@@ -3,16 +3,22 @@ import logging
 import os
 import sys
 from typing import Annotated, Any
+from urllib.parse import urlsplit
+
+import msgspec
 
 from bostie import (
     AutocompleteContext,
     Bot,
     Choice,
     ComponentContext,
+    ComponentType,
     Context,
     File,
+    Message,
     Option,
     Range,
+    UnknownComponent,
     ui,
 )
 from bostie.events import Ready, Resumed
@@ -40,6 +46,17 @@ class SyncLog(logging.Handler):
 def report(step: str, passed: bool) -> None:
     results.append(passed)
     print(f"{'PASS' if passed else 'FAIL'}  {step}", flush=True)
+
+
+def file_component_paths(message: Message) -> list[str]:
+    return [
+        urlsplit(msgspec.json.decode(component.raw)["file"]["url"]).path.rsplit("/", 1)[
+            -1
+        ]
+        for component in message.components
+        if isinstance(component, UnknownComponent)
+        and component.type == ComponentType.FILE
+    ]
 
 
 def settle(future: asyncio.Future[Any], value: object) -> None:
@@ -144,7 +161,7 @@ async def live_check(token: str, guild_id: int, channel_id: int) -> None:
     )
     report(
         "send a Components V2 message with a file",
-        [attachment.filename for attachment in message.attachments] == ["check.txt"],
+        file_component_paths(message) == ["check.txt"],
     )
 
     await bot.close()

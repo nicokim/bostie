@@ -38,6 +38,8 @@ CI runs the same commands, plus the test suite on Linux, macOS and Windows.
 
 Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/bostie-check` as a guild command in the test server and leaves it there.
 
+The sync is a bulk overwrite, so it replaces every guild command the application already has in that server. Use a bot or server without guild commands you care about. If you can't, save them first (`GET /applications/{application_id}/guilds/{guild_id}/commands`) and `PUT` them back afterwards.
+
 ## Style
 
 - Write code that explains itself through names and structure. Don't add comments.
