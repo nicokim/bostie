@@ -1,0 +1,58 @@
+{
+  "guild_id": "1335172792320131073",
+  "threads": [
+    {
+      "id": "1564337818828931073",
+      "type": 11,
+      "guild_id": "1335172792320131073",
+      "name": "release-notes-0.1",
+      "parent_id": "1335173295636611073",
+      "owner_id": "613374681415811073",
+      "last_message_id": "1564602059980931073",
+      "message_count": 12,
+      "member_count": 3,
+      "rate_limit_per_user": 0,
+      "total_message_sent": 12,
+      "flags": 0,
+      "thread_metadata": {
+        "archived": false,
+        "auto_archive_duration": 1440,
+        "archive_timestamp": "2026-10-26T18:00:00.000000+00:00",
+        "locked": false,
+        "create_timestamp": "2026-10-26T18:00:00.000000+00:00"
+      }
+    },
+    {
+      "id": "1564617159475331073",
+      "type": 11,
+      "guild_id": "1335172792320131073",
+      "name": "Voice drops after resume",
+      "parent_id": "1382046656102531073",
+      "owner_id": "820774541721731073",
+      "last_message_id": "1564617159475331073",
+      "message_count": 0,
+      "member_count": 1,
+      "rate_limit_per_user": 0,
+      "total_message_sent": 0,
+      "applied_tags": [
+        "1382046907760771073"
+      ],
+      "flags": 0,
+      "thread_metadata": {
+        "archived": false,
+        "auto_archive_duration": 4320,
+        "archive_timestamp": "2026-10-27T12:30:00.000000+00:00",
+        "locked": false,
+        "create_timestamp": "2026-10-27T12:30:00.000000+00:00"
+      }
+    }
+  ],
+  "members": [
+    {
+      "id": "1564337818828931073",
+      "user_id": "1329027298099331073",
+      "join_timestamp": "2026-10-26T18:05:00.000000+00:00",
+      "flags": 0
+    }
+  ]
+}

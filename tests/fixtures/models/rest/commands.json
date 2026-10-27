@@ -1,0 +1,252 @@
+[
+  {
+    "id": "1544285690265731073",
+    "application_id": "1329027298099331073",
+    "version": "1564201923379331073",
+    "default_member_permissions": null,
+    "type": 1,
+    "name": "kit",
+    "name_localizations": {
+      "de": "werkzeug"
+    },
+    "description": "Exercise every option type",
+    "description_localizations": {
+      "de": "Jeden Optionstyp ausprobieren"
+    },
+    "dm_permission": true,
+    "contexts": [
+      0,
+      1
+    ],
+    "integration_types": [
+      0
+    ],
+    "nsfw": false,
+    "options": [
+      {
+        "type": 2,
+        "name": "inspect",
+        "description": "Inspect things",
+        "name_localizations": null,
+        "description_localizations": null,
+        "options": [
+          {
+            "type": 1,
+            "name": "all",
+            "description": "Use every option type",
+            "name_localizations": null,
+            "description_localizations": null,
+            "options": [
+              {
+                "type": 3,
+                "name": "mode",
+                "description": "How deep to look",
+                "name_localizations": null,
+                "description_localizations": {
+                  "de": "Wie gründlich gesucht wird"
+                },
+                "required": true,
+                "choices": [
+                  {
+                    "name": "Fast",
+                    "name_localizations": {
+                      "de": "Schnell"
+                    },
+                    "value": "fast"
+                  },
+                  {
+                    "name": "Thorough",
+                    "name_localizations": {
+                      "de": "Gründlich"
+                    },
+                    "value": "thorough"
+                  }
+                ]
+              },
+              {
+                "type": 4,
+                "name": "count",
+                "description": "How many times",
+                "name_localizations": null,
+                "description_localizations": null,
+                "required": true,
+                "min_value": 1,
+                "max_value": 10
+              },
+              {
+                "type": 10,
+                "name": "ratio",
+                "description": "A fraction",
+                "name_localizations": null,
+                "description_localizations": null,
+                "min_value": 0,
+                "max_value": 1
+              },
+              {
+                "type": 5,
+                "name": "loud",
+                "description": "Announce the result",
+                "name_localizations": null,
+                "description_localizations": null
+              },
+              {
+                "type": 6,
+                "name": "target",
+                "description": "A user",
+                "name_localizations": null,
+                "description_localizations": null
+              },
+              {
+                "type": 7,
+                "name": "where",
+                "description": "A channel",
+                "name_localizations": null,
+                "description_localizations": null,
+                "channel_types": [
+                  0,
+                  2
+                ]
+              },
+              {
+                "type": 8,
+                "name": "role",
+                "description": "A role",
+                "name_localizations": null,
+                "description_localizations": null
+              },
+              {
+                "type": 9,
+                "name": "who",
+                "description": "A user or role",
+                "name_localizations": null,
+                "description_localizations": null
+              },
+              {
+                "type": 11,
+                "name": "file",
+                "description": "An attachment",
+                "name_localizations": null,
+                "description_localizations": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "1544285690265731074",
+    "application_id": "1329027298099331073",
+    "version": "1564201923379331073",
+    "default_member_permissions": "2048",
+    "type": 1,
+    "name": "search",
+    "name_localizations": null,
+    "description": "Search the lyrecord docs",
+    "description_localizations": null,
+    "dm_permission": false,
+    "contexts": [
+      0
+    ],
+    "integration_types": [
+      0
+    ],
+    "nsfw": false,
+    "options": [
+      {
+        "type": 3,
+        "name": "query",
+        "description": "What to look for",
+        "name_localizations": null,
+        "description_localizations": null,
+        "required": true,
+        "autocomplete": true,
+        "min_length": 2,
+        "max_length": 100
+      },
+      {
+        "type": 3,
+        "name": "category",
+        "description": "Where to look",
+        "name_localizations": null,
+        "description_localizations": null,
+        "required": true,
+        "choices": [
+          {
+            "name": "Docs",
+            "name_localizations": null,
+            "value": "docs"
+          },
+          {
+            "name": "Issues",
+            "name_localizations": null,
+            "value": "issues"
+          }
+        ]
+      },
+      {
+        "type": 4,
+        "name": "limit",
+        "description": "Maximum results",
+        "name_localizations": null,
+        "description_localizations": null,
+        "choices": [
+          {
+            "name": "Five",
+            "name_localizations": null,
+            "value": 5
+          },
+          {
+            "name": "Ten",
+            "name_localizations": null,
+            "value": 10
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "1544285690265731075",
+    "application_id": "1329027298099331073",
+    "version": "1564201923379331073",
+    "default_member_permissions": null,
+    "type": 2,
+    "name": "User Info",
+    "name_localizations": {
+      "de": "Benutzerinfo"
+    },
+    "description": "",
+    "description_localizations": null,
+    "dm_permission": true,
+    "contexts": [
+      0
+    ],
+    "integration_types": [
+      0
+    ],
+    "nsfw": false
+  },
+  {
+    "id": "1329027302293635073",
+    "application_id": "1329027298099331073",
+    "version": "1329027302293635074",
+    "default_member_permissions": null,
+    "type": 4,
+    "name": "launch",
+    "name_localizations": null,
+    "description": "Launch lyrecord test",
+    "description_localizations": null,
+    "dm_permission": true,
+    "contexts": [
+      0,
+      1,
+      2
+    ],
+    "integration_types": [
+      0,
+      1
+    ],
+    "nsfw": false,
+    "handler": 2
+  }
+]

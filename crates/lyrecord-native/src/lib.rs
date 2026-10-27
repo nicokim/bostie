@@ -1,9 +1,11 @@
-use lyrecord_core::{Core, CoreError, HttpRequest, Message, RawBellHandle, Ticket, describe};
+use lyrecord_core::{
+    Core, CoreError, Delivery, FailureKind, HttpRequest, RawBellHandle, Ticket, describe,
+};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::{PyBytes, PyList, PyString};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -14,12 +16,12 @@ struct NativeCore(Core);
 #[pymethods]
 impl NativeCore {
     #[staticmethod]
-    fn create() -> PyResult<(Self, RawBellHandle)> {
+    #[expect(unused_variables)]
+    fn create(token: &str, api_url: &str) -> PyResult<(Self, RawBellHandle)> {
         let (core, bell) = Core::new().map_err(to_python_error)?;
         Ok((Self(core), bell.into_raw()))
     }
 
-    #[pyo3(signature = (method, url, headers, body=None))]
     fn submit_http(
         &self,
         method: &str,
@@ -37,10 +39,10 @@ impl NativeCore {
     }
 
     fn drain<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
-        let messages = self.0.drain().map_err(to_python_error)?;
-        let items = messages
+        let deliveries = self.0.drain().map_err(to_python_error)?;
+        let items = deliveries
             .into_iter()
-            .map(|message| to_python_message(py, message))
+            .map(|delivery| to_python_delivery(py, delivery))
             .collect::<PyResult<Vec<_>>>()?;
         PyList::new(py, items)
     }
@@ -54,19 +56,77 @@ impl NativeCore {
     }
 }
 
-fn to_python_message(py: Python<'_>, message: Message) -> PyResult<Bound<'_, PyAny>> {
-    match message {
-        Message::Response { ticket, response } => (
+fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, PyAny>> {
+    match delivery {
+        Delivery::Response {
+            ticket,
+            status,
+            body,
+        } => (
             intern!(py, "response"),
             u64::from(ticket),
-            response.status,
-            response.headers,
-            PyBytes::new(py, &response.body),
+            status,
+            PyBytes::new(py, &body),
         )
             .into_bound_py_any(py),
-        Message::Failure { ticket, detail } => {
-            (intern!(py, "failure"), u64::from(ticket), detail).into_bound_py_any(py)
+        Delivery::Failure {
+            ticket,
+            kind,
+            detail,
+        } => (
+            intern!(py, "failure"),
+            u64::from(ticket),
+            failure_kind(py, kind),
+            detail,
+        )
+            .into_bound_py_any(py),
+        Delivery::Dispatch {
+            shard,
+            seq,
+            name,
+            data,
+        } => (
+            intern!(py, "dispatch"),
+            u32::from(shard),
+            seq,
+            &*name,
+            PyBytes::new(py, &data),
+        )
+            .into_bound_py_any(py),
+        Delivery::Disconnected {
+            shard,
+            code,
+            reason,
+            resuming,
+        } => (
+            intern!(py, "disconnected"),
+            u32::from(shard),
+            code,
+            reason,
+            resuming,
+        )
+            .into_bound_py_any(py),
+        Delivery::Stopped {
+            shard,
+            code,
+            reason,
+        } => (intern!(py, "stopped"), u32::from(shard), code, reason).into_bound_py_any(py),
+        Delivery::Backpressure {
+            shard,
+            queued_bytes,
+        } => (intern!(py, "backpressure"), u32::from(shard), queued_bytes).into_bound_py_any(py),
+        Delivery::InvalidRequests { count } => {
+            (intern!(py, "invalid_requests"), count).into_bound_py_any(py)
         }
+    }
+}
+
+fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
+    match kind {
+        FailureKind::Transport => intern!(py, FailureKind::Transport.as_str()),
+        FailureKind::InvalidToken => intern!(py, FailureKind::InvalidToken.as_str()),
+        FailureKind::RequestBudget => intern!(py, FailureKind::RequestBudget.as_str()),
+        FailureKind::Bug => intern!(py, FailureKind::Bug.as_str()),
     }
 }
 
@@ -74,10 +134,15 @@ fn to_python_error(error: CoreError) -> PyErr {
     let message = describe(&error);
     match error {
         CoreError::InvalidRequest(_) => PyValueError::new_err(message),
-        CoreError::Forked { .. } | CoreError::Closed => PyRuntimeError::new_err(message),
-        CoreError::Runtime(_) | CoreError::Bell(_) | CoreError::HttpClient(_) => {
-            PyOSError::new_err(message)
-        }
+        CoreError::Forked { .. }
+        | CoreError::Closed
+        | CoreError::UnknownShard(_)
+        | CoreError::ShardRunning(_)
+        | CoreError::SendQueueFull(_) => PyRuntimeError::new_err(message),
+        CoreError::Runtime(_)
+        | CoreError::Bell(_)
+        | CoreError::HttpClient(_)
+        | CoreError::Tls(_) => PyOSError::new_err(message),
     }
 }
 

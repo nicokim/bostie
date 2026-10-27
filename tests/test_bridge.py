@@ -11,7 +11,15 @@ import pytest
 
 from lyrecord import _native
 from lyrecord._bridge import Bridge
-from lyrecord.errors import TransportError
+from lyrecord.errors import (
+    InvalidToken,
+    LyrecordError,
+    RequestBudgetExhausted,
+    TransportError,
+)
+
+TOKEN = "dummy-token"
+API_URL = "https://discord.test/api/v10"
 
 type Handler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]
 type Runner = Callable[[Coroutine[Any, Any, None]], None]
@@ -67,8 +75,23 @@ class FailingDrain:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._core, name)
 
-    def drain(self) -> "list[_native.Message]":
+    def drain(self) -> "list[_native.Delivery]":
         raise RuntimeError("drain exploded")
+
+
+class RelabelledFailures:
+    def __init__(self, core: _native.Core, kind: "_native.FailureKind") -> None:
+        self._core = core
+        self._kind = kind
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._core, name)
+
+    def drain(self) -> "list[_native.Delivery]":
+        return [
+            ("failure", delivery[1], self._kind, "relabelled")
+            for delivery in self._core.drain()
+        ]
 
 
 def test_round_trip_sends_headers_and_body(run: Runner) -> None:
@@ -87,13 +110,12 @@ def test_round_trip_sends_headers_and_body(run: Runner) -> None:
 
     async def main() -> None:
         server, url = await serve(record)
-        async with server, Bridge() as bridge:
+        async with server, Bridge(TOKEN, API_URL) as bridge:
             response = await bridge.http(
                 "POST", url, headers=[("X-Probe", "1")], body=b"ping"
             )
 
         assert response.status == 201
-        assert ("x-test", "yes") in response.headers
         assert response.body == b"hello"
         assert b"x-probe: 1\r\n" in received[0].lower()
         assert received[0].endswith(b"\r\n\r\nping")
@@ -104,7 +126,7 @@ def test_round_trip_sends_headers_and_body(run: Runner) -> None:
 def test_concurrent_requests_all_complete(run: Runner) -> None:
     async def main() -> None:
         server, url = await serve(reply_hello)
-        async with server, Bridge() as bridge:
+        async with server, Bridge(TOKEN, API_URL) as bridge:
             responses = await asyncio.gather(
                 *(bridge.http("GET", url) for _ in range(500))
             )
@@ -125,7 +147,7 @@ def test_cancellation_aborts_the_rust_task(run: Runner) -> None:
             disconnected.set()
 
         server, url = await serve(wait_for_disconnect)
-        async with server, Bridge() as bridge:
+        async with server, Bridge(TOKEN, API_URL) as bridge:
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.2):
                     await bridge.http("GET", url)
@@ -140,7 +162,7 @@ def test_connection_failure_hides_the_url(run: Runner) -> None:
         server, url = await serve(reply_hello)
         server.close()
         await server.wait_closed()
-        async with Bridge() as bridge:
+        async with Bridge(TOKEN, API_URL) as bridge:
             with pytest.raises(TransportError) as raised:
                 await bridge.http("GET", f"{url}webhooks/1/SECRET-TOKEN")
 
@@ -151,7 +173,7 @@ def test_connection_failure_hides_the_url(run: Runner) -> None:
 
 def test_invalid_request_raises_immediately(run: Runner) -> None:
     async def main() -> None:
-        async with Bridge() as bridge:
+        async with Bridge(TOKEN, API_URL) as bridge:
             with pytest.raises(ValueError, match="invalid method"):
                 await bridge.http("GE T", "https://example.com")
 
@@ -160,7 +182,7 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
 
 def test_requires_a_running_bridge(run: Runner) -> None:
     async def main() -> None:
-        bridge = Bridge()
+        bridge = Bridge(TOKEN, API_URL)
         with pytest.raises(RuntimeError, match="not running"):
             await bridge.http("GET", "https://example.com")
         await bridge.close()
@@ -170,7 +192,7 @@ def test_requires_a_running_bridge(run: Runner) -> None:
 
 def test_can_only_start_once(run: Runner) -> None:
     async def main() -> None:
-        async with Bridge() as bridge:
+        async with Bridge(TOKEN, API_URL) as bridge:
             with pytest.raises(RuntimeError, match="only be started once"):
                 await bridge.__aenter__()
 
@@ -181,7 +203,7 @@ def test_closing_fails_pending_requests(run: Runner) -> None:
     async def main() -> None:
         server, url = await serve(never_reply)
         async with server:
-            bridge = Bridge()
+            bridge = Bridge(TOKEN, API_URL)
             await bridge.__aenter__()
             pending = asyncio.create_task(bridge.http("GET", url))
             await asyncio.sleep(0.1)
@@ -197,7 +219,7 @@ def test_delivery_failure_stops_the_bridge(
 ) -> None:
     async def main() -> None:
         server, url = await serve(reply_hello)
-        async with server, Bridge() as bridge:
+        async with server, Bridge(TOKEN, API_URL) as bridge:
             monkeypatch.setattr(bridge, "_core", FailingDrain(bridge._core))
             with pytest.raises(TransportError) as raised:
                 await bridge.http("GET", url)
@@ -210,7 +232,7 @@ def test_delivery_failure_stops_the_bridge(
 
 def test_rejects_use_from_another_loop(run: Runner) -> None:
     async def main() -> None:
-        async with Bridge() as bridge:
+        async with Bridge(TOKEN, API_URL) as bridge:
 
             def use_from_another_loop() -> None:
                 asyncio.run(bridge.http("GET", "http://127.0.0.1:1/"))
@@ -223,7 +245,7 @@ def test_rejects_use_from_another_loop(run: Runner) -> None:
 
 def test_close_propagates_the_callers_cancellation() -> None:
     async def main() -> None:
-        bridge = Bridge()
+        bridge = Bridge(TOKEN, API_URL)
         await bridge.__aenter__()
         closing = asyncio.create_task(bridge.close())
         await asyncio.sleep(0)
@@ -234,16 +256,43 @@ def test_close_propagates_the_callers_cancellation() -> None:
     asyncio.run(main(), loop_factory=LoopWithoutReaders)
 
 
+@pytest.mark.parametrize(
+    ("kind", "error_type"),
+    [
+        ("transport", TransportError),
+        ("invalid_token", InvalidToken),
+        ("request_budget", RequestBudgetExhausted),
+        ("bug", LyrecordError),
+    ],
+)
+def test_failure_kinds_map_to_their_exceptions(
+    run: Runner,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: "_native.FailureKind",
+    error_type: type[LyrecordError],
+) -> None:
+    async def main() -> None:
+        server, url = await serve(reply_hello)
+        async with server, Bridge(TOKEN, API_URL) as bridge:
+            monkeypatch.setattr(bridge, "_core", RelabelledFailures(bridge._core, kind))
+            with pytest.raises(error_type, match="relabelled") as raised:
+                await bridge.http("GET", url)
+
+        assert type(raised.value) is error_type
+
+    run(main())
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
 def test_forked_child_refuses_to_start() -> None:
-    bridge = Bridge()
+    bridge = Bridge(TOKEN, API_URL)
     read_end, write_end = os.pipe()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         pid = os.fork()
     if pid == 0:
         try:
-            Bridge()
+            Bridge(TOKEN, API_URL)
         except RuntimeError as error:
             os.write(
                 write_end,
@@ -269,7 +318,7 @@ def test_process_exits_cleanly_with_requests_in_flight() -> None:
         async def main():
             listener = socket.create_server(("127.0.0.1", 0))
             url = f"http://127.0.0.1:{listener.getsockname()[1]}/"
-            bridge = Bridge()
+            bridge = Bridge("dummy-token", "https://discord.test/api/v10")
             await bridge.__aenter__()
             for _ in range(10):
                 asyncio.create_task(bridge.http("GET", url))

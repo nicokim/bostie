@@ -1,0 +1,73 @@
+{
+  "id": "1329027298099331073",
+  "name": "lyrecord-test",
+  "icon": "d80f73500b8ea324255ef85752f868d4",
+  "description": "Test application for lyrecord fixtures",
+  "summary": "",
+  "bot_public": true,
+  "bot_require_code_grant": false,
+  "bot": {
+    "id": "1329027298099331073",
+    "username": "lyrecord-test",
+    "global_name": null,
+    "discriminator": "4821",
+    "avatar": "5c124ba11265959c2963ff22abc5ee5e",
+    "bot": true,
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "owner": {
+    "id": "308882807193731073",
+    "username": "ada_owner",
+    "global_name": "Ada",
+    "discriminator": "0",
+    "avatar": "a_173d406e7b4073210e72cabee9602253",
+    "public_flags": 576,
+    "flags": 576
+  },
+  "team": null,
+  "verify_key": "34e93918d7f84b5887bb42539ad438bce95654550c11c9e8ffc02d8c5f9c6c47",
+  "flags": 9084928,
+  "flags_new": "9084928",
+  "approximate_guild_count": 2,
+  "approximate_user_install_count": 0,
+  "approximate_user_authorization_count": 3,
+  "redirect_uris": [],
+  "interactions_endpoint_url": null,
+  "role_connections_verification_url": null,
+  "event_webhooks_url": null,
+  "event_webhooks_status": 1,
+  "tags": [
+    "utility"
+  ],
+  "integration_types_config": {
+    "0": {
+      "oauth2_install_params": {
+        "scopes": [
+          "applications.commands",
+          "bot"
+        ],
+        "permissions": "2252126268288064"
+      }
+    },
+    "1": {
+      "oauth2_install_params": {
+        "scopes": [
+          "applications.commands"
+        ],
+        "permissions": "0"
+      }
+    }
+  },
+  "install_params": {
+    "scopes": [
+      "applications.commands",
+      "bot"
+    ],
+    "permissions": "2252126268288064"
+  }
+}

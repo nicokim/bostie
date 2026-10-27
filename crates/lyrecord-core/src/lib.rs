@@ -1,10 +1,12 @@
 mod bell;
 mod error;
+pub mod gateway;
 mod http;
-mod inbox;
+mod ids;
+pub mod inbox;
+pub mod rest;
 mod runtime;
 mod tasks;
-mod ticket;
 
 use std::collections::HashMap;
 use std::process;
@@ -17,9 +19,9 @@ use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
-pub use crate::http::{HttpRequest, HttpResponse};
-pub use crate::inbox::Message;
-pub use crate::ticket::Ticket;
+pub use crate::http::HttpRequest;
+pub use crate::ids::{ShardId, Ticket};
+pub use crate::inbox::{Delivery, FailureKind};
 
 use crate::inbox::Inbox;
 use crate::tasks::{PendingTicket, TaskTable};
@@ -73,14 +75,19 @@ impl Core {
         };
         let pending = PendingTicket::new(ticket, Arc::clone(&self.inbox), Arc::clone(&self.tasks));
         let task = self.runtime.spawn(async move {
-            let message = match http::send(&client, request).await {
-                Ok(response) => Message::Response { ticket, response },
-                Err(error) => Message::Failure {
+            let delivery = match http::send(&client, request).await {
+                Ok((status, body)) => Delivery::Response {
                     ticket,
+                    status,
+                    body,
+                },
+                Err(error) => Delivery::Failure {
+                    ticket,
+                    kind: FailureKind::Transport,
                     detail: describe(&error.without_url()),
                 },
             };
-            pending.resolve(message);
+            pending.resolve(delivery);
         });
         table.running.insert(ticket, task.abort_handle());
         Ok(ticket)
@@ -94,7 +101,7 @@ impl Core {
         Ok(())
     }
 
-    pub fn drain(&self) -> Result<Vec<Message>, CoreError> {
+    pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {
         self.ensure_same_process()?;
         Ok(self.inbox.drain())
     }
@@ -133,6 +140,14 @@ impl Drop for Core {
             self.shut_down();
         }
     }
+}
+
+#[cfg(test)]
+fn init_test_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_max_level(tracing::Level::DEBUG)
+        .try_init();
 }
 
 #[cfg(test)]
@@ -183,7 +198,7 @@ mod tests {
         HttpRequest::parse("GET", url, &[], None).unwrap()
     }
 
-    fn wait_for_messages(core: &Core, receiver: &BellReceiver) -> Vec<Message> {
+    fn wait_for_deliveries(core: &Core, receiver: &BellReceiver) -> Vec<Delivery> {
         let mut stream = receiver.stream();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -194,35 +209,33 @@ mod tests {
 
     #[test]
     fn delivers_an_http_response() {
+        init_test_tracing();
         let url =
             serve_once(b"HTTP/1.1 201 Created\r\nX-Test: yes\r\nContent-Length: 5\r\n\r\nhello");
         let (core, receiver) = Core::new().unwrap();
 
         let ticket = core.submit_http(get(&url)).unwrap();
-        let messages = wait_for_messages(&core, &receiver);
+        let deliveries = wait_for_deliveries(&core, &receiver);
 
         let [
-            Message::Response {
+            Delivery::Response {
                 ticket: got,
-                response,
+                status,
+                body,
             },
-        ] = messages.as_slice()
+        ] = deliveries.as_slice()
         else {
-            panic!("unexpected messages: {messages:?}");
+            panic!("unexpected deliveries: {deliveries:?}");
         };
         assert_eq!(*got, ticket);
-        assert_eq!(response.status, 201);
-        assert!(
-            response
-                .headers
-                .contains(&("x-test".to_owned(), "yes".to_owned()))
-        );
-        assert_eq!(&response.body[..], b"hello");
+        assert_eq!(*status, 201);
+        assert_eq!(&body[..], b"hello");
         assert_eq!(core.inflight().unwrap(), 0);
     }
 
     #[test]
-    fn reports_connection_failures() {
+    fn reports_connection_failures_as_transport() {
+        init_test_tracing();
         let unused_port = TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -232,10 +245,16 @@ mod tests {
         core.submit_http(get(&format!("http://{unused_port}/")))
             .unwrap();
 
-        let messages = wait_for_messages(&core, &receiver);
+        let deliveries = wait_for_deliveries(&core, &receiver);
         assert!(
-            matches!(messages.as_slice(), [Message::Failure { .. }]),
-            "{messages:?}"
+            matches!(
+                deliveries.as_slice(),
+                [Delivery::Failure {
+                    kind: FailureKind::Transport,
+                    ..
+                }]
+            ),
+            "{deliveries:?}"
         );
     }
 

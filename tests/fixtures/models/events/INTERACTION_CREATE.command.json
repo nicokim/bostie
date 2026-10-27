@@ -1,0 +1,284 @@
+{
+  "id": "1564609863483523073",
+  "application_id": "1329027298099331073",
+  "type": 2,
+  "data": {
+    "id": "1544285690265731073",
+    "name": "kit",
+    "type": 1,
+    "options": [
+      {
+        "name": "inspect",
+        "type": 2,
+        "options": [
+          {
+            "name": "all",
+            "type": 1,
+            "options": [
+              {
+                "name": "mode",
+                "type": 3,
+                "value": "thorough"
+              },
+              {
+                "name": "count",
+                "type": 4,
+                "value": 7
+              },
+              {
+                "name": "ratio",
+                "type": 10,
+                "value": 0.75
+              },
+              {
+                "name": "loud",
+                "type": 5,
+                "value": true
+              },
+              {
+                "name": "target",
+                "type": 6,
+                "value": "820774541721731073"
+              },
+              {
+                "name": "where",
+                "type": 7,
+                "value": "1335173547294851073"
+              },
+              {
+                "name": "role",
+                "type": 8,
+                "value": "1335174302269571073"
+              },
+              {
+                "name": "who",
+                "type": 9,
+                "value": "308882807193731073"
+              },
+              {
+                "name": "file",
+                "type": 11,
+                "value": "1564609863064092673"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "resolved": {
+      "users": {
+        "820774541721731073": {
+          "id": "820774541721731073",
+          "username": "linus",
+          "global_name": null,
+          "discriminator": "0",
+          "avatar": null,
+          "public_flags": 0,
+          "avatar_decoration_data": null,
+          "collectibles": null,
+          "display_name_styles": null,
+          "clan": null,
+          "primary_guild": null
+        },
+        "308882807193731073": {
+          "id": "308882807193731073",
+          "username": "ada_owner",
+          "global_name": "Ada",
+          "discriminator": "0",
+          "avatar": "a_173d406e7b4073210e72cabee9602253",
+          "public_flags": 576,
+          "avatar_decoration_data": {
+            "asset": "a_9cfe55ebd354b2d1a226d267afeb6a71",
+            "sku_id": "1144058844004233369",
+            "expires_at": null
+          },
+          "collectibles": {
+            "nameplate": {
+              "sku_id": "1349849614353829990",
+              "asset": "nameplates/nameplates/twilight/",
+              "label": "",
+              "palette": "cobalt",
+              "expires_at": null
+            }
+          },
+          "display_name_styles": {
+            "font_id": 3,
+            "effect_id": 4,
+            "colors": [
+              16777215
+            ]
+          },
+          "clan": {
+            "identity_guild_id": "1335172792320131073",
+            "identity_enabled": true,
+            "tag": "LYRE",
+            "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+          },
+          "primary_guild": {
+            "identity_guild_id": "1335172792320131073",
+            "identity_enabled": true,
+            "tag": "LYRE",
+            "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+          }
+        }
+      },
+      "members": {
+        "820774541721731073": {
+          "avatar": null,
+          "banner": null,
+          "communication_disabled_until": null,
+          "flags": 2,
+          "joined_at": "2025-04-18T19:03:11.987000+00:00",
+          "nick": null,
+          "premium_since": null,
+          "roles": [],
+          "unusual_dm_activity_until": null,
+          "collectibles": null,
+          "avatar_decoration_data": null,
+          "pending": false,
+          "permissions": "1817464907619905"
+        },
+        "308882807193731073": {
+          "avatar": "21855e513cd819fe7e9c0660c83a5e83",
+          "banner": null,
+          "communication_disabled_until": null,
+          "flags": 2,
+          "joined_at": "2025-02-01T09:00:00.000000+00:00",
+          "nick": null,
+          "premium_since": "2025-02-01T12:00:00.000000+00:00",
+          "roles": [
+            "1335174050611331073"
+          ],
+          "unusual_dm_activity_until": null,
+          "collectibles": null,
+          "avatar_decoration_data": null,
+          "pending": false,
+          "permissions": "8866461766385663"
+        }
+      },
+      "roles": {
+        "1335174302269571073": {
+          "id": "1335174302269571073",
+          "name": "Moderator",
+          "description": null,
+          "color": 3447003,
+          "colors": {
+            "primary_color": 3447003,
+            "secondary_color": 10181046,
+            "tertiary_color": null
+          },
+          "hoist": true,
+          "icon": null,
+          "unicode_emoji": null,
+          "position": 2,
+          "permissions": "6756516296269958",
+          "managed": false,
+          "mentionable": true,
+          "flags": 0
+        }
+      },
+      "channels": {
+        "1335173547294851073": {
+          "id": "1335173547294851073",
+          "type": 2,
+          "guild_id": "1335172792320131073",
+          "name": "Voice Lounge",
+          "position": 0,
+          "parent_id": "1335173043978371073",
+          "topic": null,
+          "nsfw": false,
+          "rate_limit_per_user": 0,
+          "last_message_id": null,
+          "flags": 0,
+          "permissions": "8573981203889863",
+          "app_permissions": "4069281901182529"
+        }
+      },
+      "attachments": {
+        "1564609863064092673": {
+          "id": "1564609863064092673",
+          "filename": "trace.png",
+          "size": 241394,
+          "url": "https://cdn.discordapp.com/ephemeral-attachments/1544285690265731073/1564609863064092673/trace.png?ex=69005f00&is=68ff0d80&hm=eafe895eb8119e6e5d06463590b2ef81b3651c157d5c8e18f1889186c7fd0ac0&",
+          "proxy_url": "https://media.discordapp.net/ephemeral-attachments/1544285690265731073/1564609863064092673/trace.png?ex=69005f00&is=68ff0d80&hm=eafe895eb8119e6e5d06463590b2ef81b3651c157d5c8e18f1889186c7fd0ac0&",
+          "width": 800,
+          "height": 600,
+          "content_type": "image/png",
+          "placeholder": "/PcBAoBQydvKesabEIoMsdg=",
+          "placeholder_version": 1,
+          "ephemeral": true
+        }
+      }
+    }
+  },
+  "guild": {
+    "id": "1335172792320131073",
+    "locale": "en-US",
+    "features": [
+      "ANIMATED_ICON",
+      "BANNER",
+      "ENHANCED_ROLE_COLORS",
+      "INVITE_SPLASH",
+      "ROLE_ICONS"
+    ]
+  },
+  "guild_id": "1335172792320131073",
+  "channel": {
+    "id": "1335173295636611073",
+    "type": 0,
+    "guild_id": "1335172792320131073",
+    "name": "general",
+    "position": 0,
+    "parent_id": "1335173043978371073",
+    "topic": "Talk about lyrecord",
+    "nsfw": false,
+    "rate_limit_per_user": 0,
+    "last_message_id": "1564609632612253697",
+    "last_pin_timestamp": "2026-10-20T09:05:00.000000+00:00",
+    "flags": 0
+  },
+  "channel_id": "1335173295636611073",
+  "member": {
+    "user": {
+      "id": "613374681415811073",
+      "username": "grace",
+      "global_name": "Grace",
+      "discriminator": "0",
+      "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
+      "public_flags": 256,
+      "avatar_decoration_data": null,
+      "collectibles": null,
+      "display_name_styles": null,
+      "clan": null,
+      "primary_guild": null
+    },
+    "avatar": null,
+    "banner": null,
+    "communication_disabled_until": null,
+    "flags": 2,
+    "joined_at": "2025-02-02T10:15:42.512000+00:00",
+    "nick": "Grace H.",
+    "premium_since": null,
+    "roles": [
+      "1335174302269571073"
+    ],
+    "unusual_dm_activity_until": null,
+    "collectibles": null,
+    "avatar_decoration_data": null,
+    "deaf": false,
+    "mute": false,
+    "pending": false,
+    "permissions": "8573981203889863"
+  },
+  "token": "aW50ZXJhY3Rpb246MTU2NDYwOTg2MzQ4MzUyMzA3Mzo2NGIwYzhlNjk0OTAyNzhmMjZlMDA4N2I0ZTUzZDFmZTY4OWIyZWYyZmQxMTUxNmI4NGQzOWRkMmY4YWQ4NTQyM2Y3Y2UyZmU5NzgxNTk1MzU3MTU1NTczZjc0MjA2YTcyM2NmNDY3ZDdiMThmODY0NDQ5Njk1Y2U4NzA3YjA3YQ",
+  "version": 1,
+  "app_permissions": "4069281901182529",
+  "locale": "en-GB",
+  "guild_locale": "en-US",
+  "entitlements": [],
+  "authorizing_integration_owners": {
+    "0": "1335172792320131073"
+  },
+  "context": 0,
+  "attachment_size_limit": 52428800
+}

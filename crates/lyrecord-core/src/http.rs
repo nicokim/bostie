@@ -12,13 +12,6 @@ pub struct HttpRequest {
     body: Option<Bytes>,
 }
 
-#[derive(Debug)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: Bytes,
-}
-
 impl HttpRequest {
     pub fn parse(
         method: &str,
@@ -54,7 +47,7 @@ fn parse_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), Co
 pub(crate) async fn send(
     client: &reqwest::Client,
     request: HttpRequest,
-) -> Result<HttpResponse, reqwest::Error> {
+) -> Result<(u16, Bytes), reqwest::Error> {
     let mut builder = client
         .request(request.method, request.url)
         .headers(request.headers);
@@ -63,22 +56,7 @@ pub(crate) async fn send(
     }
     let response = builder.send().await?;
     let status = response.status().as_u16();
-    let headers = response
-        .headers()
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_owned(),
-                String::from_utf8_lossy(value.as_bytes()).into_owned(),
-            )
-        })
-        .collect();
-    let body = response.bytes().await?;
-    Ok(HttpResponse {
-        status,
-        headers,
-        body,
-    })
+    Ok((status, response.bytes().await?))
 }
 
 #[cfg(test)]

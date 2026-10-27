@@ -1,0 +1,24 @@
+{
+  "id": "1564614642892931073",
+  "type": 0,
+  "guild_id": "1335172792320131073",
+  "name": "bot-commands",
+  "position": 3,
+  "parent_id": "1335173043978371073",
+  "topic": null,
+  "nsfw": false,
+  "rate_limit_per_user": 5,
+  "last_message_id": "1564615901184131073",
+  "last_pin_timestamp": null,
+  "default_auto_archive_duration": 1440,
+  "default_thread_rate_limit_per_user": 0,
+  "permission_overwrites": [
+    {
+      "id": "1335180342067331073",
+      "type": 0,
+      "allow": "18432",
+      "deny": "0"
+    }
+  ],
+  "flags": 0
+}

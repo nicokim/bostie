@@ -4,8 +4,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tokio::task::AbortHandle;
 
-use crate::inbox::{Inbox, Message};
-use crate::ticket::Ticket;
+use crate::ids::Ticket;
+use crate::inbox::{Delivery, FailureKind, Inbox};
 
 pub(crate) struct TaskTable {
     pub(crate) running: HashMap<Ticket, AbortHandle>,
@@ -27,17 +27,18 @@ impl PendingTicket {
         }
     }
 
-    pub(crate) fn resolve(&self, message: Message) {
+    pub(crate) fn resolve(&self, delivery: Delivery) {
         if self.tasks.lock().running.remove(&self.ticket).is_some() {
-            self.inbox.push(message);
+            self.inbox.push(delivery);
         }
     }
 }
 
 impl Drop for PendingTicket {
     fn drop(&mut self) {
-        self.resolve(Message::Failure {
+        self.resolve(Delivery::Failure {
             ticket: self.ticket,
+            kind: FailureKind::Bug,
             detail: "lyrecord stopped this request unexpectedly; please report this bug".to_owned(),
         });
     }
@@ -67,34 +68,37 @@ mod tests {
     }
 
     #[test]
-    fn resolving_delivers_exactly_one_message() {
+    fn resolving_delivers_exactly_one_delivery() {
         let ticket = Ticket::from(1);
         let (pending, inbox, tasks) = pending(ticket);
 
-        pending.resolve(Message::Failure {
+        pending.resolve(Delivery::Response {
             ticket,
-            detail: "done".to_owned(),
+            status: 204,
+            body: bytes::Bytes::new(),
         });
         drop(pending);
 
-        let messages = inbox.drain();
-        assert!(
-            matches!(messages.as_slice(), [Message::Failure { detail, .. }] if detail == "done")
-        );
+        let drained = inbox.drain();
+        assert!(matches!(
+            drained.as_slice(),
+            [Delivery::Response { status: 204, .. }]
+        ));
         assert!(tasks.lock().running.is_empty());
     }
 
     #[test]
-    fn dropping_an_unresolved_ticket_reports_a_failure() {
+    fn dropping_an_unresolved_ticket_reports_a_bug() {
         let ticket = Ticket::from(2);
         let (pending, inbox, tasks) = pending(ticket);
 
         drop(pending);
 
-        let messages = inbox.drain();
-        assert!(
-            matches!(messages.as_slice(), [Message::Failure { ticket: got, .. }] if *got == ticket)
-        );
+        let drained = inbox.drain();
+        assert!(matches!(
+            drained.as_slice(),
+            [Delivery::Failure { ticket: got, kind: FailureKind::Bug, .. }] if *got == ticket
+        ));
         assert!(tasks.lock().running.is_empty());
     }
 

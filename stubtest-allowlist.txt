@@ -1,1 +1,1 @@
-lyrecord\._native\.\w*Message
+lyrecord\._native\.(\w*Delivery|FailureKind)

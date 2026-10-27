@@ -1,0 +1,44 @@
+{
+  "guild_id": "1335172792320131073",
+  "channel_id": "1335173547294851073",
+  "user_id": "1329027298099331073",
+  "member": {
+    "user": {
+      "id": "1329027298099331073",
+      "username": "lyrecord-test",
+      "global_name": null,
+      "discriminator": "4821",
+      "avatar": "5c124ba11265959c2963ff22abc5ee5e",
+      "bot": true,
+      "public_flags": 0,
+      "avatar_decoration_data": null,
+      "collectibles": null,
+      "display_name_styles": null,
+      "clan": null,
+      "primary_guild": null
+    },
+    "avatar": null,
+    "banner": null,
+    "communication_disabled_until": null,
+    "flags": 0,
+    "joined_at": "2025-02-01T09:30:04.221000+00:00",
+    "nick": null,
+    "premium_since": null,
+    "roles": [
+      "1335180342067331073"
+    ],
+    "unusual_dm_activity_until": null,
+    "collectibles": null,
+    "avatar_decoration_data": null,
+    "deaf": false,
+    "mute": false
+  },
+  "session_id": "70374e9c7263b9d5e16c4f418ff85dc1",
+  "deaf": false,
+  "mute": false,
+  "self_deaf": true,
+  "self_mute": false,
+  "self_video": false,
+  "suppress": false,
+  "request_to_speak_timestamp": null
+}

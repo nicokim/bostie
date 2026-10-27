@@ -1,0 +1,30 @@
+{
+  "guild_id": "1335172792320131073",
+  "user": {
+    "id": "1562134550937731073",
+    "username": "newcomer",
+    "global_name": "New Comer",
+    "discriminator": "0",
+    "avatar": "0087afaeae2e8564b64339c33637261d",
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "avatar": null,
+  "banner": null,
+  "communication_disabled_until": null,
+  "flags": 0,
+  "joined_at": "2026-10-27T12:40:00.000000+00:00",
+  "nick": null,
+  "premium_since": null,
+  "roles": [],
+  "unusual_dm_activity_until": null,
+  "collectibles": null,
+  "avatar_decoration_data": null,
+  "deaf": false,
+  "mute": false,
+  "pending": false
+}

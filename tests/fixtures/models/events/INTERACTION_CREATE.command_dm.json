@@ -1,0 +1,101 @@
+{
+  "id": "1564610156036227073",
+  "application_id": "1329027298099331073",
+  "type": 2,
+  "data": {
+    "id": "1544285690265731073",
+    "name": "kit",
+    "type": 1,
+    "options": [
+      {
+        "name": "inspect",
+        "type": 2,
+        "options": [
+          {
+            "name": "all",
+            "type": 1,
+            "options": [
+              {
+                "name": "mode",
+                "type": 3,
+                "value": "fast"
+              },
+              {
+                "name": "count",
+                "type": 4,
+                "value": 1
+              },
+              {
+                "name": "target",
+                "type": 6,
+                "value": "820774541721731073"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "resolved": {
+      "users": {
+        "820774541721731073": {
+          "id": "820774541721731073",
+          "username": "linus",
+          "global_name": null,
+          "discriminator": "0",
+          "avatar": null,
+          "public_flags": 0,
+          "avatar_decoration_data": null,
+          "collectibles": null,
+          "display_name_styles": null,
+          "clan": null,
+          "primary_guild": null
+        }
+      }
+    }
+  },
+  "channel": {
+    "id": "1549495015833731073",
+    "type": 1,
+    "last_message_id": "1564610113044611073",
+    "flags": 0,
+    "recipients": [
+      {
+        "id": "613374681415811073",
+        "username": "grace",
+        "global_name": "Grace",
+        "discriminator": "0",
+        "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
+        "public_flags": 256,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      }
+    ]
+  },
+  "channel_id": "1549495015833731073",
+  "user": {
+    "id": "613374681415811073",
+    "username": "grace",
+    "global_name": "Grace",
+    "discriminator": "0",
+    "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
+    "public_flags": 256,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "token": "aW50ZXJhY3Rpb246MTU2NDYxMDE1NjAzNjIyNzA3Mzo3YWU0MTQxZGM2NmNhOGI1OWQxMGUyODM4YzIyN2Q3NTQ0ZTQ1OGRmYzA0ZjhmNGRmZjg2MjNhMzBhNjY2MzVlZDdkZTFiNWFjODcwMTQ1ZTJjNDRiMjk0YjNlZGNiZTM2ZGMyZGFhNWU0MjFjZjBhZDIzNDk4NGJmZjZiODNhOQ",
+  "version": 1,
+  "app_permissions": "442368",
+  "locale": "en-GB",
+  "entitlements": [],
+  "authorizing_integration_owners": {
+    "0": "0"
+  },
+  "context": 1,
+  "attachment_size_limit": 10485760
+}

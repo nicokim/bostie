@@ -1,0 +1,154 @@
+{
+  "id": "1335172792320131073",
+  "name": "lyrecord test",
+  "icon": "a_76234f24e0623918dff4acc355171052",
+  "description": "Fixture guild for lyrecord",
+  "splash": null,
+  "discovery_splash": null,
+  "banner": "f35cb0d25791c6751ee4d765f55c727b",
+  "owner_id": "308882807193731073",
+  "application_id": null,
+  "afk_channel_id": null,
+  "afk_timeout": 300,
+  "system_channel_id": "1335173295636611073",
+  "system_channel_flags": 4,
+  "verification_level": 2,
+  "default_message_notifications": 1,
+  "explicit_content_filter": 2,
+  "mfa_level": 0,
+  "nsfw_level": 0,
+  "nsfw": false,
+  "premium_tier": 2,
+  "premium_subscription_count": 7,
+  "premium_progress_bar_enabled": false,
+  "preferred_locale": "en-US",
+  "rules_channel_id": null,
+  "public_updates_channel_id": null,
+  "safety_alerts_channel_id": null,
+  "max_presences": null,
+  "max_members": 500000,
+  "max_video_channel_users": 25,
+  "max_stage_video_channel_users": 50,
+  "vanity_url_code": null,
+  "incidents_data": null,
+  "features": [
+    "ANIMATED_ICON",
+    "BANNER",
+    "ENHANCED_ROLE_COLORS",
+    "INVITE_SPLASH",
+    "ROLE_ICONS"
+  ],
+  "roles": [
+    {
+      "id": "1335172792320131073",
+      "name": "@everyone",
+      "description": null,
+      "color": 0,
+      "colors": {
+        "primary_color": 0,
+        "secondary_color": null,
+        "tertiary_color": null
+      },
+      "hoist": false,
+      "icon": null,
+      "unicode_emoji": null,
+      "position": 0,
+      "permissions": "1817464907619905",
+      "managed": false,
+      "mentionable": false,
+      "flags": 0
+    },
+    {
+      "id": "1335180342067331073",
+      "name": "lyrecord-test",
+      "description": null,
+      "color": 0,
+      "colors": {
+        "primary_color": 0,
+        "secondary_color": null,
+        "tertiary_color": null
+      },
+      "hoist": false,
+      "icon": null,
+      "unicode_emoji": null,
+      "position": 1,
+      "permissions": "2252126268288064",
+      "managed": true,
+      "mentionable": false,
+      "tags": {
+        "bot_id": "1329027298099331073"
+      },
+      "flags": 0
+    },
+    {
+      "id": "1335174302269571073",
+      "name": "Moderator",
+      "description": null,
+      "color": 3447003,
+      "colors": {
+        "primary_color": 3447003,
+        "secondary_color": 10181046,
+        "tertiary_color": null
+      },
+      "hoist": true,
+      "icon": null,
+      "unicode_emoji": null,
+      "position": 2,
+      "permissions": "6756516296269958",
+      "managed": false,
+      "mentionable": true,
+      "flags": 0
+    },
+    {
+      "id": "1335174050611331073",
+      "name": "Admin",
+      "description": null,
+      "color": 15158332,
+      "colors": {
+        "primary_color": 15158332,
+        "secondary_color": null,
+        "tertiary_color": null
+      },
+      "hoist": true,
+      "icon": null,
+      "unicode_emoji": "🛡️",
+      "position": 3,
+      "permissions": "8",
+      "managed": false,
+      "mentionable": false,
+      "flags": 0
+    }
+  ],
+  "emojis": [
+    {
+      "id": "1345334752051331073",
+      "name": "lyre",
+      "roles": [],
+      "require_colons": true,
+      "managed": false,
+      "animated": false,
+      "available": true
+    },
+    {
+      "id": "1345335003709571073",
+      "name": "lyre_spin",
+      "roles": [],
+      "require_colons": true,
+      "managed": false,
+      "animated": true,
+      "available": true
+    }
+  ],
+  "stickers": [
+    {
+      "id": "1345697139916931073",
+      "name": "lyre wave",
+      "tags": "musical_note",
+      "type": 2,
+      "format_type": 1,
+      "description": "Wumpus waving a lyre",
+      "available": true,
+      "guild_id": "1335172792320131073"
+    }
+  ]
+}

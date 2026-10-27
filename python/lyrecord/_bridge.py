@@ -3,24 +3,34 @@ import socket
 from collections.abc import Iterable
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Self, assert_never
+from typing import Self
 
 from lyrecord import _native
-from lyrecord.errors import TransportError
+from lyrecord.errors import (
+    InvalidToken,
+    LyrecordError,
+    RequestBudgetExhausted,
+    TransportError,
+)
 
 BELL_READ_SIZE = 4096
+FAILURE_ERRORS = {
+    "transport": TransportError,
+    "invalid_token": InvalidToken,
+    "request_budget": RequestBudgetExhausted,
+    "bug": LyrecordError,
+}
 
 
 @dataclass(frozen=True, slots=True)
 class HttpResponse:
     status: int
-    headers: list[tuple[str, str]]
     body: bytes
 
 
 class Bridge:
-    def __init__(self) -> None:
-        self._core, bell_handle = _native.Core.create()
+    def __init__(self, token: str, api_url: str) -> None:
+        self._core, bell_handle = _native.Core.create(token, api_url)
         self._bell = socket.socket(fileno=bell_handle)
         self._bell.setblocking(False)
         self._waiting: dict[int, asyncio.Future[HttpResponse]] = {}
@@ -78,7 +88,9 @@ class Bridge:
     def _running_loop(self) -> asyncio.AbstractEventLoop:
         loop = asyncio.get_running_loop()
         if self._loop is None:
-            raise RuntimeError("the bridge is not running; use 'async with Bridge()'")
+            raise RuntimeError(
+                "the bridge is not running; use 'async with Bridge(token, api_url)'"
+            )
         if self._stopped:
             raise RuntimeError("the bridge stopped") from self._failure
         if loop is not self._loop:
@@ -114,17 +126,15 @@ class Bridge:
         self._bell.close()
 
     def _deliver_ready(self) -> None:
-        for message in self._core.drain():
-            self._deliver(message)
+        for delivery in self._core.drain():
+            self._deliver(delivery)
 
-    def _deliver(self, message: "_native.Message") -> None:
-        match message:
-            case ("response", ticket, status, headers, body):
-                self._resolve(ticket, HttpResponse(status, headers, body))
-            case ("failure", ticket, detail):
-                self._reject(ticket, TransportError(detail))
-            case _:
-                assert_never(message)
+    def _deliver(self, delivery: "_native.Delivery") -> None:
+        match delivery:
+            case ("response", ticket, status, body):
+                self._resolve(ticket, HttpResponse(status, body))
+            case ("failure", ticket, kind, detail):
+                self._reject(ticket, FAILURE_ERRORS[kind](detail))
 
     def _resolve(self, ticket: int, response: HttpResponse) -> None:
         future = self._waiting.pop(ticket, None)

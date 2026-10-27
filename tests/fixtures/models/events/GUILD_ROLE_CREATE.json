@@ -1,0 +1,22 @@
+{
+  "guild_id": "1335172792320131073",
+  "role": {
+    "id": "1564612126310531073",
+    "name": "Tester",
+    "description": null,
+    "color": 0,
+    "colors": {
+      "primary_color": 0,
+      "secondary_color": null,
+      "tertiary_color": null
+    },
+    "hoist": false,
+    "icon": null,
+    "unicode_emoji": null,
+    "position": 1,
+    "permissions": "68608",
+    "managed": false,
+    "mentionable": false,
+    "flags": 1
+  }
+}

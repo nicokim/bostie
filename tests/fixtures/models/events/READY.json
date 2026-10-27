@@ -1,0 +1,56 @@
+{
+  "v": 10,
+  "user_settings": {},
+  "user": {
+    "id": "1329027298099331073",
+    "username": "lyrecord-test",
+    "global_name": null,
+    "discriminator": "4821",
+    "avatar": "5c124ba11265959c2963ff22abc5ee5e",
+    "bot": true,
+    "verified": true,
+    "mfa_enabled": true,
+    "email": null,
+    "flags": 0,
+    "clan": null,
+    "primary_guild": null
+  },
+  "session_type": "normal",
+  "session_id": "70374e9c7263b9d5e16c4f418ff85dc1",
+  "resume_gateway_url": "wss://gateway-us-east1-d.discord.gg",
+  "relationships": [],
+  "private_channels": [],
+  "presences": [],
+  "guilds": [
+    {
+      "id": "1335172792320131073",
+      "unavailable": true
+    },
+    {
+      "id": "1335927767040131073",
+      "unavailable": true
+    }
+  ],
+  "guild_join_requests": [],
+  "geo_ordered_rtc_regions": [
+    "rotterdam",
+    "frankfurt",
+    "madrid",
+    "milan",
+    "stockholm"
+  ],
+  "game_relationships": [],
+  "auth": {},
+  "shard": [
+    0,
+    1
+  ],
+  "application": {
+    "id": "1329027298099331073",
+    "flags": 9084928,
+    "flags_new": "9084928"
+  },
+  "_trace": [
+    "[\"gateway-prd-arm-us-east1-d-7xq2\",{\"micros\":124518,\"calls\":[\"id_created\",{\"micros\":742,\"calls\":[]},\"session_lookup_time\",{\"micros\":312,\"calls\":[]},\"session_lookup_finished\",{\"micros\":11,\"calls\":[]},\"discord-sessions-prd-2-87\",{\"micros\":122951,\"calls\":[\"start_session\",{\"micros\":95480},\"build_ready\",{\"micros\":16}]}]}]"
+  ]
+}

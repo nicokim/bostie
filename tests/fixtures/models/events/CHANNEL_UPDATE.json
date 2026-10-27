@@ -1,0 +1,36 @@
+{
+  "id": "1335175308902531073",
+  "type": 0,
+  "guild_id": "1335172792320131073",
+  "name": "staff-only",
+  "position": 1,
+  "parent_id": "1335173043978371073",
+  "topic": "Moderator coordination",
+  "nsfw": false,
+  "rate_limit_per_user": 0,
+  "last_message_id": "1562737272422531073",
+  "last_pin_timestamp": null,
+  "default_auto_archive_duration": 1440,
+  "default_thread_rate_limit_per_user": 0,
+  "permission_overwrites": [
+    {
+      "id": "1335172792320131073",
+      "type": 0,
+      "allow": "0",
+      "deny": "1024"
+    },
+    {
+      "id": "1335174302269571073",
+      "type": 0,
+      "allow": "1024",
+      "deny": "0"
+    },
+    {
+      "id": "1335180342067331073",
+      "type": 0,
+      "allow": "1024",
+      "deny": "0"
+    }
+  ],
+  "flags": 0
+}

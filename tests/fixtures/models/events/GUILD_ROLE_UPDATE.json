@@ -1,0 +1,22 @@
+{
+  "guild_id": "1335172792320131073",
+  "role": {
+    "id": "1335174050611331073",
+    "name": "Admin",
+    "description": null,
+    "color": 11127295,
+    "colors": {
+      "primary_color": 11127295,
+      "secondary_color": 16759788,
+      "tertiary_color": 16761760
+    },
+    "hoist": true,
+    "icon": null,
+    "unicode_emoji": "🛡️",
+    "position": 3,
+    "permissions": "8",
+    "managed": false,
+    "mentionable": false,
+    "flags": 0
+  }
+}

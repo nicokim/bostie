@@ -1,0 +1,29 @@
+{
+  "user": {
+    "id": "820774541721731073",
+    "username": "linus",
+    "global_name": null,
+    "discriminator": "0",
+    "avatar": null,
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "avatar": null,
+  "banner": null,
+  "communication_disabled_until": null,
+  "flags": 2,
+  "joined_at": "2025-04-18T19:03:11.987000+00:00",
+  "nick": null,
+  "premium_since": null,
+  "roles": [],
+  "unusual_dm_activity_until": null,
+  "collectibles": null,
+  "avatar_decoration_data": null,
+  "deaf": false,
+  "mute": false,
+  "pending": false
+}

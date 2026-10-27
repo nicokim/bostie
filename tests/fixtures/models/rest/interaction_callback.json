@@ -1,0 +1,83 @@
+{
+  "interaction": {
+    "id": "1564609863483523073",
+    "type": 2,
+    "response_message_id": "1564609864741814273",
+    "response_message_loading": false,
+    "response_message_ephemeral": false
+  },
+  "resource": {
+    "type": 4,
+    "message": {
+      "id": "1564609864741814273",
+      "type": 20,
+      "channel_id": "1335173295636611073",
+      "author": {
+        "id": "1329027298099331073",
+        "username": "lyrecord-test",
+        "global_name": null,
+        "discriminator": "4821",
+        "avatar": "5c124ba11265959c2963ff22abc5ee5e",
+        "bot": true,
+        "public_flags": 0,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "content": "Inspected Voice Lounge 7 times (thorough).",
+      "timestamp": "2026-10-27T12:01:00.800000+00:00",
+      "edited_timestamp": null,
+      "tts": false,
+      "mention_everyone": false,
+      "mentions": [],
+      "mention_roles": [],
+      "attachments": [],
+      "embeds": [],
+      "components": [],
+      "pinned": false,
+      "flags": 0,
+      "application_id": "1329027298099331073",
+      "webhook_id": "1329027298099331073",
+      "interaction_metadata": {
+        "id": "1564609863483523073",
+        "type": 2,
+        "user": {
+          "id": "613374681415811073",
+          "username": "grace",
+          "global_name": "Grace",
+          "discriminator": "0",
+          "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
+          "public_flags": 256,
+          "avatar_decoration_data": null,
+          "collectibles": null,
+          "display_name_styles": null,
+          "clan": null,
+          "primary_guild": null
+        },
+        "authorizing_integration_owners": {
+          "0": "1335172792320131073"
+        }
+      },
+      "interaction": {
+        "id": "1564609863483523073",
+        "type": 2,
+        "name": "kit inspect all",
+        "user": {
+          "id": "613374681415811073",
+          "username": "grace",
+          "global_name": "Grace",
+          "discriminator": "0",
+          "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
+          "public_flags": 256,
+          "avatar_decoration_data": null,
+          "collectibles": null,
+          "display_name_styles": null,
+          "clan": null,
+          "primary_guild": null
+        }
+      }
+    }
+  }
+}
