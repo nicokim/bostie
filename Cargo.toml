@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 lyrecord-core = { path = "crates/lyrecord-core" }
 bytes = "1.12.1"
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 fastrand = "2.5.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 mimalloc = { version = "0.1.52", default-features = false, features = ["v2", "local_dynamic_tls"] }

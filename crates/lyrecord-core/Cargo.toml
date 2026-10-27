@@ -23,8 +23,22 @@ twilight-http-ratelimiting.workspace = true
 zstd-safe.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
+lyrecord-core = { path = ".", features = ["bench"] }
+mimalloc.workspace = true
 tokio-websockets = { workspace = true, features = ["server"] }
 tracing-subscriber.workspace = true
+
+[features]
+bench = []
+
+[[bench]]
+name = "gateway"
+harness = false
+
+[[bench]]
+name = "gateway_mimalloc"
+harness = false
 
 [lints]
 workspace = true

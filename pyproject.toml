@@ -51,7 +51,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
 
 [tool.mypy]
 strict = true
-files = ["python/lyrecord", "tests"]
+files = ["python/lyrecord", "tests", "benches"]
+
+[[tool.mypy.overrides]]
+module = "pyperf"
+ignore_missing_imports = true
 
 [tool.pytest]
 testpaths = ["tests"]
