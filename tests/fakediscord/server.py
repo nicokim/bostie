@@ -473,7 +473,6 @@ class FakeDiscord:
         defaults: Json = {
             "type": 1,
             "default_member_permissions": None,
-            "dm_permission": True,
             "nsfw": False,
             "integration_types": [0],
         }

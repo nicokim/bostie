@@ -1,6 +1,7 @@
 import msgspec
 
 from lyrecord.enums import (
+    ApplicationFlags,
     CommandType,
     ComponentType,
     InteractionContextType,
@@ -8,7 +9,7 @@ from lyrecord.enums import (
     OptionType,
     Permissions,
 )
-from lyrecord.models.base import Model
+from lyrecord.models.base import Model, permissions_from
 from lyrecord.models.channel import Channel
 from lyrecord.models.guild import Member, Role
 from lyrecord.models.message import Attachment, Message
@@ -62,9 +63,12 @@ class InteractionData(Model, kw_only=True):
 class Application(Model, kw_only=True):
     id: int
     name: str | None = None
-    flags: int | None = None
-    flags_new: int | None = None
+    _flags: str | None = msgspec.field(default=None, name="flags_new")
     bot_public: bool | None = None
+
+    @property
+    def flags(self) -> ApplicationFlags | None:
+        return None if self._flags is None else ApplicationFlags(int(self._flags))
 
 
 class Interaction(Model, kw_only=True):
@@ -82,12 +86,16 @@ class Interaction(Model, kw_only=True):
     token: str | None = None
     version: int | None = None
     message: Message | None = None
-    app_permissions: Permissions | None = None
+    _app_permissions: str | None = msgspec.field(default=None, name="app_permissions")
     locale: str | None = None
     guild_locale: str | None = None
     authorizing_integration_owners: dict[str, int] | None = None
     context: InteractionContextType | None = None
     attachment_size_limit: int | None = None
+
+    @property
+    def app_permissions(self) -> Permissions | None:
+        return permissions_from(self._app_permissions)
 
     @property
     def author(self) -> User | None:

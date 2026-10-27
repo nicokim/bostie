@@ -59,24 +59,6 @@
         "authorizing_integration_owners": {
           "0": "1335172792320131073"
         }
-      },
-      "interaction": {
-        "id": "1564609863483523073",
-        "type": 2,
-        "name": "kit inspect all",
-        "user": {
-          "id": "613374681415811073",
-          "username": "grace",
-          "global_name": "Grace",
-          "discriminator": "0",
-          "avatar": "02f1c1ef26b61fa927ec5b8fab1027b3",
-          "public_flags": 256,
-          "avatar_decoration_data": null,
-          "collectibles": null,
-          "display_name_styles": null,
-          "clan": null,
-          "primary_guild": null
-        }
       }
     }
   }

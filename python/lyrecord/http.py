@@ -17,6 +17,7 @@ from lyrecord.errors import (
 )
 from lyrecord.file import File
 
+TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
 STATUS_ERRORS: dict[int, type[HTTPException]] = {
     400: BadRequest,
     403: Forbidden,
@@ -96,7 +97,8 @@ class HTTPClient:
             reason,
         )
         if status >= 400:
-            raise _status_error(status, data)
+            bot_route = not any(token in route for token in TOKEN_PLACEHOLDERS)
+            raise _status_error(status, data, bot_route=bot_route)
         return data
 
 
@@ -138,12 +140,12 @@ def _multipart(payload: Any, files: Sequence[File]) -> tuple[str, bytes]:
     return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
 
 
-def _status_error(status: int, body: bytes) -> LyrecordError:
+def _status_error(status: int, body: bytes, *, bot_route: bool) -> LyrecordError:
     try:
         error = _error_decoder.decode(body)
     except msgspec.DecodeError:
         error = _ErrorBody()
-    if status == 401:
+    if status == 401 and bot_route:
         return InvalidToken(error.message or "401: Unauthorized")
     if status == 429:
         return RateLimited(

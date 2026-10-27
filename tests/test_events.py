@@ -6,6 +6,7 @@ import msgspec
 import pytest
 
 from lyrecord import events
+from lyrecord.enums import ApplicationFlags
 from lyrecord.events import (
     EVENTS,
     ChannelUpdate,
@@ -187,7 +188,8 @@ def test_ready() -> None:
     ]
     assert all(guild.unavailable for guild in event.guilds)
     assert event.application is not None
-    assert event.application.flags_new == 9084928
+    assert event.application.flags == 9084928
+    assert ApplicationFlags.APPLICATION_COMMAND_BADGE in event.application.flags
     assert event.session_id == "70374e9c7263b9d5e16c4f418ff85dc1"
 
 

@@ -17,7 +17,13 @@ from lyrecord.context import (
     Context,
     ResponseState,
 )
-from lyrecord.errors import InteractionExpired, InteractionResponded
+from lyrecord.enums import MessageFlags
+from lyrecord.errors import (
+    HTTPException,
+    InteractionExpired,
+    InteractionResponded,
+    NotFound,
+)
 from lyrecord.file import File
 from lyrecord.models import AllowedMentions, Interaction, decode
 
@@ -43,6 +49,7 @@ class RecordingHTTP:
         self.gate = asyncio.Event()
         self.gate.set()
         self.callback_body = CALLBACK_BODY
+        self.failures: list[HTTPException] = []
 
     async def _request(
         self,
@@ -58,6 +65,8 @@ class RecordingHTTP:
     ) -> bytes:
         self.requests.append(Request(method, route, json, files, query, params))
         await self.gate.wait()
+        if self.failures:
+            raise self.failures.pop(0)
         if method == "DELETE":
             return b""
         return self.callback_body if route == CALLBACK_ROUTE else MESSAGE_BODY
@@ -122,7 +131,7 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "followup": lambda ctx: ctx.followup("hi"),
     "delete": lambda ctx: ctx.delete(),
 }
-PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED = ResponseState
+PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, EXPIRED = ResponseState
 CALLBACK_4 = ("POST", CALLBACK_ROUTE, 4)
 CALLBACK_5 = ("POST", CALLBACK_ROUTE, 5)
 CALLBACK_6 = ("POST", CALLBACK_ROUTE, 6)
@@ -146,7 +155,7 @@ TABLE = [
     (DEFERRED, "defer_update", NOTHING, DEFERRED),
     (DEFERRED, "update", REFUSED, DEFERRED),
     (DEFERRED, "edit", EDIT, RESPONDED),
-    (DEFERRED, "followup", FOLLOWUP, RESPONDED),
+    (DEFERRED, "followup", EDIT, RESPONDED),
     (DEFERRED, "delete", DELETE, RESPONDED),
     (DEFERRED_UPDATE, "respond", FOLLOWUP, RESPONDED),
     (DEFERRED_UPDATE, "defer", NOTHING, DEFERRED_UPDATE),
@@ -429,3 +438,107 @@ def test_a_response_waits_for_an_auto_defer_in_flight_and_edits_it() -> None:
         assert ctx.state is ResponseState.RESPONDED
 
     assert run(scenario).calls == [CALLBACK_5, EDIT]
+
+
+def error(status: int, code: int) -> HTTPException:
+    kind = NotFound if status == 404 else HTTPException
+    return kind(status, code, "dead token", {}, b"")
+
+
+@pytest.mark.parametrize(
+    "dead", [error(404, 10062), error(404, 10015), error(401, 50027)]
+)
+def test_a_dead_token_expires_the_context_and_nothing_is_sent_again(
+    dead: HTTPException,
+) -> None:
+    async def scenario(http: RecordingHTTP) -> None:
+        ctx = context(ComponentContext, http)
+        http.failures.append(dead)
+        with pytest.raises(HTTPException):
+            await ctx.respond("hi")
+        assert ctx.state is ResponseState.EXPIRED
+
+        for call in CALLS.values():
+            with pytest.raises(InteractionExpired):
+                await call(ctx)
+
+    assert run(scenario).calls == [CALLBACK_4]
+
+
+def test_a_dead_token_after_a_defer_is_never_edited_again() -> None:
+    async def scenario(http: RecordingHTTP) -> None:
+        ctx = context(Context, http)
+        await ctx.defer()
+        http.failures.append(error(404, 10015))
+        with pytest.raises(NotFound):
+            await ctx.respond("hi")
+        with pytest.raises(InteractionExpired):
+            await ctx.respond("again")
+
+    assert run(scenario).calls == [CALLBACK_5, EDIT]
+
+
+def test_an_unknown_follow_up_message_keeps_the_context_alive() -> None:
+    async def scenario(http: RecordingHTTP) -> None:
+        ctx = context(Context, http)
+        await ctx.respond("hi")
+        http.failures.append(error(404, 10008))
+        with pytest.raises(NotFound):
+            await ctx.followup("gone")
+        await ctx.followup("still works")
+
+        assert ctx.state is ResponseState.RESPONDED
+
+    assert run(scenario).calls == [CALLBACK_4, FOLLOWUP, FOLLOWUP]
+
+
+def test_a_failed_auto_defer_on_a_dead_token_stops_the_answer() -> None:
+    async def scenario(http: RecordingHTTP) -> None:
+        ctx = context(Context, http, age=10, auto_defer=2.5)
+        http.failures.append(error(404, 10062))
+        with ctx.auto_defer():
+            await asyncio.sleep(0.01)
+            with pytest.raises(InteractionExpired):
+                await ctx.respond("late")
+
+    assert run(scenario).calls == [CALLBACK_5]
+
+
+def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
+    v2 = MessageFlags.IS_COMPONENTS_V2
+    text = {"type": 10, "content": "hi"}
+
+    async def scenario(http: RecordingHTTP) -> None:
+        answered = context(ComponentContext, http)
+        await answered.respond(components=[text], ephemeral=True)
+        await answered.followup(flags=MessageFlags.SUPPRESS_NOTIFICATIONS)
+        await answered.edit(components=[text])
+        deferred = context(Context, http)
+        await deferred.defer(ephemeral=True)
+        await deferred.respond(components=[text])
+        await context(ComponentContext, http).update(components=[text])
+
+    answer, followup, edit, _, filled, updated = run(scenario).requests
+    assert answer.json["data"]["flags"] == v2 | EPHEMERAL
+    assert followup.json["flags"] == MessageFlags.SUPPRESS_NOTIFICATIONS
+    assert edit.json["flags"] == v2
+    cleared = {"components": [text], "flags": v2, "content": None, "embeds": []}
+    assert filled.json == cleared
+    assert updated.json["data"] == cleared
+
+
+def test_edits_keep_only_the_listed_attachments() -> None:
+    files = [File("new.png", b"png")]
+
+    async def scenario(http: RecordingHTTP) -> None:
+        await context(ComponentContext, http).update(attachments=[1564609863064092673])
+        ctx = context(Context, http)
+        await ctx.respond("hi")
+        await ctx.edit(files=files, attachments=[1564609863064092673])
+
+    update, _, edit = run(scenario).requests
+    assert edit.json["attachments"] == [
+        {"id": 1564609863064092673},
+        {"id": 0, "filename": "new.png"},
+    ]
+    assert update.json["data"]["attachments"] == [{"id": 1564609863064092673}]

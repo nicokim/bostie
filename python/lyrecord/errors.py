@@ -125,4 +125,7 @@ class InteractionResponded(CommandError):
 
 
 class InteractionExpired(CommandError):
-    """The interaction is more than 15 minutes old and can no longer be answered."""
+    """The interaction can no longer be answered.
+
+    It is over 15 minutes old, or Discord already rejected or forgot its token.
+    """

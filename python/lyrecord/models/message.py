@@ -4,7 +4,12 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import msgspec
 
-from lyrecord.enums import MessageFlags, MessageType
+from lyrecord.enums import (
+    ComponentType,
+    MessageFlags,
+    MessageReferenceType,
+    MessageType,
+)
 from lyrecord.file import File
 from lyrecord.models.base import Builder, Model
 from lyrecord.models.channel import Channel
@@ -19,6 +24,18 @@ from lyrecord.models.user import User
 
 if TYPE_CHECKING:
     from lyrecord.models.interaction import Resolved
+
+V2_COMPONENT_TYPES = frozenset(
+    {
+        ComponentType.SECTION,
+        ComponentType.TEXT_DISPLAY,
+        ComponentType.THUMBNAIL,
+        ComponentType.MEDIA_GALLERY,
+        ComponentType.FILE,
+        ComponentType.SEPARATOR,
+        ComponentType.CONTAINER,
+    }
+)
 
 
 class Attachment(Model, kw_only=True):
@@ -103,7 +120,7 @@ class Reaction(Model, kw_only=True):
 
 
 class MessageReference(Builder, kw_only=True):
-    type: int | None = None
+    type: MessageReferenceType | None = None
     message_id: int | None = None
     channel_id: int | None = None
     guild_id: int | None = None
@@ -177,20 +194,40 @@ def build_message(
     embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
     components: Sequence[Component | Mapping[str, Any]] | None = None,
     files: Sequence[File] = (),
+    attachments: Sequence[Attachment | int] = (),
     allowed_mentions: AllowedMentions | Mapping[str, Any] | None = None,
     flags: int | None = None,
     tts: bool | None = None,
     reply_to: int | None = None,
 ) -> tuple[dict[str, Any], Sequence[File]]:
-    """Build the JSON body of a message to send or edit; only given parts are set."""
+    """Build the JSON body of a message to send or edit; only given parts are set.
+
+    V2 components set IS_COMPONENTS_V2 and clear content and embeds, and with `files`
+    or `attachments` an edit keeps only the listed `attachments`.
+    """
     components_json = None
     if components is not None:
         components_json = [
             component.raw if isinstance(component, UnknownComponent) else component
             for component in components
         ]
-    reference = None if reply_to is None else MessageReference(message_id=reply_to)
-    attachments = [_attachment(index, file) for index, file in enumerate(files)]
+        if any(_type_of(component) in V2_COMPONENT_TYPES for component in components):
+            flags = (flags or 0) | MessageFlags.IS_COMPONENTS_V2
+    components_v2 = bool((flags or 0) & MessageFlags.IS_COMPONENTS_V2)
+    if components_v2 and (content or embeds):
+        raise ValueError(
+            "messages with Components V2 cannot have content or embeds; "
+            "use ui.text() and ui.container() instead"
+        )
+    reference = (
+        None
+        if reply_to is None
+        else MessageReference(type=MessageReferenceType.DEFAULT, message_id=reply_to)
+    )
+    attachment_list = [
+        {"id": attachment if isinstance(attachment, int) else attachment.id}
+        for attachment in attachments
+    ] + [_attachment(index, file) for index, file in enumerate(files)]
     parts: dict[str, Any] = {
         "content": content,
         "embeds": embeds,
@@ -199,13 +236,25 @@ def build_message(
         "flags": flags,
         "tts": tts,
         "message_reference": reference,
-        "attachments": attachments or None,
+        "attachments": attachment_list or None,
     }
-    return {key: value for key, value in parts.items() if value is not None}, files
+    body = {key: value for key, value in parts.items() if value is not None}
+    if components_v2:
+        body |= {"content": None, "embeds": []}
+    return body, files
+
+
+def _type_of(component: Component | Mapping[str, Any]) -> int | None:
+    if isinstance(component, Mapping):
+        tag: int | None = component.get("type")
+        return tag
+    return component.type
 
 
 def _attachment(index: int, file: File) -> dict[str, Any]:
     attachment: dict[str, Any] = {"id": index, "filename": file.name}
     if file.description is not None:
         attachment["description"] = file.description
+    if file.spoiler:
+        attachment["is_spoiler"] = True
     return attachment

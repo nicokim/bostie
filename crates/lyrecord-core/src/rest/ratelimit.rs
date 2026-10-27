@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -31,9 +32,7 @@ impl ResponseLimits {
     pub(super) fn parse(status: StatusCode, headers: &HeaderMap, now: Instant) -> Self {
         let limited = (status == StatusCode::TOO_MANY_REQUESTS).then(|| Limited {
             scope: scope(headers),
-            retry_after: seconds(headers, RETRY_AFTER.as_str())
-                .or_else(|| seconds(headers, RateLimitHeaders::RESET_AFTER))
-                .unwrap_or(FALLBACK_RETRY_AFTER),
+            retry_after: seconds(headers, RETRY_AFTER.as_str()).unwrap_or(FALLBACK_RETRY_AFTER),
         });
         let bucket = match limited {
             Some(Limited {
@@ -123,6 +122,31 @@ impl GlobalGate {
                     tokio::time::sleep_until(until).await;
                 }
                 _ => return,
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct InteractionBuckets {
+    exhausted_until: HashMap<String, Instant>,
+}
+
+impl InteractionBuckets {
+    pub(super) fn wait(&self, key: &str, now: Instant) -> Duration {
+        self.exhausted_until
+            .get(key)
+            .map_or(Duration::ZERO, |until| until.saturating_duration_since(now))
+    }
+
+    pub(super) fn observe(&mut self, key: &str, bucket: Option<&RateLimitHeaders>, now: Instant) {
+        self.exhausted_until.retain(|_, until| *until > now);
+        match bucket {
+            Some(bucket) if bucket.remaining == 0 && bucket.reset_at > now => {
+                self.exhausted_until.insert(key.to_owned(), bucket.reset_at);
+            }
+            _ => {
+                self.exhausted_until.remove(key);
             }
         }
     }
@@ -227,6 +251,31 @@ mod tests {
     }
 
     #[test]
+    fn a_429_without_retry_after_waits_the_fallback_not_the_bucket_reset() {
+        let now = Instant::now();
+        for (response, scope) in [
+            (
+                headers(&[("x-ratelimit-reset-after", "64.57")]),
+                Scope::Global,
+            ),
+            (
+                headers(&[
+                    ("x-ratelimit-limit", "1"),
+                    ("x-ratelimit-remaining", "0"),
+                    ("x-ratelimit-reset-after", "0.3"),
+                    ("x-ratelimit-bucket", "abcd1234"),
+                    ("x-ratelimit-scope", "user"),
+                ]),
+                Scope::Route,
+            ),
+        ] {
+            let parsed = ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, now);
+
+            assert_eq!(parsed.limited, limited(scope, 5.0));
+        }
+    }
+
+    #[test]
     fn incomplete_headers_teach_nothing() {
         let response = headers(&[
             ("x-ratelimit-limit", "5"),
@@ -260,5 +309,31 @@ mod tests {
                 "{retry_after}"
             );
         }
+    }
+
+    #[test]
+    fn interaction_buckets_hold_a_key_only_while_it_is_exhausted() {
+        let now = Instant::now();
+        let bucket = |remaining, reset_after| RateLimitHeaders {
+            bucket: b"abcd1234".to_vec(),
+            limit: 5,
+            remaining,
+            reset_at: now + Duration::from_secs(reset_after),
+        };
+        let mut buckets = InteractionBuckets::default();
+
+        buckets.observe("first", Some(&bucket(0, 2)), now);
+        buckets.observe("second", Some(&bucket(4, 2)), now);
+        buckets.observe("third", Some(&bucket(0, 9)), now);
+
+        assert_eq!(buckets.wait("first", now), Duration::from_secs(2));
+        assert_eq!(buckets.wait("second", now), Duration::ZERO);
+        assert_eq!(buckets.exhausted_until.len(), 2);
+
+        buckets.observe("third", Some(&bucket(3, 9)), now);
+        buckets.observe("fourth", None, now + Duration::from_secs(2));
+
+        assert_eq!(buckets.wait("first", now), Duration::ZERO);
+        assert!(buckets.exhausted_until.is_empty());
     }
 }

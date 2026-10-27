@@ -17,13 +17,10 @@ from enum import Enum
 from typing import Annotated, Literal
 
 import lyrecord
-from lyrecord import ComponentContext, Context, Intents, Range, ui
+from lyrecord import ComponentContext, Context, Range, ui
 from lyrecord.events import MessageCreate
 
-bot = lyrecord.Bot(
-    intents=Intents.DEFAULT | Intents.MESSAGE_CONTENT,
-    dev_guilds=[123456789012345678],
-)
+bot = lyrecord.Bot(dev_guilds=[123456789012345678])
 
 
 class Unit(Enum):
@@ -41,24 +38,31 @@ async def roll(
     """Roll some dice."""
     again = ui.button("Again", custom_id=reroll.id(sides=sides))
     await ctx.respond(
-        f"d{sides} in {mode} mode ({unit.value})", components=[ui.row(again)]
+        components=[ui.text(f"d{sides} in {mode} mode ({unit.value})"), ui.row(again)]
     )
 
 
 @bot.on_component("reroll:{sides:int}")
 async def reroll(ctx: ComponentContext, sides: int) -> None:
-    await ctx.update(f"Rolled a d{sides} again")
+    await ctx.update(components=[ui.text(f"Rolled a d{sides} again")])
 
 
 @bot.listen
-async def log_messages(event: MessageCreate) -> None:
-    print(event.message.content)
+async def wave_back(event: MessageCreate) -> None:
+    message = event.message
+    mentioned = {user.id for user in message.mentions}
+    if bot.user and bot.user.id in mentioned and message.channel_id:
+        await bot.send_message(
+            message.channel_id,
+            components=[ui.text("Hi! Try /roll.")],
+            reply_to=message.id,
+        )
 
 
 bot.run()
 ```
 
-`bot.run()` reads the token from `LYRECORD_TOKEN`. Commands sync on startup only when they changed, and a handler that has not answered after 2.5 s is deferred for you. Options come from the type hints; choices come from a `Literal` of strings or ints, an `Enum`, or `Option(choices=...)`. Button custom ids are typed templates, so they survive restarts.
+`bot.run()` reads the token from `LYRECORD_TOKEN`. Commands sync on startup only when they changed, and a handler that has not answered after 2.5 s is deferred for you. Messages use Components V2: `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and lyrecord sets the `IS_COMPONENTS_V2` flag for you. The listener needs no privileged intent: mentions always arrive, and a message that mentions the bot carries its content too. Options come from the type hints; choices come from a `Literal` of strings or ints, an `Enum`, or `Option(choices=...)`. Button custom ids are typed templates, so they survive restarts.
 
 Everything lyrecord does not model yet stays reachable: `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint, `bot.gateway.send(op=..., d=...)` sends any opcode, and `@bot.listen_raw("EVENT_NAME")` receives any dispatch. Split a bot across modules with `lyrecord.Router()` and `bot.include(router)`.
 

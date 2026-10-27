@@ -8,6 +8,7 @@ mod runtime;
 mod tasks;
 
 use std::collections::HashMap;
+use std::num::NonZeroU16;
 use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,16 +40,24 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn new(token: &str, api_url: &str) -> Result<(Self, BellReceiver), CoreError> {
+    pub fn new(
+        token: &str,
+        api_url: &str,
+        global_limit: NonZeroU16,
+    ) -> Result<(Self, BellReceiver), CoreError> {
         let runtime = runtime::shared()?;
         let (bell, receiver) = bell::pair().map_err(CoreError::Bell)?;
         let inbox = Arc::new(Inbox::new(bell));
         let (rest, gateway) = {
             let _context = runtime.enter();
-            (
-                Rest::new(token, api_url, Arc::clone(&inbox))?,
-                Gateway::new(runtime.clone(), Arc::clone(&inbox), token)?,
-            )
+            let rest = Arc::new(Rest::new(token, api_url, global_limit, Arc::clone(&inbox))?);
+            let gateway = Gateway::new(
+                runtime.clone(),
+                Arc::clone(&inbox),
+                token,
+                Arc::downgrade(&rest),
+            )?;
+            (rest, gateway)
         };
         let core = Self {
             owner: process::id(),
@@ -57,7 +66,7 @@ impl Core {
             inbox,
             tasks: Arc::new(Mutex::new(TaskTable {
                 running: HashMap::new(),
-                rest: Some(Arc::new(rest)),
+                rest: Some(rest),
             })),
             gateway,
         };
@@ -195,6 +204,11 @@ mod tests {
     use super::*;
 
     const TOKEN: &str = "token";
+    const GLOBAL_LIMIT: NonZeroU16 = NonZeroU16::new(50).unwrap();
+
+    fn core(api_url: &str) -> Result<(Core, BellReceiver), CoreError> {
+        Core::new(TOKEN, api_url, GLOBAL_LIMIT)
+    }
 
     fn read_request_head(stream: &mut TcpStream) {
         let mut head = Vec::new();
@@ -256,7 +270,7 @@ mod tests {
     fn delivers_an_http_response() {
         init_test_tracing();
         let url = serve_once(b"HTTP/1.1 201 Created\r\nContent-Length: 5\r\n\r\nhello");
-        let (core, receiver) = Core::new(TOKEN, &url).unwrap();
+        let (core, receiver) = core(&url).unwrap();
 
         let ticket = core.request(me()).unwrap();
         let deliveries = wait_for_deliveries(&core, &receiver);
@@ -284,7 +298,7 @@ mod tests {
             .unwrap()
             .local_addr()
             .unwrap();
-        let (core, receiver) = Core::new(TOKEN, &format!("http://{unused_port}")).unwrap();
+        let (core, receiver) = core(&format!("http://{unused_port}")).unwrap();
 
         core.request(me()).unwrap();
 
@@ -303,7 +317,7 @@ mod tests {
 
     #[test]
     fn rejects_an_api_url_that_is_not_http() {
-        let error = Core::new(TOKEN, "ws://127.0.0.1:1").err();
+        let error = core("ws://127.0.0.1:1").err();
 
         assert!(
             matches!(error, Some(CoreError::InvalidRequest(_))),
@@ -314,7 +328,7 @@ mod tests {
     #[test]
     fn cancel_drops_the_connection_without_a_message() {
         let (url, on_disconnect) = serve_silently();
-        let (core, receiver) = Core::new(TOKEN, &url).unwrap();
+        let (core, receiver) = core(&url).unwrap();
 
         let ticket = core.request(me()).unwrap();
         thread::sleep(Duration::from_millis(100));
@@ -330,7 +344,7 @@ mod tests {
     #[test]
     fn closed_core_rejects_work_and_aborts_running_tasks() {
         let (url, on_disconnect) = serve_silently();
-        let (core, _receiver) = Core::new(TOKEN, &url).unwrap();
+        let (core, _receiver) = core(&url).unwrap();
         core.request(me()).unwrap();
         thread::sleep(Duration::from_millis(100));
 

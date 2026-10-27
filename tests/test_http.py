@@ -32,7 +32,7 @@ def ignore(delivery: GatewayDelivery, received: float) -> None:
 def run(scenario: Scenario, token: str | None = None) -> None:
     async def main() -> None:
         async with FakeDiscord() as fake:
-            bridge = Bridge(token or fake.token, fake.api_url, ignore)
+            bridge = Bridge(token or fake.token, fake.api_url, ignore, global_limit=50)
             async with bridge, asyncio.timeout(10):
                 await scenario(fake, HTTPClient(bridge))
 
@@ -130,6 +130,29 @@ def test_a_rate_limit_longer_than_lyrecord_waits_raises_rate_limited(
     run(scenario)
 
 
+def test_a_rejected_interaction_token_keeps_discords_status_and_code() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        route = f"/webhooks/{fake.application_id}/dead"
+        fake.fail(
+            "POST", route, 401, {"message": "Invalid Webhook Token", "code": 50027}
+        )
+
+        with pytest.raises(HTTPException) as raised:
+            await http.request(
+                "POST",
+                "/webhooks/{application_id}/{interaction_token}",
+                application_id=fake.application_id,
+                interaction_token="dead",
+                json={"content": "x"},
+            )
+
+        assert type(raised.value) is HTTPException
+        assert (raised.value.status, raised.value.code) == (401, 50027)
+        assert "authorization" not in fake.requests[0].headers
+
+    run(scenario)
+
+
 def test_a_rejected_token_raises_invalid_token() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         for _ in range(2):
@@ -180,7 +203,7 @@ def test_params_and_query_values_are_sent_as_text(
         return 204, b""
 
     async def main() -> None:
-        bridge = Bridge("token", "http://127.0.0.1:1/api/v10", ignore)
+        bridge = Bridge("token", "http://127.0.0.1:1/api/v10", ignore, global_limit=50)
         monkeypatch.setattr(bridge, "request", record)
         result = await HTTPClient(bridge).request(
             "GET",

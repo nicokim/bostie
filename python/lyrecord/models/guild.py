@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
+import msgspec
+
 from lyrecord.enums import Permissions
-from lyrecord.models.base import Model
+from lyrecord.models.base import Model, permissions_from
 from lyrecord.models.user import User
 
 if TYPE_CHECKING:
@@ -16,22 +18,25 @@ class RoleColors(Model, kw_only=True):
 
 
 class Role(Model, kw_only=True):
-    """A guild role. `color` is deprecated in favour of `colors`."""
+    """A guild role."""
 
     __option_type__: ClassVar[int] = 8
 
     id: int
     name: str | None = None
-    color: int | None = None
     colors: RoleColors | None = None
     hoist: bool | None = None
     icon: str | None = None
     unicode_emoji: str | None = None
     position: int | None = None
-    permissions: Permissions | None = None
+    _permissions: str | None = msgspec.field(default=None, name="permissions")
     managed: bool | None = None
     mentionable: bool | None = None
     flags: int | None = None
+
+    @property
+    def permissions(self) -> Permissions | None:
+        return permissions_from(self._permissions)
 
     @property
     def mention(self) -> str:
@@ -56,9 +61,14 @@ class Member(Model, kw_only=True):
     deaf: bool | None = None
     mute: bool | None = None
     pending: bool | None = None
-    permissions: Permissions | None = None
+    _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
     flags: int | None = None
+
+    @property
+    def permissions(self) -> Permissions | None:
+        """The member's permissions in the channel of an interaction."""
+        return permissions_from(self._permissions)
 
     @property
     def id(self) -> int | None:

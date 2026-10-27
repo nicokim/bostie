@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use bytes::Bytes;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -9,12 +11,21 @@ use twilight_http_ratelimiting::{Endpoint, Method as LimiterMethod};
 use crate::error::CoreError;
 
 const MAJOR_PARAMS: [&str; 3] = ["channel_id", "guild_id", "webhook_id"];
+const INTERACTION_TOKEN: &str = "interaction_token";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RouteClass {
+    Callback,
     Interaction,
     Webhook,
+    Anonymous,
     Bot,
+}
+
+impl RouteClass {
+    pub(super) fn waits_for_the_global_gate(self) -> bool {
+        !matches!(self, Self::Callback | Self::Interaction)
+    }
 }
 
 #[derive(Debug)]
@@ -65,7 +76,7 @@ impl RestRequest {
         for segment in template.split('/') {
             let Some(name) = placeholder(segment)? else {
                 segments.push(segment.to_owned());
-                key.push(segment);
+                key.push(Cow::Borrowed(segment));
                 continue;
             };
             let value = params.get(name).ok_or_else(|| {
@@ -77,10 +88,12 @@ impl RestRequest {
                 )));
             }
             segments.push(value.clone());
-            key.push(if MAJOR_PARAMS.contains(&name) {
-                value
+            key.push(if name == INTERACTION_TOKEN {
+                Cow::Owned(digest(value))
+            } else if MAJOR_PARAMS.contains(&name) {
+                Cow::Borrowed(value.as_str())
             } else {
-                segment
+                Cow::Borrowed(segment)
             });
             placeholders.push(name);
         }
@@ -93,14 +106,17 @@ impl RestRequest {
             )));
         }
 
-        let class =
-            if route.starts_with("/interactions/") || placeholders.contains(&"interaction_token") {
-                RouteClass::Interaction
-            } else if placeholders.contains(&"webhook_token") {
-                RouteClass::Webhook
-            } else {
-                RouteClass::Bot
-            };
+        let class = if route.starts_with("/interactions/") {
+            RouteClass::Callback
+        } else if placeholders.contains(&INTERACTION_TOKEN) {
+            RouteClass::Interaction
+        } else if placeholders.contains(&"webhook_token") {
+            RouteClass::Webhook
+        } else if route == "/gateway" {
+            RouteClass::Anonymous
+        } else {
+            RouteClass::Bot
+        };
 
         let mut headers = HeaderMap::new();
         if let Some(content_type) = content_type {
@@ -157,6 +173,12 @@ fn placeholder(segment: &str) -> Result<Option<&str>, CoreError> {
         })
         .map(Some)
         .ok_or_else(|| CoreError::InvalidRequest(format!("invalid placeholder {segment:?}")))
+}
+
+fn digest(token: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn header_value(value: String) -> Result<HeaderValue, CoreError> {
@@ -300,12 +322,35 @@ mod tests {
     }
 
     #[test]
+    fn interaction_tokens_key_their_own_resource_without_appearing_in_it() {
+        let route = "/webhooks/{application_id}/{interaction_token}/messages/@original";
+        let key = |token| {
+            parse(
+                "PATCH",
+                route,
+                &[("application_id", "1"), ("interaction_token", token)],
+            )
+            .unwrap()
+            .endpoint
+            .path
+        };
+
+        let first = key("first-secret-token");
+
+        assert!(first.starts_with("webhooks/{application_id}/"), "{first}");
+        assert!(first.ends_with("/messages/@original"), "{first}");
+        assert!(!first.contains("secret"), "{first}");
+        assert_eq!(first, key("first-secret-token"));
+        assert_ne!(first, key("second-secret-token"));
+    }
+
+    #[test]
     fn classifies_routes_by_their_credentials() {
         for (route, params, class) in [
             (
                 "/interactions/{interaction_id}/{interaction_token}/callback",
                 &[("interaction_id", "1"), ("interaction_token", "t")][..],
-                RouteClass::Interaction,
+                RouteClass::Callback,
             ),
             (
                 "/webhooks/{application_id}/{interaction_token}/messages/@original",
@@ -322,6 +367,8 @@ mod tests {
                 &[("webhook_id", "1")],
                 RouteClass::Bot,
             ),
+            ("/gateway", &[], RouteClass::Anonymous),
+            ("/gateway/bot", &[], RouteClass::Bot),
             (
                 "/channels/{channel_id}",
                 &[("channel_id", "1")],

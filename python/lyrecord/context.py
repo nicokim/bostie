@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING, Any
 import msgspec
 
 from lyrecord.enums import MessageFlags, OptionType
-from lyrecord.errors import InteractionExpired, InteractionResponded
+from lyrecord.errors import HTTPException, InteractionExpired, InteractionResponded
 from lyrecord.file import File
 from lyrecord.models import (
     AllowedMentions,
+    Attachment,
     Channel,
     Component,
     Embed,
@@ -41,6 +42,8 @@ DEFERRED_CHANNEL_MESSAGE = 5
 DEFERRED_UPDATE_MESSAGE = 6
 UPDATE_MESSAGE = 7
 AUTOCOMPLETE_RESULT = 8
+UNKNOWN_WEBHOOK = 10015
+UNKNOWN_INTERACTION = 10062
 
 SUBCOMMAND_TYPES = (OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP)
 
@@ -50,6 +53,7 @@ class ResponseState(Enum):
     DEFERRED = "deferred"
     DEFERRED_UPDATE = "deferred_update"
     RESPONDED = "responded"
+    EXPIRED = "expired"
 
 
 class _CallbackResource(msgspec.Struct):
@@ -117,6 +121,8 @@ class _InteractionContext:
         return " ".join((data.name, *names))
 
     def _ensure_alive(self) -> None:
+        if self.state is ResponseState.EXPIRED:
+            raise InteractionExpired("Discord no longer accepts this interaction")
         if self._loop.time() - self.received > TOKEN_LIFETIME:
             raise InteractionExpired(
                 "interactions can only be answered within 15 minutes"
@@ -131,7 +137,7 @@ class _InteractionContext:
         body: dict[str, Any] = {"type": type}
         if data is not None:
             body["data"] = data
-        response: bytes = await self._http._request(
+        return await self._send(
             "POST",
             CALLBACK_ROUTE,
             json=body,
@@ -140,7 +146,6 @@ class _InteractionContext:
             interaction_id=self.interaction.id,
             interaction_token=self.interaction.token,
         )
-        return response
 
     async def _webhook(
         self,
@@ -149,7 +154,7 @@ class _InteractionContext:
         body: Mapping[str, Any] | None = None,
         files: Sequence[File] = (),
     ) -> bytes:
-        response: bytes = await self._http._request(
+        return await self._send(
             method,
             route,
             json=body,
@@ -157,6 +162,17 @@ class _InteractionContext:
             application_id=self.interaction.application_id,
             interaction_token=self.interaction.token,
         )
+
+    async def _send(self, method: str, route: str, **request: Any) -> bytes:
+        try:
+            response: bytes = await self._http._request(method, route, **request)
+        except HTTPException as error:
+            if error.status == 401 or (
+                error.status == 404
+                and error.code in (UNKNOWN_WEBHOOK, UNKNOWN_INTERACTION)
+            ):
+                self.state = ResponseState.EXPIRED
+            raise
         return response
 
 
@@ -193,10 +209,17 @@ class Context(_InteractionContext):
         ephemeral: bool | None = None,
         allowed_mentions: AllowedMentions | None = None,
         tts: bool | None = None,
+        flags: int | None = None,
     ) -> Message | None:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
         body = self._message_body(
-            content, embeds, components, files, allowed_mentions, tts
+            content,
+            allowed_mentions,
+            embeds=embeds,
+            components=components,
+            files=files,
+            tts=tts,
+            flags=flags,
         )
         async with self._lock:
             self._ensure_alive()
@@ -228,13 +251,25 @@ class Context(_InteractionContext):
         embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
         components: Sequence[Component | Mapping[str, Any]] | None = None,
         files: Sequence[File] = (),
+        attachments: Sequence[Attachment | int] = (),
         ephemeral: bool | None = None,
         allowed_mentions: AllowedMentions | None = None,
         tts: bool | None = None,
+        flags: int | None = None,
     ) -> Message | None:
-        """Edit the original answer."""
+        """Edit the original answer.
+
+        With `files` or `attachments`, only the listed `attachments` stay.
+        """
         body = self._message_body(
-            content, embeds, components, files, allowed_mentions, tts
+            content,
+            allowed_mentions,
+            embeds=embeds,
+            components=components,
+            files=files,
+            attachments=attachments,
+            tts=tts,
+            flags=flags,
         )
         async with self._lock:
             self._ensure_alive()
@@ -253,15 +288,25 @@ class Context(_InteractionContext):
         ephemeral: bool | None = None,
         allowed_mentions: AllowedMentions | None = None,
         tts: bool | None = None,
+        flags: int | None = None,
     ) -> Message | None:
-        """Send another message after the interaction was answered or deferred."""
+        """Send another message; right after `defer()` it fills the deferred answer."""
         body = self._message_body(
-            content, embeds, components, files, allowed_mentions, tts
+            content,
+            allowed_mentions,
+            embeds=embeds,
+            components=components,
+            files=files,
+            tts=tts,
+            flags=flags,
         )
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
-            response = await self._send_followup(body, files, ephemeral)
+            if self.state is ResponseState.DEFERRED:
+                response = await self._edit_original(body, files, ephemeral)
+            else:
+                response = await self._send_followup(body, files, ephemeral)
             self._finish_deferred()
             return _message(response)
 
@@ -350,21 +395,15 @@ class Context(_InteractionContext):
     def _message_body(
         self,
         content: str | None,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None,
-        components: Sequence[Component | Mapping[str, Any]] | None,
-        files: Sequence[File],
         allowed_mentions: AllowedMentions | None,
-        tts: bool | None,
+        **parts: Any,
     ) -> dict[str, Any]:
         body, _ = build_message(
             content,
-            embeds=embeds,
-            components=components,
-            files=files,
             allowed_mentions=self._allowed_mentions
             if allowed_mentions is None
             else allowed_mentions,
-            tts=tts,
+            **parts,
         )
         return body
 
@@ -399,13 +438,25 @@ class ComponentContext(Context):
         embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
         components: Sequence[Component | Mapping[str, Any]] | None = None,
         files: Sequence[File] = (),
+        attachments: Sequence[Attachment | int] = (),
         ephemeral: bool | None = None,
         allowed_mentions: AllowedMentions | None = None,
         tts: bool | None = None,
+        flags: int | None = None,
     ) -> Message | None:
-        """Edit the message the component is attached to."""
+        """Edit the message the component is attached to.
+
+        With `files` or `attachments`, only the listed `attachments` stay.
+        """
         body = self._message_body(
-            content, embeds, components, files, allowed_mentions, tts
+            content,
+            allowed_mentions,
+            embeds=embeds,
+            components=components,
+            files=files,
+            attachments=attachments,
+            tts=tts,
+            flags=flags,
         )
         async with self._lock:
             self._ensure_alive()
@@ -475,7 +526,9 @@ def _split_subcommands(
 
 
 def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:
-    return {**body, "flags": MessageFlags.EPHEMERAL} if ephemeral else body
+    if not ephemeral:
+        return body
+    return {**body, "flags": body.get("flags", 0) | MessageFlags.EPHEMERAL}
 
 
 def _message(body: bytes) -> Message | None:

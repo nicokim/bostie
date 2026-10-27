@@ -1,5 +1,7 @@
 import asyncio
+import inspect
 import re
+from typing import get_args
 
 import pytest
 
@@ -151,3 +153,78 @@ def test_ui_checks_custom_id_length(custom_id: str) -> None:
         ui.button("x", custom_id=custom_id)
     with pytest.raises(ValueError, match="custom_id must be 1-100 characters"):
         ui.select(custom_id, [])
+
+
+def test_ui_buttons_with_a_custom_id_exclude_link_and_premium_styles() -> None:
+    style = inspect.signature(ui.button).parameters["style"].annotation
+
+    assert get_args(style.__value__) == (
+        ui.ButtonStyle.PRIMARY,
+        ui.ButtonStyle.SECONDARY,
+        ui.ButtonStyle.SUCCESS,
+        ui.ButtonStyle.DANGER,
+    )
+
+
+def test_ui_v2_builders_return_discord_component_dicts() -> None:
+    card = ui.container(
+        ui.section(
+            ui.text("# Patch notes"),
+            accessory=ui.thumbnail("https://example.com/logo.png", description="Logo"),
+        ),
+        ui.separator(spacing=2),
+        ui.media_gallery(
+            ui.gallery_item("attachment://shot.png", spoiler=True),
+            ui.gallery_item("https://example.com/b.png", description="Before"),
+        ),
+        ui.file("notes.pdf"),
+        ui.row(ui.link_button("Docs", "https://example.com")),
+        accent_color=0x5865F2,
+    )
+
+    assert card == {
+        "type": 17,
+        "components": [
+            {
+                "type": 9,
+                "components": [{"type": 10, "content": "# Patch notes"}],
+                "accessory": {
+                    "type": 11,
+                    "media": {"url": "https://example.com/logo.png"},
+                    "description": "Logo",
+                    "spoiler": False,
+                },
+            },
+            {"type": 14, "divider": True, "spacing": 2},
+            {
+                "type": 12,
+                "items": [
+                    {"media": {"url": "attachment://shot.png"}, "spoiler": True},
+                    {
+                        "media": {"url": "https://example.com/b.png"},
+                        "description": "Before",
+                        "spoiler": False,
+                    },
+                ],
+            },
+            {
+                "type": 13,
+                "file": {"url": "attachment://notes.pdf"},
+                "spoiler": False,
+            },
+            {
+                "type": 1,
+                "components": [
+                    {
+                        "type": 2,
+                        "style": 5,
+                        "label": "Docs",
+                        "url": "https://example.com",
+                        "disabled": False,
+                    }
+                ],
+            },
+        ],
+        "accent_color": 0x5865F2,
+        "spoiler": False,
+    }

@@ -3,6 +3,10 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ticket(u64);
 
+impl Ticket {
+    pub(crate) const INTERNAL: Self = Self(0);
+}
+
 impl From<u64> for Ticket {
     fn from(value: u64) -> Self {
         Self(value)

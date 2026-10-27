@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar
 
+import msgspec
+
 from lyrecord.enums import ChannelFlags, ChannelType, Permissions
-from lyrecord.models.base import Model
+from lyrecord.models.base import Model, permissions_from
 
 if TYPE_CHECKING:
     from lyrecord.models.interaction import Resolved
@@ -13,8 +15,16 @@ class Overwrite(Model, kw_only=True):
 
     id: int
     type: int | None = None
-    allow: Permissions | None = None
-    deny: Permissions | None = None
+    _allow: str | None = msgspec.field(default=None, name="allow")
+    _deny: str | None = msgspec.field(default=None, name="deny")
+
+    @property
+    def allow(self) -> Permissions | None:
+        return permissions_from(self._allow)
+
+    @property
+    def deny(self) -> Permissions | None:
+        return permissions_from(self._deny)
 
 
 class ThreadMetadata(Model, kw_only=True):
@@ -51,8 +61,18 @@ class Channel(Model, kw_only=True):
     member_count: int | None = None
     thread_metadata: ThreadMetadata | None = None
     flags: ChannelFlags | None = None
-    permissions: Permissions | None = None
-    app_permissions: Permissions | None = None
+    _permissions: str | None = msgspec.field(default=None, name="permissions")
+    _app_permissions: str | None = msgspec.field(default=None, name="app_permissions")
+
+    @property
+    def permissions(self) -> Permissions | None:
+        """The user's permissions in a channel resolved for an interaction."""
+        return permissions_from(self._permissions)
+
+    @property
+    def app_permissions(self) -> Permissions | None:
+        """The bot's permissions in a channel resolved for an interaction."""
+        return permissions_from(self._app_permissions)
 
     @property
     def obfuscated(self) -> bool:

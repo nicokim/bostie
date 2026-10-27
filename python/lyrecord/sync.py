@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from lyrecord.commands import Command, Group, Scope, _python_name, _warn
-from lyrecord.enums import CommandType, OptionType
+from lyrecord.enums import CommandType, InteractionContextType, OptionType
 from lyrecord.errors import BadRequest, CommandSyncError
 
 if TYPE_CHECKING:
@@ -14,7 +14,9 @@ log = logging.getLogger("lyrecord.sync")
 
 GLOBAL_ROUTE = "/applications/{application_id}/commands"
 GUILD_ROUTE = "/applications/{application_id}/guilds/{guild_id}/commands"
-REMOTE_ONLY_KEYS = frozenset({"application_id", "version", "guild_id"})
+DROPPED_REMOTE_KEYS = frozenset(
+    {"application_id", "version", "guild_id", "dm_permission", "default_permission"}
+)
 NESTING_TYPES = frozenset({OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP})
 MAX_COMMANDS = 100
 COMMAND_DEFAULTS: dict[str, Any] = {
@@ -95,7 +97,7 @@ async def _sync_scope(
         if command.get("type", CommandType.CHAT_INPUT) == CommandType.CHAT_INPUT
     }
     passthrough = [
-        {key: value for key, value in command.items() if key not in REMOTE_ONLY_KEYS}
+        _passthrough(command)
         for command in remote
         if command.get("type", CommandType.CHAT_INPUT) != CommandType.CHAT_INPUT
     ]
@@ -116,6 +118,24 @@ async def _sync_scope(
         list(result.changed),
     )
     return result
+
+
+def _passthrough(command: Mapping[str, Any]) -> dict[str, Any]:
+    kept = {
+        key: value for key, value in command.items() if key not in DROPPED_REMOTE_KEYS
+    }
+    if (
+        command.get("default_permission") is False
+        and command.get("default_member_permissions") is None
+    ):
+        kept["default_member_permissions"] = "0"
+    if (
+        command.get("dm_permission") is False
+        and command.get("contexts") is None
+        and command.get("guild_id") is None
+    ):
+        kept["contexts"] = [InteractionContextType.GUILD]
+    return kept
 
 
 def _diff(

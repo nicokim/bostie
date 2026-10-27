@@ -35,8 +35,10 @@ log = logging.getLogger("lyrecord.bridge")
 
 
 class Bridge:
-    def __init__(self, token: str, api_url: str, on_gateway: OnGateway) -> None:
-        self.core, bell_handle = _native.Core.create(token, api_url)
+    def __init__(
+        self, token: str, api_url: str, on_gateway: OnGateway, *, global_limit: int
+    ) -> None:
+        self.core, bell_handle = _native.Core.create(token, api_url, global_limit)
         self._on_gateway = on_gateway
         self._bell = socket.socket(fileno=bell_handle)
         self._bell.setblocking(False)

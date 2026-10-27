@@ -2,6 +2,8 @@ mod invalid;
 mod ratelimit;
 mod request;
 
+use std::collections::HashMap;
+use std::num::NonZeroU16;
 use std::ops::ControlFlow;
 use std::pin::pin;
 use std::sync::Arc;
@@ -13,12 +15,13 @@ use futures_util::FutureExt;
 use parking_lot::Mutex;
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use reqwest::{Method, StatusCode, Url};
+use sonic_rs::JsonValueTrait;
 use twilight_http_ratelimiting::{Bucket, Permit, RateLimiter};
 
 pub use self::request::RestRequest;
 
 use self::invalid::InvalidRequests;
-use self::ratelimit::{GlobalGate, Limited, ResponseLimits, Scope};
+use self::ratelimit::{GlobalGate, InteractionBuckets, Limited, ResponseLimits, Scope};
 use self::request::RouteClass;
 use crate::error::{CoreError, describe};
 use crate::ids::Ticket;
@@ -32,7 +35,6 @@ const USER_AGENT: &str = concat!(
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
-const GLOBAL_LIMIT: u16 = 50;
 #[cfg(not(test))]
 const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
 #[cfg(test)]
@@ -47,6 +49,7 @@ const BACKOFF_BASE: Duration = Duration::from_millis(10);
 pub struct Rest {
     client: reqwest::Client,
     limiter: RateLimiter,
+    interaction_buckets: Mutex<InteractionBuckets>,
     gate: GlobalGate,
     invalid: Mutex<InvalidRequests>,
     token: HeaderValue,
@@ -56,7 +59,12 @@ pub struct Rest {
 }
 
 impl Rest {
-    pub fn new(token: &str, api_url: &str, inbox: Arc<Inbox>) -> Result<Self, CoreError> {
+    pub fn new(
+        token: &str,
+        api_url: &str,
+        global_limit: NonZeroU16,
+        inbox: Arc<Inbox>,
+    ) -> Result<Self, CoreError> {
         let base = Url::parse(api_url)
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https"))
@@ -75,7 +83,8 @@ impl Rest {
             .map_err(CoreError::HttpClient)?;
         Ok(Self {
             client,
-            limiter: RateLimiter::new(GLOBAL_LIMIT),
+            limiter: RateLimiter::new(global_limit.get()),
+            interaction_buckets: Mutex::new(InteractionBuckets::default()),
             gate: GlobalGate::default(),
             invalid: Mutex::new(InvalidRequests::default()),
             token,
@@ -92,7 +101,7 @@ impl Rest {
             if let Some(failure) = self.refusal(ticket, &request) {
                 return failure;
             }
-            if request.class == RouteClass::Bot {
+            if request.class.waits_for_the_global_gate() {
                 self.gate.wait().await;
             }
             let permit = match self.permit(&request).await {
@@ -110,7 +119,9 @@ impl Rest {
                     };
                 }
             };
-            if request.class == RouteClass::Bot && self.gate.wait().now_or_never().is_none() {
+            if request.class.waits_for_the_global_gate()
+                && self.gate.wait().now_or_never().is_none()
+            {
                 drop(permit);
                 continue;
             }
@@ -125,6 +136,29 @@ impl Rest {
                 ControlFlow::Continue(wait) => tokio::time::sleep(wait).await,
             }
         }
+    }
+
+    pub(crate) async fn fetch_gateway_url(&self) -> Option<String> {
+        let request = RestRequest::parse(
+            "GET",
+            "/gateway",
+            HashMap::new(),
+            Vec::new(),
+            None,
+            None,
+            None,
+        )
+        .ok()?;
+        let Delivery::Response {
+            status: 200, body, ..
+        } = self.execute(Ticket::INTERNAL, request).await
+        else {
+            return None;
+        };
+        sonic_rs::get(&body, ["url"])
+            .ok()?
+            .as_str()
+            .map(str::to_owned)
     }
 
     fn refusal(&self, ticket: Ticket, request: &RestRequest) -> Option<Delivery> {
@@ -148,8 +182,22 @@ impl Rest {
     }
 
     async fn permit(&self, request: &RestRequest) -> Result<Option<Permit>, Duration> {
-        if request.class == RouteClass::Interaction {
-            return Ok(None);
+        match request.class {
+            RouteClass::Callback => return Ok(None),
+            RouteClass::Interaction => {
+                let wait = self
+                    .interaction_buckets
+                    .lock()
+                    .wait(&request.endpoint.path, Instant::now());
+                if wait > MAX_RETRY_WAIT {
+                    return Err(wait);
+                }
+                if !wait.is_zero() {
+                    tokio::time::sleep(wait).await;
+                }
+                return Ok(None);
+            }
+            RouteClass::Webhook | RouteClass::Anonymous | RouteClass::Bot => {}
         }
         let mut acquire = pin!(self.limiter.acquire_if(request.endpoint.clone(), |bucket| {
             bucket.is_none_or(within_reach)
@@ -194,6 +242,13 @@ impl Rest {
         let status = response.status();
         let limits = ResponseLimits::parse(status, response.headers(), Instant::now());
         self.observe(request.class, status, limits.limited);
+        if request.class == RouteClass::Interaction {
+            self.interaction_buckets.lock().observe(
+                &request.endpoint.path,
+                limits.bucket.as_ref(),
+                Instant::now(),
+            );
+        }
         if let Some(permit) = permit {
             permit.complete(limits.bucket);
         }
@@ -327,11 +382,10 @@ impl Retries {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::{HashMap, VecDeque};
+pub(crate) mod tests {
+    use std::collections::VecDeque;
     use std::iter;
 
-    use sonic_rs::JsonValueTrait;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::mpsc;
@@ -342,22 +396,22 @@ mod tests {
     use crate::bell::{self, BellReceiver};
 
     const PATIENCE: Duration = Duration::from_secs(5);
-    const NO_REPLY: String = String::new();
+    pub(crate) const NO_REPLY: String = String::new();
 
-    struct Captured {
-        path: String,
-        headers: HashMap<String, String>,
+    pub(crate) struct Captured {
+        pub(crate) path: String,
+        pub(crate) headers: HashMap<String, String>,
         body: Vec<u8>,
         at: Instant,
     }
 
-    struct Server {
-        url: String,
+    pub(crate) struct Server {
+        pub(crate) url: String,
         requests: mpsc::UnboundedReceiver<Captured>,
     }
 
     impl Server {
-        async fn start(script: Vec<String>) -> Self {
+        pub(crate) async fn start(script: Vec<String>) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}/api/v10", listener.local_addr().unwrap());
             let (captured, requests) = mpsc::unbounded_channel();
@@ -370,14 +424,14 @@ mod tests {
             Self { url, requests }
         }
 
-        async fn next(&mut self) -> Captured {
+        pub(crate) async fn next(&mut self) -> Captured {
             timeout(PATIENCE, self.requests.recv())
                 .await
                 .unwrap()
                 .unwrap()
         }
 
-        fn received(&mut self) -> usize {
+        pub(crate) fn received(&mut self) -> usize {
             iter::from_fn(|| self.requests.try_recv().ok()).count()
         }
     }
@@ -438,7 +492,7 @@ mod tests {
         })
     }
 
-    fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> String {
+    pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> String {
         let headers: String = headers
             .iter()
             .map(|(name, value)| format!("{name}: {value}\r\n"))
@@ -458,8 +512,13 @@ mod tests {
     }
 
     fn rest(url: &str) -> (Rest, BellReceiver) {
+        limited_rest(url, 50)
+    }
+
+    fn limited_rest(url: &str, global_limit: u16) -> (Rest, BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
-        let rest = Rest::new("token", url, Arc::new(Inbox::new(bell))).unwrap();
+        let global_limit = NonZeroU16::new(global_limit).unwrap();
+        let rest = Rest::new("token", url, global_limit, Arc::new(Inbox::new(bell))).unwrap();
         (rest, receiver)
     }
 
@@ -489,6 +548,31 @@ mod tests {
             "/interactions/{interaction_id}/{interaction_token}/callback",
             &[("interaction_id", "1"), ("interaction_token", "abc")],
         )
+    }
+
+    fn followup(token: &str) -> RestRequest {
+        request(
+            "POST",
+            "/webhooks/{application_id}/{interaction_token}",
+            &[("application_id", "1"), ("interaction_token", token)],
+        )
+    }
+
+    fn webhook() -> RestRequest {
+        request(
+            "POST",
+            "/webhooks/{webhook_id}/{webhook_token}",
+            &[("webhook_id", "2"), ("webhook_token", "secret")],
+        )
+    }
+
+    async fn arrivals(server: &mut Server, count: usize) -> HashMap<String, Instant> {
+        let mut arrivals = HashMap::new();
+        for _ in 0..count {
+            let captured = server.next().await;
+            arrivals.insert(captured.path, captured.at);
+        }
+        arrivals
     }
 
     fn status(delivery: Delivery) -> (u16, Bytes) {
@@ -670,11 +754,7 @@ mod tests {
             rest.execute(Ticket::from(1), message("2", "30")),
         );
 
-        let mut arrivals = HashMap::new();
-        for _ in 0..3 {
-            let captured = server.next().await;
-            arrivals.insert(captured.path, captured.at);
-        }
+        let arrivals = arrivals(&mut server, 3).await;
         let first = arrivals["/api/v10/channels/1/messages/10"];
         let same_channel = arrivals["/api/v10/channels/1/messages/20"] - first;
         let other_channel = arrivals["/api/v10/channels/2/messages/30"] - first;
@@ -686,6 +766,62 @@ mod tests {
             other_channel < Duration::from_millis(190),
             "{other_channel:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_followup_bucket_delays_its_token_but_not_others_or_callbacks() {
+        crate::init_test_tracing();
+        let exhausted = reply(
+            "200 OK",
+            &[
+                ("X-RateLimit-Bucket", "abc"),
+                ("X-RateLimit-Limit", "5"),
+                ("X-RateLimit-Remaining", "0"),
+                ("X-RateLimit-Reset-After", "0.2"),
+            ],
+            "{}",
+        );
+        let mut server = Server::start(vec![exhausted]).await;
+        let (rest, _receiver) = rest(&server.url);
+
+        status(rest.execute(Ticket::from(1), followup("first")).await);
+        tokio::join!(
+            rest.execute(Ticket::from(2), followup("first")),
+            rest.execute(Ticket::from(3), followup("second")),
+            rest.execute(Ticket::from(4), callback()),
+        );
+
+        let first = server.next().await.at;
+        let arrivals = arrivals(&mut server, 3).await;
+        let same_token = arrivals["/api/v10/webhooks/1/first"] - first;
+        let other_token = arrivals["/api/v10/webhooks/1/second"] - first;
+        let callback = arrivals["/api/v10/interactions/1/abc/callback"] - first;
+        assert!(same_token >= Duration::from_millis(190), "{same_token:?}");
+        assert!(other_token < Duration::from_millis(190), "{other_token:?}");
+        assert!(callback < Duration::from_millis(190), "{callback:?}");
+    }
+
+    #[tokio::test]
+    async fn the_global_limit_is_configurable_and_spares_interaction_routes() {
+        crate::init_test_tracing();
+        let mut server = Server::start(Vec::new()).await;
+        let (rest, _receiver) = limited_rest(&server.url, 1);
+
+        status(rest.execute(Ticket::from(1), me()).await);
+        tokio::join!(
+            rest.execute(Ticket::from(2), message("1", "10")),
+            rest.execute(Ticket::from(3), followup("first")),
+            rest.execute(Ticket::from(4), callback()),
+        );
+
+        let first = server.next().await.at;
+        let arrivals = arrivals(&mut server, 3).await;
+        let bot = arrivals["/api/v10/channels/1/messages/10"] - first;
+        let followup = arrivals["/api/v10/webhooks/1/first"] - first;
+        let callback = arrivals["/api/v10/interactions/1/abc/callback"] - first;
+        assert!(bot >= Duration::from_millis(900), "{bot:?}");
+        assert!(followup < Duration::from_millis(500), "{followup:?}");
+        assert!(callback < Duration::from_millis(500), "{callback:?}");
     }
 
     #[tokio::test]
@@ -760,14 +896,24 @@ mod tests {
         let (limited_code, _) = status(limited.await.unwrap());
 
         assert_eq!((other_code, limited_code), (200, 200));
-        let mut arrivals = HashMap::new();
-        for _ in 0..2 {
-            let captured = server.next().await;
-            arrivals.insert(captured.path, captured.at);
-        }
+        let arrivals = arrivals(&mut server, 2).await;
         let waited = arrivals["/api/v10/channels/2/messages/20"] - first;
         assert!(waited >= Duration::from_millis(500), "{waited:?}");
         assert_eq!(invalid_count(&rest), 1);
+    }
+
+    #[tokio::test]
+    async fn webhook_routes_wait_for_the_global_gate() {
+        crate::init_test_tracing();
+        let mut server = Server::start(Vec::new()).await;
+        let (rest, _receiver) = rest(&server.url);
+        let paused = Instant::now();
+        rest.gate.pause(Duration::from_millis(300));
+
+        status(rest.execute(Ticket::from(1), webhook()).await);
+
+        let waited = server.next().await.at - paused;
+        assert!(waited >= Duration::from_millis(300), "{waited:?}");
     }
 
     #[tokio::test]
@@ -878,6 +1024,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_rejected_interaction_token_does_not_stop_other_requests() {
+        crate::init_test_tracing();
+        let rejected = || reply("401 Unauthorized", &[], r#"{"code":50027}"#);
+        let mut server = Server::start(vec![rejected(), rejected()]).await;
+        let (rest, _receiver) = rest(&server.url);
+
+        let mut codes = Vec::new();
+        for (ticket, request) in [callback(), followup("first"), me(), webhook(), callback()]
+            .into_iter()
+            .enumerate()
+        {
+            let ticket = Ticket::from(u64::try_from(ticket).unwrap());
+            codes.push(status(rest.execute(ticket, request).await).0);
+        }
+
+        assert_eq!(codes, [401, 401, 200, 200, 200]);
+        assert_eq!(server.received(), 5);
+    }
+
+    #[tokio::test]
     async fn invalid_requests_warn_at_a_threshold_and_stop_every_request_at_the_hard_limit() {
         crate::init_test_tracing();
         let mut server = Server::start(vec![reply("403 Forbidden", &[], "{}")]).await;
@@ -972,7 +1138,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn interaction_routes_bypass_the_global_gate_and_the_buckets() {
+    async fn interaction_routes_skip_the_global_gate_and_the_shared_limiter() {
         crate::init_test_tracing();
         let server = Server::start(Vec::new()).await;
         let (rest, _receiver) = rest(&server.url);
@@ -984,10 +1150,13 @@ mod tests {
                 path: "users/@me".to_owned(),
             })
             .await;
+        let _busy_queue_of_the_followup = rest.limiter.acquire(followup("first").endpoint).await;
 
-        let delivery = timeout(PATIENCE, rest.execute(Ticket::from(1), callback())).await;
+        for request in [callback(), followup("first")] {
+            let delivery = timeout(PATIENCE, rest.execute(Ticket::from(1), request)).await;
 
-        assert_eq!(status(delivery.unwrap()).0, 200);
+            assert_eq!(status(delivery.unwrap()).0, 200);
+        }
     }
 
     #[tokio::test]

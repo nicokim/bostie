@@ -48,7 +48,6 @@ class GatewayClient:
         url: str,
         *,
         intents: int,
-        capabilities: int = 0,
         presence: Mapping[str, Any] | None = None,
     ) -> None:
         """Identify at ``url`` and stay connected until the shard stops.
@@ -64,7 +63,6 @@ class GatewayClient:
                 "device": "lyrecord",
             },
             "shard": [SHARD, 1],
-            "capabilities": capabilities,
         }
         if presence is not None:
             identify["presence"] = presence

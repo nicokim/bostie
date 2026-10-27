@@ -25,7 +25,7 @@ class Harness:
     def __init__(self, fake: FakeDiscord, token: str) -> None:
         self.fake = fake
         self.deliveries: asyncio.Queue[GatewayDelivery] = asyncio.Queue()
-        self.bridge = Bridge(token, fake.api_url, self._on_gateway)
+        self.bridge = Bridge(token, fake.api_url, self._on_gateway, global_limit=50)
         self.gateway = GatewayClient(self.bridge, token)
 
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
@@ -76,7 +76,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
         fake, gateway = harness.fake, harness.gateway
         assert gateway.latency is None
         gateway.identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
-        started = harness.start(capabilities=1 << 15, presence={"status": "idle"})
+        started = harness.start(presence={"status": "idle"})
 
         assert await harness.deliveries.get() == (
             "disconnected",
@@ -95,7 +95,6 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
                 "device": "lyrecord",
             },
             "shard": [0, 1],
-            "capabilities": 1 << 15,
             "presence": {"status": "idle"},
         }
         seq, name, ready = await harness.next_dispatch()
@@ -298,7 +297,9 @@ def test_status_deliveries_are_logged_at_their_level(
     caplog: pytest.LogCaptureFixture, delivery: StatusDelivery, level: int
 ) -> None:
     caplog.set_level(logging.INFO, logger="lyrecord.gateway")
-    bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
+    bridge = Bridge(
+        "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
+    )
 
     GatewayClient(bridge, "token").handle(delivery)
     asyncio.run(bridge.close())

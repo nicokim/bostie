@@ -3,7 +3,6 @@
   "name": "lyrecord-test",
   "icon": "d80f73500b8ea324255ef85752f868d4",
   "description": "Test application for lyrecord fixtures",
-  "summary": "",
   "bot_public": true,
   "bot_require_code_grant": false,
   "bot": {
@@ -31,7 +30,6 @@
   },
   "team": null,
   "verify_key": "34e93918d7f84b5887bb42539ad438bce95654550c11c9e8ffc02d8c5f9c6c47",
-  "flags": 9084928,
   "flags_new": "9084928",
   "approximate_guild_count": 2,
   "approximate_user_install_count": 0,

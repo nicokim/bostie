@@ -24,7 +24,7 @@ type Delivery = (
 @final
 class Core:
     @staticmethod
-    def create(token: str, api_url: str) -> tuple[Core, int]: ...
+    def create(token: str, api_url: str, global_limit: int) -> tuple[Core, int]: ...
     def request(
         self,
         method: str,

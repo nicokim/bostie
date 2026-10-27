@@ -271,3 +271,37 @@ def test_events_the_cache_does_not_consume_change_nothing(cache: Cache) -> None:
         before
     )
     assert "INTERACTION_CREATE" not in Cache.NAMES
+
+
+def test_cached_channels_never_hold_fields_channel_update_leaves_stale(
+    cache: Cache,
+) -> None:
+    cache.apply(event("THREAD_UPDATE"))
+    cache.apply(event("CHANNEL_UPDATE"))
+    received = event("GUILD_CREATE").raw
+
+    assert received["channels"][1]["last_message_id"] is not None
+    assert received["threads"][0]["message_count"] is not None
+    assert all(
+        (
+            channel.last_message_id,
+            channel.message_count,
+            channel.member_count,
+            channel.last_pin_timestamp,
+        )
+        == (None, None, None, None)
+        for channel in cache.guild_channels(GUILD)
+    )
+
+
+def test_an_obfuscated_update_without_guild_id_is_filed_by_channel_id(
+    cache: Cache,
+) -> None:
+    cache.apply(event("CHANNEL_UPDATE.obfuscated", guild_id=None))
+
+    general = cache.channel(GENERAL)
+    assert general is not None
+    assert general.obfuscated
+    assert general.guild_id == GUILD
+    assert general in cache.guild_channels(GUILD)
+    assert cache.channel(RELEASE_NOTES_THREAD) is None

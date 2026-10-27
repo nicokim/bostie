@@ -5,6 +5,7 @@ from pathlib import Path
 import msgspec
 import pytest
 
+from lyrecord import ui
 from lyrecord.enums import (
     ButtonStyle,
     ChannelType,
@@ -35,6 +36,7 @@ from lyrecord.models import (
     User,
     build_message,
     decode,
+    decode_components,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
@@ -292,7 +294,7 @@ def test_build_message_lists_files_as_attachments() -> None:
     assert sent is files
     assert msgspec.json.decode(msgspec.json.encode(body)) == {
         "content": "report",
-        "message_reference": {"message_id": 1564609610244030465},
+        "message_reference": {"type": 0, "message_id": 1564609610244030465},
         "attachments": [
             {"id": 0, "filename": "log.txt"},
             {"id": 1, "filename": "chart.png", "description": "Weekly chart"},
@@ -319,3 +321,61 @@ def test_build_message_never_writes_raw_payloads() -> None:
     )
 
     assert b"__lyrecord_raw__" not in msgspec.json.encode(body)
+
+
+def test_build_message_keeps_listed_attachments_before_new_files() -> None:
+    kept = decode(Attachment, b'{"id": "1564609863064092673", "filename": "a.png"}')
+
+    body, _ = build_message(
+        files=[File("new.png", b"", spoiler=True)], attachments=[kept, 42]
+    )
+
+    assert body == {
+        "attachments": [
+            {"id": 1564609863064092673},
+            {"id": 42},
+            {"id": 0, "filename": "new.png", "is_spoiler": True},
+        ]
+    }
+    assert build_message(attachments=[42])[0] == {"attachments": [{"id": 42}]}
+    assert "attachments" not in build_message("text only")[0]
+
+
+def test_v2_components_set_their_flag_clear_old_content_and_refuse_new_content() -> (
+    None
+):
+    received = UnknownComponent(type=17, raw=msgspec.Raw(b'{"type":17}'))
+    legacy_row = ui.row(ui.button("Go", custom_id="go"))
+
+    with_text, _ = build_message(
+        components=[ui.text("hi")], flags=MessageFlags.SUPPRESS_NOTIFICATIONS
+    )
+    resent, _ = build_message(components=[received])
+    legacy, _ = build_message("hi", components=[legacy_row])
+
+    v2 = MessageFlags.IS_COMPONENTS_V2
+    assert with_text == {
+        "components": [ui.text("hi")],
+        "flags": v2 | MessageFlags.SUPPRESS_NOTIFICATIONS,
+        "content": None,
+        "embeds": [],
+    }
+    assert resent["flags"] == v2
+    assert build_message(flags=v2)[0] == {"flags": v2, "content": None, "embeds": []}
+    assert legacy.keys() == {"content", "components"}
+    with pytest.raises(ValueError, match="Components V2"):
+        build_message("hi", components=[ui.text("hi")])
+    with pytest.raises(ValueError, match="Components V2"):
+        build_message(embeds=[Embed(title="x")], flags=v2)
+
+
+def test_text_inputs_and_deprecated_role_colors_are_not_modelled() -> None:
+    text_input = msgspec.Raw(b'{"type": 4, "custom_id": "note", "label": "Note"}')
+    role = decode(Role, b'{"id": "42", "color": 3447003}')
+
+    (component,) = decode_components([text_input])
+
+    assert isinstance(component, UnknownComponent)
+    assert component.type == ComponentType.TEXT_INPUT
+    assert "color" not in Role.__struct_fields__
+    assert role.raw == {"id": "42", "color": 3447003}

@@ -2,8 +2,8 @@ import msgspec
 import pytest
 
 from lyrecord.enums import (
+    ApplicationFlags,
     ButtonStyle,
-    Capabilities,
     ChannelFlags,
     ChannelType,
     CommandType,
@@ -12,18 +12,16 @@ from lyrecord.enums import (
     InteractionContextType,
     InteractionType,
     MessageFlags,
+    MessageReferenceType,
     MessageType,
     OptionType,
     Permissions,
 )
+from lyrecord.models import Application, decode
 
 
 class Channel(msgspec.Struct):
     type: ChannelType
-
-
-class Role(msgspec.Struct):
-    permissions: Permissions
 
 
 def test_unknown_value_decodes_to_a_stable_pseudo_member() -> None:
@@ -38,14 +36,13 @@ def test_unknown_value_decodes_to_a_stable_pseudo_member() -> None:
     assert ChannelType(9999) not in list(ChannelType)
 
 
-def test_flags_keep_unknown_bits_from_a_string() -> None:
-    bits = (1 << 60) | Permissions.BYPASS_SLOWMODE | Permissions.VIEW_CHANNEL
-    decoder = msgspec.json.Decoder(Role, strict=False)
+def test_application_flags_keep_unknown_bits_beyond_64_from_a_string() -> None:
+    bits = (1 << 70) | ApplicationFlags.APPLICATION_COMMAND_BADGE
 
-    permissions = decoder.decode(b'{"permissions": "%d"}' % bits).permissions
+    flags = decode(Application, b'{"id": "1", "flags_new": "%d"}' % bits).flags
 
-    assert permissions == bits
-    assert Permissions.BYPASS_SLOWMODE in permissions
+    assert flags == bits
+    assert ApplicationFlags.APPLICATION_COMMAND_BADGE in flags
 
 
 def test_default_intents_exclude_privileged_ones() -> None:
@@ -76,7 +73,10 @@ def test_default_intents_exclude_privileged_ones() -> None:
         (Intents.DIRECT_MESSAGE_POLLS, 1 << 25),
         (MessageFlags.IS_COMPONENTS_V2, 1 << 15),
         (ChannelFlags.CHANNEL_OBFUSCATED, 1 << 17),
-        (Capabilities.CHANNEL_OBFUSCATION, 1 << 15),
+        (ApplicationFlags.APPLICATION_AUTO_MODERATION_RULE_CREATE_BADGE, 1 << 6),
+        (ApplicationFlags.GATEWAY_MESSAGE_CONTENT_LIMITED, 1 << 19),
+        (ApplicationFlags.APPLICATION_COMMAND_BADGE, 1 << 23),
+        (MessageReferenceType.FORWARD, 1),
     ],
 )
 def test_values_match_the_docs(member: int, value: int) -> None:

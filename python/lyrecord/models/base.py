@@ -3,6 +3,8 @@ from typing import Any, dataclass_transform
 
 import msgspec
 
+from lyrecord.enums import Permissions
+
 
 @dataclass_transform(
     field_specifiers=(msgspec.field,), kw_only_default=True, frozen_default=True
@@ -36,3 +38,7 @@ def decode[M: Model](model: type[M], data: bytes) -> M:
     value: M = decoder(model).decode(data)
     msgspec.structs.force_setattr(value, "raw_json", data)
     return value
+
+
+def permissions_from(wire: str | None) -> Permissions | None:
+    return None if wire is None else Permissions(int(wire))

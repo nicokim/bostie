@@ -43,7 +43,6 @@
       "id": "1335172792320131073",
       "name": "@everyone",
       "description": null,
-      "color": 0,
       "colors": {
         "primary_color": 0,
         "secondary_color": null,
@@ -62,7 +61,6 @@
       "id": "1335180342067331073",
       "name": "lyrecord-test",
       "description": null,
-      "color": 0,
       "colors": {
         "primary_color": 0,
         "secondary_color": null,
@@ -84,7 +82,6 @@
       "id": "1335174302269571073",
       "name": "Moderator",
       "description": null,
-      "color": 3447003,
       "colors": {
         "primary_color": 3447003,
         "secondary_color": 10181046,
@@ -103,7 +100,6 @@
       "id": "1335174050611331073",
       "name": "Admin",
       "description": null,
-      "color": 15158332,
       "colors": {
         "primary_color": 15158332,
         "secondary_color": null,

@@ -16,7 +16,6 @@ from fakediscord import FakeDiscord, payloads
 from lyrecord import (
     AutocompleteContext,
     Bot,
-    Capabilities,
     CommandSyncError,
     ComponentContext,
     Context,
@@ -24,6 +23,7 @@ from lyrecord import (
     Forbidden,
     HTTPException,
     Intents,
+    InteractionExpired,
     InvalidToken,
     Member,
     Message,
@@ -36,6 +36,7 @@ from lyrecord import (
     Router,
     ui,
 )
+from lyrecord.context import ResponseState
 from lyrecord.events import (
     ChannelUpdate,
     GuildCreate,
@@ -179,7 +180,6 @@ def test_autosync_puts_only_changed_commands_and_an_explicit_sync_always_puts() 
         bot = example_bot(
             fake,
             intents=Intents.DEFAULT | Intents.MESSAGE_CONTENT,
-            capabilities=Capabilities.CHANNEL_OBFUSCATION,
             presence=presence,
         )
         async with running(bot, fake):
@@ -200,10 +200,8 @@ def test_autosync_puts_only_changed_commands_and_an_explicit_sync_always_puts() 
         ]
         assert bot.application_id == fake.application_id
         assert bot.user is not None and bot.user.id == int(fake.bot_user["id"])
-        assert (identify["intents"], identify["capabilities"]) == (
-            Intents.DEFAULT | Intents.MESSAGE_CONTENT,
-            Capabilities.CHANNEL_OBFUSCATION,
-        )
+        assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
+        assert "capabilities" not in identify
         assert identify["presence"] == presence
 
         fake.requests.clear()
@@ -828,6 +826,55 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
     assert str(logged.exc_info[1]) == "boom"
 
 
+def test_a_dead_interaction_token_is_never_used_again(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=0.05)
+        loop = asyncio.get_running_loop()
+        finished: asyncio.Future[ResponseState] = loop.create_future()
+
+        @bot.command
+        async def late(ctx: Context) -> None:
+            """Answer after the token died."""
+            await asyncio.sleep(0.2)
+            try:
+                await ctx.respond("too late")
+            finally:
+                finished.set_result(ctx.state)
+
+        unknown = {"message": "Unknown interaction", "code": 10062}
+        async with running(bot, fake):
+            fake.fail("POST", "/interactions/", 404, unknown, times=3)
+            interaction = payloads.interaction(2, payloads.command("late"))
+            await fake.dispatch("INTERACTION_CREATE", interaction)
+            assert await finished is ResponseState.EXPIRED
+
+        sent = [
+            (request.method, request.json)
+            for request in fake.requests
+            if interaction["token"] in request.path
+        ]
+        assert sent == [("POST", {"type": 5})]
+
+    run(scenario)
+
+    (logged,) = [record for record in caplog.records if "late raised" in record.message]
+    assert logged.exc_info is not None
+    assert isinstance(logged.exc_info[1], InteractionExpired)
+
+
+def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, global_rate_limit=0)
+
+        with pytest.raises(ValueError, match="zero"):
+            await bot.start(fake.token)
+        assert fake.requests == []
+
+    run(scenario)
+
+
 def test_a_response_with_files_is_sent_as_multipart() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with running(example_bot(fake), fake):
@@ -864,12 +911,19 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
             assert fake.requests[-1].json == {
                 "content": "hello",
                 "allowed_mentions": MENTIONS,
-                "message_reference": {"message_id": 5},
+                "message_reference": {"type": 0, "message_id": 5},
                 "attachments": [{"id": 0, "filename": "a.txt"}],
             }
             assert sent.content == "hello" and sent.raw["id"] == str(sent.id)
 
-            edited = await bot.edit_message(channel_id, sent.id, "edited")
+            edited = await bot.edit_message(
+                channel_id, sent.id, "edited", attachments=[7]
+            )
+            assert fake.requests[-1].json == {
+                "content": "edited",
+                "allowed_mentions": MENTIONS,
+                "attachments": [{"id": 7}],
+            }
             fetched = await bot.fetch_message(channel_id, sent.id)
             assert (edited.content, fetched.content) == ("edited", "edited")
 

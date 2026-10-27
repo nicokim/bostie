@@ -13,7 +13,6 @@
     "description_localizations": {
       "de": "Jeden Optionstyp ausprobieren"
     },
-    "dm_permission": true,
     "contexts": [
       0,
       1
@@ -144,7 +143,6 @@
     "name_localizations": null,
     "description": "Search the lyrecord docs",
     "description_localizations": null,
-    "dm_permission": false,
     "contexts": [
       0
     ],
@@ -217,7 +215,6 @@
     },
     "description": "",
     "description_localizations": null,
-    "dm_permission": true,
     "contexts": [
       0
     ],
@@ -236,7 +233,6 @@
     "name_localizations": null,
     "description": "Launch lyrecord test",
     "description_localizations": null,
-    "dm_permission": true,
     "contexts": [
       0,
       1,

@@ -11,8 +11,8 @@ mod shard;
 mod tests;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -29,6 +29,7 @@ use self::shard::{Shard, Signals, UNKNOWN_LATENCY};
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
+use crate::rest::Rest;
 
 const COMMAND_QUEUE: usize = 128;
 
@@ -46,6 +47,7 @@ struct Shared {
     connector: Connector,
     filter: RwLock<Filter>,
     identify: IdentifyGate,
+    rest: Weak<Rest>,
 }
 
 struct ShardHandle {
@@ -55,7 +57,12 @@ struct ShardHandle {
 }
 
 impl Gateway {
-    pub fn new(runtime: Handle, inbox: Arc<Inbox>, token: &str) -> Result<Self, CoreError> {
+    pub fn new(
+        runtime: Handle,
+        inbox: Arc<Inbox>,
+        token: &str,
+        rest: Weak<Rest>,
+    ) -> Result<Self, CoreError> {
         Ok(Self {
             runtime,
             shared: Arc::new(Shared {
@@ -64,6 +71,7 @@ impl Gateway {
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 filter: RwLock::new(None),
                 identify: IdentifyGate::default(),
+                rest,
             }),
             shards: Mutex::new(HashMap::new()),
         })
@@ -77,7 +85,7 @@ impl Gateway {
         let url = shard::gateway_url(url).ok_or_else(|| {
             CoreError::InvalidRequest(format!("{url:?} is not a ws:// or wss:// gateway URL"))
         })?;
-        envelope::check_identify(&identify)?;
+        let identify = envelope::identify_frame(&identify)?;
         let mut shards = self.shards.lock();
         if shards
             .get(&shard)

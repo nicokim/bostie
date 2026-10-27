@@ -9,8 +9,14 @@ import msgspec
 import pytest
 
 from lyrecord import events
-from lyrecord.enums import DiscordIntEnum
-from lyrecord.events import EVENTS, GuildCreate, MessageCreate, decode_event
+from lyrecord.enums import DiscordIntEnum, Permissions
+from lyrecord.events import (
+    EVENTS,
+    GuildCreate,
+    InteractionCreate,
+    MessageCreate,
+    decode_event,
+)
 from lyrecord.models import (
     ActionRow,
     Application,
@@ -116,7 +122,7 @@ def walk(value: object) -> Iterator[object]:
         yield from walk(value.members)
     if isinstance(value, msgspec.Struct):
         for name in value.__struct_fields__:
-            yield from walk(getattr(value, name))
+            yield from walk(getattr(value, name.lstrip("_")))
     elif isinstance(value, tuple | list):
         for item in value:
             yield from walk(item)
@@ -257,3 +263,36 @@ def test_a_dispatch_with_a_changed_field_type_is_skipped_with_one_warning(
     assert len(warnings) == 1
     assert "MESSAGE_CREATE" in warnings[0].getMessage()
     assert "$.mentions" in warnings[0].getMessage()
+
+
+def test_permissions_beyond_64_bits_decode() -> None:
+    bit = 1 << 70
+    guild = load(FIXTURES / "events" / "GUILD_CREATE.json")
+    guild["roles"][3]["permissions"] = str(bit | Permissions.ADMINISTRATOR)
+    overwrite = guild["channels"][3]["permission_overwrites"][0]
+    overwrite["allow"] = str(bit | Permissions.VIEW_CHANNEL)
+    overwrite["deny"] = str(bit)
+    interaction = load(FIXTURES / "events" / "INTERACTION_CREATE.command.json")
+    interaction["app_permissions"] = str(bit)
+    resolved_channels = interaction["data"]["resolved"]["channels"]
+    channel_id, channel = next(iter(resolved_channels.items()))
+    channel["permissions"] = str(bit | Permissions.SEND_MESSAGES)
+
+    created = decode_event(GuildCreate, 0, msgspec.json.encode(guild))
+    received = decode_event(InteractionCreate, 0, msgspec.json.encode(interaction))
+
+    assert created is not None
+    assert received is not None
+    role_permissions = created.roles[3].permissions
+    assert role_permissions is not None
+    assert role_permissions & bit
+    assert Permissions.ADMINISTRATOR in role_permissions
+    decoded_overwrite = created.channels[3].permission_overwrites[0]
+    assert decoded_overwrite.allow == bit | Permissions.VIEW_CHANNEL
+    assert decoded_overwrite.deny == bit
+    assert received.interaction.app_permissions == bit
+    data = received.interaction.data
+    assert data is not None and data.resolved is not None
+    assert data.resolved.channels is not None
+    resolved_channel = data.resolved.channels[int(channel_id)]
+    assert resolved_channel.permissions == bit | Permissions.SEND_MESSAGES

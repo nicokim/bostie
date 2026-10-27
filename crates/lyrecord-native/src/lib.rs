@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroU16;
 use std::time::Duration;
 
 use lyrecord_core::{
@@ -20,8 +21,12 @@ struct NativeCore(Core);
 #[pymethods]
 impl NativeCore {
     #[staticmethod]
-    fn create(token: &str, api_url: &str) -> PyResult<(Self, RawBellHandle)> {
-        let (core, bell) = Core::new(token, api_url).map_err(to_python_error)?;
+    fn create(
+        token: &str,
+        api_url: &str,
+        global_limit: NonZeroU16,
+    ) -> PyResult<(Self, RawBellHandle)> {
+        let (core, bell) = Core::new(token, api_url, global_limit).map_err(to_python_error)?;
         Ok((Self(core), bell.into_raw()))
     }
 

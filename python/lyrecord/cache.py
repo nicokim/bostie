@@ -35,7 +35,9 @@ THREAD_TYPES = frozenset(
 class Cache:
     """The bot user, guilds, channels, threads and roles, kept current by events.
 
-    Channels are stored as received: an obfuscated channel replaces the real one.
+    Channels are stored as received, obfuscated ones included, except the fields
+    CHANNEL_UPDATE does not keep current (last_message_id, message_count,
+    member_count, last_pin_timestamp), which are None.
     """
 
     NAMES: ClassVar[frozenset[str]] = frozenset(
@@ -161,11 +163,19 @@ class Cache:
             self._roles.pop(role_id, None)
 
     def _store_channel(self, channel: Channel) -> None:
-        guild_id = channel.guild_id
+        cached = self._channels.get(channel.id)
+        guild_id = channel.guild_id if cached is None else cached.guild_id
         if guild_id is None or guild_id not in self._guild_channels:
             return
-        if channel.raw_json is not None:
-            channel = msgspec.structs.replace(channel, raw_json=None)
+        channel = msgspec.structs.replace(
+            channel,
+            raw_json=None,
+            guild_id=guild_id,
+            last_message_id=None,
+            message_count=None,
+            member_count=None,
+            last_pin_timestamp=None,
+        )
         self._channels[channel.id] = channel
         self._guild_channels[guild_id][channel.id] = channel
         if channel.obfuscated:

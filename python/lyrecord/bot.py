@@ -30,7 +30,7 @@ from lyrecord.context import (
     ResponseState,
     _split_subcommands,
 )
-from lyrecord.enums import Capabilities, CommandType, Intents, InteractionType
+from lyrecord.enums import CommandType, Intents, InteractionType
 from lyrecord.errors import TransportError
 from lyrecord.events import (
     EVENTS,
@@ -46,6 +46,7 @@ from lyrecord.gateway import GatewayClient
 from lyrecord.http import HTTPClient
 from lyrecord.models import (
     AllowedMentions,
+    Attachment,
     Channel,
     Component,
     Embed,
@@ -73,7 +74,6 @@ PRIVILEGED_INTENTS = (
     Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
 )
 DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
-NO_CAPABILITIES = Capabilities(0)
 COMMAND_INTERACTIONS = frozenset(
     {
         InteractionType.APPLICATION_COMMAND,
@@ -107,7 +107,7 @@ class Bot(Router):
         cache: bool = True,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
         presence: Mapping[str, Any] | None = None,
-        capabilities: Capabilities = NO_CAPABILITIES,
+        global_rate_limit: int = 50,
         api_url: str = "https://discord.com/api/v10",
     ) -> None:
         super().__init__()
@@ -121,7 +121,7 @@ class Bot(Router):
         self._caching = cache
         self._allowed_mentions = allowed_mentions
         self._presence = presence
-        self._capabilities = capabilities
+        self._global_rate_limit = global_rate_limit
         self._api_url = api_url
         self._bridge: Bridge | None = None
         self._http: HTTPClient | None = None
@@ -176,7 +176,12 @@ class Bot(Router):
             raise RuntimeError("the bot is already running")
         if self._closing is not None and self._closing.done():
             self._closing = None
-        self._bridge = bridge = Bridge(token, self._api_url, self._on_gateway)
+        self._bridge = bridge = Bridge(
+            token,
+            self._api_url,
+            self._on_gateway,
+            global_limit=self._global_rate_limit,
+        )
         self._replaying = False
         async with bridge:
             self._http = http = HTTPClient(bridge)
@@ -204,7 +209,6 @@ class Bot(Router):
                 await gateway.start(
                     info["url"],
                     intents=self._intents,
-                    capabilities=self._capabilities,
                     presence=self._presence,
                 )
             except (TransportError, RuntimeError):
@@ -309,15 +313,20 @@ class Bot(Router):
         embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
         components: Sequence[Component | Mapping[str, Any]] | None = None,
         files: Sequence[File] = (),
+        attachments: Sequence[Attachment | int] = (),
         allowed_mentions: AllowedMentions | None = None,
         flags: int | None = None,
     ) -> Message:
-        """Edit a message; only the parts passed change."""
+        """Edit a message; only the parts passed change.
+
+        With `files` or `attachments`, only the listed `attachments` stay.
+        """
         body, files = build_message(
             content,
             embeds=embeds,
             components=components,
             files=files,
+            attachments=attachments,
             allowed_mentions=self._allowed_mentions
             if allowed_mentions is None
             else allowed_mentions,

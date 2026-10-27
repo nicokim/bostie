@@ -48,7 +48,7 @@ def ignore(delivery: GatewayDelivery, received: float) -> None:
 
 
 def bridge(api_url: str = API_URL) -> Bridge:
-    return Bridge(TOKEN, api_url, ignore)
+    return Bridge(TOKEN, api_url, ignore, global_limit=50)
 
 
 async def me(bridge: Bridge) -> tuple[int, bytes]:
@@ -233,6 +233,11 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
     run(main())
 
 
+def test_a_zero_global_limit_is_rejected() -> None:
+    with pytest.raises(ValueError, match="zero"):
+        Bridge(TOKEN, API_URL, ignore, global_limit=0)
+
+
 def test_requires_a_running_bridge(run: Runner) -> None:
     async def main() -> None:
         idle = bridge()
@@ -300,7 +305,7 @@ def test_gateway_deliveries_reach_the_callback_with_the_drain_time(
     async def main() -> None:
         server, url = await serve(reply_hello)
         loop = asyncio.get_running_loop()
-        async with server, Bridge(TOKEN, url, record) as running:
+        async with server, Bridge(TOKEN, url, record, global_limit=50) as running:
             monkeypatch.setattr(running, "core", InjectedOnce(running.core, injected))
             before = loop.time()
             assert await me(running) == (200, b"hello")
@@ -321,7 +326,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
 
     async def main() -> None:
         server, url = await serve(reply_hello)
-        async with server, Bridge(TOKEN, url, explode) as running:
+        async with server, Bridge(TOKEN, url, explode, global_limit=50) as running:
             injected: list[GatewayDelivery] = [
                 ("backpressure", 0, 1),
                 ("backpressure", 0, 2),
@@ -427,7 +432,9 @@ def test_process_exits_cleanly_with_requests_in_flight() -> None:
         async def main():
             listener = socket.create_server(("127.0.0.1", 0))
             url = f"http://127.0.0.1:{listener.getsockname()[1]}/api/v10"
-            bridge = Bridge("dummy-token", url, lambda delivery, received: None)
+            bridge = Bridge(
+                "dummy-token", url, lambda delivery, received: None, global_limit=50
+            )
             await bridge.__aenter__()
             for index in range(10):
                 params = {"interaction_id": str(index), "interaction_token": "t"}

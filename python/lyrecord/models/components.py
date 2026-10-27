@@ -61,19 +61,6 @@ class SelectMenu(Builder, kw_only=True):
     disabled: bool | None = None
 
 
-class TextInput(Builder, kw_only=True):
-    type: ComponentType
-    id: int | None = None
-    custom_id: str | None = None
-    style: int | None = None
-    label: str | None = None
-    min_length: int | None = None
-    max_length: int | None = None
-    required: bool | None = None
-    value: str | None = None
-    placeholder: str | None = None
-
-
 class UnknownComponent(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     """A component lyrecord cannot model; `raw` is sent back unchanged."""
 
@@ -81,18 +68,17 @@ class UnknownComponent(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     raw: msgspec.Raw
 
 
-type Component = ActionRow | Button | SelectMenu | TextInput | UnknownComponent
+type Component = ActionRow | Button | SelectMenu | UnknownComponent
 
 
 class _ComponentTag(msgspec.Struct):
     type: int | None = None
 
 
-COMPONENT_MODELS: dict[int, type[ActionRow | Button | SelectMenu | TextInput]] = {
+COMPONENT_MODELS: dict[int, type[ActionRow | Button | SelectMenu]] = {
     ComponentType.ACTION_ROW: ActionRow,
     ComponentType.BUTTON: Button,
     ComponentType.STRING_SELECT: SelectMenu,
-    ComponentType.TEXT_INPUT: TextInput,
     ComponentType.USER_SELECT: SelectMenu,
     ComponentType.ROLE_SELECT: SelectMenu,
     ComponentType.MENTIONABLE_SELECT: SelectMenu,

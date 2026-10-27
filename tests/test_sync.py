@@ -177,6 +177,43 @@ def test_explicit_sync_puts_ours_then_other_types_verbatim() -> None:
         assert not {"version", "application_id", "guild_id"} & passthrough.keys()
 
 
+def test_pass_through_commands_drop_deprecated_keys_and_keep_their_settings() -> None:
+    deprecated: dict[str, dict[str, Any]] = {
+        "User Info": {
+            "dm_permission": False,
+            "contexts": None,
+            "default_permission": False,
+        },
+        "launch": {"dm_permission": True, "default_permission": True},
+    }
+    http = FakeHTTP(remote(**deprecated))
+
+    run(sync_commands(http, APPLICATION_ID, COMMANDS, (), always_put=True))
+
+    user_info, launch = http.calls[1].json[2:]
+    for passthrough in (user_info, launch):
+        assert not {"dm_permission", "default_permission"} & passthrough.keys()
+    assert (user_info["contexts"], user_info["default_member_permissions"]) == (
+        [0],
+        "0",
+    )
+    assert (launch["contexts"], launch["default_member_permissions"]) == (
+        [0, 1, 2],
+        None,
+    )
+
+
+def test_guild_pass_through_commands_drop_dm_permission_as_is() -> None:
+    hidden_in_dms = {"guild_id": "11", "dm_permission": False, "contexts": None}
+    http = FakeHTTP(remote(**{"User Info": hidden_in_dms}))
+
+    run(sync_commands(http, APPLICATION_ID, COMMANDS, [11], always_put=True))
+
+    user_info = http.calls[1].json[2]
+    assert "dm_permission" not in user_info
+    assert user_info["contexts"] is None
+
+
 def swapped_search_options() -> dict[str, Any]:
     query, category, limit = REMOTE[1]["options"]
     return {"options": [category, query, limit]}

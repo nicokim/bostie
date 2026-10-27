@@ -58,7 +58,7 @@ const BACKOFF_MAX: Duration = Duration::from_millis(100);
 const NORMAL_CLOSE: u16 = 1000;
 const SESSION_KEEPING_CLOSE: u16 = 4000;
 const GATEWAY_QUERY: &str = "v=10&encoding=json&compress=zstd-stream";
-const IDENTIFY_PREFIX: &[u8] = br#"{"op":2,"d":"#;
+const STALE_URL_FAILURES: u32 = 2;
 pub(super) const UNKNOWN_LATENCY: u64 = u64::MAX;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -90,7 +90,7 @@ impl Signals {
 
 struct Session {
     id: String,
-    resume_url: Option<Url>,
+    resume_url: Url,
     seq: u64,
 }
 
@@ -116,7 +116,7 @@ struct Heartbeat {
     interval: Duration,
     next: Instant,
     sent_at: Option<Instant>,
-    received: bool,
+    acked: bool,
     paused: bool,
 }
 
@@ -166,6 +166,7 @@ pub(super) struct Shard {
     session: Option<Session>,
     had_session: bool,
     failures: u32,
+    base_url_failures: u32,
 }
 
 impl Shard {
@@ -187,6 +188,7 @@ impl Shard {
             session: None,
             had_session: false,
             failures: 0,
+            base_url_failures: 0,
         }
     }
 
@@ -195,6 +197,7 @@ impl Shard {
         loop {
             if !self.idle(delay.saturating_add(self.backoff())).await
                 || !self.await_identify_budget().await
+                || !self.refresh_stale_url().await
             {
                 self.stopped(None, "closed");
                 return;
@@ -240,6 +243,29 @@ impl Shard {
         }
     }
 
+    async fn refresh_stale_url(&mut self) -> bool {
+        if self.base_url_failures < STALE_URL_FAILURES {
+            return true;
+        }
+        self.base_url_failures = 0;
+        let Some(rest) = self.shared.rest.upgrade() else {
+            return true;
+        };
+        let fetched = tokio::select! {
+            biased;
+            () = self.signals.close.notified() => return false,
+            fetched = timeout(CONNECT_TIMEOUT, rest.fetch_gateway_url()) => fetched.ok().flatten(),
+        };
+        match fetched.as_deref().and_then(gateway_url) {
+            Some(url) => {
+                debug!(shard = %self.id, %url, "refreshed the gateway URL");
+                self.url = url;
+            }
+            None => debug!(shard = %self.id, "could not refresh the gateway URL"),
+        }
+        true
+    }
+
     fn backoff(&self) -> Duration {
         let Some(doublings) = self.failures.checked_sub(1) else {
             return Duration::ZERO;
@@ -258,8 +284,7 @@ impl Shard {
         let url = self
             .session
             .as_ref()
-            .and_then(|session| session.resume_url.as_ref())
-            .unwrap_or(&self.url);
+            .map_or(&self.url, |session| &session.resume_url);
         debug!(shard = %self.id, %url, "connecting");
         let socket = tokio::select! {
             biased;
@@ -337,10 +362,10 @@ impl Shard {
                 "no HELLO within {HELLO_TIMEOUT:?}"
             )));
         };
-        if !heartbeat.received && !heartbeat.paused {
+        if !heartbeat.acked && !heartbeat.paused {
             return Err(Ending::Zombie);
         }
-        heartbeat.received = false;
+        heartbeat.acked = false;
         heartbeat.paused = connection.held.is_some();
         heartbeat.next += heartbeat.interval;
         self.send_heartbeat(connection).await
@@ -360,12 +385,8 @@ impl Shard {
 
     async fn send_identify(&self, connection: &mut Connection) -> Result<(), Ending> {
         connection.identify_at = None;
-        let mut payload = Vec::with_capacity(IDENTIFY_PREFIX.len() + self.identify.len() + 1);
-        payload.extend_from_slice(IDENTIFY_PREFIX);
-        payload.extend_from_slice(&self.identify);
-        payload.push(b'}');
         debug!(shard = %self.id, "identifying");
-        connection.send(Bytes::from(payload)).await
+        connection.send(self.identify.clone()).await
     }
 
     async fn on_message(
@@ -384,9 +405,6 @@ impl Shard {
         };
         if let Some((code, _)) = message.as_close() {
             return Err(Ending::Closed(code.into()));
-        }
-        if let Some(heartbeat) = &mut connection.heartbeat {
-            heartbeat.received = true;
         }
         let payload = if message.is_binary() {
             connection
@@ -421,7 +439,7 @@ impl Shard {
                 forward: Some(forward),
             } => self.forward(connection, Held { seq, forward }),
             Frame::Heartbeat => return self.send_heartbeat(connection).await,
-            Frame::HeartbeatAck => self.record_latency(connection),
+            Frame::HeartbeatAck => self.on_heartbeat_ack(connection),
             Frame::Hello { heartbeat_interval } => {
                 return self.on_hello(connection, heartbeat_interval).await;
             }
@@ -435,16 +453,17 @@ impl Shard {
     }
 
     async fn on_hello(
-        &self,
+        &mut self,
         connection: &mut Connection,
         interval: Duration,
     ) -> Result<(), Ending> {
+        self.base_url_failures = 0;
         let now = Instant::now();
         connection.heartbeat = Some(Heartbeat {
             interval,
             next: now + interval.mul_f64(fastrand::f64()),
             sent_at: None,
-            received: true,
+            acked: true,
             paused: false,
         });
         connection.limiter = Some(SendLimiter::new(interval));
@@ -461,8 +480,12 @@ impl Shard {
         connection.send(Bytes::from(payload)).await
     }
 
-    fn record_latency(&self, connection: &Connection) {
-        let Some(sent_at) = connection.heartbeat.as_ref().and_then(|beat| beat.sent_at) else {
+    fn on_heartbeat_ack(&self, connection: &mut Connection) {
+        let Some(heartbeat) = &mut connection.heartbeat else {
+            return;
+        };
+        heartbeat.acked = true;
+        let Some(sent_at) = heartbeat.sent_at else {
             return;
         };
         let nanos = u64::try_from(sent_at.elapsed().as_nanos()).unwrap_or(UNKNOWN_LATENCY - 1);
@@ -510,11 +533,16 @@ impl Shard {
             while self.commands.try_recv().is_ok() {}
         }
         self.had_session = true;
-        self.session = envelope::ready_session(data).map(|ready| Session {
-            id: ready.id,
-            resume_url: ready.resume_url.as_deref().and_then(gateway_url),
-            seq: 0,
+        self.session = envelope::ready_session(data).and_then(|ready| {
+            Some(Session {
+                id: ready.id,
+                resume_url: gateway_url(&ready.resume_url)?,
+                seq: 0,
+            })
         });
+        if self.session.is_none() {
+            debug!(shard = %self.id, "READY has no usable session, so the next connection identifies");
+        }
         self.start_running(connection);
     }
 
@@ -565,8 +593,8 @@ impl Shard {
                 }
             }
             Ending::Unreachable(error) => {
-                if let Some(session) = &mut self.session {
-                    session.resume_url = None;
+                if self.session.take().is_none() {
+                    self.base_url_failures = self.base_url_failures.saturating_add(1);
                 }
                 self.disconnected(None, error);
             }

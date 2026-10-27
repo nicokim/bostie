@@ -7,7 +7,6 @@ from typing import Annotated, Any
 from lyrecord import (
     AutocompleteContext,
     Bot,
-    Capabilities,
     Choice,
     ComponentContext,
     Context,
@@ -49,7 +48,7 @@ def settle(future: asyncio.Future[Any], value: object) -> None:
 
 
 def check_bot(guild_id: int, seen: dict[str, asyncio.Future[Any]]) -> Bot:
-    bot = Bot(dev_guilds=[guild_id], capabilities=Capabilities.CHANNEL_OBFUSCATION)
+    bot = Bot(dev_guilds=[guild_id])
 
     async def flavors(ctx: AutocompleteContext, value: str) -> list[Choice]:
         return [
@@ -60,7 +59,7 @@ def check_bot(guild_id: int, seen: dict[str, asyncio.Future[Any]]) -> Bot:
 
     @bot.on_component("lyrecord-check:{count:int}")
     async def clicked(ctx: ComponentContext, count: int) -> None:
-        await ctx.update(f"Button route works ({count}).", components=[])
+        await ctx.update(components=[ui.text(f"Button route works ({count}).")])
         settle(seen["button"], count)
 
     @bot.command(name="lyrecord-check")
@@ -71,7 +70,7 @@ def check_bot(guild_id: int, seen: dict[str, asyncio.Future[Any]]) -> Bot:
     ) -> None:
         """Run the lyrecord live check."""
         button = ui.button("Click me", custom_id=clicked.id(count=count))
-        await ctx.respond(f"{count} x {flavor}", components=[ui.row(button)])
+        await ctx.respond(components=[ui.text(f"{count} x {flavor}"), ui.row(button)])
         settle(seen["command"], (flavor, count))
 
     return bot
@@ -87,7 +86,7 @@ async def connect(bot: Bot, token: str) -> "asyncio.Task[None]":
     )
     if started.done():
         started.result()
-    report("connect with channel obfuscation enabled", ready.done())
+    report("connect", ready.done())
     ready.cancel()
     return started
 
@@ -139,10 +138,12 @@ async def live_check(token: str, guild_id: int, channel_id: int) -> None:
     resumed.cancel()
 
     message = await bot.send_message(
-        channel_id, "lyrecord live check", files=[File("check.txt", b"lyrecord")]
+        channel_id,
+        components=[ui.text("lyrecord live check"), ui.file("check.txt")],
+        files=[File("check.txt", b"lyrecord")],
     )
     report(
-        "send a message with a file",
+        "send a Components V2 message with a file",
         [attachment.filename for attachment in message.attachments] == ["check.txt"],
     )
 

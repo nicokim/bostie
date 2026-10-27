@@ -1,12 +1,30 @@
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, Literal
 
 from lyrecord.custom_id import MAX_CUSTOM_ID
 from lyrecord.enums import ButtonStyle, ComponentType
 
-__all__ = ["ButtonStyle", "button", "link_button", "row", "select", "select_option"]
+__all__ = [
+    "ButtonStyle",
+    "button",
+    "container",
+    "file",
+    "gallery_item",
+    "link_button",
+    "media_gallery",
+    "row",
+    "section",
+    "select",
+    "select_option",
+    "separator",
+    "text",
+    "thumbnail",
+]
 
 type Emoji = str | Mapping[str, Any]
+type InteractiveStyle = Literal[
+    ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
+]
 
 
 def row(*components: Mapping[str, Any]) -> dict[str, Any]:
@@ -18,7 +36,7 @@ def button(
     label: str | None,
     *,
     custom_id: str,
-    style: ButtonStyle = ButtonStyle.SECONDARY,
+    style: InteractiveStyle = ButtonStyle.SECONDARY,
     emoji: Emoji | None = None,
     disabled: bool = False,
 ) -> dict[str, Any]:
@@ -83,6 +101,72 @@ def select_option(
         description=description,
         emoji=_emoji(emoji),
         default=default,
+    )
+
+
+def text(content: str) -> dict[str, Any]:
+    """Markdown text; Components V2 messages use it instead of `content`."""
+    return {"type": ComponentType.TEXT_DISPLAY, "content": content}
+
+
+def section(*texts: Mapping[str, Any], accessory: Mapping[str, Any]) -> dict[str, Any]:
+    """One to three `text` components with a `button` or `thumbnail` beside them."""
+    return {
+        "type": ComponentType.SECTION,
+        "components": list(texts),
+        "accessory": accessory,
+    }
+
+
+def thumbnail(
+    url: str, *, description: str | None = None, spoiler: bool = False
+) -> dict[str, Any]:
+    """A small image for a `section`; `url` may be `attachment://<filename>`."""
+    return _present(
+        type=ComponentType.THUMBNAIL,
+        media={"url": url},
+        description=description,
+        spoiler=spoiler,
+    )
+
+
+def media_gallery(*items: Mapping[str, Any]) -> dict[str, Any]:
+    """One to ten images or videos built with `gallery_item`."""
+    return {"type": ComponentType.MEDIA_GALLERY, "items": list(items)}
+
+
+def gallery_item(
+    url: str, *, description: str | None = None, spoiler: bool = False
+) -> dict[str, Any]:
+    """One entry of a `media_gallery`; `url` may be `attachment://<filename>`."""
+    return _present(media={"url": url}, description=description, spoiler=spoiler)
+
+
+def file(filename: str, *, spoiler: bool = False) -> dict[str, Any]:
+    """A file uploaded with the message, named as in its `File`."""
+    return {
+        "type": ComponentType.FILE,
+        "file": {"url": f"attachment://{filename}"},
+        "spoiler": spoiler,
+    }
+
+
+def separator(*, divider: bool = True, spacing: Literal[1, 2] = 1) -> dict[str, Any]:
+    """Space between components; `spacing=2` is large, and `divider` draws a line."""
+    return {"type": ComponentType.SEPARATOR, "divider": divider, "spacing": spacing}
+
+
+def container(
+    *components: Mapping[str, Any],
+    accent_color: int | None = None,
+    spoiler: bool = False,
+) -> dict[str, Any]:
+    """A box around rows, texts, sections, galleries, files and separators."""
+    return _present(
+        type=ComponentType.CONTAINER,
+        components=list(components),
+        accent_color=accent_color,
+        spoiler=spoiler,
     )
 
 

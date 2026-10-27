@@ -7,6 +7,7 @@ use sonic_rs::{JsonValueTrait, PointerTree, Value};
 use crate::error::CoreError;
 
 const MAX_COMMAND_BYTES: usize = 4096;
+const IDENTIFY_PREFIX: &[u8] = br#"{"op":2,"d":"#;
 
 static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&["op", "s", "t"]));
 static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&["session_id", "resume_gateway_url"]));
@@ -104,36 +105,35 @@ impl Frame {
 
 pub(crate) struct ReadySession {
     pub(crate) id: String,
-    pub(crate) resume_url: Option<String>,
+    pub(crate) resume_url: String,
 }
 
 pub(crate) fn ready_session(data: &[u8]) -> Option<ReadySession> {
     let fields = sonic_rs::get_many(data, &READY).ok()?;
     let mut fields = fields.iter().map(|field| field.as_ref()?.as_str());
     let id = fields.next().flatten()?.to_owned();
-    let resume_url = fields.next().flatten().map(str::to_owned);
+    let resume_url = fields.next().flatten()?.to_owned();
     Some(ReadySession { id, resume_url })
 }
 
-pub(crate) fn check_identify(payload: &[u8]) -> Result<(), CoreError> {
+pub(crate) fn identify_frame(payload: &[u8]) -> Result<Bytes, CoreError> {
     let value: Value = sonic_rs::from_slice(payload)
         .map_err(|error| invalid("the identify payload", EnvelopeError::from(error)))?;
-    if value.is_object() {
-        Ok(())
-    } else {
-        Err(CoreError::InvalidRequest(
+    if !value.is_object() {
+        return Err(CoreError::InvalidRequest(
             "the identify payload must be a JSON object".to_owned(),
-        ))
+        ));
     }
+    let mut frame = Vec::with_capacity(IDENTIFY_PREFIX.len() + payload.len() + 1);
+    frame.extend_from_slice(IDENTIFY_PREFIX);
+    frame.extend_from_slice(payload);
+    frame.push(b'}');
+    check_size(&frame)?;
+    Ok(Bytes::from(frame))
 }
 
 pub(crate) fn check_command(payload: &[u8]) -> Result<(), CoreError> {
-    if payload.len() > MAX_COMMAND_BYTES {
-        return Err(CoreError::InvalidRequest(format!(
-            "a gateway payload must be at most {MAX_COMMAND_BYTES} bytes, got {}",
-            payload.len()
-        )));
-    }
+    check_size(payload)?;
     let value: Value = sonic_rs::from_slice(payload)
         .map_err(|error| invalid("the gateway payload", EnvelopeError::from(error)))?;
     if !value.is_object() {
@@ -148,6 +148,16 @@ pub(crate) fn check_command(payload: &[u8]) -> Result<(), CoreError> {
         ))),
         Some(_) => Ok(()),
     }
+}
+
+fn check_size(payload: &[u8]) -> Result<(), CoreError> {
+    if payload.len() > MAX_COMMAND_BYTES {
+        return Err(CoreError::InvalidRequest(format!(
+            "a gateway payload must be at most {MAX_COMMAND_BYTES} bytes, got {}",
+            payload.len()
+        )));
+    }
+    Ok(())
 }
 
 fn invalid(what: &str, error: EnvelopeError) -> CoreError {
@@ -284,10 +294,35 @@ pub(crate) mod tests {
         let session = ready_session(data.as_raw_str().as_bytes()).unwrap();
 
         assert_eq!(session.id, "70374e9c7263b9d5e16c4f418ff85dc1");
+        assert_eq!(session.resume_url, "ws://{address}/gateway-resume");
+    }
+
+    #[test]
+    fn a_ready_without_resume_gateway_url_has_no_session() {
+        for data in [
+            r#"{"session_id":"x"}"#,
+            r#"{"session_id":"x","resume_gateway_url":null}"#,
+            r#"{"resume_gateway_url":"wss://gateway.discord.gg"}"#,
+        ] {
+            assert!(ready_session(data.as_bytes()).is_none(), "{data}");
+        }
+    }
+
+    #[test]
+    fn an_identify_fits_in_4096_bytes_once_wrapped_as_op_2() {
+        let identify = |length: usize| format!(r#"{{"token":"{}"}}"#, "x".repeat(length - 12));
+
+        let largest = identify_frame(identify(4083).as_bytes()).unwrap();
+
+        assert_eq!(largest.len(), MAX_COMMAND_BYTES);
         assert_eq!(
-            session.resume_url.as_deref(),
-            Some("ws://{address}/gateway-resume")
+            largest,
+            [IDENTIFY_PREFIX, identify(4083).as_bytes(), b"}"].concat()
         );
+        assert!(matches!(
+            identify_frame(identify(4084).as_bytes()),
+            Err(CoreError::InvalidRequest(_))
+        ));
     }
 
     #[test]
@@ -313,7 +348,7 @@ pub(crate) mod tests {
             );
         }
         assert!(check_command(br#"{"op":4,"d":{"guild_id":"1","channel_id":null}}"#).is_ok());
-        assert!(check_identify(br#"{"token":"t","intents":1}"#).is_ok());
-        assert!(check_identify(b"[]").is_err());
+        assert!(identify_frame(br#"{"token":"t","intents":1}"#).is_ok());
+        assert!(identify_frame(b"[]").is_err());
     }
 }

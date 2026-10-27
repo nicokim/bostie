@@ -532,7 +532,6 @@ def test_commands_come_back_in_discords_shape() -> None:
             "description": "Roll",
             "description_localizations": None,
             "default_member_permissions": None,
-            "dm_permission": True,
             "nsfw": False,
             "integration_types": [0],
             "contexts": [0],

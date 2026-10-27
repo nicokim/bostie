@@ -7,7 +7,6 @@ from lyrecord.models.components import (
     PartialEmoji,
     SelectMenu,
     SelectOption,
-    TextInput,
     UnknownComponent,
     decode_components,
 )
@@ -77,7 +76,6 @@ __all__ = [
     "SelectMenu",
     "SelectOption",
     "StickerItem",
-    "TextInput",
     "ThreadMetadata",
     "UnavailableGuild",
     "UnknownComponent",
