@@ -1,8 +1,8 @@
-<img src="docs/assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
+<img src="assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
 
 # bostie
 
-<img src="docs/assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
+<img src="assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
 
 A Discord library for Python with a Rust core, built around voice that keeps working.
 
@@ -77,7 +77,6 @@ Everything bostie does not model yet stays reachable: `bot.http.request("GET", "
 | `crates/bostie-core` | Rust core: async runtime, networking, protocol. No Python dependency. |
 | `crates/bostie-native` | Thin PyO3 bindings exposing the core as `bostie._native`. |
 | `python/bostie` | The public Python API. |
-| `docs/research` | The research behind the design, including benchmarks against other libraries. |
 
 ## License
 

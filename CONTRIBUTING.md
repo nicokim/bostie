@@ -52,4 +52,4 @@ The sync is a bulk overwrite, so it replaces every guild command the application
 
 ## Design
 
-`docs/research/00-RESUMEN.md` describes the architecture and the reasons behind it (in Spanish for now). The numbered reports next to it hold the details.
+The design notes and research will be published in the project wiki.

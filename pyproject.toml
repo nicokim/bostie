@@ -44,18 +44,31 @@ cache-keys = [
 
 [tool.ruff]
 src = ["python"]
-extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
 
+[tool.ruff.lint.per-file-ignores]
+"benches/harness/bot_runner.py" = ["E402"]
+
 [tool.mypy]
 strict = true
-files = ["python/bostie", "tests", "benches"]
+files = ["python/bostie", "tests", "benches", "benches/harness.py"]
 
 [[tool.mypy.overrides]]
-module = "pyperf"
+module = [
+    "compression.*",
+    "discord.*",
+    "interactions.*",
+    "orjson",
+    "pyperf",
+    "uvloop",
+]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bot_runner"
+disallow_untyped_defs = false
 
 [tool.pytest]
 testpaths = ["tests"]
