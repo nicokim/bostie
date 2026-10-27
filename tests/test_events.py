@@ -6,9 +6,9 @@ from typing import Any
 import msgspec
 import pytest
 
-from lyrecord import events
-from lyrecord.enums import ApplicationFlags
-from lyrecord.events import (
+from bostie import events
+from bostie.enums import ApplicationFlags
+from bostie.events import (
     EVENTS,
     ChannelUpdate,
     Event,
@@ -29,9 +29,9 @@ from lyrecord.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from lyrecord.models import Builder, Guild, Member, Model
-from lyrecord.models.base import decode as decode_model
-from lyrecord.models.base import decoder
+from bostie.models import Builder, Guild, Member, Model
+from bostie.models.base import decode as decode_model
+from bostie.models.base import decoder
 
 EVENT_FIXTURES = Path(__file__).parent / "fixtures" / "models" / "events"
 MODELLED = sorted(
@@ -39,7 +39,7 @@ MODELLED = sorted(
 )
 
 
-TOKEN = "lyrecord-test-token-7c1f"
+TOKEN = "bostie-test-token-7c1f"
 
 
 def subclasses(base: type) -> Iterator[type]:
@@ -119,7 +119,7 @@ def test_guild_create_decodes_the_header_and_children_once(
 
     assert len(decoded) == 1
     assert type(event.guild) is Guild
-    assert event.guild.name == "lyrecord test"
+    assert event.guild.name == "bostie test"
     assert event.guild.member_count == 4
     assert event.guild.system_channel_id == 1335173295636611073
     assert event.guild.raw is None
@@ -135,7 +135,7 @@ def test_guild_create_decodes_the_header_and_children_once(
     assert [thread.name for thread in event.threads] == ["release-notes-0.1"]
     assert [role.name for role in event.roles] == [
         "@everyone",
-        "lyrecord-test",
+        "bostie-test",
         "Moderator",
         "Admin",
     ]
@@ -152,7 +152,7 @@ def test_guild_create_members_and_presences_decode_on_access() -> None:
         "Ada",
         "Grace H.",
         "linus",
-        "lyrecord-test",
+        "bostie-test",
     ]
     assert members[0].roles == (1335174050611331073,)
     assert [presence["status"] for presence in event.presences] == [

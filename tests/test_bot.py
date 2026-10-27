@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 import pytest
 from fakediscord import FakeDiscord, payloads
 
-from lyrecord import (
+from bostie import (
     AutocompleteContext,
     Bot,
     CommandSyncError,
@@ -36,8 +36,8 @@ from lyrecord import (
     Router,
     ui,
 )
-from lyrecord.context import ResponseState
-from lyrecord.events import (
+from bostie.context import ResponseState
+from bostie.events import (
     ChannelUpdate,
     GuildCreate,
     InteractionCreate,
@@ -47,7 +47,7 @@ from lyrecord.events import (
     RawEvent,
     Ready,
 )
-from lyrecord.gateway import GatewayClient
+from bostie.gateway import GatewayClient
 
 type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
 
@@ -594,7 +594,7 @@ def test_close_during_startup_makes_start_return() -> None:
     run(scenario)
 
 
-def test_raw_listeners_receive_events_lyrecord_does_not_model() -> None:
+def test_raw_listeners_receive_events_bostie_does_not_model() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
         named: asyncio.Queue[RawEvent] = asyncio.Queue()
@@ -686,7 +686,7 @@ def test_wait_until_ready_raises_once_the_bot_stops_before_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        monkeypatch.delenv("LYRECORD_TOKEN", raising=False)
+        monkeypatch.delenv("BOSTIE_TOKEN", raising=False)
         bot = Bot(api_url=fake.api_url)
         failures: list[tuple[str | None, type[Exception]]] = [
             (None, ValueError),
@@ -778,11 +778,11 @@ def test_start_resolves_the_token_and_raises_fatal_errors(
         bot = Bot(api_url=fake.api_url)
         with pytest.raises(RuntimeError, match="started"):
             _ = bot.http
-        monkeypatch.delenv("LYRECORD_TOKEN", raising=False)
-        with pytest.raises(ValueError, match="LYRECORD_TOKEN"):
+        monkeypatch.delenv("BOSTIE_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="BOSTIE_TOKEN"):
             await bot.start()
 
-        monkeypatch.setenv("LYRECORD_TOKEN", f"Bot {fake.token}")
+        monkeypatch.setenv("BOSTIE_TOKEN", f"Bot {fake.token}")
         started = asyncio.create_task(bot.start())
         await fake.next_identify()
         await fake.close_gateway(4014)
@@ -1162,7 +1162,7 @@ def test_a_zstd_compressed_gateway_delivers_events() -> None:
 def test_a_failing_dispatch_is_logged_once_and_the_next_event_arrives(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger="lyrecord.bot")
+    caplog.set_level(logging.DEBUG, logger="bostie.bot")
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)

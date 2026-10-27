@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Annotated, Any
 
-from lyrecord import (
+from bostie import (
     AutocompleteContext,
     Bot,
     Choice,
@@ -15,9 +15,9 @@ from lyrecord import (
     Range,
     ui,
 )
-from lyrecord.events import Ready, Resumed
+from bostie.events import Ready, Resumed
 
-VARIABLES = ("LYRECORD_TOKEN", "LYRECORD_LIVE_GUILD", "LYRECORD_LIVE_CHANNEL")
+VARIABLES = ("BOSTIE_TOKEN", "BOSTIE_LIVE_GUILD", "BOSTIE_LIVE_CHANNEL")
 HUMAN_TIMEOUT = 120
 GATEWAY_TIMEOUT = 30
 FLAVORS = {
@@ -57,18 +57,18 @@ def check_bot(guild_id: int, seen: dict[str, asyncio.Future[Any]]) -> Bot:
             if value.lower() in name.lower()
         ]
 
-    @bot.on_component("lyrecord-check:{count:int}")
+    @bot.on_component("bostie-check:{count:int}")
     async def clicked(ctx: ComponentContext, count: int) -> None:
         await ctx.update(components=[ui.text(f"Button route works ({count}).")])
         settle(seen["button"], count)
 
-    @bot.command(name="lyrecord-check")
+    @bot.command(name="bostie-check")
     async def check(
         ctx: Context,
         flavor: Annotated[str, Option(autocomplete=flavors)],
         count: Annotated[Range[int, 1, 10], "How many scoops"] = 3,
     ) -> None:
-        """Run the lyrecord live check."""
+        """Run the bostie live check."""
         button = ui.button("Click me", custom_id=clicked.id(count=count))
         await ctx.respond(components=[ui.text(f"{count} x {flavor}"), ui.row(button)])
         settle(seen["command"], (flavor, count))
@@ -93,7 +93,7 @@ async def connect(bot: Bot, token: str) -> "asyncio.Task[None]":
 
 async def live_check(token: str, guild_id: int, channel_id: int) -> None:
     sync_log = SyncLog()
-    logging.getLogger("lyrecord.sync").addHandler(sync_log)
+    logging.getLogger("bostie.sync").addHandler(sync_log)
     loop = asyncio.get_running_loop()
     seen = {name: loop.create_future() for name in ("command", "button")}
     bot = check_bot(guild_id, seen)
@@ -106,12 +106,12 @@ async def live_check(token: str, guild_id: int, channel_id: int) -> None:
     started = await connect(bot, token)
     scope = f"(guild {guild_id})"
     report(
-        "sync /lyrecord-check",
+        "sync /bostie-check",
         any(scope in message for message in sync_log.messages),
     )
 
     print(
-        f"\nIn the test guild, within {HUMAN_TIMEOUT} s: type /lyrecord-check, pick a "
+        f"\nIn the test guild, within {HUMAN_TIMEOUT} s: type /bostie-check, pick a "
         "flavor from the suggestions, send the command, then click its button.\n",
         flush=True,
     )
@@ -139,8 +139,8 @@ async def live_check(token: str, guild_id: int, channel_id: int) -> None:
 
     message = await bot.send_message(
         channel_id,
-        components=[ui.text("lyrecord live check"), ui.file("check.txt")],
-        files=[File("check.txt", b"lyrecord")],
+        components=[ui.text("bostie live check"), ui.file("check.txt")],
+        files=[File("check.txt", b"bostie")],
     )
     report(
         "send a Components V2 message with a file",
@@ -167,9 +167,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     asyncio.run(
         live_check(
-            os.environ["LYRECORD_TOKEN"],
-            int(os.environ["LYRECORD_LIVE_GUILD"]),
-            int(os.environ["LYRECORD_LIVE_CHANNEL"]),
+            os.environ["BOSTIE_TOKEN"],
+            int(os.environ["BOSTIE_LIVE_GUILD"]),
+            int(os.environ["BOSTIE_LIVE_CHANNEL"]),
         )
     )
     sys.exit(0 if all(results) else 1)

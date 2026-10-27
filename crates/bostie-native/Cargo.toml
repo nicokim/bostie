@@ -1,0 +1,20 @@
+[package]
+name = "bostie-native"
+description = "Python bindings for bostie-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+bostie-core.workspace = true
+mimalloc.workspace = true
+pyo3.workspace = true
+
+[lints]
+workspace = true

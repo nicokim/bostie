@@ -1,6 +1,6 @@
 {
   "id": "1335172792320131073",
-  "name": "lyrecord test",
+  "name": "bostie test",
   "icon": "a_76234f24e0623918dff4acc355171052",
   "description": null,
   "splash": null,
@@ -59,7 +59,7 @@
     },
     {
       "id": "1335180342067331073",
-      "name": "lyrecord-test",
+      "name": "bostie-test",
       "description": null,
       "colors": {
         "primary_color": 0,
@@ -169,7 +169,7 @@
       "name": "general",
       "position": 0,
       "parent_id": "1335173043978371073",
-      "topic": "Talk about lyrecord",
+      "topic": "Talk about bostie",
       "nsfw": false,
       "rate_limit_per_user": 0,
       "last_message_id": "1564608351436931073",
@@ -221,7 +221,7 @@
       "name": "help-forum",
       "position": 2,
       "parent_id": "1335173043978371073",
-      "topic": "Ask for help with lyrecord",
+      "topic": "Ask for help with bostie",
       "nsfw": false,
       "rate_limit_per_user": 0,
       "last_message_id": "1563570261196931073",
@@ -409,7 +409,7 @@
     {
       "user": {
         "id": "1329027298099331073",
-        "username": "lyrecord-test",
+        "username": "bostie-test",
         "global_name": null,
         "discriminator": "4821",
         "avatar": "5c124ba11265959c2963ff22abc5ee5e",
@@ -477,7 +477,7 @@
           "type": 0,
           "application_id": "661720242585731081",
           "details": "Editing gateway.rs",
-          "state": "Workspace: lyrecord",
+          "state": "Workspace: bostie",
           "timestamps": {
             "start": 1793093400000
           },

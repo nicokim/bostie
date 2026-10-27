@@ -9,8 +9,8 @@ import pytest
 from fakediscord import FakeDiscord, Part
 from fakediscord.server import ROUTE_LIMIT
 
-from lyrecord._bridge import Bridge, GatewayDelivery
-from lyrecord.errors import (
+from bostie._bridge import Bridge, GatewayDelivery
+from bostie.errors import (
     BadRequest,
     Forbidden,
     HTTPException,
@@ -19,8 +19,8 @@ from lyrecord.errors import (
     RateLimited,
     ServerError,
 )
-from lyrecord.file import File
-from lyrecord.http import HTTPClient
+from bostie.file import File
+from bostie.http import HTTPClient
 
 MESSAGES = "/channels/{channel_id}/messages"
 
@@ -116,7 +116,7 @@ def test_error_statuses_raise_with_discords_code_message_and_errors(
 
 
 @pytest.mark.parametrize("scope", ["shared", "global"])
-def test_a_rate_limit_longer_than_lyrecord_waits_raises_rate_limited(
+def test_a_rate_limit_longer_than_bostie_waits_raises_rate_limited(
     scope: Literal["shared", "global"],
 ) -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:

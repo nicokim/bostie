@@ -1,13 +1,13 @@
 {
   "id": "1329027298099331073",
-  "name": "lyrecord-test",
+  "name": "bostie-test",
   "icon": "d80f73500b8ea324255ef85752f868d4",
-  "description": "Test application for lyrecord fixtures",
+  "description": "Test application for bostie fixtures",
   "bot_public": true,
   "bot_require_code_grant": false,
   "bot": {
     "id": "1329027298099331073",
-    "username": "lyrecord-test",
+    "username": "bostie-test",
     "global_name": null,
     "discriminator": "4821",
     "avatar": "5c124ba11265959c2963ff22abc5ee5e",

@@ -3,7 +3,7 @@ requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
 
 [project]
-name = "lyrecord"
+name = "bostie"
 description = "Discord library for Python with a Rust core, built around reliable voice"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -30,8 +30,8 @@ dev = [
 
 [tool.maturin]
 python-source = "python"
-module-name = "lyrecord._native"
-manifest-path = "crates/lyrecord-native/Cargo.toml"
+module-name = "bostie._native"
+manifest-path = "crates/bostie-native/Cargo.toml"
 
 [tool.uv]
 cache-keys = [
@@ -51,7 +51,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
 
 [tool.mypy]
 strict = true
-files = ["python/lyrecord", "tests", "benches"]
+files = ["python/bostie", "tests", "benches"]
 
 [[tool.mypy.overrides]]
 module = "pyperf"

@@ -4,8 +4,8 @@ from typing import Any
 import msgspec
 import pytest
 
-from lyrecord.cache import Cache
-from lyrecord.events import EVENTS, Event
+from bostie.cache import Cache
+from bostie.events import EVENTS, Event
 
 EVENT_FIXTURES = Path(__file__).parent / "fixtures" / "models" / "events"
 GUILD = 1335172792320131073
@@ -41,16 +41,16 @@ def test_guild_create_fills_guild_channels_threads_and_roles(cache: Cache) -> No
     guild = cache.guild(GUILD)
 
     assert cache.user is not None
-    assert cache.user.username == "lyrecord-test"
+    assert cache.user.username == "bostie-test"
     assert guild is not None
-    assert guild.name == "lyrecord test"
+    assert guild.name == "bostie test"
     assert cache.guilds() == [guild]
     assert len(cache.guild_channels(GUILD)) == 6
     assert all(channel.guild_id == GUILD for channel in cache.guild_channels(GUILD))
     assert cache.channel(RELEASE_NOTES_THREAD) is not None
     assert [role.name for role in cache.guild_roles(GUILD)] == [
         "@everyone",
-        "lyrecord-test",
+        "bostie-test",
         "Moderator",
         "Admin",
     ]
@@ -81,7 +81,7 @@ def test_an_unavailable_guild_create_never_replaces_the_cached_header(
 
     guild = cache.guild(GUILD)
     assert guild is not None
-    assert guild.name == "lyrecord test"
+    assert guild.name == "bostie test"
     assert guild.unavailable is True
     assert len(cache.guild_channels(GUILD)) == 6
 
@@ -102,7 +102,7 @@ def test_guild_update_replaces_the_header_and_keeps_the_member_count(
 
     guild = cache.guild(GUILD)
     assert guild is not None
-    assert guild.description == "Fixture guild for lyrecord"
+    assert guild.description == "Fixture guild for bostie"
     assert guild.verification_level == 2
     assert guild.member_count == 4
 

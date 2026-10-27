@@ -6,16 +6,16 @@ from typing import Annotated, Any, ClassVar, Literal
 
 import pytest
 
-from lyrecord.commands import (
+from bostie.commands import (
     Choice,
     Command,
     Option,
     Range,
     autocomplete_choices,
 )
-from lyrecord.enums import Permissions
-from lyrecord.errors import CommandDefinitionError, OptionConversionError
-from lyrecord.router import Router
+from bostie.enums import Permissions
+from bostie.errors import CommandDefinitionError, OptionConversionError
+from bostie.router import Router
 
 
 @dataclass
@@ -238,7 +238,7 @@ def test_command_name_and_description_come_from_the_function() -> None:
         More text that Discord never sees.
         """
 
-    @router.command(name="lyrecord-check", description="Explicit")
+    @router.command(name="bostie-check", description="Explicit")
     async def check(ctx: object) -> None:
         """Ignored."""
 
@@ -247,7 +247,7 @@ def test_command_name_and_description_come_from_the_function() -> None:
         pass
 
     assert (roll.name, roll.description) == ("roll", "Roll some dice.")
-    assert (check.name, check.description) == ("lyrecord-check", "Explicit")
+    assert (check.name, check.description) == ("bostie-check", "Explicit")
     assert bare.description == "\N{HORIZONTAL ELLIPSIS}"
 
 

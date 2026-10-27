@@ -3,7 +3,7 @@ from enum import IntFlag
 import msgspec
 import pytest
 
-from lyrecord.enums import (
+from bostie.enums import (
     ApplicationFlags,
     ButtonStyle,
     ChannelFlags,
@@ -19,7 +19,7 @@ from lyrecord.enums import (
     OptionType,
     Permissions,
 )
-from lyrecord.models import Application, Member, Message, decode
+from bostie.models import Application, Member, Message, decode
 
 
 class Channel(msgspec.Struct):

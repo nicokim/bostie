@@ -6,9 +6,9 @@ from typing import get_args
 
 import pytest
 
-from lyrecord import ui
-from lyrecord.custom_id import ComponentRoute
-from lyrecord.router import Router
+from bostie import ui
+from bostie.custom_id import ComponentRoute
+from bostie.router import Router
 
 
 async def handler(ctx: object, **params: object) -> None:

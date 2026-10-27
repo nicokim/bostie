@@ -141,7 +141,7 @@
     "type": 1,
     "name": "search",
     "name_localizations": null,
-    "description": "Search the lyrecord docs",
+    "description": "Search the bostie docs",
     "description_localizations": null,
     "contexts": [
       0
@@ -231,7 +231,7 @@
     "type": 4,
     "name": "launch",
     "name_localizations": null,
-    "description": "Launch lyrecord test",
+    "description": "Launch bostie test",
     "description_localizations": null,
     "contexts": [
       0,

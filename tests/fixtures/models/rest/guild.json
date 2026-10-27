@@ -1,6 +1,6 @@
 {
   "id": "1335172792320131073",
-  "name": "lyrecord test",
+  "name": "bostie test",
   "icon": "a_76234f24e0623918dff4acc355171052",
   "description": null,
   "splash": null,
@@ -61,7 +61,7 @@
     },
     {
       "id": "1335180342067331073",
-      "name": "lyrecord-test",
+      "name": "bostie-test",
       "description": null,
       "colors": {
         "primary_color": 0,

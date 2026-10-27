@@ -9,11 +9,11 @@ from typing import Annotated, Any, ClassVar
 
 import pytest
 
-from lyrecord.commands import Choice, Command, Group, Option, Range
-from lyrecord.enums import Permissions
-from lyrecord.errors import BadRequest, CommandSyncError
-from lyrecord.router import Router
-from lyrecord.sync import SyncResult, sync_commands
+from bostie.commands import Choice, Command, Group, Option, Range
+from bostie.enums import Permissions
+from bostie.errors import BadRequest, CommandSyncError
+from bostie.router import Router
+from bostie.sync import SyncResult, sync_commands
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models" / "rest"
 REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_text())
@@ -86,7 +86,7 @@ async def search(
         Option(choices=[Choice("Five", 5), Choice("Ten", 10)]),
     ] = None,
 ) -> None:
-    """Search the lyrecord docs"""
+    """Search the bostie docs"""
 
 
 COMMANDS: list[Command | Group] = [kit, search]

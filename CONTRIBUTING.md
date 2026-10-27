@@ -7,7 +7,7 @@ You need [Rust](https://rustup.rs) and [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync          # builds the Rust extension and installs dev tools
 uv run pytest    # Python tests (rebuilds the extension when Rust files change)
-cargo test -p lyrecord-core
+cargo test -p bostie-core
 ```
 
 ## Before opening a pull request
@@ -18,7 +18,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 uv run ruff format
 uv run ruff check
 uv run mypy
-uv run python -m mypy.stubtest lyrecord._native --allowlist stubtest-allowlist.txt
+uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
 ```
 
 CI runs the same commands, plus the test suite on Linux, macOS and Windows.
@@ -31,18 +31,18 @@ CI runs the same commands, plus the test suite on Linux, macOS and Windows.
 2. Turn on Developer Mode in Discord to copy the server and channel ids, then run:
 
    ```sh
-   LYRECORD_TOKEN=... LYRECORD_LIVE_GUILD=<server id> LYRECORD_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
+   BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
    ```
 
-3. When the script asks, within 120 s: type `/lyrecord-check`, pick a suggested flavor, send the command and click its button.
+3. When the script asks, within 120 s: type `/bostie-check`, pick a suggested flavor, send the command and click its button.
 
-Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/lyrecord-check` as a guild command in the test server and leaves it there.
+Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/bostie-check` as a guild command in the test server and leaves it there.
 
 ## Style
 
 - Write code that explains itself through names and structure. Don't add comments.
 - Public Python API may have a short docstring when the name and signature are not enough. One line is usually right.
-- `lyrecord-core` never depends on PyO3 and never calls into Python. Python-facing glue lives in `lyrecord-native` and `python/lyrecord`.
+- `bostie-core` never depends on PyO3 and never calls into Python. Python-facing glue lives in `bostie-native` and `python/bostie`.
 - No `unsafe`. No `unwrap`, `expect`, `panic!` or slice indexing outside tests; clippy enforces this because a panic on a background thread is invisible to Python users.
 - Discord payloads are decoded leniently: never reject unknown fields or enum values.
 - Use the latest release of every dependency. Performance claims need a benchmark.

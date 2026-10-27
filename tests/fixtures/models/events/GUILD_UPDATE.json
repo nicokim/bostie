@@ -1,8 +1,8 @@
 {
   "id": "1335172792320131073",
-  "name": "lyrecord test",
+  "name": "bostie test",
   "icon": "a_76234f24e0623918dff4acc355171052",
-  "description": "Fixture guild for lyrecord",
+  "description": "Fixture guild for bostie",
   "splash": null,
   "discovery_splash": null,
   "banner": "f35cb0d25791c6751ee4d765f55c727b",
@@ -59,7 +59,7 @@
     },
     {
       "id": "1335180342067331073",
-      "name": "lyrecord-test",
+      "name": "bostie-test",
       "description": null,
       "colors": {
         "primary_color": 0,

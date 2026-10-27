@@ -9,15 +9,15 @@ import msgspec
 import pytest
 from fakediscord import FakeDiscord, payloads
 
-from lyrecord._bridge import Bridge, GatewayDelivery, StatusDelivery
-from lyrecord.errors import (
+from bostie._bridge import Bridge, GatewayDelivery, StatusDelivery
+from bostie.errors import (
     GatewayClosed,
     InvalidToken,
     PrivilegedIntentsRequired,
     ShardingRequired,
     TransportError,
 )
-from lyrecord.gateway import GatewayClient
+from bostie.gateway import GatewayClient
 
 type Scenario = Callable[["Harness"], Coroutine[Any, Any, None]]
 
@@ -92,8 +92,8 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
             "intents": 513,
             "properties": {
                 "os": sys.platform,
-                "browser": "lyrecord",
-                "device": "lyrecord",
+                "browser": "bostie",
+                "device": "bostie",
             },
             "shard": [0, 1],
             "presence": {"status": "idle"},
@@ -143,7 +143,7 @@ def test_start_on_a_bridge_that_is_not_running_starts_no_shard() -> None:
 def test_close_ends_start_even_when_the_close_is_not_echoed_in_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("lyrecord.gateway.CLOSE_TIMEOUT", 0)
+    monkeypatch.setattr("bostie.gateway.CLOSE_TIMEOUT", 0)
 
     async def scenario(harness: Harness) -> None:
         started = await harness.ready()
@@ -186,7 +186,7 @@ def test_the_filter_drops_dispatches_nobody_listens_to() -> None:
 def test_a_dropped_connection_resumes_and_replays_missed_events(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="lyrecord.gateway")
+    caplog.set_level(logging.INFO, logger="bostie.gateway")
 
     async def scenario(harness: Harness) -> None:
         fake = harness.fake
@@ -267,7 +267,7 @@ def test_closing_the_bridge_fails_start_and_drops_the_connection() -> None:
     run(scenario)
 
 
-def test_close_code_4002_resumes_and_is_reported_as_a_lyrecord_bug(
+def test_close_code_4002_resumes_and_is_reported_as_a_bostie_bug(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(harness: Harness) -> None:
@@ -280,7 +280,7 @@ def test_close_code_4002_resumes_and_is_reported_as_a_lyrecord_bug(
 
     run(scenario)
 
-    hints = [record for record in caplog.records if "lyrecord bug" in record.message]
+    hints = [record for record in caplog.records if "bostie bug" in record.message]
     assert [record.levelno for record in hints] == [logging.WARNING]
     assert "close code 4002 (decode error)" in hints[0].message
 
@@ -297,7 +297,7 @@ def test_close_code_4002_resumes_and_is_reported_as_a_lyrecord_bug(
 def test_status_deliveries_are_logged_at_their_level(
     caplog: pytest.LogCaptureFixture, delivery: StatusDelivery, level: int
 ) -> None:
-    caplog.set_level(logging.INFO, logger="lyrecord.gateway")
+    caplog.set_level(logging.INFO, logger="bostie.gateway")
     bridge = Bridge(
         "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
     )

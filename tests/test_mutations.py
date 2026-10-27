@@ -8,16 +8,16 @@ from typing import Any
 import msgspec
 import pytest
 
-from lyrecord import events
-from lyrecord.enums import DiscordIntEnum, Permissions
-from lyrecord.events import (
+from bostie import events
+from bostie.enums import DiscordIntEnum, Permissions
+from bostie.events import (
     EVENTS,
     GuildCreate,
     InteractionCreate,
     MessageCreate,
     decode_event,
 )
-from lyrecord.models import (
+from bostie.models import (
     ActionRow,
     Application,
     Channel,
@@ -169,7 +169,7 @@ def delete(container: dict[str, Any], key: str) -> None:
 def test_unknown_keys_at_every_level_are_ignored(path: Path, decoder: Decoder) -> None:
     document = load(path)
     for value in list(objects(document)):
-        value["lyrecord_future_field"] = {"nested": [1, {"deeper": None}]}
+        value["bostie_future_field"] = {"nested": [1, {"deeper": None}]}
 
     decode_all(decoder, document)
 
@@ -251,7 +251,7 @@ def test_a_dispatch_with_a_changed_field_type_is_skipped_with_one_warning(
     document["mentions"] = "everyone"
     changed = msgspec.json.encode(document)
 
-    with caplog.at_level(logging.DEBUG, logger="lyrecord.events"):
+    with caplog.at_level(logging.DEBUG, logger="bostie.events"):
         skipped = [decode_event(MessageCreate, 0, changed) for _ in range(3)]
         delivered = decode_event(MessageCreate, 0, valid)
 

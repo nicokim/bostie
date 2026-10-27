@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from lyrecord import _native
-from lyrecord._bridge import Bridge, GatewayDelivery
-from lyrecord.errors import (
+from bostie import _native
+from bostie._bridge import Bridge, GatewayDelivery
+from bostie.errors import (
+    BostieError,
     InvalidToken,
-    LyrecordError,
     RequestBudgetExhausted,
     TransportError,
 )
@@ -337,7 +337,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
 
     run(main())
 
-    failures = [record for record in caplog.records if record.name == "lyrecord.bridge"]
+    failures = [record for record in caplog.records if record.name == "bostie.bridge"]
     assert [record.levelno for record in failures] == [logging.ERROR] * 2
     assert all(record.exc_info is not None for record in failures)
 
@@ -374,14 +374,14 @@ def test_close_propagates_the_callers_cancellation() -> None:
         ("transport", TransportError),
         ("invalid_token", InvalidToken),
         ("request_budget", RequestBudgetExhausted),
-        ("bug", LyrecordError),
+        ("bug", BostieError),
     ],
 )
 def test_failure_kinds_map_to_their_exceptions(
     run: Runner,
     monkeypatch: pytest.MonkeyPatch,
     kind: "_native.FailureKind",
-    error_type: type[LyrecordError],
+    error_type: type[BostieError],
 ) -> None:
     async def main() -> None:
         server, url = await serve(reply_hello)
@@ -425,7 +425,7 @@ def test_process_exits_cleanly_with_requests_in_flight() -> None:
     script = textwrap.dedent(
         """
         import asyncio, os, socket
-        from lyrecord._bridge import Bridge
+        from bostie._bridge import Bridge
 
         ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
 

@@ -2,8 +2,8 @@ from typing import Any, ClassVar
 
 import pytest
 
-from lyrecord.errors import CommandDefinitionError
-from lyrecord.router import Listener, Router
+from bostie.errors import CommandDefinitionError
+from bostie.router import Listener, Router
 
 
 class MessageCreate:

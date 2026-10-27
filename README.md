@@ -1,4 +1,8 @@
-# lyrecord
+<img src="docs/assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
+
+# bostie
+
+<img src="docs/assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
 
 A Discord library for Python with a Rust core, built around voice that keeps working.
 
@@ -6,8 +10,8 @@ A Discord library for Python with a Rust core, built around voice that keeps wor
 
 ## Goals
 
-- **Voice first.** Discord requires end-to-end encrypted voice (DAVE) since March 2026, and most Python libraries still struggle with it, especially when receiving audio. lyrecord will run the whole voice path in Rust, outside the GIL, so audio timing never depends on what your Python code is doing.
-- **Survives Discord changes.** Models will be tolerant: unknown fields, enum values and components never break decoding, every object keeps its raw payload, and raw escape hatches reach new events and endpoints before lyrecord models them.
+- **Voice first.** Discord requires end-to-end encrypted voice (DAVE) since March 2026, and most Python libraries still struggle with it, especially when receiving audio. bostie will run the whole voice path in Rust, outside the GIL, so audio timing never depends on what your Python code is doing.
+- **Survives Discord changes.** Models will be tolerant: unknown fields, enum values and components never break decoding, every object keeps its raw payload, and raw escape hatches reach new events and endpoints before bostie models them.
 - **Fast.** The gateway, compression, HTTP and rate limiting run in Rust; Python decodes raw JSON into compact `msgspec` models. Every performance claim comes with a benchmark against other libraries.
 
 ## Example
@@ -16,11 +20,11 @@ A Discord library for Python with a Rust core, built around voice that keeps wor
 from enum import Enum
 from typing import Annotated, Literal
 
-import lyrecord
-from lyrecord import ComponentContext, Context, Range, ui
-from lyrecord.events import MessageCreate
+import bostie
+from bostie import ComponentContext, Context, Range, ui
+from bostie.events import MessageCreate
 
-bot = lyrecord.Bot(dev_guilds=[123456789012345678])
+bot = bostie.Bot(dev_guilds=[123456789012345678])
 
 
 class Unit(Enum):
@@ -62,19 +66,21 @@ async def wave_back(event: MessageCreate) -> None:
 bot.run()
 ```
 
-`bot.run()` reads the token from `LYRECORD_TOKEN`. Commands sync on startup only when they changed, and a handler that has not answered after 2.5 s is deferred for you. Messages use Components V2: `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and lyrecord sets the `IS_COMPONENTS_V2` flag for you. The listener needs no privileged intent: mentions always arrive, and a message that mentions the bot carries its content too. Options come from the type hints; choices come from a `Literal` of strings or ints, an `Enum`, or `Option(choices=...)`. Button custom ids are typed templates, so they survive restarts.
+`bot.run()` reads the token from `BOSTIE_TOKEN`. Commands sync on startup only when they changed, and a handler that has not answered after 2.5 s is deferred for you. Messages use Components V2: `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you. The listener needs no privileged intent: mentions always arrive, and a message that mentions the bot carries its content too. Options come from the type hints; choices come from a `Literal` of strings or ints, an `Enum`, or `Option(choices=...)`. Button custom ids are typed templates, so they survive restarts.
 
-Everything lyrecord does not model yet stays reachable: `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint, `bot.gateway.send(op=..., d=...)` sends any opcode, and `@bot.listen_raw("EVENT_NAME")` receives any dispatch. Split a bot across modules with `lyrecord.Router()` and `bot.include(router)`.
+Everything bostie does not model yet stays reachable: `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint, `bot.gateway.send(op=..., d=...)` sends any opcode, and `@bot.listen_raw("EVENT_NAME")` receives any dispatch. Split a bot across modules with `bostie.Router()` and `bot.include(router)`.
 
 ## Layout
 
 | Path | What lives there |
 |---|---|
-| `crates/lyrecord-core` | Rust core: async runtime, networking, protocol. No Python dependency. |
-| `crates/lyrecord-native` | Thin PyO3 bindings exposing the core as `lyrecord._native`. |
-| `python/lyrecord` | The public Python API. |
+| `crates/bostie-core` | Rust core: async runtime, networking, protocol. No Python dependency. |
+| `crates/bostie-native` | Thin PyO3 bindings exposing the core as `bostie._native`. |
+| `python/bostie` | The public Python API. |
 | `docs/research` | The research behind the design, including benchmarks against other libraries. |
 
 ## License
 
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
+
+bostie is not affiliated with Discord Inc.

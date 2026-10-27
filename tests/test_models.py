@@ -5,8 +5,8 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from lyrecord import ui
-from lyrecord.enums import (
+from bostie import ui
+from bostie.enums import (
     ButtonStyle,
     ChannelType,
     ComponentType,
@@ -15,8 +15,8 @@ from lyrecord.enums import (
     OptionType,
     Permissions,
 )
-from lyrecord.file import File
-from lyrecord.models import (
+from bostie.file import File
+from bostie.models import (
     ActionRow,
     AllowedMentions,
     Application,
@@ -134,7 +134,7 @@ def test_components_decode_known_types_and_keep_unknown_ones() -> None:
     assert close.style is ButtonStyle.DANGER
     assert close.custom_id == "ticket:close:42"
     assert isinstance(docs, Button)
-    assert docs.url == "https://lyrecord.dev/docs"
+    assert docs.url == "https://bostie.dev/docs"
     assert isinstance(selects, ActionRow)
     (select,) = selects.components
     assert isinstance(select, SelectMenu)
@@ -353,7 +353,7 @@ def test_build_message_never_writes_raw_payloads() -> None:
         allowed_mentions=AllowedMentions(users=(820774541721731073,)),
     )
 
-    assert b"__lyrecord_raw__" not in msgspec.json.encode(body)
+    assert b"__bostie_raw__" not in msgspec.json.encode(body)
 
 
 def test_build_message_keeps_listed_attachments_before_new_files() -> None:

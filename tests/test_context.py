@@ -8,7 +8,7 @@ from typing import Any
 import msgspec
 import pytest
 
-from lyrecord.context import (
+from bostie.context import (
     CALLBACK_ROUTE,
     FOLLOWUP_ROUTE,
     ORIGINAL_ROUTE,
@@ -17,15 +17,15 @@ from lyrecord.context import (
     Context,
     ResponseState,
 )
-from lyrecord.enums import MessageFlags
-from lyrecord.errors import (
+from bostie.enums import MessageFlags
+from bostie.errors import (
     HTTPException,
     InteractionExpired,
     InteractionResponded,
     NotFound,
 )
-from lyrecord.file import File
-from lyrecord.models import AllowedMentions, Interaction, decode
+from bostie.file import File
+from bostie.models import AllowedMentions, Interaction, decode
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
 CALLBACK_BODY = (FIXTURES / "rest" / "interaction_callback.json").read_bytes()
@@ -280,7 +280,7 @@ def test_an_ephemeral_flag_that_cannot_apply_logs_one_warning(
     async def scenario(http: RecordingHTTP) -> None:
         ctx = context(Context, http)
         await ctx.defer()
-        with caplog.at_level(logging.WARNING, logger="lyrecord.context"):
+        with caplog.at_level(logging.WARNING, logger="bostie.context"):
             await ctx.respond("hi", ephemeral=True)
             await ctx.edit("again", ephemeral=True)
 
@@ -322,7 +322,7 @@ def test_files_are_sent_with_their_attachments() -> None:
 
 
 def test_autocomplete_answers_once_with_choices() -> None:
-    choices = [{"name": "lyrecord", "value": "lyrecord"}]
+    choices = [{"name": "bostie", "value": "bostie"}]
 
     async def scenario(http: RecordingHTTP) -> None:
         ctx = context(AutocompleteContext, http)

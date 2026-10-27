@@ -4,7 +4,7 @@
   "channel_id": "1335173295636611073",
   "author": {
     "id": "1329027298099331073",
-    "username": "lyrecord-test",
+    "username": "bostie-test",
     "global_name": null,
     "discriminator": "4821",
     "avatar": "5c124ba11265959c2963ff22abc5ee5e",
@@ -82,8 +82,8 @@
   "embeds": [
     {
       "type": "rich",
-      "url": "https://lyrecord.dev/changelog/0.1.0",
-      "title": "lyrecord 0.1.0",
+      "url": "https://bostie.dev/changelog/0.1.0",
+      "title": "bostie 0.1.0",
       "description": "Text MVP: gateway, REST, slash commands and components.",
       "color": 5793266,
       "timestamp": "2026-10-27T11:59:00+00:00",
@@ -105,19 +105,19 @@
         }
       ],
       "author": {
-        "name": "lyrecord",
-        "url": "https://lyrecord.dev",
-        "icon_url": "https://lyrecord.dev/icon.png",
-        "proxy_icon_url": "https://images-ext-1.discordapp.net/external/m3Xk0Qp9yH2vT6aN1cR8sLwE4fJ7gD5bU0iZ_oKq3Ys/https/lyrecord.dev/icon.png"
+        "name": "bostie",
+        "url": "https://bostie.dev",
+        "icon_url": "https://bostie.dev/icon.png",
+        "proxy_icon_url": "https://images-ext-1.discordapp.net/external/m3Xk0Qp9yH2vT6aN1cR8sLwE4fJ7gD5bU0iZ_oKq3Ys/https/bostie.dev/icon.png"
       },
       "footer": {
         "text": "fixtures",
-        "icon_url": "https://lyrecord.dev/footer.png",
-        "proxy_icon_url": "https://images-ext-1.discordapp.net/external/Qw8rT2yU4iO6pA1sD3fG5hJ7kL9zX0cV2bN4mQ6wE8r/https/lyrecord.dev/footer.png"
+        "icon_url": "https://bostie.dev/footer.png",
+        "proxy_icon_url": "https://images-ext-1.discordapp.net/external/Qw8rT2yU4iO6pA1sD3fG5hJ7kL9zX0cV2bN4mQ6wE8r/https/bostie.dev/footer.png"
       },
       "image": {
-        "url": "https://lyrecord.dev/banner.png",
-        "proxy_url": "https://images-ext-1.discordapp.net/external/Zx1Cv2Bn3Mm4Ll5Kk6Jj7Hh8Gg9Ff0Dd1Ss2Aa3Qq4W/https/lyrecord.dev/banner.png",
+        "url": "https://bostie.dev/banner.png",
+        "proxy_url": "https://images-ext-1.discordapp.net/external/Zx1Cv2Bn3Mm4Ll5Kk6Jj7Hh8Gg9Ff0Dd1Ss2Aa3Qq4W/https/bostie.dev/banner.png",
         "width": 1200,
         "height": 400,
         "content_type": "image/png",
@@ -126,8 +126,8 @@
         "flags": 0
       },
       "thumbnail": {
-        "url": "https://lyrecord.dev/spin.gif",
-        "proxy_url": "https://images-ext-1.discordapp.net/external/Pp0Oo9Ii8Uu7Yy6Tt5Rr4Ee3Ww2Qq1Aa0Ss9Dd8Ff7G/https/lyrecord.dev/spin.gif",
+        "url": "https://bostie.dev/spin.gif",
+        "proxy_url": "https://images-ext-1.discordapp.net/external/Pp0Oo9Ii8Uu7Yy6Tt5Rr4Ee3Ww2Qq1Aa0Ss9Dd8Ff7G/https/bostie.dev/spin.gif",
         "width": 128,
         "height": 128,
         "content_type": "image/gif",
@@ -139,12 +139,12 @@
     {
       "type": "video",
       "url": "https://www.youtube.com/watch?v=lYr3c0rdT3s",
-      "title": "lyrecord in 60 seconds",
-      "description": "A short tour of the lyrecord API.",
+      "title": "bostie in 60 seconds",
+      "description": "A short tour of the bostie API.",
       "color": 16711680,
       "author": {
-        "name": "lyrecord",
-        "url": "https://www.youtube.com/@lyrecord"
+        "name": "bostie",
+        "url": "https://www.youtube.com/@bostie"
       },
       "provider": {
         "name": "YouTube",
@@ -188,7 +188,7 @@
           "id": 3,
           "style": 5,
           "label": "Docs",
-          "url": "https://lyrecord.dev/docs"
+          "url": "https://bostie.dev/docs"
         }
       ]
     },
@@ -317,7 +317,7 @@
       "clan": null,
       "primary_guild": null
     },
-    "content": "hello lyrecord",
+    "content": "hello bostie",
     "timestamp": "2026-10-27T12:00:00.123000+00:00",
     "edited_timestamp": null,
     "tts": false,
