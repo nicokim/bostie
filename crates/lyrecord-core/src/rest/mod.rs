@@ -3,6 +3,7 @@ mod ratelimit;
 mod request;
 
 use std::ops::ControlFlow;
+use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -11,7 +12,7 @@ use bytes::Bytes;
 use parking_lot::Mutex;
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use reqwest::{Method, StatusCode, Url};
-use twilight_http_ratelimiting::{Permit, RateLimiter};
+use twilight_http_ratelimiting::{Bucket, Permit, RateLimiter};
 
 pub use self::request::RestRequest;
 
@@ -31,7 +32,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const GLOBAL_LIMIT: u16 = 50;
+#[cfg(not(test))]
 const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const MAX_RETRY_WAIT: Duration = Duration::from_secs(1);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const FAILURE_RETRIES: u32 = 2;
 #[cfg(not(test))]
@@ -105,6 +109,9 @@ impl Rest {
                     };
                 }
             };
+            if let Some(failure) = self.refusal(ticket, &request) {
+                return failure;
+            }
             match self
                 .attempt(ticket, &request, url.clone(), permit, &mut retries)
                 .await
@@ -139,23 +146,22 @@ impl Rest {
         if request.class == RouteClass::Interaction {
             return Ok(None);
         }
-        let permit = self
-            .limiter
-            .acquire_if(request.endpoint.clone(), |bucket| {
-                bucket.is_none_or(|bucket| {
-                    bucket.remaining > 0
-                        || bucket.reset_at.saturating_duration_since(Instant::now())
-                            <= MAX_RETRY_WAIT
-                })
-            })
-            .await;
-        if permit.is_some() {
-            return Ok(permit);
+        let mut acquire = pin!(self.limiter.acquire_if(request.endpoint.clone(), |bucket| {
+            bucket.is_none_or(within_reach)
+        }));
+        loop {
+            let refused = match tokio::time::timeout(MAX_RETRY_WAIT, acquire.as_mut()).await {
+                Ok(Some(permit)) => return Ok(Some(permit)),
+                Ok(None) => true,
+                Err(_) => false,
+            };
+            let bucket = self.limiter.bucket(request.endpoint.clone()).await;
+            if refused || bucket.is_some_and(|bucket| !within_reach(bucket)) {
+                return Err(bucket.map_or(Duration::ZERO, |bucket| {
+                    bucket.reset_at.saturating_duration_since(Instant::now())
+                }));
+            }
         }
-        let bucket = self.limiter.bucket(request.endpoint.clone()).await;
-        Err(bucket.map_or(Duration::ZERO, |bucket| {
-            bucket.reset_at.saturating_duration_since(Instant::now())
-        }))
     }
 
     async fn attempt(
@@ -182,24 +188,21 @@ impl Rest {
         };
         let status = response.status();
         let limits = ResponseLimits::parse(status, response.headers(), Instant::now());
+        self.observe(request.class, status, limits.limited);
         if let Some(permit) = permit {
             permit.complete(limits.bucket);
         }
-        let body = match response.bytes().await {
-            Ok(body) => body,
-            Err(error) => return after_transport_error(ticket, request, error, retries),
-        };
-        self.observe(request.class, status, limits.limited);
-        match retries.after_response(&request.method, status, limits.limited) {
-            Some(wait) => {
-                tracing::debug!(route = %request.endpoint.path, %status, ?wait, "retrying");
-                ControlFlow::Continue(wait)
-            }
-            None => ControlFlow::Break(Delivery::Response {
+        if let Some(wait) = retries.after_response(&request.method, status, limits.limited) {
+            tracing::debug!(route = %request.endpoint.path, %status, ?wait, "retrying");
+            return ControlFlow::Continue(wait);
+        }
+        match response.bytes().await {
+            Ok(body) => ControlFlow::Break(Delivery::Response {
                 ticket,
                 status: status.as_u16(),
                 body,
             }),
+            Err(error) => after_transport_error(ticket, request, error, retries),
         }
     }
 
@@ -225,6 +228,11 @@ impl Rest {
             }
         }
     }
+}
+
+fn within_reach(bucket: Bucket) -> bool {
+    bucket.remaining > 0
+        || bucket.reset_at.saturating_duration_since(Instant::now()) <= MAX_RETRY_WAIT
 }
 
 fn after_transport_error(
@@ -390,6 +398,7 @@ mod tests {
                 .write_all(scripted.as_bytes())
                 .await
                 .is_err()
+                || scripted.contains("Connection: close")
             {
                 return;
             }
@@ -753,10 +762,11 @@ mod tests {
         }
         let waited = arrivals["/api/v10/channels/2/messages/20"] - first;
         assert!(waited >= Duration::from_millis(500), "{waited:?}");
+        assert_eq!(invalid_count(&rest), 1);
     }
 
     #[tokio::test]
-    async fn a_long_shared_rate_limit_is_delivered_and_holds_back_its_route() {
+    async fn a_long_shared_rate_limit_is_delivered_to_queued_and_later_requests_on_its_route() {
         crate::init_test_tracing();
         let shared = too_many(&[
             ("Retry-After", "120"),
@@ -769,40 +779,109 @@ mod tests {
         let mut server = Server::start(vec![shared]).await;
         let (rest, _receiver) = rest(&server.url);
 
-        let (first_code, _) = status(rest.execute(Ticket::from(1), message("1", "10")).await);
-        let (held_code, held_body) =
-            status(rest.execute(Ticket::from(1), message("1", "20")).await);
+        let (first, queued) = timeout(PATIENCE, async {
+            tokio::join!(
+                rest.execute(Ticket::from(1), message("1", "10")),
+                rest.execute(Ticket::from(2), message("1", "20")),
+            )
+        })
+        .await
+        .unwrap();
+        let later = rest.execute(Ticket::from(3), message("1", "30")).await;
 
-        assert_eq!((first_code, held_code), (429, 429));
-        let held: sonic_rs::Value = sonic_rs::from_slice(&held_body).unwrap();
-        let retry_after = held.get("retry_after").as_f64().unwrap();
-        assert!((100.0..=120.0).contains(&retry_after), "{retry_after}");
-        assert_eq!(held.get("global").as_bool(), Some(false));
+        assert_eq!(status(first).0, 429);
+        for held_back in [queued, later] {
+            let (code, body) = status(held_back);
+            let held: sonic_rs::Value = sonic_rs::from_slice(&body).unwrap();
+            let retry_after = held.get("retry_after").as_f64().unwrap();
+            assert_eq!(code, 429);
+            assert!((100.0..=120.0).contains(&retry_after), "{retry_after}");
+            assert_eq!(held.get("global").as_bool(), Some(false));
+        }
         assert_eq!(server.received(), 1);
     }
 
     #[tokio::test]
-    async fn a_rejected_token_stops_bot_requests_but_not_interactions() {
+    async fn a_rate_limit_whose_body_breaks_off_is_still_counted_and_retried() {
+        crate::init_test_tracing();
+        let truncated = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0.1\r\nX-RateLimit-Scope: user\r\nConnection: close\r\nContent-Length: 100\r\n\r\n{}";
+        let mut server = Server::start(vec![truncated.to_owned()]).await;
+        let (rest, _receiver) = rest(&server.url);
+        let post = request(
+            "POST",
+            "/channels/{channel_id}/messages",
+            &[("channel_id", "1")],
+        );
+
+        let (code, _) = status(rest.execute(Ticket::from(1), post).await);
+
+        assert_eq!((code, server.received()), (200, 2));
+        assert_eq!(invalid_count(&rest), 1);
+    }
+
+    #[tokio::test]
+    async fn a_rejected_token_stops_queued_and_later_bot_requests_but_not_interactions() {
         crate::init_test_tracing();
         let mut server = Server::start(vec![reply("401 Unauthorized", &[], "{}")]).await;
         let (rest, _receiver) = rest(&server.url);
 
-        let (rejected, _) = status(rest.execute(Ticket::from(1), me()).await);
-        let refused = rest.execute(Ticket::from(1), me()).await;
-        let (interaction, _) = status(rest.execute(Ticket::from(1), callback()).await);
+        let (rejected, queued) = tokio::join!(
+            rest.execute(Ticket::from(1), me()),
+            rest.execute(Ticket::from(2), me()),
+        );
+        let later = rest.execute(Ticket::from(3), me()).await;
+        let (interaction, _) = status(rest.execute(Ticket::from(4), callback()).await);
 
-        assert_eq!((rejected, interaction), (401, 200));
+        assert_eq!((status(rejected).0, interaction), (401, 200));
+        for refused in [queued, later] {
+            assert!(
+                matches!(
+                    refused,
+                    Delivery::Failure {
+                        kind: FailureKind::InvalidToken,
+                        ..
+                    }
+                ),
+                "{refused:?}"
+            );
+        }
+        assert_eq!(server.received(), 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_requests_warn_at_a_threshold_and_stop_every_request_at_the_hard_limit() {
+        crate::init_test_tracing();
+        let mut server = Server::start(vec![reply("403 Forbidden", &[], "{}")]).await;
+        let (rest, _receiver) = rest(&server.url);
+        let now = Instant::now();
+        let record = |times| {
+            let mut invalid = rest.invalid.lock();
+            for _ in 0..times {
+                invalid.record(now);
+            }
+        };
+        record(999);
+
+        let (forbidden, _) = status(rest.execute(Ticket::from(1), me()).await);
+        record(8_500);
+        let refused = rest.execute(Ticket::from(2), callback()).await;
+
+        assert_eq!(forbidden, 403);
+        assert!(matches!(
+            rest.inbox.drain().as_slice(),
+            [Delivery::InvalidRequests { count: 1_000 }]
+        ));
         assert!(
             matches!(
                 refused,
                 Delivery::Failure {
-                    kind: FailureKind::InvalidToken,
+                    kind: FailureKind::RequestBudget,
                     ..
                 }
             ),
             "{refused:?}"
         );
-        assert_eq!(server.received(), 2);
+        assert_eq!(server.received(), 1);
     }
 
     #[tokio::test]

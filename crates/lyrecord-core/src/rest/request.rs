@@ -71,6 +71,11 @@ impl RestRequest {
             let value = params.get(name).ok_or_else(|| {
                 CoreError::InvalidRequest(format!("route {route:?} needs the param {name:?}"))
             })?;
+            if matches!(value.as_str(), "" | "." | "..") || value.contains(['\t', '\n', '\r']) {
+                return Err(CoreError::InvalidRequest(format!(
+                    "the param {name:?} cannot be the path segment {value:?}"
+                )));
+            }
             segments.push(value.clone());
             key.push(if MAJOR_PARAMS.contains(&name) {
                 value
@@ -229,6 +234,11 @@ mod tests {
             ("GET", "/channels/{Channel}", &[("Channel", "1")]),
             ("GET", "/channels/{}", &[]),
             ("GET", "/channels/x{channel_id}", &[("channel_id", "1")]),
+            ("GET", "/channels/{channel_id}", &[("channel_id", "")]),
+            ("GET", "/channels/{channel_id}", &[("channel_id", ".")]),
+            ("GET", "/channels/{channel_id}", &[("channel_id", "..")]),
+            ("GET", "/channels/{channel_id}", &[("channel_id", ".\t.")]),
+            ("GET", "/channels/{channel_id}", &[("channel_id", "1\n2")]),
         ] {
             let error = parse(method, route, params).unwrap_err();
             assert!(
