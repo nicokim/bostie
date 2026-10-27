@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use futures_util::FutureExt;
 use parking_lot::Mutex;
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use reqwest::{Method, StatusCode, Url};
@@ -109,6 +110,10 @@ impl Rest {
                     };
                 }
             };
+            if request.class == RouteClass::Bot && self.gate.wait().now_or_never().is_none() {
+                drop(permit);
+                continue;
+            }
             if let Some(failure) = self.refusal(ticket, &request) {
                 return failure;
             }
@@ -763,6 +768,30 @@ mod tests {
         let waited = arrivals["/api/v10/channels/2/messages/20"] - first;
         assert!(waited >= Duration::from_millis(500), "{waited:?}");
         assert_eq!(invalid_count(&rest), 1);
+    }
+
+    #[tokio::test]
+    async fn a_global_rate_limit_holds_back_requests_already_queued_on_its_route() {
+        crate::init_test_tracing();
+        let global = too_many(&[
+            ("Retry-After", "0.5"),
+            ("X-RateLimit-Global", "true"),
+            ("X-RateLimit-Scope", "global"),
+        ]);
+        let mut server = Server::start(vec![global]).await;
+        let (rest, _receiver) = rest(&server.url);
+
+        let (limited, queued) = tokio::join!(
+            rest.execute(Ticket::from(1), me()),
+            rest.execute(Ticket::from(2), me()),
+        );
+
+        assert_eq!((status(limited).0, status(queued).0), (200, 200));
+        let first = server.next().await.at;
+        for _ in 0..2 {
+            let waited = server.next().await.at - first;
+            assert!(waited >= Duration::from_millis(500), "{waited:?}");
+        }
     }
 
     #[tokio::test]

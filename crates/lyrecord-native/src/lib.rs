@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+use std::time::Duration;
+
 use lyrecord_core::{
-    Core, CoreError, Delivery, FailureKind, HttpRequest, RawBellHandle, Ticket, describe,
+    Core, CoreError, Delivery, FailureKind, IdentifyLimit, RawBellHandle, RestRequest, ShardId,
+    Ticket, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
@@ -16,22 +20,76 @@ struct NativeCore(Core);
 #[pymethods]
 impl NativeCore {
     #[staticmethod]
-    #[expect(unused_variables)]
     fn create(token: &str, api_url: &str) -> PyResult<(Self, RawBellHandle)> {
-        let (core, bell) = Core::new().map_err(to_python_error)?;
+        let (core, bell) = Core::new(token, api_url).map_err(to_python_error)?;
         Ok((Self(core), bell.into_raw()))
     }
 
-    fn submit_http(
+    #[pyo3(signature = (method, route, params, query, body=None, content_type=None, reason=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn request(
         &self,
         method: &str,
-        url: &str,
-        headers: Vec<(String, String)>,
+        route: &str,
+        params: HashMap<String, String>,
+        query: Vec<(String, String)>,
         body: Option<Vec<u8>>,
+        content_type: Option<String>,
+        reason: Option<String>,
     ) -> PyResult<u64> {
-        let request = HttpRequest::parse(method, url, &headers, body).map_err(to_python_error)?;
-        let ticket = self.0.submit_http(request).map_err(to_python_error)?;
+        let request = RestRequest::parse(method, route, params, query, body, content_type, reason)
+            .map_err(to_python_error)?;
+        let ticket = self.0.request(request).map_err(to_python_error)?;
         Ok(ticket.into())
+    }
+
+    fn gateway_identify_limit(&self, remaining: u32, total: u32, reset_after: f64) -> PyResult<()> {
+        let reset_after = Duration::try_from_secs_f64(reset_after).map_err(|error| {
+            to_python_error(CoreError::InvalidRequest(format!("reset_after: {error}")))
+        })?;
+        self.0
+            .gateway_identify_limit(IdentifyLimit {
+                remaining,
+                total,
+                reset_after,
+            })
+            .map_err(to_python_error)
+    }
+
+    fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> PyResult<()> {
+        self.0
+            .gateway_start(ShardId::from(shard_id), url, identify.into())
+            .map_err(to_python_error)
+    }
+
+    fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> PyResult<()> {
+        self.0
+            .gateway_send(ShardId::from(shard_id), payload.into())
+            .map_err(to_python_error)
+    }
+
+    fn gateway_filter(&self, names: Option<Vec<String>>) -> PyResult<()> {
+        self.0.gateway_filter(names).map_err(to_python_error)
+    }
+
+    fn gateway_reconnect(&self, shard_id: u32) -> PyResult<()> {
+        self.0
+            .gateway_reconnect(ShardId::from(shard_id))
+            .map_err(to_python_error)
+    }
+
+    fn gateway_close(&self, shard_id: u32) -> PyResult<()> {
+        self.0
+            .gateway_close(ShardId::from(shard_id))
+            .map_err(to_python_error)
+    }
+
+    fn gateway_latency(&self, shard_id: u32) -> PyResult<Option<f64>> {
+        let latency = self
+            .0
+            .gateway_latency(ShardId::from(shard_id))
+            .map_err(to_python_error)?;
+        Ok(latency.map(|latency| latency.as_secs_f64()))
     }
 
     fn cancel(&self, ticket: u64) -> PyResult<()> {

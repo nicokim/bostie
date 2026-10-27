@@ -6,10 +6,11 @@ use tokio::task::AbortHandle;
 
 use crate::ids::Ticket;
 use crate::inbox::{Delivery, FailureKind, Inbox};
+use crate::rest::Rest;
 
 pub(crate) struct TaskTable {
     pub(crate) running: HashMap<Ticket, AbortHandle>,
-    pub(crate) http: Option<reqwest::Client>,
+    pub(crate) rest: Option<Arc<Rest>>,
 }
 
 pub(crate) struct PendingTicket {
@@ -55,7 +56,7 @@ mod tests {
             .spawn(std::future::pending::<()>());
         Arc::new(Mutex::new(TaskTable {
             running: HashMap::from([(ticket, task.abort_handle())]),
-            http: None,
+            rest: None,
         }))
     }
 

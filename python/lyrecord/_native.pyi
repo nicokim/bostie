@@ -35,13 +35,6 @@ class Core:
         content_type: str | None = None,
         reason: str | None = None,
     ) -> int: ...
-    def submit_http(
-        self,
-        method: str,
-        url: str,
-        headers: list[tuple[str, str]],
-        body: bytes | None,
-    ) -> int: ...
     def gateway_identify_limit(
         self, remaining: int, total: int, reset_after: float
     ) -> None: ...

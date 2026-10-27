@@ -1,9 +1,10 @@
 import asyncio
+import logging
 import socket
-from collections.abc import Iterable
-from dataclasses import dataclass
+import weakref
+from collections.abc import Callable
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 
 from lyrecord import _native
 from lyrecord.errors import (
@@ -21,19 +22,26 @@ FAILURE_ERRORS = {
     "bug": LyrecordError,
 }
 
+type StatusDelivery = (
+    _native.DisconnectedDelivery
+    | _native.StoppedDelivery
+    | _native.BackpressureDelivery
+    | _native.InvalidRequestsDelivery
+)
+type GatewayDelivery = _native.DispatchDelivery | StatusDelivery
+type OnGateway = Callable[[GatewayDelivery, float], object]
 
-@dataclass(frozen=True, slots=True)
-class HttpResponse:
-    status: int
-    body: bytes
+log = logging.getLogger("lyrecord.bridge")
 
 
 class Bridge:
-    def __init__(self, token: str, api_url: str) -> None:
-        self._core, bell_handle = _native.Core.create(token, api_url)
+    def __init__(self, token: str, api_url: str, on_gateway: OnGateway) -> None:
+        self.core, bell_handle = _native.Core.create(token, api_url)
+        self._on_gateway = on_gateway
         self._bell = socket.socket(fileno=bell_handle)
         self._bell.setblocking(False)
-        self._waiting: dict[int, asyncio.Future[HttpResponse]] = {}
+        self._waiting: dict[int, asyncio.Future[tuple[int, bytes]]] = {}
+        self._futures: weakref.WeakSet[asyncio.Future[Any]] = weakref.WeakSet()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._fallback_pump: asyncio.Task[None] | None = None
         self._stopped = False
@@ -67,29 +75,38 @@ class Bridge:
         if self._fallback_pump is not None:
             await asyncio.wait([self._fallback_pump])
 
-    async def http(
+    async def request(
         self,
         method: str,
-        url: str,
-        *,
-        headers: Iterable[tuple[str, str]] = (),
+        route: str,
+        params: dict[str, str],
+        query: list[tuple[str, str]],
         body: bytes | None = None,
-    ) -> HttpResponse:
+        content_type: str | None = None,
+        reason: str | None = None,
+    ) -> tuple[int, bytes]:
         loop = self._running_loop()
-        ticket = self._core.submit_http(method, url, list(headers), body)
-        future: asyncio.Future[HttpResponse] = loop.create_future()
+        ticket = self.core.request(
+            method, route, params, query, body, content_type, reason
+        )
+        future: asyncio.Future[tuple[int, bytes]] = loop.create_future()
         self._waiting[ticket] = future
         try:
             return await future
         finally:
             if self._waiting.pop(ticket, None) is not None:
-                self._core.cancel(ticket)
+                self.core.cancel(ticket)
+
+    def create_future(self) -> asyncio.Future[Any]:
+        future = self._running_loop().create_future()
+        self._futures.add(future)
+        return future
 
     def _running_loop(self) -> asyncio.AbstractEventLoop:
         loop = asyncio.get_running_loop()
         if self._loop is None:
             raise RuntimeError(
-                "the bridge is not running; use 'async with Bridge(token, api_url)'"
+                "the bridge is not running; use 'async with Bridge(...)'"
             )
         if self._stopped:
             raise RuntimeError("the bridge stopped") from self._failure
@@ -126,17 +143,21 @@ class Bridge:
         self._bell.close()
 
     def _deliver_ready(self) -> None:
-        for delivery in self._core.drain():
-            self._deliver(delivery)
+        deliveries = self.core.drain()
+        received = asyncio.get_running_loop().time()
+        for delivery in deliveries:
+            match delivery:
+                case ("response", ticket, status, body):
+                    self._resolve(ticket, (status, body))
+                case ("failure", ticket, kind, detail):
+                    self._reject(ticket, FAILURE_ERRORS[kind](detail))
+                case _:
+                    try:
+                        self._on_gateway(delivery, received)
+                    except Exception:
+                        log.exception("handling a %r delivery failed", delivery[0])
 
-    def _deliver(self, delivery: "_native.Delivery") -> None:
-        match delivery:
-            case ("response", ticket, status, body):
-                self._resolve(ticket, HttpResponse(status, body))
-            case ("failure", ticket, kind, detail):
-                self._reject(ticket, FAILURE_ERRORS[kind](detail))
-
-    def _resolve(self, ticket: int, response: HttpResponse) -> None:
+    def _resolve(self, ticket: int, response: tuple[int, bytes]) -> None:
         future = self._waiting.pop(ticket, None)
         if future is not None and not future.done():
             future.set_result(response)
@@ -151,14 +172,17 @@ class Bridge:
             return
         self._stopped = True
         self._failure = failure
-        for ticket in list(self._waiting):
-            error = TransportError("the bridge stopped")
-            error.__cause__ = failure
-            self._reject(ticket, error)
+        pending = [*self._waiting.values(), *self._futures]
+        self._waiting.clear()
+        for future in pending:
+            if not future.done():
+                error = TransportError("the bridge stopped")
+                error.__cause__ = failure
+                future.set_exception(error)
         if self._fallback_pump is None:
             if self._loop is not None:
                 self._loop.remove_reader(self._bell)
             self._bell.close()
         elif self._fallback_pump is not asyncio.current_task():
             self._fallback_pump.cancel()
-        self._core.close()
+        self.core.close()

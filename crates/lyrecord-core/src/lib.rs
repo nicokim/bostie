@@ -1,7 +1,6 @@
 mod bell;
 mod error;
 pub mod gateway;
-mod http;
 mod ids;
 pub mod inbox;
 pub mod rest;
@@ -14,21 +13,21 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
-pub use crate::http::HttpRequest;
+pub use crate::gateway::IdentifyLimit;
 pub use crate::ids::{ShardId, Ticket};
 pub use crate::inbox::{Delivery, FailureKind};
+pub use crate::rest::RestRequest;
 
+use crate::gateway::Gateway;
 use crate::inbox::Inbox;
+use crate::rest::Rest;
 use crate::tasks::{PendingTicket, TaskTable};
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_TIMEOUT: Duration = Duration::from_secs(60);
-const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct Core {
     owner: u32,
@@ -36,58 +35,46 @@ pub struct Core {
     runtime: Handle,
     inbox: Arc<Inbox>,
     tasks: Arc<Mutex<TaskTable>>,
+    gateway: Gateway,
 }
 
 impl Core {
-    pub fn new() -> Result<(Self, BellReceiver), CoreError> {
+    pub fn new(token: &str, api_url: &str) -> Result<(Self, BellReceiver), CoreError> {
         let runtime = runtime::shared()?;
         let (bell, receiver) = bell::pair().map_err(CoreError::Bell)?;
-        let http = {
+        let inbox = Arc::new(Inbox::new(bell));
+        let (rest, gateway) = {
             let _context = runtime.enter();
-            reqwest::Client::builder()
-                .connect_timeout(CONNECT_TIMEOUT)
-                .read_timeout(READ_TIMEOUT)
-                .http2_keep_alive_interval(HTTP2_PING_INTERVAL)
-                .http2_keep_alive_while_idle(true)
-                .build()
-                .map_err(CoreError::HttpClient)?
+            (
+                Rest::new(token, api_url, Arc::clone(&inbox))?,
+                Gateway::new(runtime.clone(), Arc::clone(&inbox), token)?,
+            )
         };
         let core = Self {
             owner: process::id(),
             next_ticket: AtomicU64::new(1),
             runtime,
-            inbox: Arc::new(Inbox::new(bell)),
+            inbox,
             tasks: Arc::new(Mutex::new(TaskTable {
                 running: HashMap::new(),
-                http: Some(http),
+                rest: Some(Arc::new(rest)),
             })),
+            gateway,
         };
         Ok((core, receiver))
     }
 
-    pub fn submit_http(&self, request: HttpRequest) -> Result<Ticket, CoreError> {
+    pub fn request(&self, request: RestRequest) -> Result<Ticket, CoreError> {
         self.ensure_same_process()?;
         let ticket = Ticket::from(self.next_ticket.fetch_add(1, Ordering::Relaxed));
 
         let mut table = self.tasks.lock();
-        let Some(client) = table.http.clone() else {
+        let Some(rest) = table.rest.clone() else {
             return Err(CoreError::Closed);
         };
         let pending = PendingTicket::new(ticket, Arc::clone(&self.inbox), Arc::clone(&self.tasks));
         let task = self.runtime.spawn(async move {
-            let delivery = match http::send(&client, request).await {
-                Ok((status, body)) => Delivery::Response {
-                    ticket,
-                    status,
-                    body,
-                },
-                Err(error) => Delivery::Failure {
-                    ticket,
-                    kind: FailureKind::Transport,
-                    detail: describe(&error.without_url()),
-                },
-            };
-            pending.resolve(delivery);
+            pending.resolve(rest.execute(ticket, request).await);
         });
         table.running.insert(ticket, task.abort_handle());
         Ok(ticket)
@@ -99,6 +86,52 @@ impl Core {
             task.abort();
         }
         Ok(())
+    }
+
+    pub fn gateway_identify_limit(&self, limit: IdentifyLimit) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.set_identify_limit(limit);
+        Ok(())
+    }
+
+    pub fn gateway_start(
+        &self,
+        shard: ShardId,
+        url: &str,
+        identify: Bytes,
+    ) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        let table = self.tasks.lock();
+        if table.rest.is_none() {
+            return Err(CoreError::Closed);
+        }
+        self.gateway.start(shard, url, identify)
+    }
+
+    pub fn gateway_send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.send(shard, payload)
+    }
+
+    pub fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.set_filter(names);
+        Ok(())
+    }
+
+    pub fn gateway_reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.reconnect(shard)
+    }
+
+    pub fn gateway_close(&self, shard: ShardId) -> Result<(), CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.close(shard)
+    }
+
+    pub fn gateway_latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
+        self.ensure_same_process()?;
+        self.gateway.latency(shard)
     }
 
     pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {
@@ -119,10 +152,11 @@ impl Core {
 
     fn shut_down(&self) {
         let mut table = self.tasks.lock();
-        table.http = None;
+        table.rest = None;
         for (_, task) in table.running.drain() {
             task.abort();
         }
+        self.gateway.shutdown();
     }
 
     fn ensure_same_process(&self) -> Result<(), CoreError> {
@@ -160,6 +194,8 @@ mod tests {
 
     use super::*;
 
+    const TOKEN: &str = "token";
+
     fn read_request_head(stream: &mut TcpStream) {
         let mut head = Vec::new();
         let mut byte = [0; 1];
@@ -177,7 +213,7 @@ mod tests {
             read_request_head(&mut stream);
             stream.write_all(response).unwrap();
         });
-        format!("http://{address}/")
+        format!("http://{address}/api/v10")
     }
 
     fn serve_silently() -> (String, mpsc::Receiver<()>) {
@@ -191,11 +227,20 @@ mod tests {
             let _ = stream.read_to_end(&mut rest);
             disconnected.send(()).unwrap();
         });
-        (format!("http://{address}/"), on_disconnect)
+        (format!("http://{address}/api/v10"), on_disconnect)
     }
 
-    fn get(url: &str) -> HttpRequest {
-        HttpRequest::parse("GET", url, &[], None).unwrap()
+    fn me() -> RestRequest {
+        RestRequest::parse(
+            "GET",
+            "/users/@me",
+            HashMap::new(),
+            Vec::new(),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     fn wait_for_deliveries(core: &Core, receiver: &BellReceiver) -> Vec<Delivery> {
@@ -210,11 +255,10 @@ mod tests {
     #[test]
     fn delivers_an_http_response() {
         init_test_tracing();
-        let url =
-            serve_once(b"HTTP/1.1 201 Created\r\nX-Test: yes\r\nContent-Length: 5\r\n\r\nhello");
-        let (core, receiver) = Core::new().unwrap();
+        let url = serve_once(b"HTTP/1.1 201 Created\r\nContent-Length: 5\r\n\r\nhello");
+        let (core, receiver) = Core::new(TOKEN, &url).unwrap();
 
-        let ticket = core.submit_http(get(&url)).unwrap();
+        let ticket = core.request(me()).unwrap();
         let deliveries = wait_for_deliveries(&core, &receiver);
 
         let [
@@ -240,10 +284,9 @@ mod tests {
             .unwrap()
             .local_addr()
             .unwrap();
-        let (core, receiver) = Core::new().unwrap();
+        let (core, receiver) = Core::new(TOKEN, &format!("http://{unused_port}")).unwrap();
 
-        core.submit_http(get(&format!("http://{unused_port}/")))
-            .unwrap();
+        core.request(me()).unwrap();
 
         let deliveries = wait_for_deliveries(&core, &receiver);
         assert!(
@@ -259,11 +302,21 @@ mod tests {
     }
 
     #[test]
+    fn rejects_an_api_url_that_is_not_http() {
+        let error = Core::new(TOKEN, "ws://127.0.0.1:1").err();
+
+        assert!(
+            matches!(error, Some(CoreError::InvalidRequest(_))),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn cancel_drops_the_connection_without_a_message() {
         let (url, on_disconnect) = serve_silently();
-        let (core, receiver) = Core::new().unwrap();
+        let (core, receiver) = Core::new(TOKEN, &url).unwrap();
 
-        let ticket = core.submit_http(get(&url)).unwrap();
+        let ticket = core.request(me()).unwrap();
         thread::sleep(Duration::from_millis(100));
         core.cancel(ticket).unwrap();
 
@@ -277,15 +330,20 @@ mod tests {
     #[test]
     fn closed_core_rejects_work_and_aborts_running_tasks() {
         let (url, on_disconnect) = serve_silently();
-        let (core, _receiver) = Core::new().unwrap();
-        core.submit_http(get(&url)).unwrap();
+        let (core, _receiver) = Core::new(TOKEN, &url).unwrap();
+        core.request(me()).unwrap();
         thread::sleep(Duration::from_millis(100));
 
         core.close().unwrap();
 
         on_disconnect.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(matches!(core.request(me()), Err(CoreError::Closed)));
         assert!(matches!(
-            core.submit_http(get(&url)),
+            core.gateway_start(
+                ShardId::from(0),
+                "ws://127.0.0.1:1",
+                Bytes::from_static(b"{}")
+            ),
             Err(CoreError::Closed)
         ));
     }

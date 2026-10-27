@@ -73,7 +73,7 @@ impl RestRequest {
             })?;
             if matches!(value.as_str(), "" | "." | "..") || value.contains(['\t', '\n', '\r']) {
                 return Err(CoreError::InvalidRequest(format!(
-                    "the param {name:?} cannot be the path segment {value:?}"
+                    "the param {name:?} is empty, \".\" or \"..\", or contains a tab, newline or CR"
                 )));
             }
             segments.push(value.clone());
