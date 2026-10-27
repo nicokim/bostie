@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test -p lyrecord-core --locked
+
+  python-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - run: uv sync --locked
+      - run: uv run ruff format --check
+      - run: uv run ruff check
+      - run: uv run mypy
+      - run: uv run python -m mypy.stubtest lyrecord._native --allowlist stubtest-allowlist.txt
+
+  python-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.12", "3.13", "3.14", "3.15", "3.14t", "3.15t"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest
+
+  wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, manylinux: "2_28", smoke: true }
+          - { os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28", smoke: true }
+          - { os: ubuntu-latest, target: x86_64, manylinux: musllinux_1_2 }
+          - { os: ubuntu-24.04-arm, target: aarch64, manylinux: musllinux_1_2 }
+          - { os: macos-latest, target: aarch64, smoke: true }
+          - { os: macos-latest, target: x86_64 }
+          - { os: windows-latest, target: x86_64, smoke: true }
+          - { os: ubuntu-latest, target: x86_64, manylinux: "2_28", interpreters: "-i python3.14t -i python3.15t" }
+          - { os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28", interpreters: "-i python3.14t -i python3.15t" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --profile dist --locked --out dist ${{ matrix.interpreters }}
+      - if: matrix.smoke
+        uses: astral-sh/setup-uv@v10
+      - if: matrix.smoke
+        shell: bash
+        run: uv run --isolated --no-project --python 3.12 --with pytest --with dist/*.whl pytest -p no:cacheprovider
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}${{ matrix.interpreters && '-freethreaded' || '' }}
+          path: dist

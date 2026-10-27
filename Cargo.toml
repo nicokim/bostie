@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["docs"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+lyrecord-core = { path = "crates/lyrecord-core" }
+bytes = "1.12.1"
+mimalloc = { version = "0.1.52", default-features = false, features = ["v2", "local_dynamic_tls"] }
+parking_lot = "0.13.0"
+pyo3 = { version = "=0.30.1", features = ["abi3-py312"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time"] }
+tracing = "0.1.44"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+panic = "unwind"
+
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true
