@@ -23,6 +23,21 @@ uv run python -m mypy.stubtest lyrecord._native --allowlist stubtest-allowlist.t
 
 CI runs the same commands, plus the test suite on Linux, macOS and Windows.
 
+## Live check against real Discord
+
+`tests/live/live_check.py` runs the checks that need real Discord. pytest never collects it and CI never runs it. You need a bot in a test server:
+
+1. In the Discord Developer Portal, create an application with a bot. Invite it to a test server with the `bot` and `applications.commands` scopes, and let it send messages and attach files in one channel.
+2. Turn on Developer Mode in Discord to copy the server and channel ids, then run:
+
+   ```sh
+   LYRECORD_TOKEN=... LYRECORD_LIVE_GUILD=<server id> LYRECORD_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
+   ```
+
+3. When the script asks, within 120 s: type `/lyrecord-check`, pick a suggested flavor, send the command and click its button.
+
+Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/lyrecord-check` as a guild command in the test server and leaves it there.
+
 ## Style
 
 - Write code that explains itself through names and structure. Don't add comments.

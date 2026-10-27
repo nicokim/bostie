@@ -1,11 +1,14 @@
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from lyrecord.commands import Command, Group, Scope, _python_name, _warn
 from lyrecord.enums import CommandType, OptionType
 from lyrecord.errors import BadRequest, CommandSyncError
+
+if TYPE_CHECKING:
+    from lyrecord.http import HTTPClient
 
 log = logging.getLogger("lyrecord.sync")
 
@@ -68,13 +71,14 @@ async def sync_commands(
 
 
 async def _sync_scope(
-    http: Any,
+    http: "HTTPClient",
     application_id: int,
     commands: Sequence[Command | Group],
     guild_id: int | None,
     always_put: bool,
 ) -> SyncResult:
     scope: Scope
+    params: dict[str, Any]
     if guild_id is None:
         scope, route, label = "global", GLOBAL_ROUTE, "global"
         params = {"application_id": application_id}

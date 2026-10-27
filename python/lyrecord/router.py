@@ -214,10 +214,12 @@ class Router:
                 )
         for router in self._chain():
             router.commands[node.name] = node
+            router._registered()
 
     def _add_listener(self, name: str, listener: Listener) -> None:
         for router in self._chain():
             router.listeners.setdefault(name, []).append(listener)
+            router._registered()
 
     def _add_route(self, route: ComponentRoute[...]) -> None:
         for router in self._chain():
@@ -227,6 +229,10 @@ class Router:
                 )
         for router in self._chain():
             router.component_routes[route.template] = route
+            router._registered()
+
+    def _registered(self) -> None:
+        pass
 
 
 def _annotated_events(listener: Callable[..., object]) -> tuple[Any, ...]:

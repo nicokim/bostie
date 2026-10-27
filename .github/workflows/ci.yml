@@ -93,7 +93,7 @@ jobs:
         uses: astral-sh/setup-uv@v10
       - if: matrix.smoke
         shell: bash
-        run: uv run --isolated --no-project --python 3.12 --with pytest --with dist/*.whl pytest -p no:cacheprovider
+        run: uv run --isolated --no-project --python 3.12 --with pytest --with aiohttp --with dist/*.whl pytest -p no:cacheprovider
       - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}${{ matrix.interpreters && '-freethreaded' || '' }}

@@ -3,7 +3,7 @@ import logging
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 
@@ -24,6 +24,10 @@ from lyrecord.models import (
     decode,
 )
 from lyrecord.models.base import decoder
+
+if TYPE_CHECKING:
+    from lyrecord.bot import Bot
+    from lyrecord.http import HTTPClient
 
 logger = logging.getLogger("lyrecord.context")
 
@@ -69,10 +73,10 @@ class _InteractionContext:
         allowed_mentions: AllowedMentions | None,
     ) -> None:
         self.interaction = interaction
-        self.bot = bot
+        self.bot: Bot = bot
         self.received = received
         self.state = ResponseState.PENDING
-        self._http = http
+        self._http: HTTPClient = http
         self._ephemeral = ephemeral
         self._auto_defer = auto_defer
         self._allowed_mentions = allowed_mentions
