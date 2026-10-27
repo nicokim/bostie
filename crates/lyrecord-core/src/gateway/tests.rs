@@ -20,7 +20,7 @@ use super::{Gateway, IdentifyLimit};
 use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
 use crate::ids::ShardId;
-use crate::inbox::{Delivery, Inbox};
+use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery, Inbox};
 
 const TOKEN: &str = "test-token";
 const SESSION_ID: &str = "70374e9c7263b9d5e16c4f418ff85dc1";
@@ -654,11 +654,17 @@ async fn a_slow_consumer_pauses_reading_without_losing_events() {
     assert!(heartbeats >= 3, "{heartbeats} heartbeats while paused");
 
     let first = harness.inbox.drain();
-    let backpressure = first
+    let backpressure: Vec<_> = first
         .iter()
-        .filter(|delivery| matches!(delivery, Delivery::Backpressure { .. }))
-        .count();
-    assert_eq!(backpressure, 1, "{first:?}");
+        .filter_map(|delivery| match delivery {
+            Delivery::Backpressure { queued_bytes, .. } => Some(*queued_bytes),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        matches!(backpressure.as_slice(), [queued] if *queued >= DISPATCH_BYTES_LIMIT),
+        "{backpressure:?}"
+    );
     harness.received.extend(first);
     let mut seqs = Vec::new();
     while seqs.len() < 13 {

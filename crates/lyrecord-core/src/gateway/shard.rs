@@ -1,8 +1,6 @@
 use std::ops::RangeInclusive;
-use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::task::{Context, Waker};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -23,7 +21,7 @@ use super::inflate::Inflater;
 use super::limiter::SendLimiter;
 use crate::error::describe;
 use crate::ids::ShardId;
-use crate::inbox::{Delivery, Inbox};
+use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery};
 
 #[cfg(not(test))]
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -472,14 +470,15 @@ impl Shard {
     }
 
     fn forward(&mut self, connection: &mut Connection, held: Held) {
-        if has_room(&self.shared.inbox) {
+        let queued_bytes = self.shared.inbox.queued_bytes();
+        if queued_bytes < DISPATCH_BYTES_LIMIT {
             self.deliver(connection, held);
             return;
         }
         debug!(shard = %self.id, seq = held.seq, "pausing until the inbox has room");
         self.push(Delivery::Backpressure {
             shard: self.id,
-            queued_bytes: held.forward.data.len(),
+            queued_bytes,
         });
         if let Some(heartbeat) = &mut connection.heartbeat {
             heartbeat.paused = true;
@@ -619,10 +618,4 @@ async fn connect(url: &Url, connector: &Connector) -> Result<Socket, String> {
         .await
         .map_err(|error| describe(&error))?;
     Ok(socket)
-}
-
-fn has_room(inbox: &Inbox) -> bool {
-    pin!(inbox.wait_for_room())
-        .poll(&mut Context::from_waker(Waker::noop()))
-        .is_ready()
 }

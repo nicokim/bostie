@@ -9,9 +9,9 @@ use crate::bell::Bell;
 use crate::ids::{ShardId, Ticket};
 
 #[cfg(not(test))]
-const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
+pub(crate) const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
 #[cfg(test)]
-const DISPATCH_BYTES_LIMIT: usize = 64 * 1024;
+pub(crate) const DISPATCH_BYTES_LIMIT: usize = 64 * 1024;
 
 #[derive(Debug)]
 pub enum Delivery {
@@ -115,6 +115,10 @@ impl Inbox {
         };
         self.room.notify_waiters();
         deliveries
+    }
+
+    pub(crate) fn queued_bytes(&self) -> usize {
+        self.state.lock().dispatch_bytes
     }
 
     pub async fn wait_for_room(&self) {
