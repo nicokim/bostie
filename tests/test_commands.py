@@ -1,0 +1,714 @@
+import inspect
+import re
+from dataclasses import dataclass, field
+from enum import Enum, IntEnum
+from typing import Annotated, Any, ClassVar, Literal
+
+import pytest
+
+from lyrecord.commands import (
+    Choice,
+    Command,
+    Option,
+    Range,
+    autocomplete_choices,
+)
+from lyrecord.enums import Permissions
+from lyrecord.errors import CommandDefinitionError, OptionConversionError
+from lyrecord.router import Router
+
+
+@dataclass
+class Resolved:
+    users: dict[int, "User"] = field(default_factory=dict)
+    members: dict[int, "Member"] = field(default_factory=dict)
+    roles: dict[int, "Role"] = field(default_factory=dict)
+    channels: dict[int, "Channel"] = field(default_factory=dict)
+    attachments: dict[int, "Attachment"] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class User:
+    __option_type__: ClassVar[int] = 6
+    id: int
+
+    @classmethod
+    def from_resolved(cls, resolved: Resolved, id: int) -> "User | None":
+        return resolved.users.get(id)
+
+
+@dataclass(frozen=True)
+class Member:
+    __option_type__: ClassVar[int] = 6
+    id: int
+
+    @classmethod
+    def from_resolved(cls, resolved: Resolved, id: int) -> "Member | None":
+        return resolved.members.get(id)
+
+
+@dataclass(frozen=True)
+class Role:
+    __option_type__: ClassVar[int] = 8
+    id: int
+
+    @classmethod
+    def from_resolved(cls, resolved: Resolved, id: int) -> "Role | None":
+        return resolved.roles.get(id)
+
+
+@dataclass(frozen=True)
+class Channel:
+    __option_type__: ClassVar[int] = 7
+    id: int
+
+    @classmethod
+    def from_resolved(cls, resolved: Resolved, id: int) -> "Channel | None":
+        return resolved.channels.get(id)
+
+
+@dataclass(frozen=True)
+class Attachment:
+    __option_type__: ClassVar[int] = 11
+    id: int
+
+    @classmethod
+    def from_resolved(cls, resolved: Resolved, id: int) -> "Attachment | None":
+        return resolved.attachments.get(id)
+
+
+@dataclass(frozen=True)
+class Given:
+    name: str
+    type: int
+    value: str | int | float | bool
+
+
+class Unit(Enum):
+    METRIC = "metric"
+    IMPERIAL = "imperial"
+
+
+class Size(IntEnum):
+    SMALL = 1
+    LARGE = 2
+
+
+async def suggest(ctx: object, value: object) -> list[str]:
+    return []
+
+
+def command_with(hint: object, default: object = inspect.Parameter.empty) -> Command:
+    async def handler(ctx: object, value: Any) -> None:
+        pass
+
+    handler.__annotations__ = {"value": hint}
+    if default is not inspect.Parameter.empty:
+        handler.__defaults__ = (default,)
+    return Router().command(handler)
+
+
+def only_option(command: Command) -> dict[str, Any]:
+    (option,) = command.payload("guild")["options"]
+    return dict(option)
+
+
+def option(type: int, **fields: object) -> dict[str, object]:
+    return {
+        "type": type,
+        "name": "value",
+        "description": "\N{HORIZONTAL ELLIPSIS}",
+        "required": True,
+    } | fields
+
+
+@pytest.mark.parametrize(
+    ("hint", "expected"),
+    [
+        (str, option(3)),
+        (int, option(4)),
+        (float, option(10)),
+        (bool, option(5)),
+        (User, option(6)),
+        (Member, option(6)),
+        (Role, option(8)),
+        (Channel, option(7)),
+        (Attachment, option(11)),
+        (User | Role, option(9)),
+        (Member | Role, option(9)),
+        (
+            Literal["a", "b"],
+            option(
+                3, choices=[{"name": "a", "value": "a"}, {"name": "b", "value": "b"}]
+            ),
+        ),
+        (
+            Literal[1, 2],
+            option(4, choices=[{"name": "1", "value": 1}, {"name": "2", "value": 2}]),
+        ),
+        (
+            Literal[0.5, 1.5],
+            option(
+                10,
+                choices=[{"name": "0.5", "value": 0.5}, {"name": "1.5", "value": 1.5}],
+            ),
+        ),
+        (
+            Unit,
+            option(
+                3,
+                choices=[
+                    {"name": "METRIC", "value": "metric"},
+                    {"name": "IMPERIAL", "value": "imperial"},
+                ],
+            ),
+        ),
+        (
+            Size,
+            option(
+                4,
+                choices=[{"name": "SMALL", "value": 1}, {"name": "LARGE", "value": 2}],
+            ),
+        ),
+        (Range[int, 1, 5], option(4, min_value=1, max_value=5)),
+        (Range[float, 0.5, None], option(10, min_value=0.5)),
+        (Range[str, 2, 10], option(3, min_length=2, max_length=10)),
+        (int | None, option(4, required=False)),
+        (Annotated[int, "How many"], option(4, description="How many")),
+        (Annotated[str, Option(autocomplete=suggest)], option(3, autocomplete=True)),
+        (
+            Annotated[Channel, Option(channel_types=[0, 2])],
+            option(7, channel_types=[0, 2]),
+        ),
+        (
+            Annotated[int, Option(choices=[Choice("Five", 5), 10])],
+            option(
+                4,
+                choices=[{"name": "Five", "value": 5}, {"name": "10", "value": 10}],
+            ),
+        ),
+        (
+            Annotated[int, Option(extra={"min_value": 3, "future": True})],
+            option(4, min_value=3, future=True),
+        ),
+    ],
+)
+def test_hint_becomes_option_json(hint: object, expected: dict[str, object]) -> None:
+    assert only_option(command_with(hint)) == expected
+
+
+def test_a_default_makes_the_option_optional() -> None:
+    assert only_option(command_with(int, 6))["required"] is False
+
+
+def test_required_options_come_first_in_declaration_order() -> None:
+    router = Router()
+
+    @router.command
+    async def roll(
+        ctx: object, a: int = 1, *, b: str, c: bool | None, d: float
+    ) -> None:
+        pass
+
+    names = [option["name"] for option in roll.payload("guild")["options"]]
+    assert names == ["b", "d", "a", "c"]
+
+
+def test_option_settings_win_over_range_and_name() -> None:
+    hint = Annotated[Range[int, 1, 10], Option(name="dice", min=2)]
+
+    assert only_option(command_with(hint)) == option(
+        4, name="dice", min_value=2, max_value=10
+    )
+
+
+def test_annotated_text_wins_over_option_description() -> None:
+    hint = Annotated[int, Option(description="from option"), "from text"]
+
+    assert only_option(command_with(hint))["description"] == "from text"
+
+
+def test_command_name_and_description_come_from_the_function() -> None:
+    router = Router()
+
+    @router.command
+    async def roll(ctx: object) -> None:
+        """Roll some dice.
+
+        More text that Discord never sees.
+        """
+
+    @router.command(name="lyrecord-check", description="Explicit")
+    async def check(ctx: object) -> None:
+        """Ignored."""
+
+    @router.command
+    async def bare(ctx: object) -> None:
+        pass
+
+    assert (roll.name, roll.description) == ("roll", "Roll some dice.")
+    assert (check.name, check.description) == ("lyrecord-check", "Explicit")
+    assert bare.description == "\N{HORIZONTAL ELLIPSIS}"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "roll",
+        "a-b_c9",
+        "\N{MODIFIER LETTER APOSTROPHE}ok",
+        "नमस्ते",
+        "สวัสดี",
+        "ß",
+        "x" * 32,
+    ],
+)
+def test_valid_names(name: str) -> None:
+    async def handler(ctx: object) -> None:
+        pass
+
+    assert Router().command(name=name)(handler).name == name
+
+
+@pytest.mark.parametrize("name", ["Roll", "x" * 33, "", "a b", "a.b", "a'b"])
+def test_invalid_names(name: str) -> None:
+    async def handler(ctx: object) -> None:
+        pass
+
+    with pytest.raises(CommandDefinitionError, match="not a valid name"):
+        Router().command(name=name)(handler)
+
+
+async def autocomplete(ctx: object, value: object) -> list[str]:
+    return []
+
+
+@pytest.mark.parametrize(
+    ("hint", "problem"),
+    [
+        (list[int], "unsupported type hint list\\[int\\]"),
+        (int | str, "unsupported type hint"),
+        (User | Member, "unsupported type hint"),
+        (Literal["a", 1], "must be all str, all int or all float"),
+        (Literal[True], "must be all str, all int or all float"),
+        (
+            Annotated[Literal["a"], Option(autocomplete=autocomplete)],
+            "autocomplete cannot be combined with choices",
+        ),
+        (
+            Annotated[bool, Option(autocomplete=autocomplete)],
+            "autocomplete does not apply to BOOLEAN",
+        ),
+        (Literal[tuple(range(26))], "26 choices"),
+        (Annotated[str, Option(choices=[Choice("x" * 101, "a")])], "choice name"),
+        (Annotated[str, Option(choices=[Choice("", "a")])], "choice name"),
+        (
+            Annotated[str, Option(choices=[Choice("long", "x" * 101)])],
+            "longer than 100",
+        ),
+        (Annotated[str, Option(choices=[1])], "int value for a STRING option"),
+        (Annotated[Literal["a"], Option(choices=["b"])], "already sets the choices"),
+        (Annotated[int, Option(name="Bad")], "not a valid name"),
+        (Annotated[int, "x" * 101], "description"),
+        (Annotated[int, Option(description="")], "description"),
+        (Range[int, 5, 1], "min_value is greater than max_value"),
+        (Range[str, 5, 1], "min_length is greater than max_length"),
+        (Range[str, -1, 5], "min_length must be 0-6000"),
+        (Range[str, 1, 6001], "max_length must be 1-6000"),
+        (Annotated[str, Option(max_length=0)], "max_length must be 1-6000"),
+        (Range[float, -(2**53) - 1, 0], "within"),
+        (Range[int, 0, 2**53], "within"),
+        (Range[bool, 0, 1], "min_value does not apply to BOOLEAN"),
+        (Annotated[str, Option(min=1)], "min_value does not apply to STRING"),
+        (Annotated[int, Option(channel_types=[0])], "channel_types does not apply"),
+    ],
+)
+def test_definition_errors_name_the_function_and_parameter(
+    hint: object, problem: str
+) -> None:
+    with pytest.raises(CommandDefinitionError) as raised:
+        command_with(hint)
+
+    message = str(raised.value)
+    assert message.startswith(
+        "test_commands.command_with.<locals>.handler: parameter 'value': "
+    )
+    assert re.search(problem, message)
+
+
+def test_range_float_accepts_the_number_limit() -> None:
+    assert (
+        only_option(command_with(Range[float, -(2**53), 2**53]))["max_value"] == 2**53
+    )
+
+
+async def no_context() -> None:
+    pass
+
+
+async def var_args(ctx: object, *values: int) -> None:
+    pass
+
+
+async def var_kwargs(ctx: object, **values: int) -> None:
+    pass
+
+
+async def positional_only(ctx: object, value: int, /) -> None:
+    pass
+
+
+async def unannotated(ctx: object, value: int) -> None:
+    pass
+
+
+unannotated.__annotations__.clear()
+
+
+async def duplicate(ctx: object, a: int, b: Annotated[int, Option(name="a")]) -> None:
+    pass
+
+
+@pytest.mark.parametrize(
+    ("callback", "problem"),
+    [
+        (no_context, "the first parameter must take the context"),
+        (var_args, "parameter 'values': options cannot be \\*args"),
+        (var_kwargs, "parameter 'values': options cannot be"),
+        (positional_only, "parameter 'value': options cannot be"),
+        (unannotated, "parameter 'value': options need a type hint"),
+        (duplicate, "two options are named 'a'"),
+    ],
+)
+def test_parameter_list_errors(callback: Any, problem: str) -> None:
+    with pytest.raises(CommandDefinitionError, match=f"test_commands.*: {problem}"):
+        Router().command(callback)
+
+
+def test_more_than_25_options_is_an_error() -> None:
+    async def handler(ctx: object, **options: int) -> None:
+        pass
+
+    parameters = [inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    parameters += [
+        inspect.Parameter(f"o{i}", inspect.Parameter.KEYWORD_ONLY, annotation=int)
+        for i in range(26)
+    ]
+    vars(handler)["__signature__"] = inspect.Signature(parameters)
+    handler.__annotations__ = {f"o{i}": int for i in range(26)}
+
+    with pytest.raises(CommandDefinitionError, match="26 options; Discord allows 25"):
+        Router().command(handler)
+
+
+def test_text_over_8000_characters_warns() -> None:
+    names = tuple("x" * 95 + f"{i:05}" for i in range(25))
+
+    async def handler(ctx: object, a: Any, b: Any) -> None:
+        pass
+
+    many: object = Literal[names]
+    handler.__annotations__ = {"a": many, "b": many}
+
+    with pytest.warns(UserWarning, match="/handler uses 10012 characters"):
+        Router().command(handler)
+
+
+def test_global_scope_always_sets_contexts() -> None:
+    router = Router()
+
+    @router.command
+    async def anywhere(ctx: object) -> None:
+        pass
+
+    @router.command(guild_only=True)
+    async def guilds(ctx: object) -> None:
+        pass
+
+    @router.command(extra={"contexts": [0, 1, 2], "integration_types": [0, 1]})
+    async def installed(ctx: object) -> None:
+        pass
+
+    assert anywhere.payload("global")["contexts"] == [0, 1]
+    assert guilds.payload("global")["contexts"] == [0]
+    assert "contexts" not in guilds.payload("guild")
+    assert installed.payload("global")["contexts"] == [0, 1, 2]
+    assert installed.payload("guild")["integration_types"] == [0, 1]
+
+
+def test_command_payload() -> None:
+    router = Router()
+
+    @router.command(default_permissions=Permissions.MANAGE_ROLES, nsfw=True)
+    async def tag(ctx: object, name: str) -> None:
+        """Show a tag."""
+
+    assert tag.payload("global") == {
+        "type": 1,
+        "name": "tag",
+        "description": "Show a tag.",
+        "options": [option(3, name="name")],
+        "default_member_permissions": "268435456",
+        "nsfw": True,
+        "contexts": [0, 1],
+    }
+
+
+def test_group_tree_payload_and_names() -> None:
+    router = Router()
+    role = router.group(
+        "role",
+        "Manage roles",
+        default_permissions=Permissions.MANAGE_ROLES,
+        guild_only=True,
+    )
+    color = role.group("color", "Color roles")
+
+    @color.command(name="set")
+    async def color_set(ctx: object, member: Member, hex: Range[str, 7, 7]) -> None:
+        """Give a member a color role."""
+
+    @role.command
+    async def remove(ctx: object) -> None:
+        """Remove a role."""
+
+    assert color_set.qualified_name == "role color set"
+    assert role.payload("global") == {
+        "type": 1,
+        "name": "role",
+        "description": "Manage roles",
+        "options": [
+            {
+                "type": 2,
+                "name": "color",
+                "description": "Color roles",
+                "options": [
+                    {
+                        "type": 1,
+                        "name": "set",
+                        "description": "Give a member a color role.",
+                        "options": [
+                            option(6, name="member"),
+                            option(3, name="hex", min_length=7, max_length=7),
+                        ],
+                    }
+                ],
+            },
+            {
+                "type": 1,
+                "name": "remove",
+                "description": "Remove a role.",
+                "options": [],
+            },
+        ],
+        "default_member_permissions": "268435456",
+        "nsfw": False,
+        "contexts": [0],
+    }
+
+
+def test_groups_nest_one_level_and_names_stay_unique() -> None:
+    router = Router()
+    role = router.group("role", "Manage roles")
+    color = role.group("color", "Color roles")
+
+    with pytest.raises(CommandDefinitionError, match="one level deep"):
+        color.group("shade", "Too deep")
+    with pytest.raises(CommandDefinitionError, match="already has a subcommand"):
+        role.group("color", "Again")
+
+
+@pytest.mark.parametrize("setting", ["default_permissions", "guild_only", "nsfw"])
+def test_subcommands_cannot_set_top_level_settings(setting: str) -> None:
+    group = Router().group("admin", "Admin tools")
+    settings: dict[str, Any] = {setting: Permissions.ADMINISTRATOR}
+
+    with pytest.raises(TypeError, match=setting):
+        group.command(**settings)
+
+
+def test_a_group_holds_at_most_25_subcommands() -> None:
+    group = Router().group("many", "Many subcommands")
+    for index in range(25):
+        group.group(f"g{index}", "A group")
+
+    with pytest.raises(CommandDefinitionError, match="already has 25 subcommands"):
+        group.group("last", "One too many")
+
+
+HALVES: object = Literal[0.5, 1.0]
+
+
+def kitchen_sink() -> Command:
+    async def sink(
+        ctx: object,
+        text: str,
+        number: int,
+        ratio: float,
+        flag: bool,
+        user: User,
+        member: Member,
+        role: Role,
+        channel: Channel,
+        file: Attachment,
+        who: User | Role,
+        unit: Unit,
+        size: Size,
+        mode: Literal["sum", "list"],
+        half: Any,
+        maybe: int | None,
+        sides: int = 6,
+    ) -> None:
+        pass
+
+    sink.__annotations__["half"] = HALVES
+    return Router().command(sink)
+
+
+def test_bind_converts_every_option_type() -> None:
+    resolved = Resolved(
+        users={1: User(1)},
+        members={1: Member(1)},
+        roles={2: Role(2)},
+        channels={3: Channel(3)},
+        attachments={4: Attachment(4)},
+    )
+    given = [
+        Given("text", 3, "hello"),
+        Given("number", 4, 7),
+        Given("ratio", 10, 2),
+        Given("flag", 5, True),
+        Given("user", 6, "1"),
+        Given("member", 6, "1"),
+        Given("role", 8, "2"),
+        Given("channel", 7, "3"),
+        Given("file", 11, "4"),
+        Given("who", 9, "2"),
+        Given("unit", 3, "imperial"),
+        Given("size", 4, 2),
+        Given("mode", 3, "list"),
+        Given("half", 10, 1),
+    ]
+
+    arguments = kitchen_sink().bind(given, resolved)
+
+    assert arguments == {
+        "text": "hello",
+        "number": 7,
+        "ratio": 2.0,
+        "flag": True,
+        "user": User(1),
+        "member": Member(1),
+        "role": Role(2),
+        "channel": Channel(3),
+        "file": Attachment(4),
+        "who": Role(2),
+        "unit": Unit.IMPERIAL,
+        "size": Size.LARGE,
+        "mode": "list",
+        "half": 1.0,
+        "maybe": None,
+        "sides": 6,
+    }
+    assert type(arguments["ratio"]) is float
+    assert type(arguments["half"]) is float
+
+
+def test_mentionable_prefers_the_first_class_that_resolves() -> None:
+    router = Router()
+
+    @router.command
+    async def poke(ctx: object, who: User | Role) -> None:
+        pass
+
+    both = Resolved(users={5: User(5)}, roles={5: Role(5)})
+
+    assert poke.bind([Given("who", 9, "5")], both) == {"who": User(5)}
+
+
+@pytest.mark.parametrize(
+    ("given", "resolved", "problem"),
+    [
+        ([], Resolved(), "required option 'name' is missing"),
+        (
+            [Given("name", 3, "x"), Given("other", 3, "y")],
+            Resolved(),
+            "no option 'other'",
+        ),
+        ([Given("name", 4, 1)], Resolved(), "no option 'name' of type 4"),
+        ([Given("name", 3, 1)], Resolved(), "is STRING but got 1"),
+        ([Given("name", 3, "x"), Given("count", 4, True)], Resolved(), "is INTEGER"),
+        ([Given("name", 3, "x"), Given("unit", 3, "kelvin")], Resolved(), "choices"),
+        ([Given("name", 3, "x"), Given("member", 6, "9")], Resolved(), "no Member"),
+        ([Given("name", 3, "x"), Given("member", 6, "9")], None, "no Member"),
+        ([Given("name", 3, "x"), Given("member", 6, "abc")], Resolved(), "no Member"),
+    ],
+)
+def test_bind_rejects_unexpected_input(
+    given: list[Given], resolved: Resolved | None, problem: str
+) -> None:
+    router = Router()
+
+    @router.command
+    async def show(
+        ctx: object,
+        name: str,
+        count: int | None,
+        unit: Unit | None,
+        member: Member | None,
+    ) -> None:
+        pass
+
+    with pytest.raises(OptionConversionError, match=problem):
+        show.bind(given, resolved)
+
+
+def test_autocomplete_functions_are_found_by_option_name() -> None:
+    router = Router()
+
+    @router.command
+    async def tag(
+        ctx: object, name: Annotated[str, Option(name="tag-name", autocomplete=suggest)]
+    ) -> None:
+        pass
+
+    assert tag.autocompletes == {"tag-name": suggest}
+    assert only_option(tag)["autocomplete"] is True
+
+
+def test_autocomplete_choices_normalizes_values() -> None:
+    result: list[str | int | float | Choice] = [
+        "rules",
+        3,
+        1.5,
+        Choice("Named", "value"),
+    ]
+
+    assert autocomplete_choices(result, suggest) == [
+        {"name": "rules", "value": "rules"},
+        {"name": "3", "value": 3},
+        {"name": "1.5", "value": 1.5},
+        {"name": "Named", "value": "value"},
+    ]
+
+
+def test_autocomplete_choices_fixes_what_discord_would_reject() -> None:
+    long_name = Choice("n" * 150, "ok")
+    long_value = "v" * 101
+    result = [long_name, long_name, "", long_value, long_value, *range(30)]
+
+    with pytest.warns(UserWarning) as warned:
+        choices = autocomplete_choices(result, suggest)
+
+    assert choices[0] == {"name": "n" * 100, "value": "ok"}
+    assert len(choices) == 25
+    assert all(choice["name"] for choice in choices)
+    assert all(choice["value"] != long_value for choice in choices)
+    messages = sorted(str(warning.message) for warning in warned)
+    assert len(messages) == 3
+    assert all(
+        message.startswith("test_commands.suggest returned") for message in messages
+    )
+    assert any("dropped" in message for message in messages)
+    assert any("were cut" in message for message in messages)
+    assert any("first 25" in message for message in messages)

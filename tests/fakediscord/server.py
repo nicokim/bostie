@@ -1,0 +1,742 @@
+import asyncio
+import contextlib
+import math
+import sys
+import time
+import uuid
+import zlib
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from types import TracebackType
+from typing import Any, Literal, Self
+
+import msgspec
+from aiohttp import BodyPartReader, WSCloseCode, WSMsgType, hdrs, web
+from aiohttp.typedefs import Handler
+
+from fakediscord import payloads
+from fakediscord.payloads import Json
+
+API = "/api/v10"
+ROUTE_LIMIT = 5
+ROUTE_WINDOW = 1.0
+MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
+MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
+GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
+EPHEMERAL = 1 << 6
+LOADING = 1 << 7
+LOCALIZATIONS = ("name_localizations", "description_localizations")
+TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
+
+type Respond = Callable[[dict[str, str]], web.Response]
+
+
+@dataclass(frozen=True)
+class Part:
+    """One part of a multipart request body."""
+
+    name: str | None
+    filename: str | None
+    content_type: str | None
+    data: bytes
+
+
+@dataclass(frozen=True)
+class Recorded:
+    """A REST request, with ``path`` relative to ``api_url``.
+
+    ``json`` holds the JSON body, or the ``payload_json`` part of a multipart body.
+    """
+
+    method: str
+    path: str
+    query: dict[str, str]
+    headers: dict[str, str]
+    json: Any
+    parts: list[Part]
+
+
+@dataclass
+class Connection:
+    """A gateway connection, with the close code the client sent if it closed first."""
+
+    request: web.Request
+    ws: web.WebSocketResponse
+    compress: Callable[[bytes], bytes] | None
+    live: bool = False
+    close_code: int | None = None
+
+    @property
+    def path(self) -> str:
+        """``/gateway`` or ``/gateway-resume``."""
+        return self.request.path
+
+    async def send(self, frame: bytes) -> None:
+        """Send one gateway payload, compressed in ``compress=True`` mode.
+
+        A payload sent to a closing connection is dropped.
+        """
+        with contextlib.suppress(ConnectionResetError):
+            if self.compress is None:
+                await self.ws.send_frame(frame, WSMsgType.TEXT)
+            else:
+                await self.ws.send_bytes(self.compress(frame))
+
+
+@dataclass
+class _Fault:
+    method: str
+    route_prefix: str
+    times: int
+    respond: Respond
+
+
+RECORD = web.RequestKey("record", Recorded)
+
+
+class FakeDiscord:
+    """A local Discord gateway and REST API for tests, served inside ``async with``."""
+
+    api_url: str
+    gateway_url: str
+    _resume_url: str
+    _runner: web.AppRunner
+
+    def __init__(
+        self,
+        *,
+        token: str = "fake-token",
+        heartbeat_interval: int = 500,
+        compress: bool = False,
+    ) -> None:
+        self.token = token
+        self.application_id = int(payloads.fixture("rest/application_me")["id"])
+        self.bot_user: Json = payloads.fixture("events/READY")["user"]
+        guild = payloads.fixture("rest/guild")
+        channel = payloads.channel()
+        member = payloads.member()
+        self.guilds: dict[str, Json] = {guild["id"]: guild}
+        self.channels: dict[str, Json] = {channel["id"]: channel}
+        self.users: dict[str, Json] = {
+            user["id"]: user for user in (payloads.user(), member["user"])
+        }
+        self.members: dict[tuple[str, str], Json] = {
+            (guild["id"], member["user"]["id"]): member
+        }
+        self.messages: dict[str, dict[str, Json]] = {}
+        self.commands: dict[str | None, list[Json]] = {}
+        self.put_count = 0
+        self.requests: list[Recorded] = []
+        self.callbacks: asyncio.Queue[Recorded] = asyncio.Queue()
+        self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
+        self.connections: list[Connection] = []
+        self._heartbeat_interval = heartbeat_interval
+        self._zstd_stream = _zstd_streams() if compress else None
+        self._hold_acks = False
+        self._latency = 0.0
+        self._faults: list[_Fault] = []
+        self._windows: dict[tuple[str, str], tuple[float, int]] = {}
+        self._session_id: str | None = None
+        self._buffer: list[bytes] = []
+        self._identifies: asyncio.Queue[Json] = asyncio.Queue()
+        self._resumes: asyncio.Queue[Json] = asyncio.Queue()
+        self._interactions: dict[str, Json] = {}
+        self._responses: dict[str, dict[str, Json]] = {}
+        self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
+
+    async def __aenter__(self) -> Self:
+        rest_routes: list[tuple[str, str, Handler]] = [
+            ("GET", "/gateway/bot", self._gateway_bot),
+            ("GET", "/applications/@me", self._application),
+            ("GET", "/applications/{application_id}/commands", self._commands),
+            ("PUT", "/applications/{application_id}/commands", self._commands),
+            (
+                "GET",
+                "/applications/{application_id}/guilds/{guild_id}/commands",
+                self._commands,
+            ),
+            (
+                "PUT",
+                "/applications/{application_id}/guilds/{guild_id}/commands",
+                self._commands,
+            ),
+            (
+                "POST",
+                "/interactions/{interaction_id}/{interaction_token}/callback",
+                self._callback,
+            ),
+            ("POST", "/webhooks/{application_id}/{interaction_token}", self._followup),
+            *(
+                (
+                    method,
+                    "/webhooks/{application_id}/{interaction_token}/messages/{message_id}",
+                    self._webhook_message,
+                )
+                for method in ("GET", "PATCH", "DELETE")
+            ),
+            ("POST", "/channels/{channel_id}/messages", self._create_message),
+            *(
+                (
+                    method,
+                    "/channels/{channel_id}/messages/{message_id}",
+                    self._channel_message,
+                )
+                for method in ("GET", "PATCH", "DELETE")
+            ),
+            ("GET", "/channels/{channel_id}", self._channel),
+            ("GET", "/guilds/{guild_id}", self._guild),
+            ("GET", "/guilds/{guild_id}/members/{user_id}", self._member),
+            ("GET", "/users/{user_id}", self._user),
+        ]
+        app = web.Application(middlewares=[self._rest])
+        app.add_routes(
+            [
+                web.get("/gateway", self._gateway),
+                web.get("/gateway-resume", self._gateway),
+                *(
+                    web.route(method, API + path, handler)
+                    for method, path, handler in rest_routes
+                ),
+            ]
+        )
+        self._runner = web.AppRunner(app, access_log=None)
+        await self._runner.setup()
+        await web.TCPSite(self._runner, "127.0.0.1", 0).start()
+        port = self._runner.addresses[0][1]
+        self.api_url = f"http://127.0.0.1:{port}{API}"
+        self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
+        self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        for connection in self.connections:
+            await connection.ws.close(code=WSCloseCode.GOING_AWAY)
+        await self._runner.cleanup()
+
+    async def dispatch(self, name: str, d: Any) -> int:
+        """Send a dispatch event, kept for RESUME replay, and return its seq."""
+        if self._session_id is None:
+            raise RuntimeError("no gateway session yet; await next_identify() first")
+        if name == "INTERACTION_CREATE":
+            self._interactions[d["token"]] = d
+        seq = self._append(name, d)
+        if self.connections and self.connections[-1].live:
+            await self.connections[-1].send(self._buffer[seq - 1])
+        return seq
+
+    async def send_op(self, op: int, d: Any = None) -> None:
+        """Send a non-dispatch opcode, such as 7 (reconnect) or 9 (invalid session)."""
+        await self._latest().send(_frame(None, None, op, d))
+
+    async def close_gateway(self, code: int) -> None:
+        """Close the latest gateway connection with ``code``."""
+        await self._latest().ws.close(code=code)
+
+    def drop_gateway(self) -> None:
+        """Abort the latest gateway connection's TCP stream without a close frame."""
+        transport = self._latest().request.transport
+        if transport is not None:
+            transport.abort()
+
+    def hold_acks(self, flag: bool) -> None:
+        """While ``flag`` is true, leave heartbeats unanswered like a zombie link."""
+        self._hold_acks = flag
+
+    async def next_identify(self) -> Json:
+        """Wait for the next IDENTIFY and return its ``d``."""
+        return await self._identifies.get()
+
+    async def next_resume(self) -> Json:
+        """Wait for the next RESUME and return its ``d``."""
+        return await self._resumes.get()
+
+    async def interaction(self, type: int, data: Json, **fields: Any) -> Recorded:
+        """Dispatch ``payloads.interaction(...)`` and return its first callback."""
+        payload = payloads.interaction(type, data, **fields)
+        callback: asyncio.Future[Recorded] = asyncio.get_running_loop().create_future()
+        self._callback_waiters[payload["id"]] = callback
+        await self.dispatch("INTERACTION_CREATE", payload)
+        return await callback
+
+    def rate_limit(
+        self,
+        method: str,
+        route_prefix: str,
+        *,
+        scope: Literal["user", "shared", "global"] = "user",
+        retry_after: float = 0.1,
+        times: int = 1,
+    ) -> None:
+        """Answer the next ``times`` matching requests with a 429 of ``scope``."""
+        self._faults.append(
+            _Fault(
+                method,
+                route_prefix,
+                times,
+                lambda window: _rate_limited(window, scope, retry_after),
+            )
+        )
+
+    def fail(
+        self, method: str, route_prefix: str, status: int, json: Any, times: int = 1
+    ) -> None:
+        """Answer the next ``times`` matching requests with ``status`` and ``json``."""
+        self._faults.append(
+            _Fault(
+                method,
+                route_prefix,
+                times,
+                lambda window: _json(json, status, window),
+            )
+        )
+
+    def latency(self, seconds: float) -> None:
+        """Delay every REST response by ``seconds``."""
+        self._latency = seconds
+
+    def _latest(self) -> Connection:
+        if not self.connections:
+            raise RuntimeError("no gateway connection yet")
+        return self.connections[-1]
+
+    def _append(self, name: str, d: Any) -> int:
+        self._buffer.append(_frame(name, len(self._buffer) + 1, 0, d))
+        return len(self._buffer)
+
+    async def _catch_up(self, connection: Connection, seq: int) -> None:
+        while seq < len(self._buffer):
+            await connection.send(self._buffer[seq])
+            seq += 1
+        connection.live = True
+
+    async def _gateway(self, request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse(autoclose=False, compress=False)
+        await ws.prepare(request)
+        compress = None if self._zstd_stream is None else self._zstd_stream()
+        connection = Connection(request, ws, compress)
+        self.connections.append(connection)
+        hello = {"heartbeat_interval": self._heartbeat_interval, "_trace": [TRACE]}
+        await connection.send(_frame(None, None, 10, hello))
+        while (message := await ws.receive()).type in (
+            WSMsgType.TEXT,
+            WSMsgType.BINARY,
+        ):
+            try:
+                payload = msgspec.json.decode(message.data)
+            except msgspec.DecodeError:
+                await ws.close(code=4002, message=b"Decode error")
+            else:
+                await self._receive(connection, payload)
+        if message.type is WSMsgType.CLOSE:
+            connection.close_code = message.data
+        await ws.close()
+        return ws
+
+    async def _receive(self, connection: Connection, payload: Any) -> None:
+        self.gateway_received.put_nowait(payload)
+        match payload:
+            case {"op": 1} if not self._hold_acks:
+                await connection.send(_frame(None, None, 11, None))
+            case {"op": 2, "d": dict() as identify}:
+                await self._identify(connection, identify)
+                self._identifies.put_nowait(identify)
+            case {"op": 6, "d": dict() as resume}:
+                await self._resume(connection, resume)
+                self._resumes.put_nowait(resume)
+
+    async def _identify(self, connection: Connection, identify: Json) -> None:
+        if connection.live:
+            await connection.ws.close(code=4005, message=b"Already authenticated")
+        elif identify.get("token") != self.token:
+            await connection.ws.close(code=4004, message=b"Authentication failed")
+        elif not isinstance(identify.get("intents"), int):
+            await connection.ws.close(code=4013, message=b"Invalid intent(s)")
+        else:
+            self._session_id = uuid.uuid4().hex
+            self._buffer = []
+            ready = payloads.fixture("events/READY") | {
+                "user": self.bot_user,
+                "session_id": self._session_id,
+                "resume_gateway_url": self._resume_url,
+            }
+            self._append("READY", ready)
+            await self._catch_up(connection, 0)
+
+    async def _resume(self, connection: Connection, resume: Json) -> None:
+        seq = resume.get("seq")
+        if resume.get("token") != self.token:
+            await connection.ws.close(code=4004, message=b"Authentication failed")
+        elif self._session_id is None or resume.get("session_id") != self._session_id:
+            await connection.send(_frame(None, None, 9, False))
+        elif not isinstance(seq, int) or not 0 <= seq <= len(self._buffer):
+            await connection.ws.close(code=4007, message=b"Invalid seq")
+        else:
+            self._append("RESUMED", {"_trace": [TRACE]})
+            await self._catch_up(connection, seq)
+
+    @web.middleware
+    async def _rest(self, request: web.Request, handler: Handler) -> web.StreamResponse:
+        if not request.path.startswith(API + "/"):
+            return await handler(request)
+        record = await _record(request)
+        request[RECORD] = record
+        self.requests.append(record)
+        await asyncio.sleep(self._latency)
+        resource = request.match_info.route.resource
+        if resource is None:
+            return _error(404, 0, "404: Not Found")
+        route = resource.canonical
+        authorization = request.headers.get(hdrs.AUTHORIZATION)
+        if "{interaction_token}" not in route and authorization != f"Bot {self.token}":
+            return _error(401, 0, "401: Unauthorized")
+        window, retry_after = self._take_window(
+            request.method, route, request.match_info
+        )
+        fault = self._take_fault(request.method, record.path)
+        if fault is not None:
+            return fault(window)
+        if retry_after is not None:
+            return _rate_limited(window, "user", retry_after)
+        response = await handler(request)
+        response.headers.update(window)
+        return response
+
+    def _take_window(
+        self, method: str, route: str, params: Mapping[str, str]
+    ) -> tuple[dict[str, str], float | None]:
+        bucket = f"{zlib.crc32(f'{method} {route}'.encode()):08x}"
+        key = (bucket, "/".join(params.get(name, "") for name in MAJOR_PARAMETERS))
+        now = time.monotonic()
+        start, used = self._windows.get(key, (-math.inf, 0))
+        if now - start >= ROUTE_WINDOW:
+            start, used = now, 0
+        exhausted = used >= ROUTE_LIMIT
+        if not exhausted:
+            used += 1
+        self._windows[key] = (start, used)
+        reset_after = round(start + ROUTE_WINDOW - now, 3)
+        headers = {
+            "X-RateLimit-Limit": str(ROUTE_LIMIT),
+            "X-RateLimit-Remaining": str(ROUTE_LIMIT - used),
+            "X-RateLimit-Reset": f"{time.time() + reset_after:.3f}",
+            "X-RateLimit-Reset-After": str(reset_after),
+            "X-RateLimit-Bucket": bucket,
+        }
+        return headers, reset_after if exhausted else None
+
+    def _take_fault(self, method: str, path: str) -> Respond | None:
+        for fault in self._faults:
+            if fault.method == method and path.startswith(fault.route_prefix):
+                fault.times -= 1
+                if fault.times == 0:
+                    self._faults.remove(fault)
+                return fault.respond
+        return None
+
+    async def _gateway_bot(self, request: web.Request) -> web.Response:
+        return _json(payloads.fixture("rest/gateway_bot") | {"url": self.gateway_url})
+
+    async def _application(self, request: web.Request) -> web.Response:
+        application = payloads.fixture("rest/application_me")
+        return _json(
+            application | {"id": str(self.application_id), "bot": self.bot_user}
+        )
+
+    async def _commands(self, request: web.Request) -> web.Response:
+        if request.match_info["application_id"] != str(self.application_id):
+            return _error(404, 10002, "Unknown Application")
+        guild_id = request.match_info.get("guild_id")
+        if request.method == "PUT":
+            known = {
+                (command["type"], command["name"]): command["id"]
+                for command in self.commands.get(guild_id, [])
+            }
+            self.commands[guild_id] = [
+                self._stored_command(command, known, guild_id)
+                for command in request[RECORD].json
+            ]
+            self.put_count += 1
+        commands = self.commands.get(guild_id, [])
+        if request.method == "PUT" or _query_flag(request, "with_localizations"):
+            return _json(commands)
+        return _json(_without_localizations(commands))
+
+    def _stored_command(
+        self, command: Json, known: dict[tuple[int, str], str], guild_id: str | None
+    ) -> Json:
+        defaults: Json = {
+            "type": 1,
+            "default_member_permissions": None,
+            "dm_permission": True,
+            "nsfw": False,
+            "integration_types": [0],
+        }
+        if guild_id is None:
+            defaults["contexts"] = [0, 1, 2]
+        stored = defaults | _localizable(command)
+        key = (stored["type"], stored["name"])
+        scope = {} if guild_id is None else {"guild_id": guild_id}
+        return (
+            stored
+            | scope
+            | {
+                "id": command.get("id") or known.get(key) or payloads.snowflake(),
+                "application_id": str(self.application_id),
+                "version": payloads.snowflake(),
+            }
+        )
+
+    async def _callback(self, request: web.Request) -> web.Response:
+        token = request.match_info["interaction_token"]
+        interaction = self._interactions.get(token)
+        if (
+            interaction is None
+            or interaction["id"] != request.match_info["interaction_id"]
+        ):
+            return _error(404, 10062, "Unknown interaction")
+        if token in self._responses:
+            return _error(400, 40060, "Interaction has already been acknowledged.")
+        record = request[RECORD]
+        kind = record.json["type"]
+        original = self._original_response(
+            interaction, kind, record.json.get("data") or {}
+        )
+        self._responses[token] = {} if original is None else {"@original": original}
+        self.callbacks.put_nowait(record)
+        waiter = self._callback_waiters.pop(interaction["id"], None)
+        if waiter is not None and not waiter.done():
+            waiter.set_result(record)
+        if not _query_flag(request, "with_response"):
+            return web.Response(status=204)
+        return _json(_callback_response(interaction, kind, original))
+
+    def _original_response(
+        self, interaction: Json, kind: int, data: Json
+    ) -> Json | None:
+        match kind:
+            case 4:
+                return self._new_message(interaction["channel_id"], data)
+            case 5:
+                loading = {"flags": LOADING | data.get("flags", 0)}
+                return self._new_message(interaction["channel_id"], loading)
+            case 6 | 7:
+                message: Json = interaction["message"]
+                return message | _message_fields(data)
+        return None
+
+    def _new_message(self, channel_id: str, body: Json) -> Json:
+        message = payloads.message(
+            channel_id=channel_id, author=self.bot_user, content=""
+        )
+        return {
+            key: value
+            for key, value in (message | _message_fields(body)).items()
+            if key not in GATEWAY_ONLY_MESSAGE_FIELDS
+        }
+
+    def _webhook(self, request: web.Request) -> dict[str, Json] | None:
+        if request.match_info["application_id"] != str(self.application_id):
+            return None
+        return self._responses.get(request.match_info["interaction_token"])
+
+    async def _followup(self, request: web.Request) -> web.Response:
+        messages = self._webhook(request)
+        if messages is None:
+            return _error(404, 10015, "Unknown Webhook")
+        interaction = self._interactions[request.match_info["interaction_token"]]
+        message = self._new_message(interaction["channel_id"], request[RECORD].json)
+        messages[message["id"]] = message
+        return _json(message)
+
+    async def _webhook_message(self, request: web.Request) -> web.Response:
+        messages = self._webhook(request)
+        if messages is None:
+            return _error(404, 10015, "Unknown Webhook")
+        return _message_route(request, messages)
+
+    async def _create_message(self, request: web.Request) -> web.Response:
+        channel_id = request.match_info["channel_id"]
+        message = self._new_message(channel_id, request[RECORD].json)
+        self.messages.setdefault(channel_id, {})[message["id"]] = message
+        return _json(message)
+
+    async def _channel_message(self, request: web.Request) -> web.Response:
+        messages = self.messages.get(request.match_info["channel_id"], {})
+        return _message_route(request, messages)
+
+    async def _channel(self, request: web.Request) -> web.Response:
+        channel = self.channels.get(request.match_info["channel_id"])
+        return _found(channel, 10003, "Unknown Channel")
+
+    async def _guild(self, request: web.Request) -> web.Response:
+        guild = self.guilds.get(request.match_info["guild_id"])
+        return _found(guild, 10004, "Unknown Guild")
+
+    async def _member(self, request: web.Request) -> web.Response:
+        key = (request.match_info["guild_id"], request.match_info["user_id"])
+        return _found(self.members.get(key), 10007, "Unknown Member")
+
+    async def _user(self, request: web.Request) -> web.Response:
+        user_id = request.match_info["user_id"]
+        if user_id in ("@me", self.bot_user["id"]):
+            return _json(self.bot_user)
+        return _found(self.users.get(user_id), 10013, "Unknown User")
+
+
+async def _record(request: web.Request) -> Recorded:
+    parts: list[Part] = []
+    body: Any = None
+    if request.content_type == "multipart/form-data":
+        async for part in await request.multipart():
+            if isinstance(part, BodyPartReader):
+                content_type = part.headers.get(hdrs.CONTENT_TYPE)
+                data = bytes(await part.read())
+                parts.append(Part(part.name, part.filename, content_type, data))
+        body = next(
+            (
+                msgspec.json.decode(part.data)
+                for part in parts
+                if part.name == "payload_json"
+            ),
+            None,
+        )
+    elif request.content_type == "application/json":
+        body = msgspec.json.decode(await request.read())
+    headers = {name.lower(): value for name, value in request.headers.items()}
+    path = request.path.removeprefix(API)
+    return Recorded(request.method, path, dict(request.query), headers, body, parts)
+
+
+def _query_flag(request: web.Request, name: str) -> bool:
+    return request.query.get(name) in ("true", "True", "1")
+
+
+def _localizable(entity: Json) -> Json:
+    stored: Json = dict.fromkeys(LOCALIZATIONS)
+    for key, value in entity.items():
+        if key == "options":
+            stored[key] = [_localizable(option) for option in value]
+        elif key == "choices":
+            stored[key] = [{"name_localizations": None} | choice for choice in value]
+        elif key != "required" or value:
+            stored[key] = value
+    return stored
+
+
+def _without_localizations(value: Any) -> Any:
+    match value:
+        case list():
+            return [_without_localizations(item) for item in value]
+        case dict():
+            return {
+                key: _without_localizations(item)
+                for key, item in value.items()
+                if key not in LOCALIZATIONS
+            }
+    return value
+
+
+def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Response:
+    message_id = request.match_info["message_id"]
+    message = messages.get(message_id)
+    if message is None:
+        return _error(404, 10008, "Unknown Message")
+    if request.method == "DELETE":
+        del messages[message_id]
+        return web.Response(status=204)
+    if request.method == "PATCH":
+        edit = _message_fields(request[RECORD].json)
+        flags = message["flags"] & ~LOADING | edit.get("flags", 0)
+        message |= edit | {
+            "flags": flags,
+            "edited_timestamp": datetime.now(UTC).isoformat(),
+        }
+    return _json(message)
+
+
+def _message_fields(body: Json) -> Json:
+    return {key: body[key] for key in MESSAGE_FIELDS if key in body}
+
+
+def _callback_response(interaction: Json, kind: int, original: Json | None) -> Json:
+    summary: Json = {"id": interaction["id"], "type": interaction["type"]}
+    resource: Json = {"type": kind}
+    if original is not None:
+        summary |= {
+            "response_message_id": original["id"],
+            "response_message_loading": kind == 5,
+            "response_message_ephemeral": bool(original["flags"] & EPHEMERAL),
+        }
+    if kind in (4, 7):
+        resource["message"] = original
+    return {"interaction": summary, "resource": resource}
+
+
+def _rate_limited(
+    window: dict[str, str], scope: str, retry_after: float
+) -> web.Response:
+    headers = {"Retry-After": str(retry_after), "X-RateLimit-Scope": scope}
+    match scope:
+        case "global":
+            headers["X-RateLimit-Global"] = "true"
+        case "user":
+            spent = {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset-After": str(retry_after),
+            }
+            headers = window | headers | spent
+        case _:
+            headers = window | headers
+    text = (
+        "The resource is being rate limited."
+        if scope == "shared"
+        else "You are being rate limited."
+    )
+    body = {"message": text, "retry_after": retry_after, "global": scope == "global"}
+    return _json(body, 429, headers)
+
+
+def _found(entity: Json | None, code: int, message: str) -> web.Response:
+    return _error(404, code, message) if entity is None else _json(entity)
+
+
+def _error(status: int, code: int, message: str) -> web.Response:
+    return _json({"message": message, "code": code}, status)
+
+
+def _json(
+    body: Any, status: int = 200, headers: Mapping[str, str] | None = None
+) -> web.Response:
+    return web.Response(
+        body=msgspec.json.encode(body),
+        status=status,
+        content_type="application/json",
+        headers=headers,
+    )
+
+
+def _frame(t: str | None, s: int | None, op: int, d: Any) -> bytes:
+    return msgspec.json.encode({"t": t, "s": s, "op": op, "d": d})
+
+
+def _zstd_streams() -> Callable[[], Callable[[bytes], bytes]]:
+    if sys.version_info >= (3, 14):
+        from compression.zstd import CompressionParameter, ZstdCompressor
+
+        options = {
+            CompressionParameter.compression_level: 6,
+            CompressionParameter.window_log: 18,
+        }
+
+        def stream() -> Callable[[bytes], bytes]:
+            compressor = ZstdCompressor(options=options)
+            return lambda frame: compressor.compress(frame, ZstdCompressor.FLUSH_BLOCK)
+
+        return stream
+    raise RuntimeError("compress=True needs compression.zstd from Python 3.14")
