@@ -25,6 +25,7 @@ from lyrecord.models import (
     decode,
 )
 from lyrecord.models.base import decoder
+from lyrecord.models.message import in_guild
 
 if TYPE_CHECKING:
     from lyrecord.bot import Bot
@@ -227,13 +228,13 @@ class Context(_InteractionContext):
                 case ResponseState.PENDING:
                     response = await self._respond_with_callback(body, files, ephemeral)
                     self.state = ResponseState.RESPONDED
-                    return _callback_message(response)
+                    return _callback_message(response, self.guild_id)
                 case ResponseState.DEFERRED:
                     response = await self._edit_original(body, files, ephemeral)
                 case _:
                     response = await self._send_followup(body, files, ephemeral)
             self.state = ResponseState.RESPONDED
-            return _message(response)
+            return _message(response, self.guild_id)
 
     async def defer(self, *, ephemeral: bool | None = None) -> None:
         """Show "thinking…" and answer later with `respond`."""
@@ -276,7 +277,7 @@ class Context(_InteractionContext):
             self._ensure_answered("edit")
             response = await self._edit_original(body, files, ephemeral)
             self._finish_deferred()
-            return _message(response)
+            return _message(response, self.guild_id)
 
     async def followup(
         self,
@@ -308,7 +309,7 @@ class Context(_InteractionContext):
             else:
                 response = await self._send_followup(body, files, ephemeral)
             self._finish_deferred()
-            return _message(response)
+            return _message(response, self.guild_id)
 
     async def delete(self) -> None:
         """Delete the original answer."""
@@ -464,7 +465,7 @@ class ComponentContext(Context):
                 case ResponseState.PENDING:
                     response = await self._update_with_callback(body, files, ephemeral)
                     self.state = ResponseState.RESPONDED
-                    return _callback_message(response)
+                    return _callback_message(response, self.guild_id)
                 case ResponseState.DEFERRED_UPDATE:
                     response = await self._edit_original(body, files, ephemeral)
                 case _:
@@ -472,7 +473,7 @@ class ComponentContext(Context):
                         "update() needs an unanswered interaction or defer_update()"
                     )
             self.state = ResponseState.RESPONDED
-            return _message(response)
+            return _message(response, self.guild_id)
 
     async def _defer_automatically(self) -> None:
         await self._defer_update()
@@ -531,12 +532,12 @@ def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:
     return {**body, "flags": body.get("flags", 0) | MessageFlags.EPHEMERAL}
 
 
-def _message(body: bytes) -> Message | None:
-    return decode(Message, body) if body else None
+def _message(body: bytes, guild_id: int | None) -> Message | None:
+    return in_guild(decode(Message, body), guild_id) if body else None
 
 
-def _callback_message(body: bytes) -> Message | None:
+def _callback_message(body: bytes, guild_id: int | None) -> Message | None:
     resource = decoder(_CallbackResponse).decode(body).resource if body else None
     if resource is None or not resource.message:
         return None
-    return decode(Message, bytes(resource.message))
+    return in_guild(decode(Message, bytes(resource.message)), guild_id)

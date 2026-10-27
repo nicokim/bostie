@@ -18,7 +18,8 @@ from lyrecord.models import (
     User,
     VoiceState,
 )
-from lyrecord.models.base import decode, decoder
+from lyrecord.models.base import decode, decoder, redacted_repr, shown_fields
+from lyrecord.models.message import in_guild
 
 logger = logging.getLogger("lyrecord.events")
 
@@ -36,6 +37,9 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 
     shard_id: int = msgspec.field(default=0, name="__lyrecord_shard__")
     raw_json: bytes = msgspec.field(default=b"", name="__lyrecord_raw__")
+
+    __repr__ = redacted_repr
+    __rich_repr__ = shown_fields
 
     @property
     def raw(self) -> Any:
@@ -215,7 +219,9 @@ class _MessageEvent(Event, kw_only=True):
 
     @classmethod
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        return cls(shard_id=shard_id, raw_json=data, message=decode(Message, data))
+        message = decode(Message, data)
+        in_guild(message, message.guild_id)
+        return cls(shard_id=shard_id, raw_json=data, message=message)
 
 
 class MessageCreate(_MessageEvent, kw_only=True):

@@ -60,6 +60,7 @@ from lyrecord.models import (
     build_message,
     decode,
 )
+from lyrecord.models.message import in_guild
 from lyrecord.router import RAW_EVENT_NAME, Listener, Router
 
 log = logging.getLogger("lyrecord.bot")
@@ -171,17 +172,22 @@ class Bot(Router):
 
         The token defaults to the LYRECORD_TOKEN environment variable.
         """
-        token = _resolve_token(token)
         if self._bridge is not None:
             raise RuntimeError("the bot is already running")
+        try:
+            token = _resolve_token(token)
+            bridge = Bridge(
+                token,
+                self._api_url,
+                self._on_gateway,
+                global_limit=self._global_rate_limit,
+            )
+        except Exception:
+            self._stop_ready_waiters()
+            raise
         if self._closing is not None and self._closing.done():
             self._closing = None
-        self._bridge = bridge = Bridge(
-            token,
-            self._api_url,
-            self._on_gateway,
-            global_limit=self._global_rate_limit,
-        )
+        self._bridge = bridge
         self._replaying = False
         async with bridge:
             self._http = http = HTTPClient(bridge)
@@ -224,7 +230,7 @@ class Bot(Router):
         await asyncio.shield(self._closing)
 
     async def wait_until_ready(self) -> None:
-        """Wait for the first READY since `start()`."""
+        """Wait for the first READY since `start()`; RuntimeError if it ends first."""
         if self._ready:
             return
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -302,7 +308,7 @@ class Bot(Router):
             files=files,
             channel_id=channel_id,
         )
-        return decode(Message, data)
+        return in_guild(decode(Message, data), self._guild_of(channel_id))
 
     async def edit_message(
         self,
@@ -340,7 +346,7 @@ class Bot(Router):
             channel_id=channel_id,
             message_id=message_id,
         )
-        return decode(Message, data)
+        return in_guild(decode(Message, data), self._guild_of(channel_id))
 
     async def delete_message(
         self, channel_id: int, message_id: int, *, reason: str | None = None
@@ -360,7 +366,7 @@ class Bot(Router):
             channel_id=channel_id,
             message_id=message_id,
         )
-        return decode(Message, data)
+        return in_guild(decode(Message, data), self._guild_of(channel_id))
 
     async def fetch_channel(self, channel_id: int) -> Channel:
         data = await self.http._request(
@@ -385,6 +391,10 @@ class Bot(Router):
         )
         return decode(Member, data)
 
+    def _guild_of(self, channel_id: int) -> int | None:
+        channel = self.cache.channel(channel_id)
+        return None if channel is None else channel.guild_id
+
     async def _run(self, token: str | None) -> None:
         started = asyncio.ensure_future(self.start(token))
         if threading.current_thread() is threading.main_thread():
@@ -407,6 +417,12 @@ class Bot(Router):
             await self._bridge.close()
         self._bridge = None
         self._ready = False
+        self._stop_ready_waiters()
+
+    def _stop_ready_waiters(self) -> None:
+        for future in self._ready_waiters:
+            if not future.done():
+                future.set_exception(RuntimeError("the bot stopped before READY"))
 
     def _dispatch_names(self) -> list[str] | None:
         names = {*self.listeners, *self._waiters, "RATE_LIMITED"}
@@ -520,6 +536,7 @@ class Bot(Router):
                 self._spawn(_run_listener(listener, payload, name))
 
     def _route(self, interaction: Interaction, received: float) -> None:
+        anchor = received
         if self._replaying:
             age = time.time() * 1000 - ((interaction.id >> 22) + DISCORD_EPOCH_MS)
             if age > STALE_INTERACTION_MS:
@@ -530,7 +547,8 @@ class Bot(Router):
                     age / 1000,
                 )
                 return
-        handler = self._handler(interaction, received)
+            anchor = min(received, asyncio.get_running_loop().time() - age / 1000)
+        handler = self._handler(interaction, anchor)
         if handler is None:
             log.debug("no command or component route handles %d", interaction.id)
             return

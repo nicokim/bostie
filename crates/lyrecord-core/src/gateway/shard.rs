@@ -100,6 +100,7 @@ enum Ending {
     Requested,
     Reconnect,
     InvalidSession { resumable: bool },
+    NoIdentifyLeft,
     Zombie,
     Closed(u16),
     Lost(String),
@@ -122,6 +123,7 @@ struct Heartbeat {
 
 struct Connection {
     socket: Socket,
+    signals: Arc<Signals>,
     inflater: Inflater,
     hello_deadline: Instant,
     heartbeat: Option<Heartbeat>,
@@ -133,10 +135,23 @@ struct Connection {
 
 impl Connection {
     async fn send(&mut self, payload: Bytes) -> Result<(), Ending> {
-        self.socket
-            .send(Message::text(payload))
-            .await
-            .map_err(|error| Ending::Lost(describe(&error)))?;
+        let patience = self
+            .heartbeat
+            .as_ref()
+            .map_or(HELLO_TIMEOUT, |heartbeat| heartbeat.interval);
+        tokio::select! {
+            biased;
+            () = self.signals.close.notified() => return Err(Ending::Stop),
+            () = self.signals.reconnect.notified() => return Err(Ending::Requested),
+            sent = timeout(patience, self.socket.send(Message::text(payload))) => match sent {
+                Ok(sent) => sent.map_err(|error| Ending::Lost(describe(&error)))?,
+                Err(_) => {
+                    return Err(Ending::Lost(format!(
+                        "a write did not finish within {patience:?}"
+                    )));
+                }
+            },
+        }
         if let Some(limiter) = &mut self.limiter {
             limiter.record(Instant::now());
         }
@@ -298,6 +313,7 @@ impl Shard {
         };
         let mut connection = Connection {
             socket,
+            signals: Arc::clone(&self.signals),
             inflater,
             hello_deadline: Instant::now() + HELLO_TIMEOUT,
             heartbeat: None,
@@ -422,7 +438,7 @@ impl Shard {
     }
 
     fn wants(&self, name: &str) -> bool {
-        matches!(name, "READY" | "RESUMED")
+        ends_the_handshake(name)
             || self
                 .shared
                 .filter
@@ -468,7 +484,8 @@ impl Shard {
         });
         connection.limiter = Some(SendLimiter::new(interval));
         let Some(session) = &self.session else {
-            connection.identify_at = Some(self.shared.identify.reserve(now));
+            let slot = self.shared.identify.reserve(now);
+            connection.identify_at = Some(slot.ok_or(Ending::NoIdentifyLeft)?);
             return Ok(());
         };
         debug!(shard = %self.id, seq = session.seq, "resuming");
@@ -494,7 +511,7 @@ impl Shard {
 
     fn forward(&mut self, connection: &mut Connection, held: Held) {
         let queued_bytes = self.shared.inbox.queued_bytes();
-        if queued_bytes < DISPATCH_BYTES_LIMIT {
+        if queued_bytes < DISPATCH_BYTES_LIMIT || ends_the_handshake(&held.forward.name) {
             self.deliver(connection, held);
             return;
         }
@@ -598,6 +615,7 @@ impl Shard {
                 }
                 self.disconnected(None, error);
             }
+            Ending::NoIdentifyLeft => {}
             Ending::Requested => self.disconnected(None, "reconnect requested".to_owned()),
             Ending::Reconnect => {
                 self.disconnected(None, "reconnect requested by Discord".to_owned());
@@ -633,6 +651,10 @@ impl Shard {
     fn push(&self, delivery: Delivery) {
         self.shared.inbox.push(delivery);
     }
+}
+
+fn ends_the_handshake(name: &str) -> bool {
+    matches!(name, "READY" | "RESUMED")
 }
 
 async fn connect(url: &Url, connector: &Connector) -> Result<Socket, String> {

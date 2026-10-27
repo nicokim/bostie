@@ -1,6 +1,9 @@
 from enum import KEEP, IntEnum, IntFlag
 from typing import Self
 
+FLAG_WIDTH = 128
+MSGSPEC_ENUM_MAX = (1 << 63) - 1
+
 
 class DiscordIntEnum(IntEnum):
     """An IntEnum that maps unknown values to stable `UNKNOWN_<value>` members."""
@@ -14,6 +17,19 @@ class DiscordIntEnum(IntEnum):
         unknown._value_ = value
         cls._value2member_map_.setdefault(value, unknown)
         return cls(value)
+
+
+class DiscordIntFlag(IntFlag, boundary=KEEP):
+    """An IntFlag whose operators, `~` included, keep bits lyrecord does not know."""
+
+    @classmethod
+    def _missing_(cls, value: object) -> Self:
+        if isinstance(value, int) and value < 0:
+            return cls(value & ((1 << FLAG_WIDTH) - 1))
+        flag: Self = super()._missing_(value)
+        if flag > MSGSPEC_ENUM_MAX:
+            cls._value2member_map_.pop(value, None)
+        return flag
 
 
 class ChannelType(DiscordIntEnum):
@@ -144,7 +160,7 @@ class CommandType(DiscordIntEnum):
     PRIMARY_ENTRY_POINT = 4
 
 
-class Permissions(IntFlag, boundary=KEEP):
+class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1
     BAN_MEMBERS = 1 << 2
@@ -198,8 +214,14 @@ class Permissions(IntFlag, boundary=KEEP):
     PIN_MESSAGES = 1 << 51
     BYPASS_SLOWMODE = 1 << 52
 
+    @classmethod
+    def _missing_(cls, value: object) -> Self:
+        permissions = super()._missing_(value)
+        cls._value2member_map_.pop(value, None)
+        return permissions
 
-class Intents(IntFlag, boundary=KEEP):
+
+class Intents(DiscordIntFlag):
     GUILDS = 1 << 0
     GUILD_MEMBERS = 1 << 1
     GUILD_MODERATION = 1 << 2
@@ -243,7 +265,7 @@ class Intents(IntFlag, boundary=KEEP):
     )
 
 
-class MessageFlags(IntFlag, boundary=KEEP):
+class MessageFlags(DiscordIntFlag):
     CROSSPOSTED = 1 << 0
     IS_CROSSPOST = 1 << 1
     SUPPRESS_EMBEDS = 1 << 2
@@ -259,7 +281,7 @@ class MessageFlags(IntFlag, boundary=KEEP):
     IS_COMPONENTS_V2 = 1 << 15
 
 
-class ChannelFlags(IntFlag, boundary=KEEP):
+class ChannelFlags(DiscordIntFlag):
     PINNED = 1 << 1
     REQUIRE_TAG = 1 << 4
     HIDE_MEDIA_DOWNLOAD_OPTIONS = 1 << 15
@@ -267,7 +289,7 @@ class ChannelFlags(IntFlag, boundary=KEEP):
     IS_SPOILER_CHANNEL = 1 << 21
 
 
-class ApplicationFlags(IntFlag, boundary=KEEP):
+class ApplicationFlags(DiscordIntFlag):
     APPLICATION_AUTO_MODERATION_RULE_CREATE_BADGE = 1 << 6
     GATEWAY_PRESENCE = 1 << 12
     GATEWAY_PRESENCE_LIMITED = 1 << 13

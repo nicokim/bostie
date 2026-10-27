@@ -18,7 +18,7 @@ class RequestBudgetExhausted(LyrecordError):
 
 
 class HTTPException(LyrecordError):
-    """Discord answered a request with an error status."""
+    """A request ended with an error status."""
 
     def __init__(
         self,
@@ -49,7 +49,10 @@ class NotFound(HTTPException):
 
 
 class RateLimited(HTTPException):
-    """Discord answered 429 Too Many Requests and lyrecord did not retry."""
+    """Discord answered 429, or lyrecord held the request back unsent.
+
+    lyrecord holds it back when the route stays limited for longer than it waits.
+    """
 
     def __init__(
         self,

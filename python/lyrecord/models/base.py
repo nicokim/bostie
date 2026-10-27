@@ -1,9 +1,25 @@
+from collections.abc import Mapping, Sequence
 from functools import cache
 from typing import Any, dataclass_transform
 
 import msgspec
 
 from lyrecord.enums import Permissions
+
+HIDDEN_FIELDS = frozenset({"raw_json", "token"})
+
+
+def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
+    return [
+        (name, getattr(struct, name))
+        for name in struct.__struct_fields__
+        if name not in HIDDEN_FIELDS
+    ]
+
+
+def redacted_repr(struct: msgspec.Struct) -> str:
+    shown = ", ".join(f"{name}={value!r}" for name, value in shown_fields(struct))
+    return f"{type(struct).__name__}({shown})"
 
 
 @dataclass_transform(
@@ -13,6 +29,9 @@ class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     """Base of the models lyrecord decodes from Discord payloads."""
 
     raw_json: bytes | None = msgspec.field(default=None, name="__lyrecord_raw__")
+
+    __repr__ = redacted_repr
+    __rich_repr__ = shown_fields
 
     @property
     def raw(self) -> Any:
@@ -31,6 +50,17 @@ class Builder(msgspec.Struct, kw_only=True, frozen=True, gc=False, omit_defaults
 def decoder(type_: Any) -> msgspec.json.Decoder[Any]:
     """The shared lenient JSON decoder for a type."""
     return msgspec.json.Decoder(type_, strict=False)
+
+
+def _as_builtin(value: object) -> object:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, Sequence):
+        return list(value)
+    raise TypeError(f"Encoding objects of type {type(value).__name__} is unsupported")
+
+
+encoder = msgspec.json.Encoder(enc_hook=_as_builtin)
 
 
 def decode[M: Model](model: type[M], data: bytes) -> M:

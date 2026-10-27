@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -137,6 +137,45 @@ def test_command_names_are_unique_across_included_routers() -> None:
         bot.include(music)
     with pytest.raises(CommandDefinitionError, match="already registered"):
         bot.command(command)
+
+
+def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:
+    bot = Router()
+    ping = bot.command(name="ping")(command)
+    bot.on_component("taken:{a}")(component)
+    plugin = Router()
+    echo = plugin.command(name="echo")(command)
+    plugin.command(name="ping")(command)
+    plugin.listen(on_message)
+    clashing_route = Router()
+    clashing_route.on_component("taken:{a}")(component)
+
+    with pytest.raises(CommandDefinitionError, match="'ping' is already registered"):
+        bot.include(plugin)
+    with pytest.raises(ValueError, match="component template 'taken:"):
+        bot.include(clashing_route)
+
+    assert bot.commands == {"ping": ping}
+    assert bot.listeners == {}
+    assert plugin.parent is None and clashing_route.parent is None
+    del plugin.commands["ping"]
+    bot.include(plugin)
+    assert bot.commands == {"ping": ping, "echo": echo}
+    assert bot.listeners == {"MESSAGE_CREATE": [Listener(on_message, MessageCreate)]}
+
+
+def test_error_hooks_register_bare_or_for_types_and_all_or_nothing() -> None:
+    router = Router()
+
+    assert router.on_error(hook) is hook
+    router.on_error(AppError)(other_hook)
+    with pytest.raises(ValueError, match="AppError already exists"):
+        router.on_error(KeyError, AppError)(parent_hook)
+    not_an_exception: Any = hook
+    with pytest.raises(TypeError, match="is not an exception class"):
+        router.on_error(AppError, not_an_exception)
+
+    assert router.error_handlers == {Exception: hook, AppError: other_hook}
 
 
 def test_error_hooks_pick_the_nearest_base_then_walk_up() -> None:

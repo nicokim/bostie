@@ -16,6 +16,7 @@ from lyrecord.errors import (
     ServerError,
 )
 from lyrecord.file import File
+from lyrecord.models.base import encoder
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
 STATUS_ERRORS: dict[int, type[HTTPException]] = {
@@ -86,7 +87,7 @@ class HTTPClient:
         if files:
             content_type, body = _multipart(json, files)
         elif json is not None:
-            body = msgspec.json.encode(json)
+            body = encoder.encode(json)
         status, data = await self._bridge.request(
             method,
             route,
@@ -129,7 +130,7 @@ def _multipart(payload: Any, files: Sequence[File]) -> tuple[str, bytes]:
         chunks.extend((head.encode(), data, b"\r\n"))
 
     if payload is not None:
-        add('name="payload_json"', "application/json", msgspec.json.encode(payload))
+        add('name="payload_json"', "application/json", encoder.encode(payload))
     for index, file in enumerate(files):
         filename = (
             file.name.replace('"', "%22").replace("\r", "%0D").replace("\n", "%0A")

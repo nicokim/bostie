@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
-use twilight_http_ratelimiting::RateLimitHeaders;
+use twilight_http_ratelimiting::{Endpoint, RateLimitHeaders};
 
 const FALLBACK_RETRY_AFTER: Duration = Duration::from_secs(5);
 const LONGEST_HONORED_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
@@ -129,21 +129,26 @@ impl GlobalGate {
 
 #[derive(Default)]
 pub(super) struct InteractionBuckets {
-    exhausted_until: HashMap<String, Instant>,
+    exhausted_until: HashMap<Endpoint, Instant>,
 }
 
 impl InteractionBuckets {
-    pub(super) fn wait(&self, key: &str, now: Instant) -> Duration {
+    pub(super) fn wait(&self, key: &Endpoint, now: Instant) -> Duration {
         self.exhausted_until
             .get(key)
             .map_or(Duration::ZERO, |until| until.saturating_duration_since(now))
     }
 
-    pub(super) fn observe(&mut self, key: &str, bucket: Option<&RateLimitHeaders>, now: Instant) {
+    pub(super) fn observe(
+        &mut self,
+        key: &Endpoint,
+        bucket: Option<&RateLimitHeaders>,
+        now: Instant,
+    ) {
         self.exhausted_until.retain(|_, until| *until > now);
         match bucket {
             Some(bucket) if bucket.remaining == 0 && bucket.reset_at > now => {
-                self.exhausted_until.insert(key.to_owned(), bucket.reset_at);
+                self.exhausted_until.insert(key.clone(), bucket.reset_at);
             }
             _ => {
                 self.exhausted_until.remove(key);
@@ -155,6 +160,7 @@ impl InteractionBuckets {
 #[cfg(test)]
 mod tests {
     use reqwest::header::HeaderValue;
+    use twilight_http_ratelimiting::Method;
 
     use super::*;
 
@@ -312,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn interaction_buckets_hold_a_key_only_while_it_is_exhausted() {
+    fn interaction_buckets_hold_a_method_and_key_only_while_it_is_exhausted() {
         let now = Instant::now();
         let bucket = |remaining, reset_after| RateLimitHeaders {
             bucket: b"abcd1234".to_vec(),
@@ -320,20 +326,41 @@ mod tests {
             remaining,
             reset_at: now + Duration::from_secs(reset_after),
         };
+        let key = |method, path: &str| Endpoint {
+            method,
+            path: path.to_owned(),
+        };
         let mut buckets = InteractionBuckets::default();
 
-        buckets.observe("first", Some(&bucket(0, 2)), now);
-        buckets.observe("second", Some(&bucket(4, 2)), now);
-        buckets.observe("third", Some(&bucket(0, 9)), now);
+        buckets.observe(&key(Method::Patch, "first"), Some(&bucket(0, 2)), now);
+        buckets.observe(&key(Method::Patch, "second"), Some(&bucket(4, 2)), now);
+        buckets.observe(&key(Method::Patch, "third"), Some(&bucket(0, 9)), now);
 
-        assert_eq!(buckets.wait("first", now), Duration::from_secs(2));
-        assert_eq!(buckets.wait("second", now), Duration::ZERO);
+        assert_eq!(
+            buckets.wait(&key(Method::Patch, "first"), now),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            buckets.wait(&key(Method::Delete, "first"), now),
+            Duration::ZERO
+        );
+        assert_eq!(
+            buckets.wait(&key(Method::Patch, "second"), now),
+            Duration::ZERO
+        );
         assert_eq!(buckets.exhausted_until.len(), 2);
 
-        buckets.observe("third", Some(&bucket(3, 9)), now);
-        buckets.observe("fourth", None, now + Duration::from_secs(2));
+        buckets.observe(&key(Method::Patch, "third"), Some(&bucket(3, 9)), now);
+        buckets.observe(
+            &key(Method::Patch, "fourth"),
+            None,
+            now + Duration::from_secs(2),
+        );
 
-        assert_eq!(buckets.wait("first", now), Duration::ZERO);
+        assert_eq!(
+            buckets.wait(&key(Method::Patch, "first"), now),
+            Duration::ZERO
+        );
         assert!(buckets.exhausted_until.is_empty());
     }
 }

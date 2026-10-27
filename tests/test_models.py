@@ -173,6 +173,39 @@ def test_reencoding_writes_components_back_unchanged() -> None:
     assert msgspec.json.decode(msgspec.json.encode(body))["components"] == original
 
 
+def test_a_decoded_select_sent_back_keeps_its_default_values() -> None:
+    default = {"id": "820774541721731073", "type": "user"}
+    select = {"type": 5, "custom_id": "who", "default_values": [default]}
+    row = {"type": 1, "components": [select]}
+    message = decode(Message, msgspec.json.encode({"id": "1", "components": [row]}))
+    decoded_row = message.components[0]
+    assert isinstance(decoded_row, ActionRow)
+    child = decoded_row.components[0]
+    assert isinstance(child, SelectMenu)
+
+    body, _ = build_message(components=[msgspec.structs.replace(child, disabled=True)])
+
+    sent = msgspec.json.decode(msgspec.json.encode(body))["components"][0]
+    assert sent["default_values"] == [{"id": 820774541721731073, "type": "user"}]
+    assert sent["disabled"] is True
+
+
+def test_a_component_interaction_links_its_message_to_the_guild() -> None:
+    interaction = decode(Interaction, payload("events/INTERACTION_CREATE.button.json"))
+    message = interaction.message
+    assert message is not None
+
+    assert message.jump_url == (
+        f"https://discord.com/channels/{interaction.guild_id}/"
+        f"{message.channel_id}/{message.id}"
+    )
+    assert message.referenced_message is not None
+    assert message.referenced_message.guild_id == interaction.guild_id
+    assert decode(Message, payload("rest/message.json")).jump_url.startswith(
+        "https://discord.com/channels/@me/"
+    )
+
+
 def test_resolved_options_convert_to_their_models() -> None:
     interaction = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
     assert interaction.data is not None

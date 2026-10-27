@@ -130,26 +130,34 @@ class Router:
 
         return register
 
+    @overload
+    def on_error[H: ErrorHandler](self, handler: H, /) -> H: ...
+
+    @overload
     def on_error[H: ErrorHandler](
         self, *exception_types: type[BaseException]
-    ) -> Callable[[H], H]:
-        """Register `async def hook(ctx, error)` for this router's handler errors."""
+    ) -> Callable[[H], H]: ...
 
-        def register(handler: H) -> H:
-            for exception_type in exception_types or (Exception,):
-                if exception_type in self.error_handlers:
-                    raise ValueError(
-                        f"an error hook for {exception_type.__name__} already exists"
-                    )
-                self.error_handlers[exception_type] = handler
-            return handler
+    def on_error(self, *targets: Any) -> Any:
+        """Register `async def hook(ctx, error)` for this router's handler errors.
 
-        return register
+        Use `@router.on_error` for every Exception, or name the exception types.
+        """
+        if len(targets) == 1 and not isinstance(targets[0], type):
+            return self._on_error(targets[0], (Exception,))
+        for target in targets:
+            if not (isinstance(target, type) and issubclass(target, BaseException)):
+                raise TypeError(f"{target!r} is not an exception class")
+        return lambda handler: self._on_error(handler, targets or (Exception,))
 
     def include(self, router: "Router") -> None:
         """Add a router's commands, listeners and routes, including later ones."""
         if router.parent is not None or router in self._chain():
             raise ValueError("a router can be included once, and never into itself")
+        for name in router.commands:
+            self._check_command(name)
+        for template in router.component_routes:
+            self._check_route(template)
         router.parent = self
         for node in router.commands.values():
             self._add_command(node)
@@ -200,18 +208,38 @@ class Router:
             )
         return listener
 
+    def _on_error[H: ErrorHandler](
+        self, handler: H, exception_types: tuple[type[BaseException], ...]
+    ) -> H:
+        for exception_type in exception_types:
+            if exception_type in self.error_handlers:
+                raise ValueError(
+                    f"an error hook for {exception_type.__name__} already exists"
+                )
+        for exception_type in exception_types:
+            self.error_handlers[exception_type] = handler
+        return handler
+
     def _chain(self) -> Iterator["Router"]:
         router: Router | None = self
         while router is not None:
             yield router
             router = router.parent
 
+    def _check_command(self, name: str) -> None:
+        if any(name in router.commands for router in self._chain()):
+            raise CommandDefinitionError(
+                f"a command named {name!r} is already registered"
+            )
+
+    def _check_route(self, template: str) -> None:
+        if any(template in router.component_routes for router in self._chain()):
+            raise ValueError(
+                f"the component template {template!r} is already registered"
+            )
+
     def _add_command(self, node: Command | Group) -> None:
-        for router in self._chain():
-            if node.name in router.commands:
-                raise CommandDefinitionError(
-                    f"a command named {node.name!r} is already registered"
-                )
+        self._check_command(node.name)
         for router in self._chain():
             router.commands[node.name] = node
             router._registered()
@@ -222,11 +250,7 @@ class Router:
             router._registered()
 
     def _add_route(self, route: ComponentRoute[...]) -> None:
-        for router in self._chain():
-            if route.template in router.component_routes:
-                raise ValueError(
-                    f"the component template {route.template!r} is already registered"
-                )
+        self._check_route(route.template)
         for router in self._chain():
             router.component_routes[route.template] = route
             router._registered()

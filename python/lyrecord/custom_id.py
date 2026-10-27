@@ -1,5 +1,6 @@
 import re
 from collections.abc import Callable, Coroutine
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -7,7 +8,7 @@ if TYPE_CHECKING:
 
 MAX_CUSTOM_ID = 100
 PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
-PATTERNS = {"": r".+?", "int": r"-?\d+"}
+KINDS = frozenset({"", "int"})
 
 
 class ComponentRoute[**P]:
@@ -35,16 +36,7 @@ class ComponentRoute[**P]:
         self.router = router
         self.names = names
         self._literals = literals
-        self._integers = frozenset(name for name, kind in placeholders if kind == "int")
-        self._pattern = re.compile(
-            re.escape(literals[0])
-            + "".join(
-                f"(?P<{name}>{PATTERNS[kind]})" + re.escape(literal)
-                for (name, kind), literal in zip(
-                    placeholders, literals[1:], strict=True
-                )
-            )
-        )
+        self._kinds = tuple(kind for _, kind in placeholders)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, None]:
         return self.handler(*args, **kwargs)
@@ -72,20 +64,47 @@ class ComponentRoute[**P]:
 
     def match(self, custom_id: str) -> dict[str, str | int] | None:
         """The placeholder values in `custom_id`, or None if it does not fit."""
-        found = self._pattern.fullmatch(custom_id)
+        head = self._literals[0]
+        if not custom_id.startswith(head):
+            return None
+
+        @cache
+        def values(index: int, start: int) -> tuple[str, ...] | None:
+            if index == len(self._kinds):
+                return () if start == len(custom_id) else None
+            literal = self._literals[index + 1]
+            for end in _ends(self._kinds[index], custom_id, start):
+                if custom_id.startswith(literal, end):
+                    rest = values(index + 1, end + len(literal))
+                    if rest is not None:
+                        return (custom_id[start:end], *rest)
+            return None
+
+        found = values(0, len(head))
         if found is None:
             return None
         return {
-            name: int(value) if name in self._integers else value
-            for name, value in found.groupdict().items()
+            name: int(value) if kind == "int" else value
+            for name, kind, value in zip(self.names, self._kinds, found, strict=True)
         }
 
 
 def _placeholder(template: str, text: str) -> tuple[str, str]:
     name, _, kind = text.partition(":")
-    if not name.isidentifier() or kind not in PATTERNS:
+    if not name.isidentifier() or kind not in KINDS:
         raise ValueError(
             f"{template!r} has an invalid placeholder {{{text}}}; "
             "use {name} or {name:int}"
         )
     return name, kind
+
+
+def _ends(kind: str, text: str, start: int) -> range:
+    if kind == "int":
+        digits = start + text.startswith("-", start)
+        stop = digits
+        while stop < len(text) and text[stop].isdecimal():
+            stop += 1
+        return range(stop, digits, -1)
+    newline = text.find("\n", start)
+    return range(start + 1, (len(text) if newline < 0 else newline) + 1)

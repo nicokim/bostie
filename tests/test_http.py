@@ -1,5 +1,7 @@
 import asyncio
+from collections import UserList
 from collections.abc import Callable, Coroutine
+from types import MappingProxyType
 from typing import Any, Literal
 
 import msgspec
@@ -130,25 +132,40 @@ def test_a_rate_limit_longer_than_lyrecord_waits_raises_rate_limited(
     run(scenario)
 
 
-def test_a_rejected_interaction_token_keeps_discords_status_and_code() -> None:
+@pytest.mark.parametrize(
+    ("route", "params"),
+    [
+        (
+            "/webhooks/{application_id}/{interaction_token}",
+            {"application_id": 1, "interaction_token": "dead"},
+        ),
+        (
+            "/webhooks/{webhook_id}/{webhook_token}",
+            {"webhook_id": 1, "webhook_token": "dead"},
+        ),
+    ],
+)
+def test_a_rejected_interaction_or_webhook_token_keeps_discords_status_and_code(
+    route: str, params: dict[str, Any]
+) -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        route = f"/webhooks/{fake.application_id}/dead"
         fake.fail(
-            "POST", route, 401, {"message": "Invalid Webhook Token", "code": 50027}
+            "POST",
+            "/webhooks/1/dead",
+            401,
+            {"message": "Invalid Webhook Token", "code": 50027},
         )
 
         with pytest.raises(HTTPException) as raised:
-            await http.request(
-                "POST",
-                "/webhooks/{application_id}/{interaction_token}",
-                application_id=fake.application_id,
-                interaction_token="dead",
-                json={"content": "x"},
-            )
+            await http.request("POST", route, json={"content": "x"}, **params)
 
         assert type(raised.value) is HTTPException
         assert (raised.value.status, raised.value.code) == (401, 50027)
         assert "authorization" not in fake.requests[0].headers
+        user = next(iter(fake.users))
+        assert (await http.request("GET", "/users/{user_id}", user_id=user))[
+            "id"
+        ] == user
 
     run(scenario)
 
@@ -189,6 +206,22 @@ def test_files_go_out_as_multipart_with_payload_json_and_escaped_names() -> None
             ),
             Part("files[1]", "raw.bin", "application/octet-stream", b"\x00\r\n--"),
         ]
+
+    run(scenario)
+
+
+def test_any_mapping_or_sequence_is_sent_as_json() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        embeds = UserList([MappingProxyType({"title": "t"})])
+        body = MappingProxyType({"content": "x", "embeds": embeds})
+
+        for files in ((), (File("a.txt", b"a"),)):
+            await http.request(
+                "POST", MESSAGES, channel_id=channel_id(fake), json=body, files=files
+            )
+
+        expected = {"content": "x", "embeds": [{"title": "t"}]}
+        assert [request.json for request in fake.requests] == [expected, expected]
 
     run(scenario)
 

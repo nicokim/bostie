@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from collections.abc import Callable, Coroutine
+from types import MappingProxyType
 from typing import Any
 
 import msgspec
@@ -76,7 +77,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
         fake, gateway = harness.fake, harness.gateway
         assert gateway.latency is None
         gateway.identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
-        started = harness.start(presence={"status": "idle"})
+        started = harness.start(presence=MappingProxyType({"status": "idle"}))
 
         assert await harness.deliveries.get() == (
             "disconnected",
@@ -110,7 +111,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
             "status": "dnd",
             "afk": False,
         }
-        gateway.send(3, presence)
+        gateway.send(3, MappingProxyType(presence))
         assert await sent_op(fake, 3) == presence
 
         for _ in range(2):

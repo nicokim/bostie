@@ -61,15 +61,15 @@ impl IdentifyGate {
         (budget.remaining == 0).then_some(budget.resets_at)
     }
 
-    pub(crate) fn reserve(&self, now: Instant) -> Instant {
+    pub(crate) fn reserve(&self, now: Instant) -> Option<Instant> {
         let mut state = self.state.lock();
         if let Some(budget) = state.budget.as_mut() {
             budget.refill_if_due(now);
-            budget.remaining = budget.remaining.saturating_sub(1);
+            budget.remaining = budget.remaining.checked_sub(1)?;
         }
         let slot = state.next_slot.map_or(now, |next| next.max(now));
         state.next_slot = Some(slot + IDENTIFY_SPACING);
-        slot
+        Some(slot)
     }
 }
 
@@ -95,10 +95,10 @@ mod tests {
         let gate = IdentifyGate::default();
         let start = Instant::now();
 
-        assert_eq!(gate.reserve(start), start);
-        assert_eq!(gate.reserve(start), start + IDENTIFY_SPACING);
+        assert_eq!(gate.reserve(start), Some(start));
+        assert_eq!(gate.reserve(start), Some(start + IDENTIFY_SPACING));
         let later = start + IDENTIFY_SPACING * 10;
-        assert_eq!(gate.reserve(later), later);
+        assert_eq!(gate.reserve(later), Some(later));
     }
 
     #[test]
@@ -107,7 +107,7 @@ mod tests {
         let now = Instant::now();
 
         for _ in 0..2000 {
-            gate.reserve(now);
+            assert!(gate.reserve(now).is_some());
         }
 
         assert_eq!(gate.exhausted_until(now), None);
@@ -120,14 +120,16 @@ mod tests {
         let gate = seeded(1, reset, start);
 
         assert_eq!(gate.exhausted_until(start), None);
-        gate.reserve(start);
+        assert_eq!(gate.reserve(start), Some(start));
+        assert_eq!(gate.reserve(start), None);
         assert_eq!(gate.exhausted_until(start), Some(start + reset));
 
         let after_reset = start + reset;
         assert_eq!(gate.exhausted_until(after_reset), None);
         for _ in 0..1000 {
-            gate.reserve(after_reset);
+            assert!(gate.reserve(after_reset).is_some());
         }
+        assert_eq!(gate.reserve(after_reset), None);
         assert_eq!(
             gate.exhausted_until(after_reset),
             Some(after_reset + BUDGET_PERIOD)

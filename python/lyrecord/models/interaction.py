@@ -12,7 +12,7 @@ from lyrecord.enums import (
 from lyrecord.models.base import Model, permissions_from
 from lyrecord.models.channel import Channel
 from lyrecord.models.guild import Member, Role
-from lyrecord.models.message import Attachment, Message
+from lyrecord.models.message import Attachment, Message, in_guild
 from lyrecord.models.user import User
 
 
@@ -92,6 +92,10 @@ class Interaction(Model, kw_only=True):
     authorizing_integration_owners: dict[str, int] | None = None
     context: InteractionContextType | None = None
     attachment_size_limit: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.message is not None:
+            in_guild(self.message, self.guild_id)
 
     @property
     def app_permissions(self) -> Permissions | None:

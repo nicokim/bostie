@@ -5,8 +5,6 @@ import sys
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-import msgspec
-
 from lyrecord._bridge import Bridge, StatusDelivery
 from lyrecord.errors import (
     GatewayClosed,
@@ -15,6 +13,7 @@ from lyrecord.errors import (
     PrivilegedIntentsRequired,
     ShardingRequired,
 )
+from lyrecord.models.base import encoder
 
 SHARD = 0
 CLOSE_TIMEOUT = 2.0
@@ -67,7 +66,7 @@ class GatewayClient:
         if presence is not None:
             identify["presence"] = presence
         stopped = self._bridge.create_future()
-        self._bridge.core.gateway_start(SHARD, url, msgspec.json.encode(identify))
+        self._bridge.core.gateway_start(SHARD, url, encoder.encode(identify))
         self._stopped = stopped
         await asyncio.shield(stopped)
 
@@ -76,7 +75,7 @@ class GatewayClient:
 
         Their replies arrive only for event names someone listens to.
         """
-        self._bridge.core.gateway_send(SHARD, msgspec.json.encode({"op": op, "d": d}))
+        self._bridge.core.gateway_send(SHARD, encoder.encode({"op": op, "d": d}))
 
     def filter(self, names: Iterable[str] | None) -> None:
         """Forward only dispatches with these names, or every dispatch for None."""

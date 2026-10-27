@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from lyrecord.events import (
     MemberUpdate,
     MessageCreate,
     MessageDelete,
+    RawEvent,
     ReactionAdd,
     Ready,
     ThreadCreate,
@@ -27,7 +29,7 @@ from lyrecord.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from lyrecord.models import Guild, Member, Model
+from lyrecord.models import Builder, Guild, Member, Model
 from lyrecord.models.base import decode as decode_model
 from lyrecord.models.base import decoder
 
@@ -35,6 +37,29 @@ EVENT_FIXTURES = Path(__file__).parent / "fixtures" / "models" / "events"
 MODELLED = sorted(
     path for path in EVENT_FIXTURES.glob("*.json") if path.name.split(".")[0] in EVENTS
 )
+
+
+TOKEN = "lyrecord-test-token-7c1f"
+
+
+def subclasses(base: type) -> Iterator[type]:
+    subclass: type
+    for subclass in base.__subclasses__():
+        yield subclass
+        yield from subclasses(subclass)
+
+
+STRUCTS: list[type[msgspec.Struct]] = [
+    *subclasses(Model),
+    *subclasses(Builder),
+    *subclasses(Event),
+]
+SECRET_KEYS = {
+    field.encode_name
+    for struct in STRUCTS
+    for field in msgspec.structs.fields(struct)
+    if "token" in field.encode_name or "secret" in field.encode_name
+}
 
 
 def decode[E: Event](event: type[E], name: str, shard_id: int = 0) -> E:
@@ -207,10 +232,16 @@ def test_thread_list_sync_tells_channel_scope_from_guild_scope() -> None:
 
 def test_message_and_reaction_events() -> None:
     created = decode(MessageCreate, "MESSAGE_CREATE")
+    reply = decode(MessageCreate, "MESSAGE_CREATE.rich").message.referenced_message
     deleted = decode(MessageDelete, "MESSAGE_DELETE")
     reaction = decode(ReactionAdd, "MESSAGE_REACTION_ADD")
 
     assert created.message.guild_id == 1335172792320131073
+    assert reply is not None
+    assert reply.jump_url == (
+        "https://discord.com/channels/1335172792320131073/"
+        "1335173295636611073/1564609610244030465"
+    )
     assert created.message.member is not None
     assert created.message.member.user is None
     assert deleted.id == created.message.id
@@ -229,3 +260,47 @@ def test_voice_events() -> None:
     assert state.member is not None
     assert server.endpoint == "c-iad20-3a7f91c2.discord.media:443"
     assert server.token == "8f3e2b9c1d7a4f60"
+
+
+@pytest.mark.parametrize("struct", STRUCTS, ids=lambda struct: struct.__qualname__)
+def test_no_repr_shows_a_token_or_the_payload_holding_it(
+    struct: type[msgspec.Struct],
+) -> None:
+    payload: dict[str, Any] = {"id": "1", "name": "n", "seq": 1}
+    payload |= dict.fromkeys(SECRET_KEYS, TOKEN)
+    if any(
+        field.required and field.name == "type"
+        for field in msgspec.structs.fields(struct)
+    ):
+        payload["type"] = 1
+    data = msgspec.json.encode(payload)
+    value: Any
+    if issubclass(struct, Event):
+        value = struct.decode(0, data)
+    elif issubclass(struct, Model):
+        value = decode_model(struct, data)
+    else:
+        value = decoder(struct).decode(data)
+
+    for text in (repr(value), str(value), repr(value.__rich_repr__())):
+        assert TOKEN not in text
+
+
+def test_reprs_leave_out_interaction_and_voice_tokens() -> None:
+    created = decode(InteractionCreate, "INTERACTION_CREATE.command")
+    server = decode(VoiceServerUpdate, "VOICE_SERVER_UPDATE")
+    raw = RawEvent(
+        shard_id=0, raw_json=created.raw_json, name=InteractionCreate.NAME, seq=1
+    )
+    token = created.interaction.token
+    assert token is not None and server.token is not None
+
+    for value, secret in [
+        (created, token),
+        (created.interaction, token),
+        (raw, token),
+        (server, server.token),
+    ]:
+        assert secret not in repr(value)
+        assert secret not in str(value)
+    assert repr(raw) == "RawEvent(shard_id=0, name='INTERACTION_CREATE', seq=1)"

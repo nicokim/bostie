@@ -1,3 +1,5 @@
+from enum import IntFlag
+
 import msgspec
 import pytest
 
@@ -17,7 +19,7 @@ from lyrecord.enums import (
     OptionType,
     Permissions,
 )
-from lyrecord.models import Application, decode
+from lyrecord.models import Application, Member, Message, decode
 
 
 class Channel(msgspec.Struct):
@@ -43,6 +45,48 @@ def test_application_flags_keep_unknown_bits_beyond_64_from_a_string() -> None:
 
     assert flags == bits
     assert ApplicationFlags.APPLICATION_COMMAND_BADGE in flags
+
+
+@pytest.mark.parametrize(
+    ("flags", "unknown"),
+    [
+        (Permissions, 1 << 70),
+        (ApplicationFlags, 1 << 70),
+        (MessageFlags, 1 << 63),
+        (ChannelFlags, 1 << 63),
+        (Intents, 1 << 40),
+    ],
+)
+def test_every_operator_keeps_unknown_bits(flags: type[IntFlag], unknown: int) -> None:
+    first, second = list(flags)[:2]
+    value = flags(unknown | first | second)
+
+    assert value & ~first == unknown | second
+    assert value & ~flags(0) == value
+    assert ~~value == value
+    assert value | first == value
+    assert value ^ first == unknown | second
+    assert unknown & value == unknown
+    assert unknown ^ value == first | second
+    assert all(member in ~first for member in flags if member != first)
+    assert msgspec.json.Decoder(flags).decode(b"%d" % first) == first
+
+
+def test_clearing_a_message_flag_keeps_bits_discord_added_later() -> None:
+    message = decode(Message, b'{"id": "1", "flags": %d}' % (1 << 16 | 1 << 2))
+    assert message.flags is not None
+
+    assert message.flags & ~MessageFlags.SUPPRESS_EMBEDS == 1 << 16
+
+
+def test_reading_permissions_caches_no_composite_values() -> None:
+    cached = len(Permissions._value2member_map_)
+
+    for value in range(1, 2000):
+        member = decode(Member, b'{"permissions": "%d"}' % (value << 20))
+        assert member.permissions == value << 20
+
+    assert len(Permissions._value2member_map_) == cached
 
 
 def test_default_intents_exclude_privileged_ones() -> None:

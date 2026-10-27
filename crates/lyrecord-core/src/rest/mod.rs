@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use reqwest::{Method, StatusCode, Url};
 use sonic_rs::JsonValueTrait;
-use twilight_http_ratelimiting::{Bucket, Permit, RateLimiter};
+use twilight_http_ratelimiting::{Bucket, Permit, RateLimitHeaders, RateLimiter};
 
 pub use self::request::RestRequest;
 
@@ -181,21 +181,21 @@ impl Rest {
         })
     }
 
-    async fn permit(&self, request: &RestRequest) -> Result<Option<Permit>, Duration> {
+    async fn permit(&self, request: &RestRequest) -> Result<PermitGuard, Duration> {
         match request.class {
-            RouteClass::Callback => return Ok(None),
+            RouteClass::Callback => return Ok(PermitGuard(None)),
             RouteClass::Interaction => {
                 let wait = self
                     .interaction_buckets
                     .lock()
-                    .wait(&request.endpoint.path, Instant::now());
+                    .wait(&request.endpoint, Instant::now());
                 if wait > MAX_RETRY_WAIT {
                     return Err(wait);
                 }
                 if !wait.is_zero() {
                     tokio::time::sleep(wait).await;
                 }
-                return Ok(None);
+                return Ok(PermitGuard(None));
             }
             RouteClass::Webhook | RouteClass::Anonymous | RouteClass::Bot => {}
         }
@@ -204,7 +204,7 @@ impl Rest {
         }));
         loop {
             let refused = match tokio::time::timeout(MAX_RETRY_WAIT, acquire.as_mut()).await {
-                Ok(Some(permit)) => return Ok(Some(permit)),
+                Ok(Some(permit)) => return Ok(PermitGuard(Some(permit))),
                 Ok(None) => true,
                 Err(_) => false,
             };
@@ -222,7 +222,7 @@ impl Rest {
         ticket: Ticket,
         request: &RestRequest,
         url: Url,
-        permit: Option<Permit>,
+        permit: PermitGuard,
         retries: &mut Retries,
     ) -> ControlFlow<Delivery, Duration> {
         let mut builder = self
@@ -244,14 +244,12 @@ impl Rest {
         self.observe(request.class, status, limits.limited);
         if request.class == RouteClass::Interaction {
             self.interaction_buckets.lock().observe(
-                &request.endpoint.path,
+                &request.endpoint,
                 limits.bucket.as_ref(),
                 Instant::now(),
             );
         }
-        if let Some(permit) = permit {
-            permit.complete(limits.bucket);
-        }
+        permit.complete(limits.bucket);
         if let Some(wait) = retries.after_response(&request.method, status, limits.limited) {
             tracing::debug!(route = %request.endpoint.path, %status, ?wait, "retrying");
             return ControlFlow::Continue(wait);
@@ -286,6 +284,24 @@ impl Rest {
             if let Some(count) = crossed {
                 self.inbox.push(Delivery::InvalidRequests { count });
             }
+        }
+    }
+}
+
+struct PermitGuard(Option<Permit>);
+
+impl PermitGuard {
+    fn complete(mut self, headers: Option<RateLimitHeaders>) {
+        if let Some(permit) = self.0.take() {
+            permit.complete(headers);
+        }
+    }
+}
+
+impl Drop for PermitGuard {
+    fn drop(&mut self) {
+        if let Some(permit) = self.0.take() {
+            permit.complete(None);
         }
     }
 }
@@ -1157,6 +1173,25 @@ pub(crate) mod tests {
 
             assert_eq!(status(delivery.unwrap()).0, 200);
         }
+    }
+
+    #[tokio::test]
+    async fn a_request_cancelled_after_sending_keeps_its_global_slot() {
+        crate::init_test_tracing();
+        let mut server = Server::start(vec![NO_REPLY]).await;
+        let (rest, _receiver) = limited_rest(&server.url, 1);
+        let rest = Arc::new(rest);
+        let sent = tokio::spawn({
+            let rest = Arc::clone(&rest);
+            async move { rest.execute(Ticket::from(1), message("1", "10")).await }
+        });
+        let first = server.next().await.at;
+
+        sent.abort();
+        status(rest.execute(Ticket::from(2), message("1", "20")).await);
+
+        let waited = server.next().await.at - first;
+        assert!(waited >= Duration::from_millis(900), "{waited:?}");
     }
 
     #[tokio::test]

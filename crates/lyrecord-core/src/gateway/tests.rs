@@ -7,7 +7,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use sonic_rs::{JsonValueTrait, Value};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep, timeout, timeout_at};
@@ -95,7 +95,10 @@ struct FakeGateway {
 
 impl FakeGateway {
     async fn start(zstd: bool) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.set_recv_buffer_size(4096).unwrap();
+        socket.bind(SocketAddr::from(([127, 0, 0, 1], 0))).unwrap();
+        let listener = socket.listen(1024).unwrap();
         let address = listener.local_addr().unwrap();
         let (sender, connections) = mpsc::unbounded_channel();
         tokio::spawn(async move {
@@ -196,6 +199,25 @@ impl Peer {
 
     async fn receive(&mut self) -> Value {
         sonic_rs::from_str(&self.receive_text().await).unwrap()
+    }
+
+    async fn identifies(&mut self) -> bool {
+        loop {
+            let message = timeout(WAIT, self.socket.next())
+                .await
+                .expect("nothing received")
+                .expect("the client went away")
+                .unwrap();
+            if message.is_close() {
+                return false;
+            }
+            if let Some(text) = message.as_text()
+                && !text.starts_with(r#"{"op":1,"#)
+            {
+                assert_identify(&sonic_rs::from_str(text).unwrap());
+                return true;
+            }
+        }
     }
 
     async fn acknowledge_heartbeats(mut self) {
@@ -791,6 +813,125 @@ async fn an_empty_identify_budget_opens_no_connection_until_the_reset() {
     );
     harness.fake.connection().await;
     assert!(seeded.elapsed() >= reset_after - Duration::from_millis(5));
+}
+
+#[tokio::test]
+async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
+    let mut harness = Harness::new(false).await;
+    harness.gateway.set_identify_limit(IdentifyLimit {
+        remaining: 1,
+        total: 1000,
+        reset_after: Duration::from_secs(3600),
+    });
+    for id in 0..2 {
+        harness
+            .gateway
+            .start(
+                ShardId::from(id),
+                &harness.fake.url(),
+                Bytes::from_static(IDENTIFY),
+            )
+            .unwrap();
+    }
+    let mut peers = [harness.fake.accept().await, harness.fake.accept().await];
+
+    for peer in &mut peers {
+        peer.send(&hello(SLOW_HEARTBEAT)).await;
+    }
+
+    let mut identified = 0;
+    for peer in &mut peers {
+        identified += usize::from(peer.identifies().await);
+    }
+    assert_eq!(identified, 1);
+    assert_eq!(
+        harness.disconnected().await,
+        (
+            None,
+            "daily identify limit reached; waiting 3600 s".to_owned(),
+            false
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
+    let mut harness = Harness::new(false).await;
+    harness.inbox.push(Delivery::Dispatch {
+        shard: shard(),
+        seq: 0,
+        name: "MESSAGE_CREATE".into(),
+        data: Bytes::from(vec![b'0'; DISPATCH_BYTES_LIMIT]),
+    });
+    harness.start();
+    let mut peer = harness.fake.accept().await;
+    peer.send(&hello(100)).await;
+    assert_identify(&peer.receive().await);
+    peer.send(&harness.fake.ready()).await;
+
+    drop(peer);
+
+    harness.resume(SLOW_HEARTBEAT, 1).await;
+}
+
+#[tokio::test]
+async fn a_write_that_never_finishes_ends_the_connection_and_does_not_hold_back_close() {
+    let mut harness = Harness::new(false).await;
+    harness.start();
+    let mut peer = harness.fake.accept().await;
+    peer.send(&hello(SLOW_HEARTBEAT)).await;
+    assert_identify(&peer.receive().await);
+    let unsendable = "s".repeat(8 << 20);
+    peer.send(&harness.fake.ready().replace(SESSION_ID, &unsendable))
+        .await;
+    harness.until_dispatch("READY").await;
+    drop(peer);
+    assert!(harness.disconnected().await.2);
+
+    let mut unread = harness.fake.accept().await;
+    unread.send(&hello(300)).await;
+    assert_eq!(
+        harness.disconnected().await,
+        (None, "a write did not finish within 300ms".to_owned(), true)
+    );
+
+    let mut unread_again = harness.fake.accept().await;
+    unread_again.send(&hello(SLOW_HEARTBEAT)).await;
+    sleep(Duration::from_millis(100)).await;
+    let closing = Instant::now();
+    harness.gateway.close(shard()).unwrap();
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    let stopped_after = closing.elapsed();
+    assert!(stopped_after < Duration::from_secs(1), "{stopped_after:?}");
+}
+
+#[tokio::test]
+async fn a_pause_that_starts_after_an_unanswered_heartbeat_is_no_zombie() {
+    let mut harness = Harness::new(false).await;
+    let mut peer = harness.ready(500).await;
+    peer.send(fixture(HEARTBEAT_ACK)).await;
+    peer.heartbeat().await;
+    peer.send(fixture(HEARTBEAT_ACK)).await;
+    peer.heartbeat().await;
+
+    for seq in 2..=14 {
+        peer.send(&message(seq)).await;
+    }
+    peer.send(fixture(HEARTBEAT_ACK)).await;
+    for _ in 0..3 {
+        peer.heartbeat().await;
+    }
+    tokio::spawn(peer.acknowledge_heartbeats());
+
+    let mut seqs = Vec::new();
+    while seqs.len() < 13 {
+        match harness.delivery().await {
+            Delivery::Dispatch { seq, .. } => seqs.push(seq),
+            Delivery::Backpressure { .. } => {}
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(seqs, (2..=14).collect::<Vec<_>>());
 }
 
 #[tokio::test]

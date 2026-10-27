@@ -188,6 +188,14 @@ class Message(Model, kw_only=True):
         return resolved.messages.get(id) if resolved.messages else None
 
 
+def in_guild(message: Message, guild_id: int | None) -> Message:
+    if message.guild_id is None:
+        msgspec.structs.force_setattr(message, "guild_id", guild_id)
+    if message.referenced_message is not None:
+        in_guild(message.referenced_message, message.guild_id)
+    return message
+
+
 def build_message(
     content: str | None = None,
     *,

@@ -47,6 +47,13 @@ class SelectOption(Builder, kw_only=True):
     default: bool | None = None
 
 
+class SelectDefaultValue(Builder, kw_only=True):
+    """A user, role or channel a select shows as already chosen."""
+
+    id: int
+    type: str | None = None
+
+
 class SelectMenu(Builder, kw_only=True):
     """A string, user, role, mentionable or channel select, told apart by `type`."""
 
@@ -56,6 +63,7 @@ class SelectMenu(Builder, kw_only=True):
     options: tuple[SelectOption, ...] = ()
     channel_types: tuple[ChannelType, ...] = ()
     placeholder: str | None = None
+    default_values: tuple[SelectDefaultValue, ...] = ()
     min_values: int | None = None
     max_values: int | None = None
     disabled: bool | None = None

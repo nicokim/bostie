@@ -452,6 +452,43 @@ def test_buttons_and_modal_submits_are_routed_by_custom_id_template() -> None:
     run(scenario)
 
 
+def test_a_bot_with_only_component_routes_answers_clicks() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.on_component("go")
+        async def go(ctx: ComponentContext) -> None:
+            await ctx.update("went")
+
+        async with running(bot, fake):
+            clicked = await fake.interaction(3, payloads.button("go"))
+
+        assert clicked.json["type"] == 7
+
+    run(scenario)
+
+
+def test_a_handler_that_closes_the_bot_finishes_the_shutdown() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.command
+        async def stop(ctx: Context) -> None:
+            """Stop the bot."""
+            await ctx.respond("bye")
+            await bot.close()
+
+        started = asyncio.create_task(bot.start(fake.token))
+        await bot.wait_until_ready()
+        answered = await fake.interaction(2, payloads.command("stop"))
+
+        await started
+        assert answered.json["type"] == 4
+        assert fake.connections[-1].close_code == 1000
+
+    run(scenario)
+
+
 def test_listeners_the_cache_and_wait_for_see_gateway_events() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
@@ -643,6 +680,95 @@ def test_a_resume_replays_missed_events_once_and_skips_stale_interactions(
 
     replayed = [record for record in caplog.records if "replayed" in record.message]
     assert [record.levelno for record in replayed] == [logging.WARNING]
+
+
+def test_wait_until_ready_raises_once_the_bot_stops_before_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        monkeypatch.delenv("LYRECORD_TOKEN", raising=False)
+        bot = Bot(api_url=fake.api_url)
+        failures: list[tuple[str | None, type[Exception]]] = [
+            (None, ValueError),
+            ("wrong-token", InvalidToken),
+        ]
+        for token, error in failures:
+            started = asyncio.create_task(bot.start(token))
+            with pytest.raises(RuntimeError, match="stopped before READY"):
+                await bot.wait_until_ready()
+            with pytest.raises(error):
+                await started
+
+        fake.latency(0.3)
+        started = asyncio.create_task(bot.start(fake.token))
+        waiting = asyncio.create_task(bot.wait_until_ready())
+        await asyncio.sleep(0.1)
+        await bot.close()
+        await started
+        with pytest.raises(RuntimeError, match="stopped before READY"):
+            await waiting
+
+        fake.latency(0)
+        async with running(bot, fake):
+            await bot.wait_until_ready()
+
+        first = asyncio.create_task(bot.start(fake.token))
+        await bot.wait_until_ready()
+        await bot.close()
+        second = asyncio.create_task(bot.start(fake.token))
+        await bot.wait_until_ready()
+        await first
+        await bot.close()
+        await second
+
+    run(scenario)
+
+
+def test_start_seeds_the_daily_identify_budget(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        exhausted = {"total": 1000, "remaining": 0, "reset_after": 300}
+        gateway_bot = payloads.fixture("rest/gateway_bot")
+        fake.fail(
+            "GET",
+            "/gateway/bot",
+            200,
+            gateway_bot | {"url": fake.gateway_url, "session_start_limit": exhausted},
+        )
+        async with running(Bot(api_url=fake.api_url), fake):
+            await fake.next_identify()
+
+    run(scenario)
+
+    assert any(
+        "daily identify limit reached" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_a_replayed_interaction_is_deferred_by_its_age_not_its_receipt() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=1.0)
+        states: asyncio.Queue[ResponseState] = asyncio.Queue()
+
+        @bot.command
+        async def slow(ctx: Context) -> None:
+            """Answer slowly."""
+            await asyncio.sleep(0.5)
+            states.put_nowait(ctx.state)
+            await ctx.respond("done")
+
+        async with running(bot, fake):
+            await fake.send_op(7)
+            created = payloads.snowflake(time.time() - 2.5)
+            first = await fake.interaction(2, payloads.command("slow"), id=created)
+            await fake.next_resume()
+            assert await states.get() is ResponseState.DEFERRED
+
+        assert first.json["type"] == 5
+
+    run(scenario)
 
 
 def test_start_resolves_the_token_and_raises_fatal_errors(
@@ -905,6 +1031,10 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
         channel_id = int(payloads.channel()["id"])
         member_id = int(payloads.member()["user"]["id"])
         async with running(bot, fake):
+            await asyncio.gather(
+                bot.wait_for(GuildCreate),
+                fake.dispatch("GUILD_CREATE", payloads.guild()),
+            )
             sent = await bot.send_message(
                 channel_id, "hello", files=[File("a.txt", b"A")], reply_to=5
             )
@@ -926,6 +1056,8 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
             }
             fetched = await bot.fetch_message(channel_id, sent.id)
             assert (edited.content, fetched.content) == ("edited", "edited")
+            link = f"https://discord.com/channels/{guild_id}/{channel_id}/{sent.id}"
+            assert sent.jump_url == edited.jump_url == fetched.jump_url == link
 
             await bot.delete_message(channel_id, sent.id, reason="cleanup")
             assert fake.requests[-1].headers["x-audit-log-reason"] == "cleanup"

@@ -236,6 +236,9 @@ def test_message_calls_return_the_message_discord_created() -> None:
         assert answer.raw["id"] == "1564609864741814273"
         assert followup is not None
         assert followup.raw_json == MESSAGE_BODY
+        in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
+        assert answer.jump_url.startswith(in_guild)
+        assert followup.jump_url.startswith(in_guild)
 
     run(scenario)
 

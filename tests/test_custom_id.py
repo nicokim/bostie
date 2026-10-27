@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import re
+import time
 from typing import get_args
 
 import pytest
@@ -27,6 +28,26 @@ def test_placeholders_parse_with_backtracking_and_int_conversion() -> None:
     assert vote.match("vote:x:y") is None
     assert vote.match("vote::1") is None
     assert vote.match("other:x:1") is None
+    assert route("x:{a}").match("x:abc") == {"a": "abc"}
+    assert route("v:{n:int}").match("v:12junk") is None
+    assert route("{n:int}1{x}").match("12121x") == {"n": 1212, "x": "x"}
+
+
+def test_a_custom_id_that_nearly_fits_many_placeholders_fails_fast() -> None:
+    many = route("{a}:{b}:{c}:{d}:{e}:{f}:end")
+
+    started = time.perf_counter()
+    assert many.match(":" * 100) is None
+    assert time.perf_counter() - started < 0.5
+    assert many.match("a:b:c:d:e:f:g\n:end") is None
+    assert many.match("a:b:c:d:e:f:g:end") == {
+        "a": "a",
+        "b": "b",
+        "c": "c",
+        "d": "d",
+        "e": "e",
+        "f": "f:g",
+    }
 
 
 def test_literal_text_is_matched_exactly() -> None:
