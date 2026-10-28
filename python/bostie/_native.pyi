@@ -107,6 +107,7 @@ class Core:
         self_mute: bool,
         self_deaf: bool,
         timeout: float,
+        server_change_delay: float,
         bitrate: int,
         application: ApplicationName,
         fec: bool,

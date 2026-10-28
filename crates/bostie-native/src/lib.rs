@@ -125,8 +125,8 @@ impl NativeCore {
     }
 
     #[pyo3(signature = (
-        guild_id, channel_id, *, shard_id, user_id, self_mute, self_deaf, timeout, bitrate,
-        application, fec, packet_loss, complexity, speaking,
+        guild_id, channel_id, *, shard_id, user_id, self_mute, self_deaf, timeout,
+        server_change_delay, bitrate, application, fec, packet_loss, complexity, speaking,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn voice_connect(
@@ -138,6 +138,7 @@ impl NativeCore {
         self_mute: bool,
         self_deaf: bool,
         timeout: f64,
+        server_change_delay: f64,
         bitrate: u32,
         application: &str,
         fec: bool,
@@ -153,6 +154,7 @@ impl NativeCore {
             self_mute,
             self_deaf,
             timeout: voice::seconds("timeout", timeout)?,
+            server_change_delay: voice::seconds("server_change_delay", server_change_delay)?,
             encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
             speaking,
         };

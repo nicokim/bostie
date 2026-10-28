@@ -42,6 +42,7 @@ def connect(
     core: _native.Core,
     *,
     timeout: float = 60.0,
+    server_change_delay: float = 0.0,
     bitrate: int = 64_000,
     application: Literal["audio", "voip", "lowdelay"] = "audio",
     speaking: int = 1,
@@ -54,6 +55,7 @@ def connect(
         self_mute=False,
         self_deaf=False,
         timeout=timeout,
+        server_change_delay=server_change_delay,
         bitrate=bitrate,
         application=application,
         fec=True,
@@ -279,6 +281,8 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
         connect(core, speaking=0)
     with pytest.raises(ValueError, match="timeout"):
         connect(core, timeout=-1.0)
+    with pytest.raises(ValueError, match="server_change_delay"):
+        connect(core, server_change_delay=-1.0)
     core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
     connect(core)
     with pytest.raises(RuntimeError, match="already has a voice connection"):

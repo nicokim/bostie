@@ -264,6 +264,7 @@ pub struct ConnectRequest {
     pub self_mute: bool,
     pub self_deaf: bool,
     pub timeout: Duration,
+    pub server_change_delay: Duration,
     pub encoder: EncoderSettings,
     pub speaking: u8,
 }

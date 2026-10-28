@@ -86,6 +86,7 @@ class Defaults:
     self_deaf: bool = False
     self_mute: bool = False
     timeout: float = 10.0
+    server_change_delay: float = 0.0
     encoder: Encoder = Encoder()
     speaking_flags: SpeakingFlags = SpeakingFlags.MICROPHONE
     stage: Literal["listen", "request", "speak"] = "listen"
@@ -96,6 +97,13 @@ class Defaults:
         if not (math.isfinite(self.timeout) and self.timeout > 0):
             raise ValueError(
                 f"timeout must be a positive number of seconds, got {self.timeout}"
+            )
+        if not (
+            math.isfinite(self.server_change_delay) and self.server_change_delay >= 0
+        ):
+            raise ValueError(
+                "server_change_delay must be a number of seconds of at least 0, "
+                f"got {self.server_change_delay}"
             )
         if not self.speaking_flags:
             raise ValueError("speaking_flags must set at least one flag")

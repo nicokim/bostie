@@ -43,6 +43,7 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
         await connected(
             bot,
             self_mute=True,
+            server_change_delay=0.5,
             encoder=voice.Encoder(bitrate=50_000, packet_loss=0.25, complexity=7),
             speaking_flags=SpeakingFlags.SOUNDSHARE,
         )
@@ -56,6 +57,7 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
                     "self_mute": True,
                     "self_deaf": True,
                     "timeout": 15.0,
+                    "server_change_delay": 0.5,
                     "bitrate": 50_000,
                     "application": "audio",
                     "fec": True,

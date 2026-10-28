@@ -404,6 +404,7 @@ impl Harness {
             self_mute: false,
             self_deaf: false,
             timeout: TIMEOUT,
+            server_change_delay: Duration::ZERO,
             encoder: encoder(),
             speaking: 1,
         }
@@ -1339,6 +1340,56 @@ async fn a_terminated_call_then_a_new_server_connects_to_it() {
 
     server.expect_op(op::IDENTIFY).await;
     assert_eq!(harness.joins(CHANNEL), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_terminated_call_waits_the_server_change_delay_even_past_the_timeout() {
+    let delay = Duration::from_secs(3);
+    let mut harness = Harness::start().await;
+    harness
+        .voice
+        .connect(ConnectRequest {
+            timeout: Duration::from_secs(2),
+            server_change_delay: delay,
+            ..harness.request()
+        })
+        .unwrap();
+    harness.announce().await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.server.gateway.close(4022);
+    harness.until(VoiceStatus::Reconnecting).await;
+    let mut server = Server::start(guild(), |_| {}).await;
+
+    let offered = Instant::now();
+    harness.fresh_server_at(&mut server).await;
+    server.expect_op(op::IDENTIFY).await;
+    let waited = offered.elapsed();
+    harness.until(VoiceStatus::Ready).await;
+
+    assert!(waited >= delay, "identified after {waited:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
+    let mut harness = Harness::start().await;
+    harness
+        .voice
+        .connect(ConnectRequest {
+            server_change_delay: Duration::from_secs(3_600),
+            ..harness.request()
+        })
+        .unwrap();
+    harness.announce().await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Reconnecting).await;
+    harness.state(Some(OTHER_CHANNEL));
+    harness.wait_for(moved).await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness.server.collect().await;
+    assert_eq!(harness.server.count(op::IDENTIFY), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

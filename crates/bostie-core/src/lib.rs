@@ -429,6 +429,7 @@ mod tests {
             self_mute: false,
             self_deaf: false,
             timeout: Duration::from_secs(5),
+            server_change_delay: Duration::ZERO,
             encoder: EncoderSettings {
                 bitrate: 64_000,
                 application: Application::Audio,

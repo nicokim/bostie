@@ -286,6 +286,8 @@ pub(super) struct Connection {
     status: VoiceStatus,
     step: Step,
     timeout: Duration,
+    server_change_delay: Duration,
+    server_moved: bool,
     seen: Seen,
     server_used: u64,
     server_settled: u64,
@@ -338,6 +340,8 @@ impl Connection {
             status: VoiceStatus::Connecting,
             step: Step::VoiceEvents,
             timeout: request.timeout,
+            server_change_delay: request.server_change_delay,
+            server_moved: false,
             seen,
             server_used: 0,
             server_settled: 0,
@@ -555,7 +559,7 @@ impl Connection {
         self.media.install(None);
     }
 
-    fn take_server(&mut self) -> Option<Credentials> {
+    fn offered_server(&self) -> Option<(Credentials, u64)> {
         let snapshot = self.gateway.borrow();
         if snapshot.server_seq <= self.server_used {
             return None;
@@ -571,8 +575,11 @@ impl Connection {
             token: server.token.clone(),
             endpoint,
         };
-        let seq = snapshot.server_seq;
-        drop(snapshot);
+        Some((credentials, snapshot.server_seq))
+    }
+
+    fn take_server(&mut self) -> Option<Credentials> {
+        let (credentials, seq) = self.offered_server()?;
         self.server_used = seq;
         self.seen.server = self.seen.server.max(seq);
         Some(credentials)
@@ -580,6 +587,17 @@ impl Connection {
 
     async fn wait(&mut self) -> Next {
         loop {
+            if self.server_moved && self.offered_server().is_some() {
+                self.server_moved = false;
+                match self.let_the_call_move().await {
+                    Ok(()) => {}
+                    Err(SessionEnd::Gateway(event)) => match self.on_event(event).await {
+                        Next::Wait => continue,
+                        next => return next,
+                    },
+                    Err(end) => return self.after(end),
+                }
+            }
             if let Some(credentials) = self.take_server() {
                 return Next::Identify(credentials);
             }
@@ -592,6 +610,14 @@ impl Connection {
                 Err(end) => return self.after(end),
             }
         }
+    }
+
+    async fn let_the_call_move(&mut self) -> Result<(), SessionEnd> {
+        let paused = self.deadline.take();
+        let started = Instant::now();
+        let waited = self.interruptible(sleep(self.server_change_delay)).await;
+        self.deadline = paused.map(|deadline| deadline + started.elapsed());
+        waited
     }
 
     fn after(&mut self, end: SessionEnd) -> Next {
@@ -728,6 +754,12 @@ impl Connection {
             GatewayEvent::ServerUnavailable => Step::ServerUnavailable,
             GatewayEvent::SessionReplaced => Step::SessionReplaced,
         };
+        self.server_moved = self.connected
+            && !self.server_change_delay.is_zero()
+            && matches!(
+                event,
+                GatewayEvent::ServerChanged | GatewayEvent::ServerUnavailable
+            );
         self.drop_session();
         self.reconnecting(step);
         if event == GatewayEvent::SessionReplaced

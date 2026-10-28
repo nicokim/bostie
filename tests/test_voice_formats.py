@@ -114,6 +114,7 @@ def test_defaults_match_the_documented_values() -> None:
     )
     assert defaults.speaking_flags is SpeakingFlags.MICROPHONE
     assert (defaults.timeout, defaults.sink_buffer) == (10.0, 0.2)
+    assert defaults.server_change_delay == 0.0
     assert (defaults.stage, defaults.stall) == ("listen", "hold")
     assert not defaults.self_deaf
     assert not defaults.self_mute
@@ -131,6 +132,9 @@ def test_defaults_accept_buffers_from_20_ms_to_60_s(sink_buffer: float) -> None:
         ("timeout", -1.0, "timeout"),
         ("timeout", math.inf, "timeout"),
         ("timeout", math.nan, "timeout"),
+        ("server_change_delay", -0.1, "server_change_delay"),
+        ("server_change_delay", math.inf, "server_change_delay"),
+        ("server_change_delay", math.nan, "server_change_delay"),
         ("sink_buffer", 0.019, "sink_buffer"),
         ("sink_buffer", 60.1, "sink_buffer"),
         ("sink_buffer", math.nan, "sink_buffer"),
