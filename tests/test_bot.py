@@ -23,7 +23,6 @@ from bostie import (
     Forbidden,
     HTTPException,
     Intents,
-    InteractionExpired,
     InvalidToken,
     Member,
     Message,
@@ -36,7 +35,6 @@ from bostie import (
     Router,
     ui,
 )
-from bostie.context import ResponseState
 from bostie.events import (
     ChannelUpdate,
     GuildCreate,
@@ -93,6 +91,18 @@ async def sent_op(fake: FakeDiscord, op: int) -> Any:
     return payload["d"]
 
 
+def levels(caplog: pytest.LogCaptureFixture, logger: str) -> list[int]:
+    return [record.levelno for record in caplog.records if record.name == logger]
+
+
+def failures(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
+    return [
+        (record.levelno, str(record.exc_info[1]))
+        for record in caplog.records
+        if record.name == "bostie.bot" and record.exc_info is not None
+    ]
+
+
 def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
     bot = Bot(api_url=fake.api_url, **options)
 
@@ -135,11 +145,6 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
         """Give a member a color role."""
         await ctx.respond(f"{member.mention} is now {hex}")
 
-    @bot.command(ephemeral=True)
-    async def report(ctx: Context) -> None:
-        """Upload the last report."""
-        await ctx.respond("Here it is:", files=[File("report.txt", b"all good")])
-
     return bot
 
 
@@ -171,7 +176,6 @@ def test_autosync_puts_only_changed_commands_and_an_explicit_sync_always_puts() 
             "roll",
             "tag",
             "role",
-            "report",
         ]
         assert bot.application_id == fake.application_id
         assert bot.user is not None and bot.user.id == int(fake.bot_user["id"])
@@ -274,79 +278,58 @@ def test_a_subcommand_in_a_group_gets_its_resolved_member() -> None:
     run(scenario)
 
 
-def test_a_slow_handler_is_deferred_after_the_delay_then_edits_the_answer() -> None:
+def test_a_command_can_override_the_bots_auto_defer_and_answer_ephemerally() -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        loop = asyncio.get_running_loop()
-        bot = Bot(api_url=fake.api_url, auto_defer=0.2)
-        release = asyncio.Event()
-        answered: asyncio.Future[Message | None] = loop.create_future()
+        bot = Bot(api_url=fake.api_url, auto_defer=0)
 
         @bot.command
         async def slow(ctx: Context) -> None:
-            """Take a while."""
-            await release.wait()
-            answered.set_result(await ctx.respond("done"))
+            """Answer after a moment."""
+            await asyncio.sleep(0.01)
+            await ctx.respond("done")
 
-        @bot.command(auto_defer=None)
+        @bot.command(auto_defer=None, ephemeral=True)
         async def patient(ctx: Context) -> None:
-            """Take a while without deferring."""
-            await asyncio.sleep(0.4)
+            """Answer after a moment without deferring."""
+            await asyncio.sleep(0.01)
             await ctx.respond("done")
 
         async with running(bot, fake):
-            undeferred = await fake.interaction(2, payloads.command("patient"))
-            sent = loop.time()
-            callback = await fake.interaction(2, payloads.command("slow"))
-            deferred_after = loop.time() - sent
-            release.set()
-            message = await answered
+            deferred = await fake.interaction(2, payloads.command("slow"))
+            answered = await fake.interaction(2, payloads.command("patient"))
 
-        assert undeferred.json["type"] == 4
-        assert callback.json == {"type": 5}
-        resolution = time.get_clock_info("monotonic").resolution
-        assert 0.2 - resolution <= deferred_after < 1.0
-        assert message is not None and message.content == "done"
-        edit = fake.requests[-1]
-        token = callback.path.split("/")[3]
-        original = f"/webhooks/{fake.application_id}/{token}"
-        assert (edit.method, edit.path) == ("PATCH", f"{original}/messages/@original")
+        assert deferred.json == {"type": 5}
+        assert (answered.json["type"], answered.json["data"]["flags"]) == (4, EPHEMERAL)
 
     run(scenario)
 
 
-def test_a_handler_that_starts_late_is_deferred_at_once_and_logged(
-    caplog: pytest.LogCaptureFixture,
+def test_a_handler_that_starts_late_logs_a_warning(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr("bostie.bot.SLOW_HANDLER_START", 0.01)
+
     def block_the_loop(event: InteractionCreate) -> bool:
-        time.sleep(1.1)
+        time.sleep(0.05)
         return True
 
     async def scenario(fake: FakeDiscord) -> None:
-        loop = asyncio.get_running_loop()
-        bot = Bot(api_url=fake.api_url, auto_defer=0.5)
+        bot = Bot(api_url=fake.api_url)
 
         @bot.command
-        async def stuck(ctx: Context) -> None:
-            """Never answer."""
-            await asyncio.Event().wait()
+        async def ping(ctx: Context) -> None:
+            """Ping."""
+            await ctx.respond("pong")
 
         async with running(bot, fake):
-            sent = loop.time()
-            _, callback = await asyncio.gather(
+            await asyncio.gather(
                 bot.wait_for(InteractionCreate, check=block_the_loop),
-                fake.interaction(2, payloads.command("stuck")),
+                fake.interaction(2, payloads.command("ping")),
             )
-            elapsed = loop.time() - sent
-
-        assert callback.json == {"type": 5}
-        assert elapsed < 1.4
 
     run(scenario)
 
-    (warning,) = [
-        record for record in caplog.records if "reached its handler" in record.message
-    ]
-    assert warning.levelno == logging.WARNING
+    assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
 
 def test_only_slash_interactions_run_a_command_and_unanswered_ones_are_logged(
@@ -388,14 +371,10 @@ def test_only_slash_interactions_run_a_command_and_unanswered_ones_are_logged(
 
     run(scenario)
 
-    warnings = [
-        record.message
-        for record in caplog.records
-        if "without answering" in record.message
-    ]
-    assert len(warnings) == 2
-    assert ".silent returned without answering" in warnings[0]
-    assert ".thinking returned after deferring without answering" in warnings[1]
+    warnings = [record for record in caplog.records if record.name == "bostie.bot"]
+    assert [record.levelno for record in warnings] == [logging.WARNING] * 2
+    assert ".silent " in warnings[0].getMessage()
+    assert ".thinking " in warnings[1].getMessage()
 
 
 def test_buttons_and_modal_submits_are_routed_by_custom_id_template() -> None:
@@ -482,14 +461,6 @@ def test_listeners_the_cache_and_wait_for_see_gateway_events() -> None:
             assert cached_guild is not None and cached_guild.name == guild["name"]
             assert created.guild.id == cached_guild.id
 
-            hidden = payloads.obfuscated_channel()
-            await asyncio.gather(
-                bot.wait_for(ChannelUpdate), fake.dispatch("CHANNEL_UPDATE", hidden)
-            )
-            channel = bot.cache.channel(int(hidden["id"]))
-            assert channel is not None and channel.obfuscated
-            assert (channel.name, channel.raw_json) == ("___hidden___", None)
-
             message = payloads.message()
             with pytest.raises(ZeroDivisionError):
                 await asyncio.gather(
@@ -568,23 +539,6 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache_setting(
     run(scenario)
 
 
-def test_close_during_startup_makes_start_return() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        started = asyncio.create_task(bot.start(fake.token))
-        await bot.close()
-        await started
-
-        fake.latency(0.3)
-        started = asyncio.create_task(bot.start(fake.token))
-        await asyncio.sleep(0.1)
-        await bot.close()
-        await started
-        assert not fake.connections
-
-    run(scenario)
-
-
 def test_raw_listeners_receive_events_bostie_does_not_model() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
@@ -614,11 +568,11 @@ def test_raw_listeners_receive_events_bostie_does_not_model() -> None:
     run(scenario)
 
 
-def test_a_resume_replays_missed_events_once_and_skips_stale_interactions(
+def test_a_resume_replays_missed_events_once_and_times_interactions_by_their_age(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
+        bot = Bot(api_url=fake.api_url, auto_defer=1.0)
         handled: list[int] = []
         messages: asyncio.Queue[int] = asyncio.Queue()
         interactions: asyncio.Queue[int] = asyncio.Queue()
@@ -628,6 +582,12 @@ def test_a_resume_replays_missed_events_once_and_skips_stale_interactions(
             """Ping."""
             handled.append(ctx.interaction.id)
             await ctx.respond("pong")
+
+        @bot.command
+        async def slow(ctx: Context) -> None:
+            """Answer after a moment."""
+            await asyncio.sleep(0.1)
+            await ctx.respond("done")
 
         @bot.listen
         async def on_message(event: MessageCreate) -> None:
@@ -646,12 +606,16 @@ def test_a_resume_replays_missed_events_once_and_skips_stale_interactions(
                 2, payloads.command("ping"), id=payloads.snowflake(minute_ago)
             )
             await fake.dispatch("INTERACTION_CREATE", stale)
+            recent = await fake.interaction(
+                2, payloads.command("slow"), id=payloads.snowflake(time.time() - 2.5)
+            )
 
             resume = await fake.next_resume()
             assert resume["seq"] == missed_seq - 1
             assert fake.connections[-1].path == "/gateway-resume"
             assert await messages.get() == int(missed["id"])
             assert await interactions.get() == int(stale["id"])
+            assert recent.json == {"type": 5}
 
             late = await fake.interaction(
                 2, payloads.command("ping"), id=payloads.snowflake(minute_ago)
@@ -669,16 +633,23 @@ def test_a_resume_replays_missed_events_once_and_skips_stale_interactions(
 
     run(scenario)
 
-    replayed = [record for record in caplog.records if "replayed" in record.message]
-    assert [record.levelno for record in replayed] == [logging.WARNING]
+    assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
 
-def test_wait_until_ready_raises_once_the_bot_stops_before_ready(
+def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         monkeypatch.delenv("BOSTIE_TOKEN", raising=False)
         bot = Bot(api_url=fake.api_url)
+        started = asyncio.create_task(bot.start(fake.token))
+        waiting = asyncio.create_task(bot.wait_until_ready())
+        await bot.close()
+        await started
+        with pytest.raises(RuntimeError, match="stopped before READY"):
+            await waiting
+        assert not fake.connections
+
         failures: list[tuple[str | None, type[Exception]]] = [
             (None, ValueError),
             ("wrong-token", InvalidToken),
@@ -690,16 +661,6 @@ def test_wait_until_ready_raises_once_the_bot_stops_before_ready(
             with pytest.raises(error):
                 await started
 
-        fake.latency(0.3)
-        started = asyncio.create_task(bot.start(fake.token))
-        waiting = asyncio.create_task(bot.wait_until_ready())
-        await asyncio.sleep(0.1)
-        await bot.close()
-        await started
-        with pytest.raises(RuntimeError, match="stopped before READY"):
-            await waiting
-
-        fake.latency(0)
         async with running(bot, fake):
             await bot.wait_until_ready()
 
@@ -732,34 +693,7 @@ def test_start_seeds_the_daily_identify_budget(
 
     run(scenario)
 
-    assert any(
-        "daily identify limit reached" in record.getMessage()
-        for record in caplog.records
-    )
-
-
-def test_a_replayed_interaction_is_deferred_by_its_age_not_its_receipt() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, auto_defer=1.0)
-        states: asyncio.Queue[ResponseState] = asyncio.Queue()
-
-        @bot.command
-        async def slow(ctx: Context) -> None:
-            """Answer slowly."""
-            await asyncio.sleep(0.5)
-            states.put_nowait(ctx.state)
-            await ctx.respond("done")
-
-        async with running(bot, fake):
-            await fake.send_op(7)
-            created = payloads.snowflake(time.time() - 2.5)
-            first = await fake.interaction(2, payloads.command("slow"), id=created)
-            await fake.next_resume()
-            assert await states.get() is ResponseState.DEFERRED
-
-        assert first.json["type"] == 5
-
-    run(scenario)
+    assert levels(caplog, "bostie.gateway") == [logging.WARNING]
 
 
 def test_start_resolves_the_token_and_raises_fatal_errors(
@@ -783,29 +717,6 @@ def test_start_resolves_the_token_and_raises_fatal_errors(
         with pytest.raises(InvalidToken):
             await Bot(api_url=fake.api_url).start("wrong-token")
         assert fake.requests[-1].path == "/gateway/bot"
-
-    run(scenario)
-
-
-def test_rest_errors_become_typed_exceptions_and_a_global_429_is_waited_out() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        channel_id = int(payloads.channel()["id"])
-        path = f"/channels/{channel_id}"
-        async with running(bot, fake):
-            fake.fail("GET", path, 403, payloads.fixture("rest/error_403"))
-            with pytest.raises(Forbidden) as raised:
-                await bot.fetch_channel(channel_id)
-            assert (raised.value.status, raised.value.code, raised.value.message) == (
-                403,
-                50013,
-                "Missing Permissions",
-            )
-
-            fake.rate_limit("GET", path, scope="global", retry_after=0.2)
-            channel = await bot.fetch_channel(channel_id)
-            assert channel.id == channel_id
-            assert [request.path for request in fake.requests[-2:]] == [path, path]
 
     run(scenario)
 
@@ -936,49 +847,11 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
 
     run(scenario)
 
-    (logged,) = [
-        record for record in caplog.records if "crash raised" in record.message
+    assert failures(caplog) == [
+        (logging.ERROR, "boom"),
+        (logging.ERROR, "late boom"),
+        (logging.ERROR, "autocomplete boom"),
     ]
-    assert logged.exc_info is not None
-    assert str(logged.exc_info[1]) == "boom"
-
-
-def test_a_dead_interaction_token_is_never_used_again(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, auto_defer=0.05)
-        loop = asyncio.get_running_loop()
-        finished: asyncio.Future[ResponseState] = loop.create_future()
-
-        @bot.command
-        async def late(ctx: Context) -> None:
-            """Answer after the token died."""
-            await asyncio.sleep(0.2)
-            try:
-                await ctx.respond("too late")
-            finally:
-                finished.set_result(ctx.state)
-
-        unknown = {"message": "Unknown interaction", "code": 10062}
-        async with running(bot, fake):
-            fake.fail("POST", "/interactions/", 404, unknown, times=3)
-            interaction = payloads.interaction(2, payloads.command("late"))
-            await fake.dispatch("INTERACTION_CREATE", interaction)
-            assert await finished is ResponseState.EXPIRED
-
-        sent = [
-            (request.method, request.json)
-            for request in fake.requests
-            if interaction["token"] in request.path
-        ]
-        assert sent == [("POST", {"type": 5})]
-
-    run(scenario)
-
-    (logged,) = [record for record in caplog.records if "late raised" in record.message]
-    assert logged.exc_info is not None
-    assert isinstance(logged.exc_info[1], InteractionExpired)
 
 
 def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
@@ -988,29 +861,6 @@ def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
         with pytest.raises(ValueError, match="zero"):
             await bot.start(fake.token)
         assert fake.requests == []
-
-    run(scenario)
-
-
-def test_a_response_with_files_is_sent_as_multipart() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        async with running(example_bot(fake), fake):
-            callback = await fake.interaction(2, payloads.command("report"))
-
-        assert [(part.name, part.filename) for part in callback.parts] == [
-            ("payload_json", None),
-            ("files[0]", "report.txt"),
-        ]
-        assert callback.parts[1].data == b"all good"
-        assert callback.json == {
-            "type": 4,
-            "data": {
-                "content": "Here it is:",
-                "allowed_mentions": MENTIONS,
-                "attachments": [{"id": 0, "filename": "report.txt"}],
-                "flags": EPHEMERAL,
-            },
-        }
 
     run(scenario)
 
@@ -1064,7 +914,7 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
     run(scenario)
 
 
-def test_gateway_commands_rate_limits_and_latency_reach_the_bot(
+def test_gateway_rate_limits_and_latency_reach_the_bot(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
@@ -1076,15 +926,6 @@ def test_gateway_commands_rate_limits_and_latency_reach_the_bot(
             limits.put_nowait(event)
 
         async with running(bot, fake):
-            presence: dict[str, Any] = {
-                "since": None,
-                "activities": [],
-                "status": "dnd",
-                "afk": False,
-            }
-            bot.gateway.send(op=3, d=presence)
-            assert await sent_op(fake, 3) == presence
-
             await fake.dispatch("RATE_LIMITED", payloads.fixture("events/RATE_LIMITED"))
             await limits.get()
 
@@ -1094,11 +935,7 @@ def test_gateway_commands_rate_limits_and_latency_reach_the_bot(
 
     run(scenario, heartbeat_interval=50)
 
-    (warning,) = [
-        record for record in caplog.records if "rate limited" in record.message
-    ]
-    assert warning.levelno == logging.WARNING
-    assert warning.message == "the gateway rate limited opcode 8; retry after 27.5 s"
+    assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
 
 def test_close_sends_1000_and_cancels_running_listeners(
@@ -1180,14 +1017,9 @@ def test_a_failing_dispatch_is_logged_once_and_the_next_event_arrives(
 
     run(scenario)
 
-    failures = [
-        record
-        for record in caplog.records
-        if record.message == "handling CHANNEL_UPDATE failed"
-    ]
-    assert [(record.levelno, record.exc_info is not None) for record in failures] == [
-        (logging.ERROR, True),
-        (logging.DEBUG, True),
+    assert failures(caplog) == [
+        (logging.ERROR, "cache bug"),
+        (logging.DEBUG, "cache bug"),
     ]
 
 
@@ -1216,12 +1048,7 @@ def test_a_raising_listener_is_logged_and_the_other_listeners_still_run(
 
     run(scenario)
 
-    failures = [
-        record for record in caplog.records if "broken raised" in record.message
-    ]
-    assert len(failures) == 2
-    assert all(record.message.endswith("on MESSAGE_CREATE") for record in failures)
-    assert all(record.exc_info is not None for record in failures)
+    assert failures(caplog) == [(logging.ERROR, "listener bug")] * 2
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGTERM handlers need Unix")

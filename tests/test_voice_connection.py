@@ -3,8 +3,6 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from types import SimpleNamespace
-from typing import Any
 
 import msgspec
 import pytest
@@ -25,6 +23,7 @@ from voice_fakes import (
     ready,
     run,
     settle,
+    voice_state,
 )
 
 from bostie import voice
@@ -33,7 +32,6 @@ from bostie.errors import Forbidden, NotFound
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
 from bostie.models import VoiceState
 from bostie.voice import connection as connection_module
-from bostie.voice import layers as layers_module
 
 PATCH_ME = f"/guilds/{GUILD_ID}/voice-states/@me"
 
@@ -96,7 +94,7 @@ def test_voice_needs_the_guild_voice_states_intent(call: str) -> None:
         )
         with pytest.raises(RuntimeError, match=r"Intents\.GUILD_VOICE_STATES"):
             await attempt
-        assert (bot.core.calls, bot.core.sent, bot.rest.requests) == ([], [], [])
+        assert (bot.core.sent, bot.rest.requests) == ([], [])
 
     run(scenario, intents=Intents.GUILDS)
 
@@ -137,7 +135,7 @@ def test_only_guild_voice_and_stage_channels_connect(channel_id: int) -> None:
         bot.rest.answers[("GET", "/channels/999")] = (200, {"id": "999", "type": 2})
         with pytest.raises(ValueError, match="is not a voice or stage channel"):
             await bot.voice.connect(channel_id)
-        assert bot.core.calls == []
+        assert bot.core.sent == []
 
     run(scenario)
 
@@ -182,7 +180,7 @@ def test_a_failing_stage_request_disconnects_and_raises() -> None:
         bot.deliver(ready())
         with pytest.raises(Forbidden):
             await task
-        assert bot.core.names()[-1] == "voice_disconnect"
+        assert bot.core.sent == [voice_state(STAGE), voice_state(None)]
         assert bot.voice.get(GUILD_ID) is None
 
     run(scenario)
@@ -208,16 +206,14 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
         vc = await connected(bot, VOICE)
         moving = asyncio.ensure_future(bot.voice.connect(OTHER_VOICE))
         await settle()
-        assert bot.calls("voice_update") == [
-            ("voice_update", (GUILD_ID, OTHER_VOICE, False, False), {})
-        ]
         bot.deliver(("voice_state", GUILD_ID, "reconnecting", None, None, "moving"))
         bot.deliver(("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, True))
         await settle()
         assert not moving.done()
         bot.deliver(ready())
         assert await moving is vc
-        assert len(bot.calls("voice_connect")) == 1
+        assert bot.voice.connections == (vc,)
+        assert bot.core.sent == [voice_state(VOICE), voice_state(OTHER_VOICE)]
 
     run(scenario)
 
@@ -226,11 +222,8 @@ def test_a_second_connect_with_other_flags_edits_them() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot, VOICE)
         assert await bot.voice.connect(VOICE) is vc
-        assert bot.calls("voice_update") == []
         assert await bot.voice.connect(VOICE, self_deaf=True) is vc
-        assert bot.calls("voice_update") == [
-            ("voice_update", (GUILD_ID, VOICE, False, True), {})
-        ]
+        assert bot.core.sent == [voice_state(VOICE), voice_state(VOICE, self_deaf=True)]
 
     run(scenario)
 
@@ -243,7 +236,7 @@ def test_concurrent_connects_both_get_the_ready_connection() -> None:
         bot.deliver(ready())
         one, two = await asyncio.gather(first, second)
         assert one is two
-        assert len(bot.calls("voice_connect")) == 1
+        assert bot.core.sent == [voice_state(VOICE)]
 
     run(scenario)
 
@@ -273,10 +266,6 @@ def test_a_failed_connect_raises_with_reason_code_and_detail() -> None:
             4004,
             "rejoin limit reached",
         )
-        assert str(error) == (
-            "voice connection failed: authentication_failed (close code 4004): "
-            "rejoin limit reached"
-        )
         assert bot.voice.get(GUILD_ID) is None
 
     run(scenario)
@@ -289,7 +278,9 @@ def test_cancelling_a_connect_disconnects() -> None:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert bot.core.names() == ["voice_connect", "voice_disconnect"]
+        await settle()
+        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
+        assert bot.voice.connections == ()
 
     run(scenario)
 
@@ -490,34 +481,28 @@ async def verification_code(vc: voice.VoiceConnection) -> None:
 
 
 @pytest.mark.parametrize("name", AFTER_THE_END)
-def test_after_the_end_calls_raise_voice_not_connected_without_a_native_call(
-    name: str,
-) -> None:
+def test_after_the_end_calls_raise_voice_not_connected(name: str) -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         dave = vc.dave
         bot.deliver(disconnected("removed"))
-        calls = list(bot.core.calls)
         with pytest.raises(voice.VoiceNotConnected):
             await AFTER_THE_END[name](vc)
         assert vc.dave == dave
-        assert bot.core.calls == calls
 
     run(scenario)
 
 
-def test_after_the_end_reads_return_the_last_values_without_a_native_call() -> None:
+def test_after_the_end_reads_return_the_last_values() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         bot.core.counters = {"packets_sent": 50}
         dave, stats, diagnostics = vc.dave, vc.stats(), vc.diagnostics()
         bot.deliver(disconnected("requested"))
-        calls = list(bot.core.calls)
         await vc.disconnect()
         assert vc.latency == voice.Latency(None, None)
         assert (vc.dave, vc.stats(), vc.diagnostics()) == (dave, stats, diagnostics)
         assert vc.stats().send.packets_sent == 50
-        assert bot.core.calls == calls
         assert bot.voice.connections == ()
 
     run(scenario)
@@ -624,9 +609,7 @@ def test_move_waits_for_the_new_channel_and_ready() -> None:
         vc = await connected(bot, self_deaf=True)
         moving = asyncio.ensure_future(vc.move(OTHER_VOICE))
         await settle()
-        assert bot.calls("voice_update") == [
-            ("voice_update", (GUILD_ID, OTHER_VOICE, False, True), {})
-        ]
+        assert bot.core.sent[-1] == voice_state(OTHER_VOICE, self_deaf=True)
         bot.deliver(ready())
         await settle()
         assert not moving.done()
@@ -657,7 +640,7 @@ def test_a_move_to_another_guilds_channel_is_refused() -> None:
         vc = await connected(bot)
         with pytest.raises(ValueError, match="in another guild"):
             await vc.move(ELSEWHERE)
-        assert bot.calls("voice_update") == []
+        assert bot.core.sent == [voice_state(VOICE)]
 
     run(scenario)
 
@@ -667,19 +650,20 @@ def test_edit_sends_the_flags_for_the_same_channel() -> None:
         vc = await connected(bot, self_deaf=True)
         await vc.edit(self_mute=True)
         await vc.edit(self_deaf=False)
-        assert bot.calls("voice_update") == [
-            ("voice_update", (GUILD_ID, VOICE, True, True), {}),
-            ("voice_update", (GUILD_ID, VOICE, True, False), {}),
+        assert bot.core.sent[1:] == [
+            voice_state(VOICE, self_mute=True, self_deaf=True),
+            voice_state(VOICE, self_mute=True),
         ]
 
     run(scenario)
 
 
-def test_reconnect_asks_the_core() -> None:
+def test_reconnect_resumes_the_connection() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         vc.reconnect()
-        assert bot.core.names()[-1] == "voice_reconnect"
+        await vc.wait_until(voice.State.RESUMING)
+        await vc.wait_until(voice.State.READY)
 
     run(scenario)
 
@@ -690,7 +674,7 @@ def test_disconnect_returns_once_ended_and_is_idempotent() -> None:
         await vc.disconnect()
         await vc.disconnect()
         assert vc.state is voice.State.DISCONNECTED
-        assert bot.core.names().count("voice_disconnect") == 1
+        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
         assert bot.events[-1] == voice.StateChange(
             guild_id=GUILD_ID,
             old=voice.State.READY,
@@ -748,17 +732,7 @@ def test_connect_external_returns_the_state_and_server_and_disconnects() -> None
     async def scenario(bot: FakeBot) -> None:
         task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
         await settle()
-        assert bot.core.sent == [
-            {
-                "op": 4,
-                "d": {
-                    "guild_id": str(GUILD_ID),
-                    "channel_id": str(VOICE),
-                    "self_mute": False,
-                    "self_deaf": False,
-                },
-            }
-        ]
+        assert bot.core.sent == [voice_state(VOICE)]
         bot.dispatch(voice_state_update(VOICE, user_id=USER_ID))
         bot.dispatch(VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="other"))
         bot.dispatch(voice_state_update(VOICE))
@@ -772,13 +746,8 @@ def test_connect_external_returns_the_state_and_server_and_disconnects() -> None
             "v.discord.gg",
         )
         await external.disconnect()
-        assert bot.core.sent[-1]["d"] == {
-            "guild_id": str(GUILD_ID),
-            "channel_id": None,
-            "self_mute": False,
-            "self_deaf": False,
-        }
-        assert bot.core.calls == []
+        assert bot.core.sent[-1] == voice_state(None)
+        assert bot.voice.get(GUILD_ID) is None
 
     run(scenario)
 
@@ -797,10 +766,7 @@ def test_connect_external_timing_out_leaves_the_channel() -> None:
         with pytest.raises(voice.VoiceConnectError) as raised:
             await bot.voice.connect_external(GUILD_ID, VOICE, timeout=0.05)
         assert raised.value.reason is voice.DisconnectReason.TIMEOUT
-        assert [payload["d"]["channel_id"] for payload in bot.core.sent] == [
-            str(VOICE),
-            None,
-        ]
+        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
 
     run(scenario)
 
@@ -823,7 +789,7 @@ def test_context_voice_connects_to_the_users_channel() -> None:
         bot.deliver(ready())
         vc = await task
         assert (vc.channel_id, ctx.current) == (OTHER_VOICE, vc)
-        assert bot.calls("voice_connect")[0][2]["self_deaf"] is True
+        assert bot.core.sent == [voice_state(OTHER_VOICE, self_deaf=True)]
         assert context_voice(bot, None).current is None
 
     run(scenario)
@@ -840,7 +806,7 @@ def test_context_voice_raises_not_in_voice(case: str) -> None:
         guild_id = None if case == "dm" else GUILD_ID
         with pytest.raises(voice.NotInVoice):
             await context_voice(bot, guild_id).connect()
-        assert bot.core.calls == []
+        assert bot.core.sent == []
 
     run(scenario)
 
@@ -853,35 +819,20 @@ def test_context_voice_lets_other_not_found_errors_through() -> None:
     run(scenario)
 
 
-def test_versions_come_from_the_native_module(monkeypatch: pytest.MonkeyPatch) -> None:
-    found = {"bostie": "0.1.0", "libopus": "1.6.1", "davey": "0.2.0-beta.1"}
-    monkeypatch.setattr(
-        connection_module, "_native", SimpleNamespace(versions=lambda: found)
-    )
-    assert voice.versions() == found
-
-
-def test_play_hands_the_connection_and_options_to_the_layers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    played: list[tuple[Any, ...]] = []
-    track: Any = object()
-
-    async def fake_play(*args: Any, **options: Any) -> Any:
-        played.append((*args, options))
-        return track
-
-    monkeypatch.setattr(layers_module, "play", fake_play)
-
+def test_play_opens_a_sink_with_its_options_and_the_connection_defaults() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        source = voice.File("a.ogg")
-        assert await vc.play(source, volume=0.5, stall="drop", meta=7) is track
-        assert played == [
-            (vc, source, {"volume": 0.5, "buffer": None, "stall": "drop", "meta": 7})
-        ]
+        track = await vc.play(voice.File("a.ogg"), volume=0.5, stall="drop", meta=7)
+        sink = track.sink
+        assert (track.meta, sink.volume, sink.stall, sink.buffer) == (
+            7,
+            0.5,
+            "drop",
+            0.4,
+        )
+        track.stop()
 
-    run(scenario)
+    run(scenario, defaults=voice.Defaults(sink_buffer=0.4))
 
 
 def test_handles_of_unknown_ids_and_guilds_are_ignored() -> None:

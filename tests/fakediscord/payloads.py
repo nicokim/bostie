@@ -50,11 +50,6 @@ def channel(**fields: Any) -> Json:
     return fixture("rest/channel") | fields
 
 
-def obfuscated_channel(**fields: Any) -> Json:
-    """``channel()`` as Discord sends it to a bot that cannot see it."""
-    return fixture("events/CHANNEL_UPDATE.obfuscated") | fields
-
-
 def guild(**fields: Any) -> Json:
     """A GUILD_CREATE with channels (one obfuscated), a thread, roles and members."""
     return fixture("events/GUILD_CREATE") | fields

@@ -113,10 +113,7 @@ class VoiceGateway:
         self._udp: asyncio.DatagramTransport | None = None
 
     async def voice_op(self, op: int, d: Any = None) -> None:
-        """Send ``op`` to the latest voice session, kept for resume replay.
-
-        ``d`` goes out as JSON with ``seq``, or as a binary frame when it is bytes.
-        """
+        """Send ``op`` to the latest voice session, kept for resume replay."""
         if not self.voice_sessions:
             raise RuntimeError("no voice session yet; await next_voice_identify()")
         await self._send_sequenced(self.voice_sessions[-1], op, d)
@@ -129,21 +126,11 @@ class VoiceGateway:
         """Send op 13: ``user_id`` left the call."""
         await self.voice_op(13, {"user_id": str(user_id)})
 
-    async def speaking(self, user_id: int, ssrc: int, flags: int = 1) -> None:
+    async def speaking(self, user_id: int, ssrc: int, flags: int) -> None:
         """Send op 5: ``user_id`` speaks on ``ssrc`` with ``flags``."""
         await self.voice_op(
             5, {"user_id": str(user_id), "ssrc": ssrc, "speaking": flags}
         )
-
-    async def close_voice(self, code: int) -> None:
-        """Close the latest voice socket with ``code``."""
-        await self._latest_voice_socket().close(code)
-
-    def drop_voice(self) -> None:
-        """Abort the latest voice socket's TCP stream without a close frame."""
-        transport = self._latest_voice_socket().request.transport
-        if transport is not None:
-            transport.abort()
 
     async def next_voice_identify(self) -> Json:
         """Wait for the next voice Identify and return its ``d``."""
@@ -189,11 +176,6 @@ class VoiceGateway:
             del self._current_sessions[guild_id]
         if session.socket is not None:
             await session.socket.close(code)
-
-    def _latest_voice_socket(self) -> VoiceSocket:
-        if not self.voice_sockets:
-            raise RuntimeError("no voice connection yet")
-        return self.voice_sockets[-1]
 
     async def _voice_gateway(self, request: web.Request) -> web.StreamResponse:
         if request.query.get("v") != "8":

@@ -47,9 +47,21 @@ cache-keys = [
 src = ["python"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "SLF001", "TID251", "TID253"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-module-level-imports = [
+    "bostie.voice.connection",
+    "bostie.voice.sink",
+    "bostie.voice.sources",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"bostie._bridge".msg = "voice layers use only the public voice API"
+"bostie._native".msg = "voice layers use only the public voice API"
 
 [tool.ruff.lint.per-file-ignores]
+"!python/bostie/voice/layers.py" = ["SLF001", "TID251", "TID253"]
 "benches/harness/bot_runner.py" = ["E402"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 

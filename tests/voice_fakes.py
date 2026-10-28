@@ -238,29 +238,51 @@ class FakeCore:
         self.dave_view: tuple[int, int | None, str | None] = (1, 4, "11111 22222")
         self.counters: dict[str, int] = {}
         self.diagnostic_values: dict[str, object] = {"status": "ready"}
+        self.live: set[int] = set()
         self._next_handle = 100
 
-    def names(self) -> list[str]:
-        return [name for name, _, _ in self.calls]
-
     def deliver(self, delivery: VoiceDelivery) -> None:
+        self.track(delivery)
         handle = self.handle
         if handle is not None:
             asyncio.get_running_loop().call_soon(handle, delivery, 0.0)
+
+    def track(self, delivery: VoiceDelivery) -> None:
+        if delivery[0] == "voice_state" and delivery[2] == "disconnected":
+            self.live.discard(delivery[1])
 
     def gateway_send(self, shard_id: int, payload: bytes) -> None:
         self.sent.append(json.loads(payload))
 
     def voice_connect(self, guild_id: int, channel_id: int, **options: Any) -> None:
-        self._record("voice_connect", guild_id, channel_id, **options)
+        if guild_id in self.live:
+            raise RuntimeError(f"guild {guild_id} already has a voice connection")
+        self.calls.append(("voice_connect", (guild_id, channel_id), options))
+        self.live.add(guild_id)
+        self.sent.append(
+            voice_state(
+                channel_id,
+                self_mute=options["self_mute"],
+                self_deaf=options["self_deaf"],
+                guild_id=guild_id,
+            )
+        )
 
     def voice_update(
         self, guild_id: int, channel_id: int, self_mute: bool, self_deaf: bool
     ) -> None:
         self._record("voice_update", guild_id, channel_id, self_mute, self_deaf)
+        self.sent.append(
+            voice_state(
+                channel_id, self_mute=self_mute, self_deaf=self_deaf, guild_id=guild_id
+            )
+        )
 
     def voice_disconnect(self, guild_id: int) -> None:
-        self._record("voice_disconnect", guild_id)
+        self.calls.append(("voice_disconnect", (guild_id,), {}))
+        if guild_id not in self.live:
+            return
+        self.sent.append(voice_state(None, guild_id=guild_id))
         if self.auto_disconnect:
             self.deliver(
                 ("voice_state", guild_id, "disconnected", "requested", None, "")
@@ -268,6 +290,8 @@ class FakeCore:
 
     def voice_reconnect(self, guild_id: int) -> None:
         self._record("voice_reconnect", guild_id)
+        self.deliver(("voice_state", guild_id, "resuming", None, None, ""))
+        self.deliver(("voice_state", guild_id, "ready", None, None, ""))
 
     def voice_encoder(
         self,
@@ -359,7 +383,7 @@ class FakeCore:
         return self._source("voice_url", url, headers)
 
     def _source(self, name: str, *arguments: Any) -> FakeSource:
-        self._record(name, *arguments)
+        self.calls.append((name, arguments, {}))
         source = FakeSource(self, self._handle_id(), arguments)
         self.sources.append(source)
         return source
@@ -368,8 +392,10 @@ class FakeCore:
         self._next_handle += 1
         return self._next_handle
 
-    def _record(self, name: str, *args: Any, **kwargs: Any) -> None:
-        self.calls.append((name, args, kwargs))
+    def _record(self, name: str, guild_id: int, *args: Any, **kwargs: Any) -> None:
+        if guild_id not in self.live:
+            raise RuntimeError(f"no voice connection in guild {guild_id}")
+        self.calls.append((name, (guild_id, *args), kwargs))
 
 
 class FakeBridge:
@@ -467,6 +493,7 @@ class FakeBot:
                 future.set_result(event)
 
     def deliver(self, delivery: VoiceDelivery) -> None:
+        self.core.track(delivery)
         self.voice.handle(delivery, 0.0)
 
     def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
@@ -474,6 +501,24 @@ class FakeBot:
 
     def calls(self, name: str) -> list[Call]:
         return [call for call in self.core.calls if call[0] == name]
+
+
+def voice_state(
+    channel_id: int | None,
+    *,
+    self_mute: bool = False,
+    self_deaf: bool = False,
+    guild_id: int = GUILD_ID,
+) -> dict[str, Any]:
+    return {
+        "op": 4,
+        "d": {
+            "guild_id": str(guild_id),
+            "channel_id": None if channel_id is None else str(channel_id),
+            "self_mute": self_mute,
+            "self_deaf": self_deaf,
+        },
+    }
 
 
 def ready(guild_id: int = GUILD_ID) -> VoiceDelivery:

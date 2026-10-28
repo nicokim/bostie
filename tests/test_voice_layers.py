@@ -1,7 +1,9 @@
+import ast
 import asyncio
 from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar, Literal, Self, cast
 
 import pytest
@@ -925,3 +927,22 @@ def test_broadcast_encodes_pcm_once_for_every_connection(
         assert FakeEncoder.made[-1] == (pcm, voip)
 
     run(scenario)
+
+
+def test_layers_import_only_at_the_top_or_for_type_checking() -> None:
+    tree = ast.parse(Path(layers.__file__).read_text())
+    top = [
+        *tree.body,
+        *(
+            child
+            for node in tree.body
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING"
+            for child in node.body
+        ),
+    ]
+    nested = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import | ast.ImportFrom) and node not in top
+    ]
+    assert nested == []

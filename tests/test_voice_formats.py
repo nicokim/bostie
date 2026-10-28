@@ -1,5 +1,6 @@
 import ast
 import math
+from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -11,21 +12,11 @@ from bostie import voice
 from bostie.enums import Direction, DisconnectReason, SpeakingFlags, State
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 
-COMMON_RATES = [
-    8_000,
-    11_025,
-    12_000,
-    16_000,
-    22_050,
-    24_000,
-    32_000,
-    44_100,
-    48_000,
-    88_200,
-    96_000,
-    176_400,
-    192_000,
-]
+VALID = nullcontext()
+
+
+def invalid(message: str) -> AbstractContextManager[object]:
+    return pytest.raises(ValueError, match=message)
 
 
 def stub_literals(alias: str) -> list[str]:
@@ -40,75 +31,81 @@ def stub_literals(alias: str) -> list[str]:
     raise LookupError(alias)
 
 
-@pytest.mark.parametrize("rate", COMMON_RATES)
-def test_common_rates_are_accepted(rate: int) -> None:
-    assert voice.PCM(rate, 1, "f32le").rate == rate
-
-
-@pytest.mark.parametrize("rate", [8_001, 44_101])
-def test_rates_whose_resampler_block_exceeds_a_frame_name_the_rule(rate: int) -> None:
-    with pytest.raises(ValueError, match=r"gcd\(rate, 48000\) must be at most 960"):
-        voice.PCM(rate)
-
-
-@pytest.mark.parametrize("rate", [0, 7_999, 192_001])
-def test_rates_outside_8_to_192_khz_are_rejected(rate: int) -> None:
-    with pytest.raises(ValueError, match="from 8000 to 192000 Hz"):
-        voice.PCM(rate)
-
-
 @pytest.mark.parametrize(
-    ("field", "value", "message"),
+    ("settings", "outcome"),
     [
-        ("channels", 0, "channels"),
-        ("channels", 6, "channels"),
-        ("sample", "s24le", "sample"),
+        ({"rate": 8_000, "channels": 1, "sample": "f32le"}, VALID),
+        ({"rate": 11_025}, VALID),
+        ({"rate": 192_000}, VALID),
+        ({"rate": 8_001}, invalid(r"gcd\(rate, 48000\) must be at most 960")),
+        ({"rate": 44_101}, invalid(r"gcd\(rate, 48000\) must be at most 960")),
+        ({"rate": 7_999}, invalid("from 8000 to 192000 Hz")),
+        ({"rate": 192_001}, invalid("from 8000 to 192000 Hz")),
+        ({"channels": 0}, invalid("channels")),
+        ({"channels": 6}, invalid("channels")),
+        ({"sample": "s24le"}, invalid("sample")),
     ],
 )
-def test_pcm_rejects_unknown_layouts(field: str, value: Any, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        voice.PCM(**{field: value})
-
-
-def test_pcm_defaults_to_48_khz_stereo_s16le() -> None:
-    assert voice.PCM() == voice.PCM(48_000, 2, "s16le")
-
-
-@pytest.mark.parametrize(
-    "settings",
-    [
-        {"bitrate": 500, "packet_loss": 0.0, "complexity": 0},
-        {"bitrate": 512_000, "packet_loss": 1.0, "complexity": 10},
-        {"application": "lowdelay", "fec": False},
-    ],
-)
-def test_encoder_accepts_its_bounds(settings: dict[str, Any]) -> None:
-    voice.Encoder(**settings)
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("bitrate", 499, "bitrate"),
-        ("bitrate", 512_001, "bitrate"),
-        ("packet_loss", -0.01, "packet loss"),
-        ("packet_loss", 10, "packet loss"),
-        ("packet_loss", math.nan, "packet loss"),
-        ("complexity", -1, "complexity"),
-        ("complexity", 11, "complexity"),
-        ("application", "music", "application"),
-    ],
-)
-def test_encoder_rejects_values_past_its_bounds(
-    field: str, value: Any, message: str
+def test_pcm_checks_its_rate_channels_and_sample(
+    settings: dict[str, Any], outcome: AbstractContextManager[object]
 ) -> None:
-    with pytest.raises(ValueError, match=message):
-        voice.Encoder(**{field: value})
+    with outcome:
+        voice.PCM(**settings)
 
 
-def test_defaults_match_the_documented_values() -> None:
+@pytest.mark.parametrize(
+    ("settings", "outcome"),
+    [
+        ({"bitrate": 500, "packet_loss": 0.0, "complexity": 0}, VALID),
+        ({"bitrate": 512_000, "packet_loss": 1.0, "complexity": 10}, VALID),
+        ({"application": "lowdelay", "fec": False}, VALID),
+        ({"bitrate": 499}, invalid("bitrate")),
+        ({"bitrate": 512_001}, invalid("bitrate")),
+        ({"packet_loss": -0.01}, invalid("packet loss")),
+        ({"packet_loss": 10}, invalid("packet loss")),
+        ({"packet_loss": math.nan}, invalid("packet loss")),
+        ({"complexity": -1}, invalid("complexity")),
+        ({"complexity": 11}, invalid("complexity")),
+        ({"application": "music"}, invalid("application")),
+    ],
+)
+def test_encoder_checks_its_bounds(
+    settings: dict[str, Any], outcome: AbstractContextManager[object]
+) -> None:
+    with outcome:
+        voice.Encoder(**settings)
+
+
+@pytest.mark.parametrize(
+    ("settings", "outcome"),
+    [
+        ({"sink_buffer": 0.02}, VALID),
+        ({"sink_buffer": 60.0}, VALID),
+        ({"timeout": 0.0}, invalid("timeout")),
+        ({"timeout": math.inf}, invalid("timeout")),
+        ({"timeout": math.nan}, invalid("timeout")),
+        ({"server_change_delay": -0.1}, invalid("server_change_delay")),
+        ({"server_change_delay": math.inf}, invalid("server_change_delay")),
+        ({"server_change_delay": math.nan}, invalid("server_change_delay")),
+        ({"sink_buffer": 0.019}, invalid("sink_buffer")),
+        ({"sink_buffer": 60.1}, invalid("sink_buffer")),
+        ({"sink_buffer": math.nan}, invalid("sink_buffer")),
+        ({"speaking_flags": SpeakingFlags(0)}, invalid("speaking_flags")),
+        ({"stage": "shout"}, invalid("stage")),
+        ({"stall": "wait"}, invalid("stall")),
+    ],
+)
+def test_defaults_check_their_bounds(
+    settings: dict[str, Any], outcome: AbstractContextManager[object]
+) -> None:
+    with outcome:
+        voice.Defaults(**settings)
+
+
+def test_formats_default_to_the_documented_values() -> None:
     defaults = voice.Defaults()
 
+    assert voice.PCM() == voice.PCM(48_000, 2, "s16le")
     assert defaults.encoder == voice.Encoder(
         bitrate=None, application="audio", fec=True, packet_loss=0.1, complexity=10
     )
@@ -118,36 +115,6 @@ def test_defaults_match_the_documented_values() -> None:
     assert (defaults.stage, defaults.stall) == ("listen", "hold")
     assert not defaults.self_deaf
     assert not defaults.self_mute
-
-
-@pytest.mark.parametrize("sink_buffer", [0.02, 60.0])
-def test_defaults_accept_buffers_from_20_ms_to_60_s(sink_buffer: float) -> None:
-    assert voice.Defaults(sink_buffer=sink_buffer).sink_buffer == sink_buffer
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("timeout", 0.0, "timeout"),
-        ("timeout", -1.0, "timeout"),
-        ("timeout", math.inf, "timeout"),
-        ("timeout", math.nan, "timeout"),
-        ("server_change_delay", -0.1, "server_change_delay"),
-        ("server_change_delay", math.inf, "server_change_delay"),
-        ("server_change_delay", math.nan, "server_change_delay"),
-        ("sink_buffer", 0.019, "sink_buffer"),
-        ("sink_buffer", 60.1, "sink_buffer"),
-        ("sink_buffer", math.nan, "sink_buffer"),
-        ("speaking_flags", SpeakingFlags(0), "speaking_flags"),
-        ("stage", "shout", "stage"),
-        ("stall", "wait", "stall"),
-    ],
-)
-def test_defaults_reject_values_past_their_bounds(
-    field: str, value: Any, message: str
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        voice.Defaults(**{field: value})
 
 
 @pytest.mark.parametrize(

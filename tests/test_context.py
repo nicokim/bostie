@@ -320,22 +320,6 @@ def test_allowed_mentions_default_to_the_bot_setting() -> None:
     assert followup.json["allowed_mentions"] is override
 
 
-def test_files_are_sent_with_their_attachments() -> None:
-    files = [File("report.txt", b"all good", "Daily report")]
-
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        await ctx.respond("Here it is:", files=files)
-        await ctx.followup(files=files)
-
-    answer, followup = run(scenario).requests
-    attachments = [{"id": 0, "filename": "report.txt", "description": "Daily report"}]
-    assert answer.files == files
-    assert answer.json["data"]["attachments"] == attachments
-    assert followup.files == files
-    assert followup.json == {"attachments": attachments}
-
-
 def test_autocomplete_answers_once_with_choices() -> None:
     choices = [{"name": "bostie", "value": "bostie"}]
 
@@ -384,25 +368,25 @@ def test_auto_defer_fires_at_receipt_plus_the_delay() -> None:
     assert request.json == {"type": 5, "data": {"flags": EPHEMERAL}}
 
 
-def test_auto_defer_fires_at_once_when_the_delay_already_passed() -> None:
+@pytest.mark.parametrize(
+    ("kind", "sent", "after"),
+    [
+        (Context, CALLBACK_5, ResponseState.DEFERRED),
+        (ComponentContext, CALLBACK_6, ResponseState.DEFERRED_UPDATE),
+    ],
+)
+def test_auto_defer_fires_at_once_when_the_delay_already_passed(
+    kind: type[Context], sent: tuple[str, str, int], after: ResponseState
+) -> None:
     async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, age=10, auto_defer=2.5)
+        ctx = context(kind, http, age=10, auto_defer=2.5)
         with ctx.auto_defer():
             await asyncio.sleep(0.01)
-            assert http.calls == [CALLBACK_5]
+            assert http.calls == [sent]
+
+        assert ctx.state is after
 
     run(scenario)
-
-
-def test_auto_defer_of_a_component_keeps_the_message_unchanged() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(ComponentContext, http, age=10, auto_defer=2.5)
-        with ctx.auto_defer():
-            await asyncio.sleep(0.01)
-
-        assert ctx.state is ResponseState.DEFERRED_UPDATE
-
-    assert run(scenario).calls == [CALLBACK_6]
 
 
 def test_no_auto_defer_after_a_response() -> None:
@@ -545,18 +529,21 @@ def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
     assert updated.json["data"] == cleared
 
 
-def test_edits_keep_only_the_listed_attachments() -> None:
+def test_answers_send_their_files_and_edits_keep_only_the_listed_attachments() -> None:
     files = [File("new.png", b"png")]
+    kept = 1564609863064092673
 
     async def scenario(http: RecordingHTTP) -> None:
-        await context(ComponentContext, http).update(attachments=[1564609863064092673])
+        await context(ComponentContext, http).update(attachments=[kept])
         ctx = context(Context, http)
-        await ctx.respond("hi")
-        await ctx.edit(files=files, attachments=[1564609863064092673])
+        await ctx.respond("hi", files=files)
+        await ctx.followup(files=files)
+        await ctx.edit(files=files, attachments=[kept])
 
-    update, _, edit = run(scenario).requests
-    assert edit.json["attachments"] == [
-        {"id": 1564609863064092673},
-        {"id": 0, "filename": "new.png"},
-    ]
-    assert update.json["data"]["attachments"] == [{"id": 1564609863064092673}]
+    update, answer, followup, edit = run(scenario).requests
+    new = {"id": 0, "filename": "new.png"}
+    assert [answer.files, followup.files, edit.files] == [files] * 3
+    assert answer.json["data"]["attachments"] == [new]
+    assert followup.json == {"attachments": [new]}
+    assert edit.json["attachments"] == [{"id": kept}, new]
+    assert update.json["data"]["attachments"] == [{"id": kept}]

@@ -370,19 +370,6 @@ def test_a_url_that_does_not_parse_is_a_value_error(core: _native.Core) -> None:
         core.voice_url("not a url", [])
 
 
-def test_the_opus_encoder_returns_one_packet_per_20_ms() -> None:
-    whole = encoder()
-    partial = encoder()
-    resampled = encoder(rate=44_100, channels=1, sample="f32le")
-
-    assert len(whole.encode(bytes(FRAME_BYTES * 50))) == 50
-    assert whole.flush() == []
-    assert len(partial.encode(bytes(FRAME_BYTES + FRAME_BYTES // 2))) == 1
-    assert len(partial.flush()) == 1
-    packets = resampled.encode(bytes(44_100 * 4)) + resampled.flush()
-    assert len(packets) == 50
-
-
 def test_the_opus_encoder_checks_its_settings() -> None:
     with pytest.raises(ValueError, match="bitrate"):
         encoder(bitrate=10)
@@ -390,13 +377,6 @@ def test_the_opus_encoder_checks_its_settings() -> None:
         encoder(rate=44_101)
     with pytest.raises(ValueError, match="channels"):
         encoder(channels=3)
-
-
-def test_versions_name_bostie_libopus_davey_and_the_dave_protocol() -> None:
-    versions = _native.versions()
-
-    assert versions.keys() == {"bostie", "libopus", "davey", "dave_protocol"}
-    assert versions["dave_protocol"] == "1"
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")

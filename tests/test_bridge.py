@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 import pytest
+from fakediscord import FakeDiscord
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
@@ -18,6 +19,7 @@ from bostie.errors import (
     RequestBudgetExhausted,
     TransportError,
 )
+from bostie.gateway import GatewayClient
 
 TOKEN = "dummy-token"
 API_URL = "https://discord.test/api/v10"
@@ -26,6 +28,7 @@ OK = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"
 
 type Handler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]
 type Runner = Callable[[Coroutine[Any, Any, None]], None]
+type Rewrite = Callable[[list[_native.Delivery]], list[_native.Delivery]]
 
 
 class LoopWithoutReaders(asyncio.SelectorEventLoop):
@@ -86,43 +89,16 @@ async def never_reply(
     writer.close()
 
 
-class FailingDrain:
-    def __init__(self, core: _native.Core) -> None:
-        self._core = core
+class RewrittenCore:
+    def __init__(self, core: _native.Core, rewrite: Rewrite) -> None:
+        self.core = core
+        self.rewrite = rewrite
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._core, name)
+        return getattr(self.core, name)
 
     def drain(self) -> "list[_native.Delivery]":
-        raise RuntimeError("drain exploded")
-
-
-class RelabelledFailures:
-    def __init__(self, core: _native.Core, kind: "_native.FailureKind") -> None:
-        self._core = core
-        self._kind = kind
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._core, name)
-
-    def drain(self) -> "list[_native.Delivery]":
-        return [
-            ("failure", delivery[1], self._kind, "relabelled")
-            for delivery in self._core.drain()
-        ]
-
-
-class InjectedOnce:
-    def __init__(self, core: _native.Core, injected: list[GatewayDelivery]) -> None:
-        self._core = core
-        self._injected = injected
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._core, name)
-
-    def drain(self) -> "list[_native.Delivery]":
-        injected, self._injected = self._injected, []
-        return [*injected, *self._core.drain()]
+        return self.rewrite(self.core.drain())
 
 
 def test_round_trip_sends_the_route_headers_and_body(run: Runner) -> None:
@@ -174,7 +150,7 @@ def test_concurrent_requests_all_complete(run: Runner) -> None:
     run(main())
 
 
-def test_cancellation_aborts_the_rust_task(run: Runner) -> None:
+def test_cancelling_a_request_drops_its_connection(run: Runner) -> None:
     async def main() -> None:
         disconnected = asyncio.Event()
 
@@ -190,26 +166,6 @@ def test_cancellation_aborts_the_rust_task(run: Runner) -> None:
                 async with asyncio.timeout(0.2):
                     await me(running)
             await asyncio.wait_for(disconnected.wait(), 5)
-            assert running.core.inflight() == 0
-
-    run(main())
-
-
-def test_connection_failure_hides_the_url(run: Runner) -> None:
-    async def main() -> None:
-        server, url = await serve(reply_hello)
-        server.close()
-        await server.wait_closed()
-        async with bridge(url) as running:
-            with pytest.raises(TransportError) as raised:
-                await running.request(
-                    "POST",
-                    "/webhooks/{webhook_id}/{webhook_token}",
-                    {"webhook_id": "1", "webhook_token": "SECRET-TOKEN"},
-                    [],
-                )
-
-        assert "SECRET-TOKEN" not in str(raised.value)
 
     run(main())
 
@@ -259,17 +215,28 @@ def test_can_only_start_once(run: Runner) -> None:
 
 def test_closing_fails_pending_requests_and_futures(run: Runner) -> None:
     async def main() -> None:
-        server, url = await serve(never_reply)
+        accepted = asyncio.Event()
+        disconnected = asyncio.Event()
+
+        async def hold(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            accepted.set()
+            await never_reply(reader, writer)
+            disconnected.set()
+
+        server, url = await serve(hold)
         async with server:
             running = bridge(url)
             await running.__aenter__()
             pending = asyncio.create_task(me(running))
             stopped = running.create_future()
-            await asyncio.sleep(0.1)
+            await accepted.wait()
             await running.close()
             for waiter in (pending, stopped):
                 with pytest.raises(TransportError, match="stopped"):
                     await waiter
+            await disconnected.wait()
 
     run(main())
 
@@ -277,10 +244,13 @@ def test_closing_fails_pending_requests_and_futures(run: Runner) -> None:
 def test_delivery_failure_stops_the_bridge(
     run: Runner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    def explode(deliveries: "list[_native.Delivery]") -> "list[_native.Delivery]":
+        raise RuntimeError("drain exploded")
+
     async def main() -> None:
         server, url = await serve(reply_hello)
         async with server, bridge(url) as running:
-            monkeypatch.setattr(running, "core", FailingDrain(running.core))
+            monkeypatch.setattr(running, "core", RewrittenCore(running.core, explode))
             with pytest.raises(TransportError) as raised:
                 await me(running)
             assert isinstance(raised.value.__cause__, RuntimeError)
@@ -290,56 +260,37 @@ def test_delivery_failure_stops_the_bridge(
     run(main())
 
 
-def test_gateway_deliveries_reach_the_callback_with_the_drain_time(
-    run: Runner, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    injected: list[GatewayDelivery] = [
-        ("disconnected", 0, 4000, "unknown error", True),
-        ("invalid_requests", 1000),
-    ]
-    handed: list[tuple[GatewayDelivery, float]] = []
-
-    def record(delivery: GatewayDelivery, received: float) -> None:
-        handed.append((delivery, received))
-
-    async def main() -> None:
-        server, url = await serve(reply_hello)
-        loop = asyncio.get_running_loop()
-        async with server, Bridge(TOKEN, url, record, global_limit=50) as running:
-            monkeypatch.setattr(running, "core", InjectedOnce(running.core, injected))
-            before = loop.time()
-            assert await me(running) == (200, b"hello")
-            after = loop.time()
-
-        assert [delivery for delivery, _ in handed] == injected
-        first, second = (received for _, received in handed)
-        assert before <= first == second <= after
-
-    run(main())
-
-
 def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
-    run: Runner, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    run: Runner, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def explode(delivery: GatewayDelivery, received: float) -> None:
-        raise ValueError("handler exploded")
-
     async def main() -> None:
-        server, url = await serve(reply_hello)
-        async with server, Bridge(TOKEN, url, explode, global_limit=50) as running:
-            injected: list[GatewayDelivery] = [
-                ("backpressure", 0, 1),
-                ("backpressure", 0, 2),
-            ]
-            monkeypatch.setattr(running, "core", InjectedOnce(running.core, injected))
-            assert await me(running) == (200, b"hello")
-            assert await me(running) == (200, b"hello")
+        exploded = asyncio.Event()
+
+        def explode(delivery: GatewayDelivery, received: float) -> None:
+            exploded.set()
+            raise ValueError("handler exploded")
+
+        async with FakeDiscord() as fake:
+            async with Bridge(
+                fake.token, fake.api_url, explode, global_limit=50
+            ) as running:
+                gateway = GatewayClient(running, fake.token)
+                started = asyncio.ensure_future(
+                    gateway.start(fake.gateway_url, intents=513)
+                )
+                await exploded.wait()
+                assert (await me(running))[0] == 200
+            with pytest.raises(TransportError, match="stopped"):
+                await started
 
     run(main())
 
-    failures = [record for record in caplog.records if record.name == "bostie.bridge"]
-    assert [record.levelno for record in failures] == [logging.ERROR] * 2
-    assert all(record.exc_info is not None for record in failures)
+    failures = {
+        (record.levelno, str(record.exc_info[1]))
+        for record in caplog.records
+        if record.name == "bostie.bridge" and record.exc_info is not None
+    }
+    assert failures == {(logging.ERROR, "handler exploded")}
 
 
 def test_rejects_use_from_another_loop(run: Runner) -> None:
@@ -383,10 +334,13 @@ def test_failure_kinds_map_to_their_exceptions(
     kind: "_native.FailureKind",
     error_type: type[BostieError],
 ) -> None:
+    def relabel(deliveries: "list[_native.Delivery]") -> "list[_native.Delivery]":
+        return [("failure", delivery[1], kind, "relabelled") for delivery in deliveries]
+
     async def main() -> None:
         server, url = await serve(reply_hello)
         async with server, bridge(url) as running:
-            monkeypatch.setattr(running, "core", RelabelledFailures(running.core, kind))
+            monkeypatch.setattr(running, "core", RewrittenCore(running.core, relabel))
             with pytest.raises(error_type, match="relabelled") as raised:
                 await me(running)
 

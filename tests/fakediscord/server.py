@@ -90,7 +90,6 @@ class Connection:
 class _Fault:
     method: str
     route_prefix: str
-    times: int
     respond: Respond
 
 
@@ -119,7 +118,6 @@ class FakeDiscord(VoiceGateway):
         voice: bool = False,
         voice_heartbeat_interval: float = 500.0,
         voice_order: Order = "state_first",
-        full: bool = False,
     ) -> None:
         super().__init__(voice_heartbeat_interval)
         self.token = token
@@ -137,16 +135,14 @@ class FakeDiscord(VoiceGateway):
             (guild["id"], member["user"]["id"]): member
         }
         self.messages: dict[str, dict[str, Json]] = {}
-        self.commands: dict[str | None, list[Json]] = {}
+        self.commands: list[Json] = []
         self.put_count = 0
         self.requests: list[Recorded] = []
-        self.callbacks: asyncio.Queue[Recorded] = asyncio.Queue()
         self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
         self.connections: list[Connection] = []
         self._heartbeat_interval = heartbeat_interval
         self._zstd_stream = _zstd_streams() if compress else None
         self._hold_acks = False
-        self._latency = 0.0
         self._faults: list[_Fault] = []
         self._windows: dict[tuple[str, str], tuple[float, int]] = {}
         self._session_id: str | None = None
@@ -157,7 +153,6 @@ class FakeDiscord(VoiceGateway):
         self._responses: dict[str, dict[str, Json]] = {}
         self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
         self.voice_order = voice_order
-        self.full = full
         self.mute = False
         self.suppress = False
         self.voice_states: dict[tuple[str, str], Json] = {}
@@ -173,16 +168,6 @@ class FakeDiscord(VoiceGateway):
             ("GET", "/applications/@me", self._application),
             ("GET", "/applications/{application_id}/commands", self._commands),
             ("PUT", "/applications/{application_id}/commands", self._commands),
-            (
-                "GET",
-                "/applications/{application_id}/guilds/{guild_id}/commands",
-                self._commands,
-            ),
-            (
-                "PUT",
-                "/applications/{application_id}/guilds/{guild_id}/commands",
-                self._commands,
-            ),
             (
                 "POST",
                 "/interactions/{interaction_id}/{interaction_token}/callback",
@@ -290,7 +275,7 @@ class FakeDiscord(VoiceGateway):
         """Wait for the next op 4 the bot sent and return its ``d``."""
         return await self._voice_state_updates.get()
 
-    async def move_bot(self, channel_id: int, *, order: Order = "state_first") -> None:
+    async def move_bot(self, channel_id: int) -> None:
         """Move the bot to ``channel_id`` as a moderator would.
 
         The voice socket of the old channel then closes with 4014.
@@ -301,7 +286,7 @@ class FakeDiscord(VoiceGateway):
             str(channel_id),
             state["self_mute"],
             state["self_deaf"],
-            order,
+            "state_first",
         )
 
     async def kick_bot(self) -> None:
@@ -310,14 +295,6 @@ class FakeDiscord(VoiceGateway):
         await self._leave_voice(
             state["guild_id"], state["self_mute"], state["self_deaf"]
         )
-
-    async def server_update(self, endpoint: str | None) -> None:
-        """Send VOICE_SERVER_UPDATE with a new token; ``None`` means no voice server."""
-        state = self._bot_voice_state()
-        guild_id = state["guild_id"]
-        token = self._grant_voice(guild_id, state["user_id"], state["session_id"])
-        server = {"token": token, "guild_id": guild_id, "endpoint": endpoint}
-        await self.dispatch("VOICE_SERVER_UPDATE", server)
 
     async def next_identify(self) -> Json:
         """Wait for the next IDENTIFY and return its ``d``."""
@@ -342,37 +319,24 @@ class FakeDiscord(VoiceGateway):
         *,
         scope: Literal["user", "shared", "global"] = "user",
         retry_after: float = 0.1,
-        times: int = 1,
     ) -> None:
-        """Answer the next ``times`` matching requests with a 429 of ``scope``."""
+        """Answer the next matching request with a 429 of ``scope``."""
         self._faults.append(
             _Fault(
                 method,
                 route_prefix,
-                times,
                 lambda window: _rate_limited(window, scope, retry_after),
             )
         )
 
-    def fail(
-        self, method: str, route_prefix: str, status: int, json: Any, times: int = 1
-    ) -> None:
-        """Answer the next ``times`` matching requests with ``status`` and ``json``.
+    def fail(self, method: str, route_prefix: str, status: int, json: Any) -> None:
+        """Answer the next matching request with ``status`` and ``json``.
 
         This also stubs routes the fake does not model, which otherwise get a 404.
         """
         self._faults.append(
-            _Fault(
-                method,
-                route_prefix,
-                times,
-                lambda window: _json(json, status, window),
-            )
+            _Fault(method, route_prefix, lambda window: _json(json, status, window))
         )
-
-    def latency(self, seconds: float) -> None:
-        """Delay every REST response by ``seconds``."""
-        self._latency = seconds
 
     def _latest(self) -> Connection:
         if not self.connections:
@@ -467,7 +431,7 @@ class FakeDiscord(VoiceGateway):
             }:
                 if channel_id is None:
                     await self._leave_voice(guild_id, self_mute, self_deaf)
-                elif not self.full:
+                else:
                     await self._join_voice(
                         guild_id, channel_id, self_mute, self_deaf, self.voice_order
                     )
@@ -532,7 +496,6 @@ class FakeDiscord(VoiceGateway):
         record = await _record(request)
         request[RECORD] = record
         self.requests.append(record)
-        await asyncio.sleep(self._latency)
         resource = request.match_info.route.resource
         if resource is None:
             fault = self._take_fault(request.method, record.path)
@@ -581,9 +544,7 @@ class FakeDiscord(VoiceGateway):
     def _take_fault(self, method: str, path: str) -> Respond | None:
         for fault in self._faults:
             if fault.method == method and path.startswith(fault.route_prefix):
-                fault.times -= 1
-                if fault.times == 0:
-                    self._faults.remove(fault)
+                self._faults.remove(fault)
                 return fault.respond
         return None
 
@@ -599,45 +560,34 @@ class FakeDiscord(VoiceGateway):
     async def _commands(self, request: web.Request) -> web.Response:
         if request.match_info["application_id"] != str(self.application_id):
             return _error(404, 10002, "Unknown Application")
-        guild_id = request.match_info.get("guild_id")
         if request.method == "PUT":
             known = {
                 (command["type"], command["name"]): command["id"]
-                for command in self.commands.get(guild_id, [])
+                for command in self.commands
             }
-            self.commands[guild_id] = [
-                self._stored_command(command, known, guild_id)
-                for command in request[RECORD].json
+            self.commands = [
+                self._stored_command(command, known) for command in request[RECORD].json
             ]
             self.put_count += 1
-        commands = self.commands.get(guild_id, [])
         if request.method == "PUT" or _query_flag(request, "with_localizations"):
-            return _json(commands)
-        return _json(_without_localizations(commands))
+            return _json(self.commands)
+        return _json(_without_localizations(self.commands))
 
-    def _stored_command(
-        self, command: Json, known: dict[tuple[int, str], str], guild_id: str | None
-    ) -> Json:
+    def _stored_command(self, command: Json, known: dict[tuple[int, str], str]) -> Json:
         defaults: Json = {
             "type": 1,
             "default_member_permissions": None,
             "nsfw": False,
             "integration_types": [0],
+            "contexts": [0, 1, 2],
         }
-        if guild_id is None:
-            defaults["contexts"] = [0, 1, 2]
         stored = defaults | _localizable(command)
         key = (stored["type"], stored["name"])
-        scope = {} if guild_id is None else {"guild_id": guild_id}
-        return (
-            stored
-            | scope
-            | {
-                "id": command.get("id") or known.get(key) or payloads.snowflake(),
-                "application_id": str(self.application_id),
-                "version": payloads.snowflake(),
-            }
-        )
+        return stored | {
+            "id": command.get("id") or known.get(key) or payloads.snowflake(),
+            "application_id": str(self.application_id),
+            "version": payloads.snowflake(),
+        }
 
     async def _callback(self, request: web.Request) -> web.Response:
         token = request.match_info["interaction_token"]
@@ -655,7 +605,6 @@ class FakeDiscord(VoiceGateway):
             interaction, kind, record.json.get("data") or {}
         )
         self._responses[token] = {} if original is None else {"@original": original}
-        self.callbacks.put_nowait(record)
         waiter = self._callback_waiters.pop(interaction["id"], None)
         if waiter is not None and not waiter.done():
             waiter.set_result(record)
