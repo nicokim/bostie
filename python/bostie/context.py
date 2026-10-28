@@ -26,6 +26,7 @@ from bostie.models import (
 )
 from bostie.models.base import decoder
 from bostie.models.message import in_guild
+from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
     from bostie.bot import Bot
@@ -117,6 +118,11 @@ class _InteractionContext:
     @property
     def locale(self) -> str | None:
         return self.interaction.locale
+
+    @property
+    def voice(self) -> ContextVoice:
+        """Voice in this guild; `connect()` joins the channel of the user who ran it."""
+        return ContextVoice(self.bot.voice, self.guild_id, self.user.id)
 
     @property
     def command_name(self) -> str | None:

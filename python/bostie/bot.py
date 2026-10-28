@@ -61,7 +61,10 @@ from bostie.models import (
     decode,
 )
 from bostie.models.message import in_guild
-from bostie.router import RAW_EVENT_NAME, Listener, Router
+from bostie.router import RAW_EVENT_NAME, EventClass, Listener, Router
+from bostie.voice.connection import VoiceManager
+from bostie.voice.events import LOCAL_NAMES, VoiceEvent
+from bostie.voice.formats import Defaults
 
 log = logging.getLogger("bostie.bot")
 
@@ -75,6 +78,7 @@ PRIVILEGED_INTENTS = (
     Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
 )
 DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
+DEFAULT_VOICE = Defaults()
 COMMAND_INTERACTIONS = frozenset(
     {
         InteractionType.APPLICATION_COMMAND,
@@ -90,7 +94,7 @@ type Handler = Callable[..., Coroutine[Any, Any, None]]
 
 @dataclass(frozen=True, slots=True)
 class _Waiter:
-    event: type[Event]
+    event: type[EventClass]
     check: Callable[[Any], bool] | None
     future: asyncio.Future[Any]
 
@@ -110,9 +114,11 @@ class Bot(Router):
         presence: Mapping[str, Any] | None = None,
         global_rate_limit: int = 50,
         api_url: str = "https://discord.com/api/v10",
+        voice: Defaults = DEFAULT_VOICE,
     ) -> None:
         super().__init__()
         self.cache = Cache()
+        self.voice = VoiceManager(self, voice)
         self.user: User | None = None
         self.application_id: int | None = None
         self._intents = intents
@@ -245,7 +251,7 @@ class Bot(Router):
         finally:
             self._ready_waiters.remove(future)
 
-    async def wait_for[E: Event](
+    async def wait_for[E: Event | VoiceEvent](
         self,
         event: type[E],
         *,
@@ -411,6 +417,7 @@ class Bot(Router):
             await started
 
     async def _shut_down(self) -> None:
+        await self.voice.close()
         if self._gateway is not None:
             await self._gateway.close()
         tasks = list(self._tasks)
@@ -430,7 +437,7 @@ class Bot(Router):
                 future.set_exception(RuntimeError("the bot stopped before READY"))
 
     def _dispatch_names(self) -> list[str] | None:
-        names = {*self.listeners, *self._waiters, "RATE_LIMITED"}
+        names = {*self.listeners, *self._waiters, "RATE_LIMITED"} - LOCAL_NAMES
         if RAW_EVENT_NAME in names:
             return None
         if self._caching:
@@ -482,6 +489,30 @@ class Bot(Router):
                 self.gateway.handle(delivery)
             case ("stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway.handle(delivery)
+            case (
+                "voice_state"
+                | "voice_moved"
+                | "voice_dave"
+                | "voice_self"
+                | "voice_speaking"
+                | "voice_clients"
+                | "voice_client_left"
+                | "voice_stalled"
+                | "voice_wake"
+                | "voice_marker",
+                *_,
+            ):
+                self.voice.handle(delivery, received)
+
+    def _emit(self, event: VoiceEvent) -> None:
+        for waiter in self._waiters.get(event.NAME, ()):
+            if not waiter.future.done():
+                _resolve(waiter, event)
+        for listener in self.listeners.get(event.NAME, ()):
+            self._spawn(_run_listener(listener, event, event.NAME))
+
+    def _shard_for(self, guild_id: int) -> int:
+        return 0
 
     def _dispatch(
         self, shard_id: int, seq: int, name: str, data: bytes, received: float
@@ -524,7 +555,7 @@ class Bot(Router):
         for key in (name, RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
                 if not waiter.future.done():
-                    _resolve(waiter, event(waiter.event))
+                    _resolve(waiter, event(cast("type[Event]", waiter.event)))
         if name == InteractionCreate.NAME:
             created = event(InteractionCreate)
             if created is not None:
@@ -733,7 +764,7 @@ def _resolve_token(token: str | None) -> str:
     return token.removeprefix("Bot ")
 
 
-def _resolve(waiter: _Waiter, event: Event | None) -> None:
+def _resolve(waiter: _Waiter, event: Event | VoiceEvent | None) -> None:
     if event is None:
         return
     try:
@@ -745,7 +776,9 @@ def _resolve(waiter: _Waiter, event: Event | None) -> None:
         waiter.future.set_result(event)
 
 
-async def _run_listener(listener: Listener, event: Event, name: str) -> None:
+async def _run_listener(
+    listener: Listener, event: Event | VoiceEvent, name: str
+) -> None:
     try:
         await listener.callback(event)
     except Exception:

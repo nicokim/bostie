@@ -6,7 +6,7 @@
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
-> **Status:** pre-alpha. Text bots work: slash commands, buttons and selects, gateway events, the cache and REST. Voice comes next.
+> **Status:** pre-alpha. Text bots work: slash commands, buttons and selects, gateway events, the cache and REST. Voice joins channels and plays audio. Receiving audio comes next.
 
 ## Install
 
@@ -20,7 +20,7 @@ You need Python 3.12 or newer and Rust 1.95 or newer ([rustup.rs](https://rustup
 
 ## Goals
 
-- Voice is the next feature. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026, and most Python libraries still struggle with it, especially when receiving audio. The whole voice path is planned in Rust, outside the GIL, so audio timing does not depend on what your Python code is doing.
+- Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026, and most Python libraries still struggle with it, especially when receiving audio. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
 - Bots keep working when Discord adds things. Unknown fields, enum values and components never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
 - The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
 
@@ -96,6 +96,72 @@ Everything bostie does not model yet stays reachable:
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
 
+## Voice
+
+```python
+from bostie import Bot, Context, voice
+
+bot = Bot(voice=voice.Defaults(timeout=15.0))
+queues: dict[int, voice.Queue] = {}
+
+
+@bot.command
+async def play(ctx: Context, url: str) -> None:
+    """Queue a direct media URL."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    queue = queues.get(vc.guild_id)
+    if queue is None or queue.vc is not vc:
+        queue = queues[vc.guild_id] = voice.Queue(vc)
+    queue.add(voice.Url(url))
+    await ctx.respond(f"{len(queue.upcoming)} queued")
+
+
+@bot.command
+async def skip(ctx: Context) -> None:
+    """Skip the current track."""
+    if ctx.guild_id in queues:
+        queues[ctx.guild_id].skip()
+    await ctx.respond("skipped")
+
+
+@bot.listen
+async def on_voice_state(event: voice.StateChange) -> None:
+    if event.new is voice.State.DISCONNECTED:
+        print(f"voice in {event.guild_id} ended: {event.reason} ({event.detail})")
+
+
+bot.run()
+```
+
+- `ctx.voice.connect()` joins the voice channel of the user who ran the command. `bot.voice.connect(channel_id)` joins any voice or stage channel. In a guild where the bot is already connected, both move it, so `ctx.voice.current or ...` keeps a bot that is playing where it is.
+- `connect()` returns once audio can flow, or raises `voice.VoiceConnectError` with the reason. Dropped connections, voice server changes, moves and DAVE transitions are handled for you. `voice.StateChange`, `voice.Moved`, `voice.UserJoin` and the other voice events reach `@bot.listen` and `bot.wait_for`.
+- `voice.File`, `voice.Bytes` and `voice.Url` decode Ogg Opus and Vorbis, WebM, FLAC, WAV and MP3 in Rust. `voice.FFmpeg(args)` plays anything ffmpeg reads, and `voice.Stream(chunks, format)` plays an async iterator. `vc.play(source)` plays a source on its own, mixed with whatever else plays. `voice.Queue` plays tracks back to back without gaps.
+- `vc.sink(format)` is what they all build on: a bounded writer of PCM (16-bit or float, 8 to 192 kHz, mono or stereo) or Opus packets. `await sink.write(data)` waits while `buffer` seconds are queued. A sink that runs dry sends silence; the stream goes on.
+- `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, sink buffer, stall policy and stage role. Each call can override them.
+- Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`.
+- Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
+
+### Text to speech
+
+Most streaming text-to-speech APIs can return raw PCM. Hand the chunks to `voice.Stream` with their format, and playback starts with the first chunk:
+
+```python
+speaking: dict[int, voice.Track] = {}
+
+
+@bot.command
+async def say(ctx: Context, text: str) -> None:
+    """Speak; a new /say interrupts the last one."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    if (previous := speaking.get(vc.guild_id)) is not None:
+        previous.stop()
+    chunks = speech(text)
+    speaking[vc.guild_id] = await vc.play(voice.Stream(chunks, voice.PCM(24_000, 1)))
+    await ctx.respond("speaking")
+```
+
+Here `speech(text)` stands for your engine's streaming call: an async iterator of 24 kHz mono 16-bit chunks. The Rust core resamples them to 48 kHz stereo.
+
 ## Bot parameters
 
 Every parameter of `bostie.Bot` is keyword-only and optional.
@@ -109,6 +175,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `presence`: the `presence` object sent with identify, as a dict in Discord's format.
 - `global_rate_limit`: requests per second across all routes, 50 by default. Interaction responses and follow-ups do not count.
 - `api_url`: the REST API base URL, for a proxy or a fake Discord in tests.
+- `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
 
 ## Layout
 

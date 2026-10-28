@@ -1,4 +1,4 @@
-from bostie import ui
+from bostie import ui, voice
 from bostie.bot import Bot
 from bostie.commands import Choice, Option, Range
 from bostie.context import AutocompleteContext, ComponentContext, Context
@@ -158,4 +158,5 @@ __all__ = [
     "User",
     "VoiceState",
     "ui",
+    "voice",
 ]

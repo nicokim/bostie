@@ -797,16 +797,17 @@ class VoiceConnection:
                 del self.manager._connections[self.guild_id]
             for sink in list(self._sinks):
                 sink._release()
-        self._emit(
-            StateChange(
-                guild_id=self.guild_id,
-                old=old,
-                new=self._state,
-                reason=self._reason,
-                code=code,
-                detail=detail,
+        if self._state is not old:
+            self._emit(
+                StateChange(
+                    guild_id=self.guild_id,
+                    old=old,
+                    new=self._state,
+                    reason=self._reason,
+                    code=code,
+                    detail=detail,
+                )
             )
-        )
         self._changed()
 
     async def _follow(self, channel_id: int) -> None:

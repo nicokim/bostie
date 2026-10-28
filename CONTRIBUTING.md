@@ -41,12 +41,15 @@ CI runs the tests on Linux, macOS and Windows, with Python 3.12, 3.13, 3.14, 3.1
 
 Terms the code uses:
 
-- **delivery**: one item the Rust core hands to Python: a dispatch, a REST response or failure, or a connection status. It is `Delivery` in `crates/bostie-core/src/inbox.rs`, and Python receives it as a tuple typed in `python/bostie/_native.pyi`.
+- **delivery**: one item the Rust core hands to Python: a dispatch, a REST response or failure, a connection status, or a voice update. It is `Delivery` in `crates/bostie-core/src/inbox.rs`, and Python receives it as a tuple typed in `python/bostie/_native.pyi`.
 - **inbox**: the queue of deliveries waiting for Python (`Inbox` in `inbox.rs`).
 - **bell**: a socket pair (`crates/bostie-core/src/bell.rs`). The core writes one byte to it when the inbox gets its first delivery since the last drain. Python's event loop watches the other end.
 - **drain**: Python taking every queued delivery at once (`Core.drain()`).
 - **ticket**: the number that identifies a REST request. Its response or failure delivery carries the same ticket.
 - **filter**: the dispatch names Python wants. The shard skips the others without copying their payload.
+- **tap**: the voice side of the shard (`crates/bostie-core/src/voice/tap.rs`). It reads VOICE_STATE_UPDATE and VOICE_SERVER_UPDATE before the filter, so voice works whatever Python listens to.
+- **sink**: a bounded queue of audio for one voice connection (`voice/sink.rs`), written from Python through `vc.sink()`.
+- **pacer**: the OS threads that run every voice connection's **lane** each 20 ms (`voice/pacer.rs`, `voice/media.rs`). A lane mixes the connection's sinks, encodes Opus, encrypts and sends one packet. It never takes the GIL.
 
 The path of one dispatch:
 
@@ -57,6 +60,8 @@ The path of one dispatch:
 5. `Shard::forward` pushes a `Delivery::Dispatch` with `Inbox::push`. When the inbox already holds 64 MiB of dispatches, the shard holds the frame and stops reading the socket until Python drains, so TCP pushes back on Discord.
 6. The bell wakes `Bridge._on_bell`, which calls `core.drain()`. A response or failure settles the future waiting on its ticket. Everything else goes to `Bot._on_gateway`.
 7. `Bot._dispatch` decodes the payload at most once per event class (`decode_event` in `python/bostie/events.py`). It then updates the READY state, the cache, the `wait_for` waiters and the interaction routes, in that order, and last starts one task per listener.
+
+Voice uses the same path for everything but audio. `Bot._on_gateway` hands each `voice_*` delivery to `VoiceManager.handle` (`python/bostie/voice/connection.py`). That updates the `VoiceConnection` and emits `voice.*` events through `Bot._emit` to the same listeners and `wait_for` waiters, without the filter. Audio never rides in a delivery: `voice_wake` tells a waiting `Sink.write` that its sink has room again, and `voice_marker` settles a marker once the audio before it has left.
 
 ## Adding a gateway event
 
@@ -84,6 +89,8 @@ Rust needs no change: the core forwards any dispatch name in the filter. Follow 
 - `async with running(bot, fake):` starts the bot on the fake, waits for READY, and closes the bot at the end.
 - `await fake.dispatch(name, d)` sends a dispatch. `await fake.interaction(type, data)` sends an interaction and returns the bot's answer as a recorded request.
 - `fake.fail(method, route_prefix, status, json)` answers the next matching request with `status` and `json`. It also stubs routes the fake does not model.
+
+`FakeDiscord(voice=True)` adds voice. It answers op 4 with VOICE_STATE_UPDATE and VOICE_SERVER_UPDATE, serves a voice gateway (v8), and runs a UDP server that decrypts every RTP packet into `fake.packets`. It never negotiates DAVE; DAVE is tested in Rust. Scripts move or kick the bot (`move_bot`, `kick_bot`), change the voice server (`server_update`), close or drop the voice socket (`close_voice`, `drop_voice`) and send voice opcodes (`clients_connect`, `client_disconnect`, `speaking`, `voice_op`). `full=True` leaves joins unanswered, as Discord does for a full channel. `tests/test_bot_voice.py` runs a real bot against it.
 
 pytest puts `tests/` on the import path, so tests import it as `fakediscord`:
 
@@ -125,6 +132,22 @@ def test_ping_answers_pong() -> None:
 Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/bostie-check` as a guild command in the test server and leaves it there.
 
 The sync is a bulk overwrite, so it replaces every guild command the application already has in that server. Use a bot or server without guild commands you care about. If you can't, save them first (`GET /applications/{application_id}/guilds/{guild_id}/commands`) and `PUT` them back afterwards.
+
+### Voice
+
+`tests/live/voice_check.py` checks voice with you listening in the Discord client. It syncs no commands.
+
+1. Use the bot from the live check, and let it connect and speak in a voice channel that nobody is in. To check moves, give it a second voice channel. To check stages, give it a stage channel where it may request to speak.
+2. Run:
+
+   ```sh
+   BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_VOICE=<empty voice channel id> uv run python tests/live/voice_check.py
+   ```
+
+   Add `BOSTIE_LIVE_VOICE_2=<channel id>` for the moves and `BOSTIE_LIVE_STAGE=<channel id>` for the stage.
+3. When the script asks, join the voice channel, and answer its y/n questions about what you hear. Follow the bot when it moves.
+
+The script prints the call's privacy code and your verification code, which should match the call's details in the client. It also prints whether Discord sent the call's member list (op 11) before or after the session description. Its DAVE recovery step runs only if Discord starts a recovery during the check, which a bot cannot cause; otherwise it prints SKIP.
 
 ## Style
 
