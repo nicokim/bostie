@@ -1,4 +1,5 @@
 mod invalid;
+mod limits;
 mod ratelimit;
 mod request;
 
@@ -21,6 +22,7 @@ use twilight_http_ratelimiting::{Bucket, Permit, RateLimitHeaders, RateLimiter};
 pub use self::request::RestRequest;
 
 use self::invalid::InvalidRequests;
+use self::limits::{BACKOFF_BASE, MAX_RETRY_WAIT};
 use self::ratelimit::{GlobalGate, InteractionBuckets, Limited, ResponseLimits, Scope};
 use self::request::RouteClass;
 use crate::error::{CoreError, describe};
@@ -35,16 +37,8 @@ const USER_AGENT: &str = concat!(
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
-#[cfg(not(test))]
-const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
-#[cfg(test)]
-const MAX_RETRY_WAIT: Duration = Duration::from_secs(1);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const FAILURE_RETRIES: u32 = 2;
-#[cfg(not(test))]
-const BACKOFF_BASE: Duration = Duration::from_millis(500);
-#[cfg(test)]
-const BACKOFF_BASE: Duration = Duration::from_millis(10);
 
 pub struct Rest {
     client: reqwest::Client,

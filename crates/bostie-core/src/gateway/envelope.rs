@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use bytes::Bytes;
-use sonic_rs::{JsonValueTrait, PointerTree, Value};
+use sonic_rs::{JsonValueTrait, LazyValue, PointerTree, Value};
 
 use crate::error::CoreError;
 
@@ -75,9 +75,7 @@ impl Frame {
                 let forward = if wanted(name) {
                     Some(Forward {
                         name: name.into(),
-                        data: Bytes::copy_from_slice(
-                            sonic_rs::get(frame, ["d"])?.as_raw_str().as_bytes(),
-                        ),
+                        data: Bytes::copy_from_slice(data(frame)?.as_raw_str().as_bytes()),
                     })
                 } else {
                     None
@@ -87,7 +85,7 @@ impl Frame {
             1 => Self::Heartbeat,
             7 => Self::Reconnect,
             9 => Self::InvalidSession {
-                resumable: sonic_rs::get(frame, ["d"])?.as_bool().unwrap_or(false),
+                resumable: data(frame)?.as_bool().unwrap_or(false),
             },
             10 => Self::Hello {
                 heartbeat_interval: sonic_rs::get(frame, ["d", "heartbeat_interval"])
@@ -101,6 +99,16 @@ impl Frame {
             op => Self::Other { op },
         })
     }
+}
+
+fn data(frame: &[u8]) -> Result<LazyValue<'_>, EnvelopeError> {
+    sonic_rs::get(frame, ["d"]).map_err(|error| {
+        if error.is_not_found() {
+            EnvelopeError::Field("d")
+        } else {
+            error.into()
+        }
+    })
 }
 
 pub(crate) struct ReadySession {
@@ -272,6 +280,8 @@ pub(crate) mod tests {
                 r#"{"t":null,"s":null,"op":10,"d":{}}"#,
                 "d.heartbeat_interval",
             ),
+            (r#"{"t":"READY","s":1,"op":0}"#, "d"),
+            (r#"{"t":null,"s":null,"op":9}"#, "d"),
         ];
         for (frame, field) in cases {
             let error = Frame::parse(frame.as_bytes(), |_| true).unwrap_err();

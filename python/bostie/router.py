@@ -3,12 +3,24 @@ import typing
 from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from types import EllipsisType, UnionType
-from typing import Any, ClassVar, Protocol, Union, get_args, get_origin, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Protocol,
+    Union,
+    get_args,
+    get_origin,
+    overload,
+)
 
 from bostie.commands import Command, CommandCallback, Group
 from bostie.custom_id import ComponentRoute
 from bostie.enums import Permissions
 from bostie.errors import CommandDefinitionError
+
+if TYPE_CHECKING:
+    from bostie.bot import Bot
 
 RAW_EVENT_NAME = "*"
 
@@ -37,6 +49,13 @@ class Router:
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.error_handlers: dict[type[BaseException], ErrorHandler] = {}
+
+    @property
+    def bot(self) -> "Bot":
+        """The bot this router is included in; RuntimeError until then."""
+        if self.parent is None:
+            raise RuntimeError("router.bot exists once the router is included in a Bot")
+        return self.parent.bot
 
     @overload
     def command(self, callback: CommandCallback, /) -> Command: ...

@@ -175,7 +175,7 @@ def test_the_filter_drops_dispatches_nobody_listens_to() -> None:
         harness.gateway.filter(["MESSAGE_CREATE"])
         await harness.ready()
 
-        await harness.fake.dispatch("TYPING_START", {"channel_id": "1", "user_id": "2"})
+        await harness.fake.dispatch("BRAND_NEW_EVENT", {"answer": 42})
         seq = await harness.fake.dispatch("MESSAGE_CREATE", payloads.message())
 
         assert (await harness.next_dispatch())[:2] == (seq, "MESSAGE_CREATE")

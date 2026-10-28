@@ -87,6 +87,7 @@ def context[C: Context | AutocompleteContext](
     kind: type[C],
     http: RecordingHTTP,
     *,
+    source: Interaction | None = None,
     age: float = 0.0,
     ephemeral: bool = False,
     auto_defer: float | None = None,
@@ -98,7 +99,7 @@ def context[C: Context | AutocompleteContext](
         AutocompleteContext: "INTERACTION_CREATE.autocomplete",
     }[kind]
     return kind(
-        interaction(fixture),
+        source or interaction(fixture),
         None,
         http,
         received=asyncio.get_running_loop().time() - age,
@@ -198,6 +199,20 @@ def test_response_state_machine(
 
         assert http.calls == ([sent] if sent else [])
         assert ctx.state is after
+
+    run(scenario)
+
+
+def test_the_user_is_the_member_in_guilds_the_user_in_dms_and_never_none() -> None:
+    dm = interaction("INTERACTION_CREATE.command_dm")
+    nobody = msgspec.structs.replace(dm, user=None)
+
+    async def scenario(http: RecordingHTTP) -> None:
+        in_guild = context(Context, http).user
+        in_dm = context(Context, http, source=dm).user
+        assert (in_guild.username, in_dm.username) == ("grace", "grace")
+        with pytest.raises(RuntimeError, match="without a user"):
+            _ = context(Context, http, source=nobody).user
 
     run(scenario)
 

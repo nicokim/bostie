@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ from bostie.events import (
     Ready,
     ThreadCreate,
     ThreadListSync,
+    TypingStart,
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
@@ -66,6 +68,27 @@ def decode[E: Event](event: type[E], name: str, shard_id: int = 0) -> E:
     return event.decode(shard_id, (EVENT_FIXTURES / f"{name}.json").read_bytes())
 
 
+def decode_ids_only(struct: type[msgspec.Struct], **fields: Any) -> Any:
+    payload: dict[str, Any] = {"id": "1", "name": "n", "seq": 1} | fields
+    if any(
+        field.required and field.name == "type"
+        for field in msgspec.structs.fields(struct)
+    ):
+        payload["type"] = 1
+    data = msgspec.json.encode(payload)
+    try:
+        if issubclass(struct, Event):
+            return struct.decode(0, data)
+        if issubclass(struct, Model):
+            return decode_model(struct, data)
+        return decoder(struct).decode(data)
+    except msgspec.ValidationError as error:
+        pytest.fail(
+            f"{struct.__qualname__}: {error}. Every field but an id or type needs a "
+            "default such as None, so a payload without it does not drop the event"
+        )
+
+
 @pytest.mark.parametrize("path", MODELLED, ids=lambda path: path.stem)
 def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
     data = path.read_bytes()
@@ -76,6 +99,12 @@ def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
     assert event.shard_id == 3
     assert event.raw_json is data
     assert event.raw == json.loads(data)
+
+
+def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
+    names = {path.name.split(".")[0] for path in EVENT_FIXTURES.glob("*.json")}
+
+    assert names - EVENTS.keys() == {"RATE_LIMITED"}
 
 
 @pytest.mark.parametrize(
@@ -251,6 +280,16 @@ def test_message_and_reaction_events() -> None:
     assert reaction.message_author_id == 1329027298099331073
 
 
+def test_typing_start_reads_the_unix_timestamp_and_the_member() -> None:
+    event = decode(TypingStart, "TYPING_START")
+
+    assert event.channel_id == 1335173295636611073
+    assert event.guild_id == 1335172792320131073
+    assert event.timestamp == datetime(2026, 10, 27, 12, tzinfo=UTC)
+    assert event.member is not None
+    assert event.member.id == event.user_id == 820774541721731073
+
+
 def test_voice_events() -> None:
     state = decode(VoiceStateUpdate, "VOICE_STATE_UPDATE").voice_state
     server = decode(VoiceServerUpdate, "VOICE_SERVER_UPDATE")
@@ -263,24 +302,17 @@ def test_voice_events() -> None:
 
 
 @pytest.mark.parametrize("struct", STRUCTS, ids=lambda struct: struct.__qualname__)
+def test_fields_have_defaults_so_a_missing_field_never_drops_an_event(
+    struct: type[msgspec.Struct],
+) -> None:
+    decode_ids_only(struct)
+
+
+@pytest.mark.parametrize("struct", STRUCTS, ids=lambda struct: struct.__qualname__)
 def test_no_repr_shows_a_token_or_the_payload_holding_it(
     struct: type[msgspec.Struct],
 ) -> None:
-    payload: dict[str, Any] = {"id": "1", "name": "n", "seq": 1}
-    payload |= dict.fromkeys(SECRET_KEYS, TOKEN)
-    if any(
-        field.required and field.name == "type"
-        for field in msgspec.structs.fields(struct)
-    ):
-        payload["type"] = 1
-    data = msgspec.json.encode(payload)
-    value: Any
-    if issubclass(struct, Event):
-        value = struct.decode(0, data)
-    elif issubclass(struct, Model):
-        value = decode_model(struct, data)
-    else:
-        value = decoder(struct).decode(data)
+    value = decode_ids_only(struct, **dict.fromkeys(SECRET_KEYS, TOKEN))
 
     for text in (repr(value), str(value), repr(value.__rich_repr__())):
         assert TOKEN not in text

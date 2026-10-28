@@ -3,10 +3,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::Instant;
 
-#[cfg(not(test))]
-const IDENTIFY_SPACING: Duration = Duration::from_secs(5);
-#[cfg(test)]
-const IDENTIFY_SPACING: Duration = Duration::from_millis(20);
+use super::limits::IDENTIFY_SPACING;
 
 const BUDGET_PERIOD: Duration = Duration::from_secs(24 * 60 * 60);
 

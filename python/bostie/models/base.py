@@ -48,7 +48,10 @@ class Builder(msgspec.Struct, kw_only=True, frozen=True, gc=False, omit_defaults
 
 @cache
 def decoder(type_: Any) -> msgspec.json.Decoder[Any]:
-    """The shared lenient JSON decoder for a type."""
+    """The shared lax JSON decoder for a type.
+
+    Lax mode turns snowflake strings into int and unix numbers into datetime.
+    """
     return msgspec.json.Decoder(type_, strict=False)
 
 

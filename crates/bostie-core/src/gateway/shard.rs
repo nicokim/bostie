@@ -1,4 +1,3 @@
-use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -19,41 +18,12 @@ use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
+use super::limits::{
+    BACKOFF_BASE, BACKOFF_MAX, CLOSE_TIMEOUT, CONNECT_TIMEOUT, HELLO_TIMEOUT, INVALID_SESSION_DELAY,
+};
 use crate::error::describe;
 use crate::ids::ShardId;
 use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery};
-
-#[cfg(not(test))]
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(test)]
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-
-#[cfg(not(test))]
-const HELLO_TIMEOUT: Duration = Duration::from_secs(20);
-#[cfg(test)]
-const HELLO_TIMEOUT: Duration = Duration::from_secs(1);
-
-#[cfg(not(test))]
-const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(test)]
-const CLOSE_TIMEOUT: Duration = Duration::from_millis(200);
-
-#[cfg(not(test))]
-const INVALID_SESSION_DELAY: RangeInclusive<Duration> =
-    Duration::from_secs(1)..=Duration::from_secs(5);
-#[cfg(test)]
-const INVALID_SESSION_DELAY: RangeInclusive<Duration> =
-    Duration::from_millis(10)..=Duration::from_millis(30);
-
-#[cfg(not(test))]
-const BACKOFF_BASE: Duration = Duration::from_secs(1);
-#[cfg(test)]
-const BACKOFF_BASE: Duration = Duration::from_millis(10);
-
-#[cfg(not(test))]
-const BACKOFF_MAX: Duration = Duration::from_secs(60);
-#[cfg(test)]
-const BACKOFF_MAX: Duration = Duration::from_millis(100);
 
 const NORMAL_CLOSE: u16 = 1000;
 const SESSION_KEEPING_CLOSE: u16 = 4000;
@@ -134,6 +104,23 @@ struct Connection {
 }
 
 impl Connection {
+    fn next_tick(&self) -> Instant {
+        self.heartbeat
+            .as_ref()
+            .map_or(self.hello_deadline, |heartbeat| heartbeat.next)
+    }
+
+    fn can_read(&self) -> bool {
+        self.held.is_none()
+    }
+
+    fn next_command_slot(&mut self, now: Instant) -> Option<Instant> {
+        if !self.running {
+            return None;
+        }
+        self.limiter.as_mut().map(|limiter| limiter.next_slot(now))
+    }
+
     async fn send(&mut self, payload: Bytes) -> Result<(), Ending> {
         let patience = self
             .heartbeat
@@ -334,37 +321,30 @@ impl Shard {
     async fn serve(&mut self, connection: &mut Connection) -> Ending {
         loop {
             let now = Instant::now();
-            let tick = connection
-                .heartbeat
-                .as_ref()
-                .map_or(connection.hello_deadline, |heartbeat| heartbeat.next);
-            let commands_at = connection
-                .limiter
-                .as_mut()
-                .filter(|_| connection.running)
-                .map(|limiter| limiter.next_slot(now));
+            let next_tick = connection.next_tick();
+            let command_slot = connection.next_command_slot(now);
+            let commands_due = command_slot.is_some_and(|slot| slot <= now);
+            let commands_wait_until = command_slot.filter(|&slot| slot > now);
             let step = tokio::select! {
                 biased;
                 () = self.signals.close.notified() => Err(Ending::Stop),
                 () = self.signals.reconnect.notified() => Err(Ending::Requested),
-                () = sleep_until(tick) => self.on_tick(connection).await,
+                () = sleep_until(next_tick) => self.on_tick(connection).await,
                 () = sleep_until(connection.identify_at.unwrap_or(now)), if connection.identify_at.is_some() => {
                     self.send_identify(connection).await
                 }
-                message = connection.socket.next(), if connection.held.is_none() => {
+                message = connection.socket.next(), if connection.can_read() => {
                     self.on_message(connection, message).await
                 }
-                () = self.shared.inbox.wait_for_room(), if connection.held.is_some() => {
-                    if let Some(held) = connection.held.take() {
-                        self.deliver(connection, held);
-                    }
+                () = self.shared.inbox.wait_for_room(), if !connection.can_read() => {
+                    self.deliver_held(connection);
                     Ok(())
                 }
-                command = self.commands.recv(), if commands_at.is_some_and(|at| at <= now) => match command {
+                command = self.commands.recv(), if commands_due => match command {
                     Some(payload) => connection.send(payload).await,
                     None => Err(Ending::Stop),
                 },
-                () = sleep_until(commands_at.unwrap_or(now)), if commands_at.is_some_and(|at| at > now) => Ok(()),
+                () = sleep_until(commands_wait_until.unwrap_or(now)), if commands_wait_until.is_some() => Ok(()),
             };
             if let Err(ending) = step {
                 return ending;
@@ -524,6 +504,12 @@ impl Shard {
             heartbeat.paused = true;
         }
         connection.held = Some(held);
+    }
+
+    fn deliver_held(&mut self, connection: &mut Connection) {
+        if let Some(held) = connection.held.take() {
+            self.deliver(connection, held);
+        }
     }
 
     fn deliver(&mut self, connection: &mut Connection, held: Held) {

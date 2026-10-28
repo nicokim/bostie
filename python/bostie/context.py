@@ -89,8 +89,14 @@ class _InteractionContext:
         self._loop = asyncio.get_running_loop()
 
     @property
-    def user(self) -> User | None:
-        return self.interaction.author
+    def user(self) -> User:
+        """The user who triggered the interaction, in a guild or in a DM."""
+        author = self.interaction.author
+        if author is None:
+            raise RuntimeError(
+                f"Discord sent interaction {self.interaction.id} without a user"
+            )
+        return author
 
     @property
     def member(self) -> Member | None:
@@ -186,7 +192,10 @@ class Context(_InteractionContext):
 
     @contextmanager
     def auto_defer(self) -> Iterator[None]:
-        """Defer if the block has not answered by the auto-defer delay after receipt."""
+        """Use as `with ctx.auto_defer():` to defer when the block is slow to answer.
+
+        Slow means no answer `auto_defer` seconds after the interaction arrived.
+        """
         timer = (
             None
             if self._auto_defer is None

@@ -2,6 +2,7 @@ from typing import Any, ClassVar
 
 import pytest
 
+from bostie import Bot
 from bostie.errors import CommandDefinitionError
 from bostie.router import Listener, Router
 
@@ -125,6 +126,18 @@ def test_include_merges_and_keeps_following_the_child() -> None:
     assert bot.listeners == {"MESSAGE_CREATE": [Listener(on_message, MessageCreate)]}
     assert bot.match_component("music:a") == (route, {"track": "a"})
     assert play.router is music
+
+
+def test_a_router_reaches_its_bot_once_it_is_included() -> None:
+    bot = Bot()
+    plugin, nested = Router(), Router()
+    plugin.include(nested)
+    with pytest.raises(RuntimeError, match="included in a Bot"):
+        _ = nested.bot
+
+    bot.include(plugin)
+
+    assert nested.bot is plugin.bot is bot.bot is bot
 
 
 def test_command_names_are_unique_across_included_routers() -> None:

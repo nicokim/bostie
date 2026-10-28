@@ -136,6 +136,11 @@ class Bot(Router):
         self._failed_dispatches: set[str] = set()
 
     @property
+    def bot(self) -> "Bot":
+        """This bot, so code written against a Router works on the bot too."""
+        return self
+
+    @property
     def http(self) -> HTTPClient:
         """The REST client, for any endpoint; it exists once `start()` runs."""
         if self._http is None:
@@ -438,7 +443,8 @@ class Bot(Router):
         if self._gateway is not None:
             self._gateway.filter(self._dispatch_names())
 
-    _registered = _refresh_filter
+    def _registered(self) -> None:
+        self._refresh_filter()
 
     def _warn_about_privileged_intents(self) -> None:
         for listeners in self.listeners.values():

@@ -104,7 +104,10 @@ class Choice:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Option:
-    """Option settings given as `Annotated` metadata; they win over the hint."""
+    """Option settings, given as `Annotated[int, Option(...)]` metadata.
+
+    Settings here override what the type hint implies.
+    """
 
     name: str | None = None
     description: str | None = None

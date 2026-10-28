@@ -93,7 +93,7 @@
       "clan": null,
       "primary_guild": null
     },
-    "content": "<@820774541721731073> thanks for the report! <@&1335174302269571073> please review https://www.youtube.com/watch?v=lYr3c0rdT3s",
+    "content": "<@820774541721731073> thanks for the report! <@&1335174302269571073> please review https://www.youtube.com/watch?v=q3Vx8RmT2kZ",
     "timestamp": "2026-10-27T12:00:05.456000+00:00",
     "edited_timestamp": null,
     "tts": false,
@@ -157,7 +157,7 @@
           },
           {
             "name": "Voice",
-            "value": "DAVE (Phase 2)",
+            "value": "DAVE (planned)",
             "inline": true
           },
           {
@@ -200,7 +200,7 @@
       },
       {
         "type": "video",
-        "url": "https://www.youtube.com/watch?v=lYr3c0rdT3s",
+        "url": "https://www.youtube.com/watch?v=q3Vx8RmT2kZ",
         "title": "bostie in 60 seconds",
         "description": "A short tour of the bostie API.",
         "color": 16711680,
@@ -213,8 +213,8 @@
           "url": "https://www.youtube.com"
         },
         "thumbnail": {
-          "url": "https://i.ytimg.com/vi/lYr3c0rdT3s/maxresdefault.jpg",
-          "proxy_url": "https://images-ext-1.discordapp.net/external/Yt0Th1Um2Bn3Ai4Ll5Mx6Rr7Ee8Ss9Dd0Ff1Gg2Hh3J/https/i.ytimg.com/vi/lYr3c0rdT3s/maxresdefault.jpg",
+          "url": "https://i.ytimg.com/vi/q3Vx8RmT2kZ/maxresdefault.jpg",
+          "proxy_url": "https://images-ext-1.discordapp.net/external/Yt0Th1Um2Bn3Ai4Ll5Mx6Rr7Ee8Ss9Dd0Ff1Gg2Hh3J/https/i.ytimg.com/vi/q3Vx8RmT2kZ/maxresdefault.jpg",
           "width": 1280,
           "height": 720,
           "content_type": "image/jpeg",
@@ -223,7 +223,7 @@
           "flags": 0
         },
         "video": {
-          "url": "https://www.youtube.com/embed/lYr3c0rdT3s",
+          "url": "https://www.youtube.com/embed/q3Vx8RmT2kZ",
           "width": 1280,
           "height": 720,
           "flags": 0

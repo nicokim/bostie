@@ -53,7 +53,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC"]
 
 [tool.mypy]
 strict = true
-files = ["python/bostie", "tests", "benches", "benches/harness.py"]
+files = ["python/bostie", "tests", "benches"]
 
 [[tool.mypy.overrides]]
 module = [

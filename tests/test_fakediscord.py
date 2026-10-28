@@ -397,6 +397,20 @@ def test_injected_failure_repeats_then_requests_reach_the_route() -> None:
     run(scenario)
 
 
+def test_injected_failure_stubs_a_route_the_fake_does_not_model() -> None:
+    async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
+        reaction = "/channels/1/messages/2/reactions/%F0%9F%91%8B/@me"
+        fake.fail("PUT", "/channels/1/messages/2/reactions/", 204, None)
+        results = []
+        for _ in range(2):
+            async with session.put(fake.api_url + reaction, headers=auth(fake)) as r:
+                results.append(r.status)
+
+        assert results == [204, 404]
+
+    run(scenario)
+
+
 def test_unknown_routes_and_missing_tokens_get_discord_errors() -> None:
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         results = []

@@ -1,14 +1,6 @@
 use zstd_safe::{DCtx, InBuffer, OutBuffer};
 
-#[cfg(not(test))]
-const MAX_DECOMPRESSED: usize = 128 * 1024 * 1024;
-#[cfg(test)]
-const MAX_DECOMPRESSED: usize = 1024 * 1024;
-
-#[cfg(not(test))]
-const SCRATCH_KEEP: usize = 8 * 1024 * 1024;
-#[cfg(test)]
-const SCRATCH_KEEP: usize = 64 * 1024;
+use super::limits::{MAX_DECOMPRESSED, SCRATCH_KEEP};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum InflateError {

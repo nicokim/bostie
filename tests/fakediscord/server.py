@@ -286,7 +286,10 @@ class FakeDiscord:
     def fail(
         self, method: str, route_prefix: str, status: int, json: Any, times: int = 1
     ) -> None:
-        """Answer the next ``times`` matching requests with ``status`` and ``json``."""
+        """Answer the next ``times`` matching requests with ``status`` and ``json``.
+
+        This also stubs routes the fake does not model, which otherwise get a 404.
+        """
         self._faults.append(
             _Fault(
                 method,
@@ -390,7 +393,10 @@ class FakeDiscord:
         await asyncio.sleep(self._latency)
         resource = request.match_info.route.resource
         if resource is None:
-            return _error(404, 0, "404: Not Found")
+            fault = self._take_fault(request.method, record.path)
+            if fault is None:
+                return _error(404, 0, "404: Not Found")
+            return fault({})
         route = resource.canonical
         authorization = request.headers.get(hdrs.AUTHORIZATION)
         if "{interaction_token}" not in route and authorization != f"Bot {self.token}":

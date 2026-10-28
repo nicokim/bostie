@@ -106,10 +106,10 @@ def test_rich_message() -> None:
     first, second = message.embeds
     assert first.timestamp == datetime(2026, 10, 27, 11, 59, tzinfo=UTC)
     assert first.fields[1] == EmbedField(
-        name="Voice", value="DAVE (Phase 2)", inline=True
+        name="Voice", value="DAVE (planned)", inline=True
     )
     assert second.video is not None
-    assert second.video.url == "https://www.youtube.com/embed/lYr3c0rdT3s"
+    assert second.video.url == "https://www.youtube.com/embed/q3Vx8RmT2kZ"
     assert [reaction.count for reaction in message.reactions] == [2, 1]
     assert message.reactions[1].emoji is not None
     assert message.reactions[1].emoji.id == 1345334752051331073

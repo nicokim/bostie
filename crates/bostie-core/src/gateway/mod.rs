@@ -6,6 +6,7 @@ mod envelope;
 mod identify;
 mod inflate;
 mod limiter;
+mod limits;
 mod shard;
 #[cfg(test)]
 mod tests;

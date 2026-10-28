@@ -16,7 +16,7 @@ _increments = itertools.count()
 
 
 def fixture(name: str) -> Json:
-    """A fresh copy of a fixture object, such as ``fixture("events/READY")``."""
+    """A fresh copy of tests/fixtures/models/{name}.json."""
     return msgspec.json.decode(
         (FIXTURES / f"{name}.json").read_bytes(), type=dict[str, Any]
     )

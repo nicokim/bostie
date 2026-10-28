@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import Any, ClassVar, Self, dataclass_transform
 
 import msgspec
@@ -30,7 +31,11 @@ _undecodable: set[str] = set()
     field_specifiers=(msgspec.field,), kw_only_default=True, frozen_default=True
 )
 class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
-    """Base of the typed gateway events."""
+    """Base of the typed gateway events.
+
+    `INTENTS` are the intents Discord needs to send the event; the bot warns when a
+    privileged one is missing.
+    """
 
     NAME: ClassVar[str]
     INTENTS: ClassVar[Intents] = Intents(0)
@@ -262,6 +267,19 @@ class ReactionRemove(_ReactionEvent, kw_only=True):
     NAME = "MESSAGE_REACTION_REMOVE"
 
 
+class TypingStart(Event, kw_only=True):
+    """A user started typing; `member` and `guild_id` are None in DMs."""
+
+    NAME = "TYPING_START"
+    INTENTS = Intents.GUILD_MESSAGE_TYPING | Intents.DIRECT_MESSAGE_TYPING
+
+    channel_id: int | None = None
+    guild_id: int | None = None
+    user_id: int | None = None
+    timestamp: datetime | None = None
+    member: Member | None = None
+
+
 class _GuildMemberPayload(Member, kw_only=True):
     guild_id: int | None = None
 
@@ -364,6 +382,7 @@ EVENTS: dict[str, type[Event]] = {
         MessageDelete,
         ReactionAdd,
         ReactionRemove,
+        TypingStart,
         MemberJoin,
         MemberUpdate,
         MemberRemove,

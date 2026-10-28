@@ -5,13 +5,13 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Annotated, Any, Literal
 
 import pytest
-from fakediscord import FakeDiscord, payloads
+from fakediscord import FakeDiscord, payloads, run, running
 
 from bostie import (
     AutocompleteContext,
@@ -49,8 +49,6 @@ from bostie.events import (
 )
 from bostie.gateway import GatewayClient
 
-type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
-
 STRING = OptionType.STRING
 INTEGER = OptionType.INTEGER
 USER = OptionType.USER
@@ -62,29 +60,6 @@ MEMBER_ID = "820774541721731073"
 class Unit(Enum):
     METRIC = "metric"
     IMPERIAL = "imperial"
-
-
-def run(scenario: Scenario, **options: Any) -> None:
-    async def main() -> None:
-        async with FakeDiscord(**options) as fake, asyncio.timeout(10):
-            await scenario(fake)
-
-    asyncio.run(main())
-
-
-@contextlib.asynccontextmanager
-async def running(bot: Bot, fake: FakeDiscord) -> AsyncIterator[None]:
-    started = asyncio.create_task(bot.start(fake.token))
-    ready = asyncio.create_task(bot.wait_until_ready())
-    await asyncio.wait([started, ready], return_when=asyncio.FIRST_COMPLETED)
-    ready.cancel()
-    if started.done():
-        await started
-    try:
-        yield
-    finally:
-        await bot.close()
-        await started
 
 
 @contextlib.contextmanager
@@ -540,6 +515,22 @@ def test_listeners_the_cache_and_wait_for_see_gateway_events() -> None:
     run(scenario)
 
 
+def test_listeners_see_the_cache_already_updated() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        seen: asyncio.Queue[bool] = asyncio.Queue()
+
+        @bot.listen
+        async def on_guild(event: GuildCreate) -> None:
+            seen.put_nowait(bot.cache.guild(event.guild.id) is not None)
+
+        async with running(bot, fake):
+            await fake.dispatch("GUILD_CREATE", payloads.guild())
+            assert await seen.get()
+
+    run(scenario)
+
+
 def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -616,9 +607,9 @@ def test_raw_listeners_receive_events_bostie_does_not_model() -> None:
                 seq,
                 {"answer": 42},
             )
-            await fake.dispatch("TYPING_START", {"channel_id": "1", "user_id": "2"})
+            await fake.dispatch("BRAND_NEW_EVENT_2", {"answer": 43})
             names = [(await everything.get()).name for _ in range(3)]
-            assert names == ["READY", "BRAND_NEW_EVENT", "TYPING_START"]
+            assert names == ["READY", "BRAND_NEW_EVENT", "BRAND_NEW_EVENT_2"]
 
     run(scenario)
 

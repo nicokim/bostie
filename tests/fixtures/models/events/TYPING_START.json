@@ -1,0 +1,20 @@
+{
+  "user_id": "820774541721731073",
+  "timestamp": 1793102400,
+  "member": {
+    "user": {
+      "id": "820774541721731073",
+      "username": "linus",
+      "global_name": "Linus 🔥",
+      "discriminator": "0",
+      "avatar": null
+    },
+    "roles": [],
+    "joined_at": "2025-04-18T19:03:11.987000+00:00",
+    "deaf": false,
+    "mute": false,
+    "flags": 2
+  },
+  "channel_id": "1335173295636611073",
+  "guild_id": "1335172792320131073"
+}
