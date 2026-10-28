@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with bostie. Questions, bug reports and feature ideas go in the GitHub issue tracker. If you want to change the public API, open an issue first so we can agree on the design before you build it. A new event, a clearer name or a missing test can go straight to a pull request.
+Thanks for helping with bostie. Questions, bug reports and feature ideas go in the GitHub issue tracker. Report a security problem privately instead, as [SECURITY.md](SECURITY.md) describes. If you want to change the public API, open an issue first so we can agree on the design before you build it. A new event, a clearer name or a missing test can go straight to a pull request.
 
 ## Setup
 
@@ -89,7 +89,7 @@ Test what a user could notice: a return value, an event, a packet sent, an error
 
 Each behaviour gets one test, at the lowest layer that shows it. Codecs, crypto and state machines have a `mod tests` at the bottom of their Rust file. Python tests cover what the Python layer adds. The end-to-end tests in `tests/test_bot_voice.py` and `crates/bostie-core/src/voice/tests.rs` are there to prove the parts are connected, not to repeat the unit tests. When two tests differ only in their inputs, make them one `pytest.mark.parametrize` table or one loop over cases.
 
-Parsers and crypto get a round trip, a known-answer vector when one exists, and a malformed input that comes back as an error instead of a panic. Wire formats get one fixture per payload under `tests/fixtures`, taken from Discord's documentation.
+Parsers and crypto get a round trip, a known-answer vector when one exists, and a malformed input that comes back as an error instead of a panic. Wire formats get one fixture per payload under `tests/fixtures`, taken from Discord's documentation. In `crates/bostie-core/src/voice/testdata`, `media/generate.sh` rebuilds the audio fixtures, byte for byte with ffmpeg 7.1.1, and `uv run vectors.py` prints the transport encryption vectors.
 
 Don't wait on the clock. Pass short timeouts and intervals through configuration, not a `#[cfg(test)]` constant. The pacer tests are the exception, because real time is what they measure. Their default bound holds on a busy CI runner. To check the clock's precision, run `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer` on an idle machine, which holds it to 5 ms at p99.
 

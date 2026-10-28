@@ -1,0 +1,17 @@
+name: Feature request
+description: Something bostie should let you do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The thing your bot needs, not yet how bostie should do it.
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: How it could look
+      description: A few lines of the code you'd like to write, if you have an idea.
+      render: python

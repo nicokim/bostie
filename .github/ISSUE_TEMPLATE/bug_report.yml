@@ -1,0 +1,32 @@
+name: Bug report
+description: bostie does something it shouldn't, or fails to do something it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what bostie did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Code to reproduce it
+      description: The smallest bot that shows the problem. Leave your token out.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Traceback or logs
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The bostie commit (`git rev-parse --short HEAD` in your clone), the output of `python -VV`, and your operating system.
+      placeholder: bostie a1b2c3d, Python 3.14.0 free-threading build, Ubuntu 24.04
+    validations:
+      required: true
