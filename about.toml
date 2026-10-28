@@ -1,0 +1,203 @@
+accepted = ["MIT", "0BSD", "ISC", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }
+
+hpke-rs.accepted = ["MPL-2.0"]
+hpke-rs-crypto.accepted = ["MPL-2.0"]
+hpke-rs-rust-crypto.accepted = ["MPL-2.0"]
+symphonia.accepted = ["MPL-2.0"]
+symphonia-bundle-flac.accepted = ["MPL-2.0"]
+symphonia-bundle-mp3.accepted = ["MPL-2.0"]
+symphonia-codec-pcm.accepted = ["MPL-2.0"]
+symphonia-codec-vorbis.accepted = ["MPL-2.0"]
+symphonia-common.accepted = ["MPL-2.0"]
+symphonia-core.accepted = ["MPL-2.0"]
+symphonia-format-mkv.accepted = ["MPL-2.0"]
+symphonia-format-ogg.accepted = ["MPL-2.0"]
+symphonia-format-riff.accepted = ["MPL-2.0"]
+symphonia-metadata.accepted = ["MPL-2.0"]
+
+[opusic-sys.clarify]
+license = "BSD-3-Clause"
+
+[[opusic-sys.clarify.files]]
+path = "opus/COPYING"
+checksum = "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551"
+
+[aws-lc-sys.clarify]
+license = "ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)"
+
+[[aws-lc-sys.clarify.files]]
+path = "aws-lc/LICENSE"
+license = "ISC"
+checksum = "977c541bd25ffe36975dde25c028c0cd15ddf3d08243983b58e8a6a3d9447523"
+
+[[aws-lc-sys.clarify.files]]
+path = "aws-lc/third_party/fiat/LICENSE"
+license = "MIT"
+checksum = "43e358d7b6eb109d0f51f7b3a090fd82607965767c25fadee39e922475de2061"
+
+[[aws-lc-sys.clarify.files]]
+path = "aws-lc/third_party/jitterentropy/jitterentropy-library/jitterentropy.h"
+license = "BSD-3-Clause"
+end = "DAMAGE.\n */"
+checksum = "bfea97738104d02ba8a97ff8bf19e319a09991f1950d3072b6b7d10a5c71a57a"
+
+[aws-lc-rs.clarify]
+license = "ISC AND (Apache-2.0 OR ISC)"
+
+[[aws-lc-rs.clarify.files]]
+path = "LICENSE"
+license = "ISC"
+checksum = "b50b376e7d24a0598488b730c3034ffcd0b58dd36c0913a24b9903a3cfd04bf7"
+
+[zstd-sys.clarify]
+license = "BSD-3-Clause"
+
+[[zstd-sys.clarify.files]]
+path = "LICENSE"
+checksum = "ce4868c8e4ebe47a7d4b3c93dbf6b802033e5ae2fa7638098173f80836daac60"
+
+[[zstd-sys.clarify.files]]
+path = "zstd/LICENSE"
+checksum = "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+
+[libmimalloc-sys.clarify]
+license = "MIT"
+
+[[libmimalloc-sys.clarify.files]]
+path = "LICENSE.txt"
+checksum = "a08554fab028af3af047e8588d32d019662c1b1bf07959a195a2f75fe340726b"
+
+[[libmimalloc-sys.clarify.files]]
+path = "c_src/mimalloc/v2/LICENSE"
+checksum = "82ade5d7d9b029044b5fbbc326207fc47c2d44ee4dd71e8a559c36d728217de9"
+
+[sonic-rs.clarify]
+license = "Apache-2.0 AND MIT"
+
+[[sonic-rs.clarify.files]]
+path = "LICENSE"
+license = "Apache-2.0"
+checksum = "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
+
+[[sonic-rs.clarify.files]]
+path = "licenses/LICENSE-sonic_cpp"
+license = "Apache-2.0"
+checksum = "43293fded4890ea79c7ec12e41c644524063cac78f44ab52c4deba169fc4c13f"
+
+[[sonic-rs.clarify.files]]
+path = "licenses/LICENSE-simdjson"
+license = "Apache-2.0"
+checksum = "664f4e8a5ae846b8a94960da2418187c0b4176d64266ba5fdb8316a8ddf50f27"
+
+[[sonic-rs.clarify.files]]
+path = "licenses/LICENSE-yyjson"
+license = "MIT"
+checksum = "734d7fb3eb56f0a04e6b7ab0c5d3634624a8bfaa2acc87a2c03a029b20868cf8"
+
+[[sonic-rs.clarify.files]]
+path = "licenses/serde_json/LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[sonic-number.clarify]
+license = "Apache-2.0 AND MIT"
+
+[[sonic-number.clarify.files]]
+path = "LICENSE"
+license = "Apache-2.0"
+checksum = "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1"
+
+[[sonic-number.clarify.files]]
+path = "licenses/LICENSE-sonic_cpp"
+license = "Apache-2.0"
+checksum = "43293fded4890ea79c7ec12e41c644524063cac78f44ab52c4deba169fc4c13f"
+
+[[sonic-number.clarify.files]]
+path = "licenses/LICENSE-yyjson"
+license = "MIT"
+checksum = "734d7fb3eb56f0a04e6b7ab0c5d3634624a8bfaa2acc87a2c03a029b20868cf8"
+
+[pyo3.clarify]
+license = "MIT OR Apache-2.0"
+
+[[pyo3.clarify.files]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "afcbe3b2e6b37172b5a9ca869ee4c0b8cdc09316e5d4384864154482c33e5af6"
+
+[curve25519-dalek.clarify]
+license = "BSD-3-Clause"
+
+[[curve25519-dalek.clarify.files]]
+path = "LICENSE"
+checksum = "cca0bd3c4fcdba74145ef9d49c62337e2c9fbf9368288f11d0547f1b0273219f"
+
+[windows-sys.clarify]
+license = "MIT OR Apache-2.0"
+
+[[windows-sys.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-link.clarify]
+license = "MIT OR Apache-2.0"
+
+[[windows-link.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[davey.clarify]
+license = "MIT"
+
+[[davey.clarify.git]]
+path = "LICENSE"
+checksum = "90760006b6e6c76a67476de39bee25e42e584679eac5d608765355d5d54e8afa"
+
+[openmls.clarify]
+license = "MIT"
+
+[[openmls.clarify.git]]
+path = "LICENSE"
+checksum = "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"
+
+[openmls_basic_credential.clarify]
+license = "MIT"
+
+[[openmls_basic_credential.clarify.git]]
+path = "LICENSE"
+checksum = "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"
+
+[openmls_memory_storage.clarify]
+license = "MIT"
+
+[[openmls_memory_storage.clarify.git]]
+path = "LICENSE"
+checksum = "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"
+
+[openmls_rust_crypto.clarify]
+license = "MIT"
+
+[[openmls_rust_crypto.clarify.git]]
+path = "LICENSE"
+checksum = "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"
+
+[openmls_traits.clarify]
+license = "MIT"
+
+[[openmls_traits.clarify.git]]
+path = "LICENSE"
+checksum = "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"

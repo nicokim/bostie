@@ -1,0 +1,31 @@
+# Third-party notices
+
+bostie's native extension (`bostie._native`) is built from the crates and bundled C libraries below. Each section names the license bostie uses them under and repeats the notices that license asks to be kept.
+
+cargo-about generates this file from `about.toml` and `about.hbs`, so edit those instead.
+
+{{#each licenses}}
+{{#if first_of_kind}}
+- {{{name}}}
+{{/if}}
+{{/each}}
+{{#each licenses}}
+{{#if first_of_kind}}
+
+## {{{name}}}
+{{#if (eq id "MPL-2.0")}}
+
+bostie uses these crates unmodified. Their source code is available from crates.io and from the repositories linked below.
+{{/if}}
+{{/if}}
+
+Used by:
+
+{{#each used_by}}
+- [{{{crate.name}}} {{{crate.version}}}]({{#if crate.repository}}{{{crate.repository}}}{{else}}https://crates.io/crates/{{{crate.name}}}{{/if}}){{#if (eq crate.name "twilight-http-ratelimiting")}}, which ships no license file; its repository gives the notice "Copyright (c) 2019 (c) The Twilight Contributors"{{/if}}
+{{/each}}
+
+````text
+{{{text}}}
+````
+{{/each}}

@@ -47,6 +47,17 @@ jobs:
       - run: uv run mypy
       - run: uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
 
+  notices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+      - run: cargo about generate --locked -m crates/bostie-native/Cargo.toml -o THIRD-PARTY-NOTICES.md about.hbs
+      - run: git diff --exit-code THIRD-PARTY-NOTICES.md
+
   python-tests:
     strategy:
       fail-fast: false
