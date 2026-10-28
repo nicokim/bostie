@@ -168,6 +168,7 @@ pub struct Dave {
     members: HashSet<UserId>,
     pending: HashMap<u16, u16>,
     last_transition: u16,
+    recovering: bool,
     recoveries: VecDeque<Instant>,
     counters: DaveCounters,
     #[cfg(test)]
@@ -186,6 +187,7 @@ impl Dave {
             members: HashSet::new(),
             pending: HashMap::new(),
             last_transition: 0,
+            recovering: false,
             recoveries: VecDeque::new(),
             counters: DaveCounters::default(),
             #[cfg(test)]
@@ -267,7 +269,7 @@ impl Dave {
             SendMode::Plain
         } else if self.members.is_empty() {
             SendMode::Discard
-        } else if self.session.as_ref().is_some_and(DaveSession::can_encrypt) {
+        } else if !self.recovering && self.session.as_ref().is_some_and(DaveSession::can_encrypt) {
             SendMode::Encrypt
         } else {
             SendMode::Hold
@@ -430,6 +432,7 @@ impl Dave {
         {
             session.set_passthrough_mode(false, Some(PASSTHROUGH_EXPIRY_SECS));
         }
+        self.recovering = false;
         self.counters.transitions_executed += 1;
         debug!(transition_id, protocol_version, "DAVE transition executed");
         Executed {
@@ -621,6 +624,7 @@ impl Dave {
             return Err(DaveError::RecoveryLimit);
         }
         warn!(transition_id, "resetting the DAVE session");
+        self.recovering = true;
         out.push(Outbound::InvalidCommitWelcome(transition_id));
         self.rebuild(out)
     }
@@ -1345,6 +1349,27 @@ mod tests {
         let sent = call.sent_by(user(BOT));
         assert_eq!(sent[0], Outbound::InvalidCommitWelcome(9));
         assert!(matches!(sent[1], Outbound::KeyPackage(_)));
+        assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+        assert_eq!(hear(&mut call, BOT, A), OPUS);
+    }
+
+    #[test]
+    fn after_a_recovery_the_bot_holds_until_its_re_add_executes() {
+        let mut call = group(&[BOT, A]);
+        call.fake.hold_transitions = true;
+        call.deliver(
+            user(BOT),
+            DaveOp::AnnounceCommit {
+                transition_id: 9,
+                commit: Bytes::from_static(b"a replayed commit"),
+            },
+        );
+        call.run();
+
+        assert_eq!(call.dave(user(BOT)).counters().recoveries, 1);
+        assert_eq!(ready_ids(&call.sent_by(user(BOT))).len(), 1);
+        assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Hold);
+        release(&mut call);
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
         assert_eq!(hear(&mut call, BOT, A), OPUS);
     }
