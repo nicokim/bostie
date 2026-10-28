@@ -1,0 +1,516 @@
+import asyncio
+import json
+import threading
+from collections import deque
+from collections.abc import Buffer, Callable, Coroutine
+from dataclasses import dataclass
+from typing import Any, Literal, cast
+
+import msgspec
+
+from bostie._bridge import Bridge
+from bostie.cache import Cache
+from bostie.enums import Intents
+from bostie.events import Event
+from bostie.gateway import GatewayClient
+from bostie.http import HTTPClient
+from bostie.models import Channel, User, decode
+from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
+from bostie.voice.events import VoiceEvent
+from bostie.voice.formats import Defaults
+
+BOT_ID = 1000
+USER_ID = 2000
+GUILD_ID = 1
+OTHER_GUILD_ID = 2
+VOICE = 10
+OTHER_VOICE = 11
+STAGE = 12
+TEXT = 13
+ELSEWHERE = 20
+NO_BITRATE = 21
+SAMPLE_RATE = 48_000
+DEFAULTS = Defaults()
+
+CHANNELS: dict[int, dict[str, Any]] = {
+    VOICE: {"id": str(VOICE), "type": 2, "guild_id": str(GUILD_ID), "bitrate": 96_000},
+    OTHER_VOICE: {
+        "id": str(OTHER_VOICE),
+        "type": 2,
+        "guild_id": str(GUILD_ID),
+        "bitrate": 32_000,
+    },
+    STAGE: {"id": str(STAGE), "type": 13, "guild_id": str(GUILD_ID), "bitrate": 64_000},
+    TEXT: {"id": str(TEXT), "type": 0, "guild_id": str(GUILD_ID)},
+    ELSEWHERE: {"id": str(ELSEWHERE), "type": 2, "guild_id": str(OTHER_GUILD_ID)},
+    NO_BITRATE: {"id": str(NO_BITRATE), "type": 2, "guild_id": str(OTHER_GUILD_ID)},
+}
+
+type Call = tuple[str, tuple[Any, ...], dict[str, Any]]
+
+
+@dataclass
+class Request:
+    method: str
+    path: str
+    json: Any
+
+
+class FakeSink:
+    def __init__(
+        self,
+        core: "FakeCore",
+        id: int,
+        *,
+        kind: Literal["pcm", "opus"],
+        rate: int,
+        channels: int,
+        sample: str,
+        buffer: float,
+        volume: float,
+        stall: str,
+    ) -> None:
+        self._id = id
+        self.core = core
+        self.kind = kind
+        self.rate = rate
+        self.channels = channels
+        self.sample = sample
+        self.buffer = buffer
+        self.volume = volume
+        self.stall = stall
+        self.bytes_per_second = rate * channels * (2 if sample == "s16le" else 4)
+        self.writes: list[bytes] = []
+        self.written = 0.0
+        self.consumed = 0.0
+        self.max_queued = 0.0
+        self.armed = False
+        self.markers: list[tuple[int, float]] = []
+        self.next_marker = 1
+        self.flushes = 0
+        self.clears: list[int | None] = []
+        self.closed = False
+        self.failure: Exception | None = None
+        self.counters: dict[str, int] = {}
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    def write(self, data: Buffer) -> bool:
+        self._check()
+        if self.queued() >= self.buffer:
+            self.armed = True
+            return False
+        chunk = bytes(data)
+        self.writes.append(chunk)
+        self.written += (
+            0.02 if self.kind == "opus" else len(chunk) / self.bytes_per_second
+        )
+        self.max_queued = max(self.max_queued, self.queued())
+        return True
+
+    def mark(self) -> tuple[int, int]:
+        self._check()
+        marker = self.next_marker
+        self.next_marker += 1
+        self.markers.append((marker, self.written))
+        return marker, round(self.written * SAMPLE_RATE)
+
+    def flush(self) -> tuple[int, int]:
+        self._check()
+        self.flushes += 1
+        return self.mark()
+
+    def clear(self, until: int | None = None) -> None:
+        self._check()
+        self.clears.append(until)
+        end = next(
+            (position for marker, position in self.markers if marker == until),
+            self.written,
+        )
+        self.consumed = max(self.consumed, end)
+        self._settle(played=False)
+
+    def set_volume(self, volume: float) -> None:
+        self._check()
+        self.volume = volume
+
+    def queued(self) -> float:
+        self._check()
+        return self.written - self.consumed
+
+    def passthrough(self) -> bool:
+        self._check()
+        return False
+
+    def stats(self) -> dict[str, int]:
+        self._check()
+        return {**self.counters, "consumed_samples": round(self.consumed * SAMPLE_RATE)}
+
+    def close(self) -> None:
+        if not self.closed:
+            self.closed = True
+            self.consumed = self.written
+            self._settle(played=False)
+
+    def pull(self, seconds: float) -> None:
+        self.consumed = min(self.written, self.consumed + seconds)
+        self._settle(played=True)
+        if self.armed and self.written - self.consumed <= self.buffer / 2:
+            self.armed = False
+            self.core.deliver(("voice_wake", self._id))
+
+    def _settle(self, *, played: bool) -> None:
+        for marker, position in list(self.markers):
+            if position <= self.consumed + 1e-9:
+                self.markers.remove((marker, position))
+                self.core.deliver(("voice_marker", self._id, marker, played))
+
+    def _check(self) -> None:
+        if self.failure is not None:
+            raise self.failure
+        if self.closed:
+            raise RuntimeError(f"voice handle {self._id} is closed")
+
+
+class FakeSource:
+    def __init__(self, core: "FakeCore", id: int, arguments: tuple[Any, ...]) -> None:
+        self._id = id
+        self.core = core
+        self.arguments = arguments
+        self.probe = core.probe
+        self.failure: str | None = None
+        self.items: deque[list[bytes] | None] = deque()
+        self.seeks: list[float] = []
+        self.closed = False
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    def info(self) -> tuple[Literal["pcm", "opus"], float | None, bool] | None:
+        self._check()
+        return self.probe
+
+    def read(self) -> list[bytes] | None:
+        self._check()
+        if not self.items:
+            return []
+        if self.items[0] is None:
+            return None
+        return self.items.popleft()
+
+    def error(self) -> str | None:
+        self._check()
+        return self.failure
+
+    def seek(self, position: float) -> None:
+        self._check()
+        self.seeks.append(position)
+
+    def close(self) -> None:
+        self.closed = True
+
+    def feed(self, *items: list[bytes] | None) -> None:
+        self.items.extend(items)
+        self.core.deliver(("voice_wake", self._id))
+
+    def _check(self) -> None:
+        if self.closed:
+            raise RuntimeError(f"voice handle {self._id} is closed")
+
+
+class FakeCore:
+    def __init__(self) -> None:
+        self.calls: list[Call] = []
+        self.sent: list[Any] = []
+        self.sinks: list[FakeSink] = []
+        self.sources: list[FakeSource] = []
+        self.handle: Callable[[VoiceDelivery, float], None] | None = None
+        self.auto_disconnect = True
+        self.probe: tuple[Literal["pcm", "opus"], float | None, bool] | None = (
+            "pcm",
+            3.0,
+            True,
+        )
+        self.latency: tuple[float | None, float | None] = (0.01, 0.02)
+        self.dave_view: tuple[int, int | None, str | None] = (1, 4, "11111 22222")
+        self.counters: dict[str, int] = {}
+        self.diagnostic_values: dict[str, object] = {"status": "ready"}
+        self._next_handle = 100
+
+    def names(self) -> list[str]:
+        return [name for name, _, _ in self.calls]
+
+    def deliver(self, delivery: VoiceDelivery) -> None:
+        handle = self.handle
+        if handle is not None:
+            asyncio.get_running_loop().call_soon(handle, delivery, 0.0)
+
+    def gateway_send(self, shard_id: int, payload: bytes) -> None:
+        self.sent.append(json.loads(payload))
+
+    def voice_connect(self, guild_id: int, channel_id: int, **options: Any) -> None:
+        self._record("voice_connect", guild_id, channel_id, **options)
+
+    def voice_update(
+        self, guild_id: int, channel_id: int, self_mute: bool, self_deaf: bool
+    ) -> None:
+        self._record("voice_update", guild_id, channel_id, self_mute, self_deaf)
+
+    def voice_disconnect(self, guild_id: int) -> None:
+        self._record("voice_disconnect", guild_id)
+        if self.auto_disconnect:
+            self.deliver(
+                ("voice_state", guild_id, "disconnected", "requested", None, "")
+            )
+
+    def voice_reconnect(self, guild_id: int) -> None:
+        self._record("voice_reconnect", guild_id)
+
+    def voice_encoder(
+        self,
+        guild_id: int,
+        *,
+        bitrate: int,
+        application: Literal["audio", "voip", "lowdelay"],
+        fec: bool,
+        packet_loss: int,
+        complexity: int,
+    ) -> None:
+        self._record(
+            "voice_encoder",
+            guild_id,
+            bitrate=bitrate,
+            application=application,
+            fec=fec,
+            packet_loss=packet_loss,
+            complexity=complexity,
+        )
+
+    def voice_speaking(self, guild_id: int, flags: int) -> None:
+        self._record("voice_speaking", guild_id, flags)
+
+    def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]:
+        self._record("voice_latency", guild_id)
+        return self.latency
+
+    def voice_dave(self, guild_id: int) -> tuple[int, int | None, str | None]:
+        self._record("voice_dave", guild_id)
+        return self.dave_view
+
+    def voice_verification_code(self, guild_id: int, user_id: int) -> str:
+        self._record("voice_verification_code", guild_id, user_id)
+        return f"code for {user_id} on {threading.current_thread().name}"
+
+    def voice_stats(self, guild_id: int) -> dict[str, int]:
+        self._record("voice_stats", guild_id)
+        return dict(self.counters)
+
+    def voice_diagnostics(self, guild_id: int) -> dict[str, object]:
+        self._record("voice_diagnostics", guild_id)
+        return dict(self.diagnostic_values)
+
+    def voice_sink(
+        self,
+        guild_id: int,
+        *,
+        kind: Literal["pcm", "opus"],
+        rate: int,
+        channels: int,
+        sample: Literal["s16le", "f32le"],
+        buffer: float,
+        volume: float,
+        stall: Literal["hold", "drop"],
+    ) -> FakeSink:
+        self._record(
+            "voice_sink",
+            guild_id,
+            kind=kind,
+            rate=rate,
+            channels=channels,
+            sample=sample,
+            buffer=buffer,
+            volume=volume,
+            stall=stall,
+        )
+        sink = FakeSink(
+            self,
+            self._handle_id(),
+            kind=kind,
+            rate=rate,
+            channels=channels,
+            sample=sample,
+            buffer=buffer,
+            volume=volume,
+            stall=stall,
+        )
+        self.sinks.append(sink)
+        return sink
+
+    def voice_file(self, path: str) -> FakeSource:
+        return self._source("voice_file", path)
+
+    def voice_bytes(self, data: bytes, hint: str | None) -> FakeSource:
+        return self._source("voice_bytes", data, hint)
+
+    def voice_url(self, url: str, headers: list[tuple[str, str]]) -> FakeSource:
+        return self._source("voice_url", url, headers)
+
+    def _source(self, name: str, *arguments: Any) -> FakeSource:
+        self._record(name, *arguments)
+        source = FakeSource(self, self._handle_id(), arguments)
+        self.sources.append(source)
+        return source
+
+    def _handle_id(self) -> int:
+        self._next_handle += 1
+        return self._next_handle
+
+    def _record(self, name: str, *args: Any, **kwargs: Any) -> None:
+        self.calls.append((name, args, kwargs))
+
+
+class FakeBridge:
+    def __init__(self, core: FakeCore) -> None:
+        self.core = core
+        self.requests: list[Request] = []
+        self.answers: dict[tuple[str, str], tuple[int, Any]] = {}
+
+    async def request(
+        self,
+        method: str,
+        route: str,
+        params: dict[str, str],
+        query: list[tuple[str, str]],
+        body: bytes | None = None,
+        content_type: str | None = None,
+        reason: str | None = None,
+    ) -> tuple[int, bytes]:
+        path = route.format(**params)
+        self.requests.append(
+            Request(method, path, None if body is None else json.loads(body))
+        )
+        status, payload = self.answers.get((method, path)) or self._default(path)
+        return status, b"" if payload is None else msgspec.json.encode(payload)
+
+    def paths(self, method: str) -> list[str]:
+        return [request.path for request in self.requests if request.method == method]
+
+    def _default(self, path: str) -> tuple[int, Any]:
+        match path.split("/"):
+            case ["", "channels", channel_id] if int(channel_id) in CHANNELS:
+                return 200, CHANNELS[int(channel_id)]
+            case ["", "guilds", _, "voice-states", "@me"]:
+                return 204, None
+        return 404, {"code": 10003, "message": "Unknown Channel"}
+
+
+class FakeBot:
+    def __init__(
+        self,
+        *,
+        intents: Intents = Intents.DEFAULT,
+        defaults: Defaults = DEFAULTS,
+        running: bool = True,
+    ) -> None:
+        self.core = FakeCore()
+        self.rest = FakeBridge(self.core)
+        self._bridge: FakeBridge | None = self.rest if running else None
+        self.user: User | None = User(id=BOT_ID) if running else None
+        self.cache = Cache()
+        self.http = HTTPClient(cast(Bridge, self.rest))
+        self.gateway = GatewayClient(cast(Bridge, self.rest), "token")
+        self._intents = intents
+        self.events: list[VoiceEvent] = []
+        self.voice = VoiceManager(self, defaults)
+        self.core.handle = self.voice.handle
+        self._waiters: list[
+            tuple[type[Event], Callable[[Any], bool] | None, asyncio.Future[Event]]
+        ] = []
+
+    def _shard_for(self, guild_id: int) -> int:
+        return 0
+
+    def _emit(self, event: VoiceEvent) -> None:
+        self.events.append(event)
+
+    async def fetch_channel(self, channel_id: int) -> Channel:
+        data = await self.http._request(
+            "GET", "/channels/{channel_id}", channel_id=channel_id
+        )
+        return decode(Channel, data)
+
+    async def wait_for[E: Event](
+        self, event: type[E], *, check: Callable[[E], bool] | None = None
+    ) -> E:
+        future: asyncio.Future[Event] = asyncio.get_running_loop().create_future()
+        waiter = (
+            cast(type[Event], event),
+            cast(Callable[[Any], bool] | None, check),
+            future,
+        )
+        self._waiters.append(waiter)
+        try:
+            return cast(E, await future)
+        finally:
+            self._waiters.remove(waiter)
+
+    def dispatch(self, event: Event) -> None:
+        for kind, check, future in list(self._waiters):
+            if (
+                isinstance(event, kind)
+                and not future.done()
+                and (check is None or check(event))
+            ):
+                future.set_result(event)
+
+    def deliver(self, delivery: VoiceDelivery) -> None:
+        self.voice.handle(delivery, 0.0)
+
+    def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
+        return [event for event in self.events if isinstance(event, kind)]
+
+    def calls(self, name: str) -> list[Call]:
+        return [call for call in self.core.calls if call[0] == name]
+
+
+def ready(guild_id: int = GUILD_ID) -> VoiceDelivery:
+    return ("voice_state", guild_id, "ready", None, None, "")
+
+
+def disconnected(
+    reason: Literal["requested", "removed", "timeout", "authentication_failed"],
+    code: int | None = None,
+    detail: str = "",
+    guild_id: int = GUILD_ID,
+) -> VoiceDelivery:
+    return ("voice_state", guild_id, "disconnected", reason, code, detail)
+
+
+async def settle() -> None:
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+async def connected(
+    bot: FakeBot, channel_id: int = VOICE, guild_id: int = GUILD_ID, **options: Any
+) -> VoiceConnection:
+    task = asyncio.ensure_future(bot.voice.connect(channel_id, **options))
+    await settle()
+    bot.deliver(ready(guild_id))
+    return await task
+
+
+def run(
+    scenario: Callable[[FakeBot], Coroutine[Any, Any, None]], **options: Any
+) -> FakeBot:
+    bot = FakeBot(**options)
+
+    async def main() -> None:
+        async with asyncio.timeout(10):
+            await scenario(bot)
+
+    asyncio.run(main())
+    return bot

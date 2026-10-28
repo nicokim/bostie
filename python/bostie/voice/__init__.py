@@ -8,6 +8,17 @@ from bostie.errors import (
     VoiceError,
     VoiceNotConnected,
 )
+from bostie.voice.connection import (
+    ContextVoice,
+    Dave,
+    ExternalVoice,
+    SendStats,
+    VoiceConnection,
+    VoiceManager,
+    VoiceStats,
+    versions,
+)
+from bostie.voice.encoder import OpusEncoder
 from bostie.voice.events import (
     DaveTransition,
     MediaResumed,
@@ -20,31 +31,57 @@ from bostie.voice.events import (
     VoiceEvent,
 )
 from bostie.voice.formats import PCM, Defaults, Encoder, Format, Latency, Opus
+from bostie.voice.layers import EndReason, Queue, Track, TrackEnd, broadcast
+from bostie.voice.sink import Marker, Sink, SinkStats
+from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Url
 
 __all__ = [
     "PCM",
     "BufferFull",
+    "Bytes",
+    "ContextVoice",
+    "Dave",
     "DaveTransition",
     "Defaults",
     "Direction",
     "DisconnectReason",
     "Encoder",
+    "EndReason",
+    "ExternalVoice",
+    "FFmpeg",
+    "File",
     "Format",
     "Latency",
+    "Marker",
     "MediaResumed",
     "MediaStalled",
     "Moved",
     "NotInVoice",
     "Opus",
+    "OpusEncoder",
+    "Queue",
+    "SendStats",
+    "Sink",
     "SinkClosed",
+    "SinkStats",
+    "Source",
     "SourceError",
     "SpeakingUpdate",
     "State",
     "StateChange",
+    "Stream",
+    "Track",
+    "TrackEnd",
+    "Url",
     "UserJoin",
     "UserLeave",
     "VoiceConnectError",
+    "VoiceConnection",
     "VoiceError",
     "VoiceEvent",
+    "VoiceManager",
     "VoiceNotConnected",
+    "VoiceStats",
+    "broadcast",
+    "versions",
 ]
