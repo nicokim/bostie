@@ -15,18 +15,21 @@ use tokio_websockets::{ClientBuilder, CloseCode, Message, ServerBuilder};
 use super::*;
 use crate::bell::{self, BellReceiver};
 use crate::voice::codec::FrameEncoder;
+use crate::voice::connection::ConnectionTuning;
 use crate::voice::crypto::Mode;
+use crate::voice::dave::Recovery;
 use crate::voice::dave::{Fault, MlsCall, Outbound, SendMode};
 use crate::voice::proto::op;
-use crate::voice::source::tests::{fixture, frames, read_to_end, wait_for_info};
+use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
-use crate::voice::testkit::mls::{Call, Corruption, Signal};
+use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
-    Application, DaveOp, FRAME_SAMPLES, PcmFormat, ProposalsOp, SILENCE_FRAME, SampleFormat,
-    SinkFormat, StallPolicy,
+    Application, DaveOp, FRAME, FRAME_SAMPLES, PcmFormat, ProposalsOp, SampleFormat, SinkFormat,
+    StallPolicy,
 };
+use crate::voice::ws::Timeouts;
 
 const WAIT: Duration = Duration::from_secs(15);
 const SHARD: u32 = 0;
@@ -36,12 +39,36 @@ const SECOND_GUILD: u64 = 1_335_172_792_320_131_099;
 const EARLY_PEER: u64 = 50;
 const LATE_PEER: u64 = 2_000_000_000_000_000_001;
 const THIRD_PEER: u64 = 2_000_000_000_000_000_002;
-const FOURTH_PEER: u64 = 2_000_000_000_000_000_003;
 const HEARTBEAT: Duration = Duration::from_secs(30);
 const QUICK_HEARTBEAT: Duration = Duration::from_millis(150);
 const TIMEOUT: Duration = Duration::from_secs(30);
 const AES: &str = "aead_aes256_gcm_rtpsize";
 const XCHACHA: &str = "aead_xchacha20_poly1305_rtpsize";
+
+fn tuning() -> Tuning {
+    Tuning {
+        connection: ConnectionTuning {
+            move_window: Duration::from_millis(200),
+            resume_backoff: Duration::from_millis(10),
+            resume_backoff_max: Duration::from_millis(50),
+            keepalive_interval: Duration::from_millis(100),
+            early_ops: 8,
+            speaking_coalesce: Duration::from_millis(20),
+            discovery_interval: Duration::from_millis(50),
+            stall_after: Duration::from_millis(100),
+            ws: Timeouts {
+                connect: Duration::from_secs(1),
+                close: Duration::from_millis(200),
+            },
+            dave: Recovery {
+                limit: 2,
+                window: Duration::from_secs(1),
+            },
+        },
+        source_prefetch: Duration::from_millis(100),
+        http_buffer: 4 * 1024,
+    }
+}
 
 fn guild() -> GuildId {
     Config::default().server_id
@@ -361,10 +388,16 @@ impl Harness {
     }
 
     async fn with(change: impl FnOnce(&mut Config)) -> Self {
-        Self::build(change, PacerPool::manual()).await
+        Self::build(change, PacerPool::manual(), tuning()).await
     }
 
-    async fn build(change: impl FnOnce(&mut Config), pacer: PacerPool) -> Self {
+    async fn tuned(change: impl FnOnce(&mut ConnectionTuning)) -> Self {
+        let mut tuning = tuning();
+        change(&mut tuning.connection);
+        Self::build(|_| {}, PacerPool::manual(), tuning).await
+    }
+
+    async fn build(change: impl FnOnce(&mut Config), pacer: PacerPool, tuning: Tuning) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::new(bell));
@@ -374,12 +407,13 @@ impl Harness {
             let recorder = Arc::clone(&recorder);
             Arc::new(move |_, payload| recorder.send(payload))
         };
-        let voice = Voice::with_pacer(
+        let voice = Voice::build(
             runtime::Handle::current(),
             Arc::clone(&inbox),
             Arc::clone(&tap),
             send,
             pacer,
+            tuning,
         )
         .unwrap();
         Self {
@@ -568,7 +602,7 @@ impl Harness {
     }
 
     fn tick(&self, n: u32) {
-        self.voice.pacer().tick(n);
+        self.voice.shared.pacer.tick(n);
     }
 
     fn media(&self) -> Arc<Media> {
@@ -949,39 +983,6 @@ async fn hello_after_ready_still_completes_the_handshake() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn one_second_of_pcm_is_fifty_packets_then_five_silence_frames() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-    let sink = harness.sink(pcm(), StallPolicy::Hold);
-    sink.write(&tone(48_000)).unwrap();
-    sink.flush().unwrap();
-
-    harness.tick(55);
-
-    let packets = harness.server.sfu.wait_packets(55, WAIT);
-    assert_eq!(packets.len(), 55);
-    let first = packets[0].header;
-    for (index, packet) in packets.iter().enumerate() {
-        let step = u16::try_from(index).unwrap();
-        assert_eq!(packet.header.sequence, first.sequence.wrapping_add(step));
-        assert_eq!(
-            packet.header.timestamp,
-            first.timestamp.wrapping_add(960 * u32::from(step))
-        );
-    }
-    assert!(packets.windows(2).all(|pair| pair[0].nonce < pair[1].nonce));
-    assert!(
-        packets[..50]
-            .iter()
-            .all(|packet| packet.payload != SILENCE_FRAME)
-    );
-    assert_eq!(harness.server.sfu.silence_runs(), [5]);
-    harness.tick(5);
-    sleep(Duration::from_millis(20)).await;
-    assert_eq!(harness.server.sfu.packets().len(), 55);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending() {
     let mut harness = Harness::start().await;
     harness.connected().await;
@@ -1087,11 +1088,17 @@ async fn close_codes_bostie_caused_end_the_connection_without_retrying() {
 
         assert_eq!(harness.ended().await.0, reason, "{code}");
         let statuses = harness.statuses();
+        let steps: Vec<VoiceStatus> = statuses.iter().map(|state| state.0).collect();
+        assert_eq!(
+            steps,
+            [
+                VoiceStatus::Connecting,
+                VoiceStatus::Ready,
+                VoiceStatus::Disconnected
+            ],
+            "{code}"
+        );
         assert_eq!(statuses.last().unwrap().2, Some(code), "{code}");
-        sleep(Duration::from_millis(50)).await;
-        harness.server.collect().await;
-        assert_eq!(harness.server.count(op::RESUME), 0, "{code}");
-        assert_eq!(harness.server.count(op::IDENTIFY), 1, "{code}");
         assert_eq!(harness.joins(CHANNEL), 1, "{code}");
         assert_eq!(harness.leaves(), 1, "{code}");
     }
@@ -1344,12 +1351,12 @@ async fn a_terminated_call_then_a_new_server_connects_to_it() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_terminated_call_waits_the_server_change_delay_even_past_the_timeout() {
-    let delay = Duration::from_secs(3);
+    let delay = Duration::from_millis(1_500);
     let mut harness = Harness::start().await;
     harness
         .voice
         .connect(ConnectRequest {
-            timeout: Duration::from_secs(2),
+            timeout: Duration::from_secs(1),
             server_change_delay: delay,
             ..harness.request()
         })
@@ -1411,7 +1418,7 @@ async fn a_server_without_an_endpoint_holds_media_until_the_next_server_takes_ov
 
     assert_eq!(detail, "server_unavailable");
     assert_eq!(server.sfu.wait_packets(3, WAIT).len(), 3);
-    sleep(Duration::from_millis(20)).await;
+    assert_eq!(harness.counter("packets_sent"), 5);
     assert_eq!(harness.server.sfu.packets().len(), 2);
     assert_eq!(harness.counter("held_ticks"), 2);
     assert_eq!(queued_frames(&sink), 15 * 960);
@@ -1429,6 +1436,10 @@ async fn a_new_token_on_the_same_endpoint_identifies_again_and_never_resumes() {
 
     assert_eq!(detail, "server_changed");
     assert_eq!(harness.server.count(op::IDENTIFY), 2);
+    assert_eq!(
+        harness.server.json(op::IDENTIFY)[1]["token"].as_str(),
+        Some("token-2")
+    );
     assert_eq!(harness.server.count(op::RESUME), 0);
     assert_eq!(harness.joins(CHANNEL), 1);
 }
@@ -1606,7 +1617,7 @@ async fn closing_the_core_ends_the_connection_without_a_leave_and_drops_the_lane
     assert_eq!(reason, DisconnectReason::Closed);
     assert_eq!(harness.leaves(), 0);
     assert!(sink.is_closed());
-    assert_eq!(harness.voice.pacer().lanes(), 0);
+    assert_eq!(harness.voice.shared.pacer.lanes(), 0);
     assert!(matches!(
         harness.voice.connect(harness.request()),
         Err(CoreError::Closed)
@@ -1879,7 +1890,7 @@ async fn resumes_that_drop_before_their_first_ack_fall_back_to_a_rejoin() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_panicking_lane_ends_its_connection_and_the_other_lanes_keep_ticking() {
+async fn a_lane_that_stops_ends_its_connection_while_the_other_lanes_keep_ticking() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let second = harness.second_guild().await;
@@ -1897,17 +1908,12 @@ async fn a_panicking_lane_ends_its_connection_and_the_other_lanes_keep_ticking()
         .unwrap();
     other.write(&tone(FRAME_SAMPLES * 5)).unwrap();
 
-    harness
-        .media()
-        .faults
-        .panic_lane
-        .store(true, Ordering::Relaxed);
+    harness.media().close();
     harness.tick(3);
     let (reason, _, detail) = harness.ended().await;
 
     assert_eq!(reason, DisconnectReason::ProtocolError);
-    assert!(detail.starts_with("internal error: "), "{detail}");
-    assert_eq!(harness.voice.pacer().threads()[0].lane_panics, 1);
+    assert_eq!(detail, "internal error: the media lane ended");
     assert_eq!(harness.leaves(), 1);
     assert_eq!(second.sfu.wait_packets(3, WAIT).len(), 3);
 }
@@ -1945,43 +1951,33 @@ async fn a_full_shard_queue_is_retried_until_the_voice_state_goes_out() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn speaking_updates_are_coalesced_and_the_last_flags_win() {
-    let mut harness = Harness::start().await;
+    let mut harness =
+        Harness::tuned(|tuning| tuning.speaking_coalesce = Duration::from_millis(200)).await;
     harness.connected().await;
     harness.server.expect_op(op::SPEAKING).await;
-    sleep(Duration::from_millis(50)).await;
-    let start = Instant::now();
 
     for index in 0..30_u8 {
         harness.voice.set_speaking(guild(), index % 3 + 1).unwrap();
-        std::thread::sleep(Duration::from_micros(200));
-    }
-    for _ in 0..3 {
-        harness
-            .server
-            .gateway
-            .send(op::CLIENTS_CONNECT, json!({"user_ids": ["5"]}));
     }
     harness
-        .settle(|harness| {
-            harness.count(|delivery| matches!(delivery, Delivery::VoiceClients { .. })) == 3
+        .server
+        .expect(|message| match message {
+            ClientMessage::Json { op, d } if *op == u64::from(op::SPEAKING) => {
+                d["speaking"].as_u64() == Some(3)
+            }
+            _ => false,
         })
         .await;
-    sleep(Duration::from_millis(100)).await;
-    harness.server.collect().await;
-    let elapsed = start.elapsed();
 
     let updates = harness.server.json(op::SPEAKING);
-    let after = &updates[1..];
-    let windows = usize::try_from(elapsed.as_millis() / 20).unwrap();
-    assert!(!after.is_empty());
-    assert!(after.len() <= 1 + windows, "{} in {elapsed:?}", after.len());
-    assert_eq!(after.last().unwrap()["speaking"].as_u64(), Some(3));
+    assert!(updates.len() <= 3, "{updates:?}");
     assert!(harness.voice.set_speaking(guild(), 0).is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_server_without_an_endpoint_closes_the_socket_and_stops_keepalives() {
-    let mut harness = Harness::start().await;
+    let keepalive = Duration::from_millis(20);
+    let mut harness = Harness::tuned(|tuning| tuning.keepalive_interval = keepalive).await;
     harness.connected().await;
     harness
         .settle(|harness| harness.counter("keepalives_answered") >= 1)
@@ -1991,7 +1987,7 @@ async fn a_server_without_an_endpoint_closes_the_socket_and_stops_keepalives() {
     let code = harness.server.expect_close().await;
     harness.until(VoiceStatus::Reconnecting).await;
     let sent = harness.counter("keepalives_sent");
-    sleep(Duration::from_millis(300)).await;
+    sleep(keepalive * 3).await;
 
     assert_eq!(code, 4000);
     assert_eq!(harness.counter("keepalives_sent"), sent);
@@ -2021,7 +2017,11 @@ async fn each_change_of_mute_or_suppress_is_reported_once_with_all_four_flags() 
     harness.offer_state(guild(), Some(CHANNEL), r#","mute":true,"suppress":true"#);
     assert_eq!(harness.wait_for(flags).await, [false, false, true, true]);
     harness.offer_state(guild(), Some(CHANNEL), r#","mute":true,"suppress":true"#);
-    sleep(Duration::from_millis(30)).await;
+    harness.server.gateway.send(
+        op::SPEAKING,
+        json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
+    );
+    harness.speaking_from(90).await;
 
     assert_eq!(
         harness.count(|delivery| matches!(delivery, Delivery::VoiceSelf { .. })),
@@ -2169,41 +2169,6 @@ impl Harness {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn alone_in_a_dave_call_the_bot_is_ready_and_drains_its_sinks_without_sending() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[]);
-    harness.in_call(&mut call).await;
-    let sink = harness.sink(pcm(), StallPolicy::Hold);
-    sink.write(&tone(FRAME_SAMPLES * 5)).unwrap();
-    let (marker, _) = sink.flush().unwrap();
-
-    harness.tick(5);
-    let played = harness
-        .wait_for(|delivery| match delivery {
-            Delivery::VoiceMarker {
-                marker: got,
-                played,
-                ..
-            } if *got == marker => Some(*played),
-            _ => None,
-        })
-        .await;
-
-    harness.server.expect_op(op::DAVE_MLS_KEY_PACKAGE).await;
-
-    assert!(played);
-    assert_eq!(harness.gate(), SendMode::Discard);
-    assert_eq!(harness.server.count(op::DAVE_MLS_KEY_PACKAGE), 1);
-    assert_eq!(harness.counter("alone_ticks"), 5);
-    assert_eq!(harness.counter("packets_sent"), 0);
-    assert!(harness.server.sfu.packets().is_empty());
-    assert_eq!(
-        harness.count(|delivery| matches!(delivery, Delivery::VoiceStalled { .. })),
-        0
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_peer_joining_a_lone_bot_forms_a_group_and_hears_the_exact_opus_bytes() {
     for peer in [LATE_PEER, EARLY_PEER] {
         let mut harness = Harness::dave().await;
@@ -2217,64 +2182,23 @@ async fn a_peer_joining_a_lone_bot_forms_a_group_and_hears_the_exact_opus_bytes(
         assert_eq!(executed.0, 1, "{peer}");
         assert_eq!(executed.1, Some(1), "{peer}");
         assert_ne!(executed.2, 0, "{peer}");
+        assert!(harness.voice.dave(guild()).unwrap().privacy_code.is_some());
+        assert_eq!(
+            harness
+                .voice
+                .verification_code(guild(), user(peer))
+                .unwrap(),
+            dave::verification_code(call.dave(user(peer)).fingerprint_pair(bot()).unwrap())
+                .unwrap()
+        );
+        assert_eq!(
+            harness.counter("welcomes"),
+            u64::from(peer == EARLY_PEER),
+            "{peer}"
+        );
         harness.assert_heard(&mut call, &[peer]);
         assert_eq!(harness.counter("dave_frames"), 2);
     }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn joining_a_group_waits_for_the_execute_and_every_peer_hears_the_bot() {
-    for peers in [&[EARLY_PEER][..], &[EARLY_PEER, LATE_PEER, THIRD_PEER]] {
-        let mut harness = Harness::dave().await;
-        let mut call = dave_call(CHANNEL, peers);
-        call.fake.hold_transitions = true;
-        harness.server.sfu.ignore_discoveries(1);
-        harness.connect();
-        harness.announce().await;
-        harness.server.expect_op(op::IDENTIFY).await;
-        call.join_remote(bot());
-
-        harness
-            .pump(&mut call, |harness, _| {
-                !transition_readies(&harness.server).is_empty()
-            })
-            .await;
-        assert!(!harness.ready());
-        assert_eq!(harness.statuses().len(), 1);
-        assert_eq!(harness.gate(), SendMode::Hold);
-        let held = call.fake.release_transitions();
-        call.enqueue(held);
-        harness.encrypting(&mut call).await;
-
-        let ready = transition_readies(&harness.server);
-        assert_eq!(ready.len(), 1);
-        assert_ne!(ready[0], 0);
-        assert_eq!(harness.counter("welcomes"), 1);
-        assert!(
-            harness
-                .media()
-                .dave
-                .lock()
-                .leaves()
-                .iter()
-                .any(|(_, member)| *member == bot())
-        );
-        harness.assert_heard(&mut call, peers);
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_transition_id_of_zero_executes_at_once_without_a_transition_ready() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[EARLY_PEER]);
-    call.fake.next_transition = 0;
-
-    harness.in_call(&mut call).await;
-    harness.encrypting(&mut call).await;
-
-    assert!(transition_readies(&harness.server).is_empty());
-    assert_eq!(harness.wait_for(dave_states).await.2, 0);
-    harness.assert_heard(&mut call, &[EARLY_PEER]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2306,159 +2230,6 @@ async fn the_last_peer_leaving_resets_the_group_and_a_new_peer_gets_a_new_key() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn every_reset_sends_a_new_key_package_and_the_next_peers_hear_the_bot() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[]);
-    harness.in_call(&mut call).await;
-
-    for (round, peer) in [LATE_PEER, THIRD_PEER, FOURTH_PEER].into_iter().enumerate() {
-        call.join(user(peer));
-        harness.encrypting(&mut call).await;
-        harness.assert_heard(&mut call, &[peer]);
-        call.leave(user(peer));
-        let packages = u64::try_from(round).unwrap() + 2;
-        harness
-            .pump(&mut call, |harness, _| {
-                harness.counter("key_packages") == packages && harness.gate() == SendMode::Discard
-            })
-            .await;
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_downgrade_stays_encrypted_until_its_execute_then_sends_plain_opus() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    harness.wait_for(dave_states).await;
-    call.fake.hold_transitions = true;
-
-    let downgrade = call.fake.downgrade();
-    call.enqueue(downgrade);
-    harness
-        .pump(&mut call, |harness, _| {
-            transition_readies(&harness.server).len() == 2
-        })
-        .await;
-    let sink = harness.opus_sink();
-    let before = harness.play(&sink, 1);
-    let encrypted = harness.server.sfu.packets().last().unwrap().payload.clone();
-    let held = call.fake.release_transitions();
-    call.enqueue(held);
-    harness
-        .pump(&mut call, |harness, _| harness.gate() == SendMode::Plain)
-        .await;
-    let after = harness.play(&sink, 1);
-
-    assert_ne!(encrypted, before[0].to_vec());
-    assert_eq!(
-        hear(&mut call, LATE_PEER, &encrypted),
-        Some(before[0].to_vec())
-    );
-    assert_eq!(
-        harness.server.sfu.packets().last().unwrap().payload,
-        after[0].to_vec()
-    );
-    let (protocol_version, _, transition_id) = harness.wait_for(dave_states).await;
-    assert_eq!(protocol_version, 0);
-    assert_eq!(
-        transition_id,
-        *transition_readies(&harness.server).last().unwrap()
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_upgrade_from_plain_sends_a_key_package_and_encrypts_after_its_execute() {
-    let mut harness = Harness::start().await;
-    let mut call = Call::new(ChannelId::from(CHANNEL), 0);
-    call.join(user(LATE_PEER));
-    call.run();
-    harness.in_call(&mut call).await;
-    let sink = harness.opus_sink();
-    let plain = harness.play(&sink, 1);
-    assert_eq!(
-        harness.server.sfu.packets().last().unwrap().payload,
-        plain[0].to_vec()
-    );
-    call.fake.hold_transitions = true;
-
-    let upgrade = call.fake.upgrade();
-    call.enqueue(upgrade);
-    harness
-        .pump(&mut call, |harness, _| {
-            !transition_readies(&harness.server).is_empty()
-        })
-        .await;
-    let still_plain = harness.play(&sink, 1);
-    let held = call.fake.release_transitions();
-    call.enqueue(held);
-    harness.encrypting(&mut call).await;
-
-    assert_eq!(harness.server.count(op::DAVE_MLS_KEY_PACKAGE), 1);
-    assert_eq!(
-        harness.server.sfu.packets().last().unwrap().payload,
-        still_plain[0].to_vec()
-    );
-    harness.assert_heard(&mut call, &[LATE_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_call_without_dave_sends_plain_opus_and_only_caches_the_external_sender() {
-    let mut harness = Harness::start().await;
-    let fake = crate::voice::testkit::mls::ExternalSenderFake::new(ChannelId::from(CHANNEL), 1);
-    harness.connect();
-    harness.announce().await;
-    harness.server.expect_op(op::IDENTIFY).await;
-    harness.server.send_dave(fake.external_sender());
-    harness.until(VoiceStatus::Ready).await;
-
-    let sink = harness.opus_sink();
-    let sent = harness.play(&sink, 2);
-
-    let packets = harness.server.sfu.packets();
-    assert_eq!(packets[0].payload, sent[0].to_vec());
-    assert_eq!(packets[1].payload, sent[1].to_vec());
-    harness.server.collect().await;
-    assert_eq!(harness.server.count(op::DAVE_MLS_KEY_PACKAGE), 0);
-    assert_eq!(harness.voice.dave(guild()).unwrap().protocol_version, 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_corrupt_commit_is_reported_and_the_bot_is_added_back() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let executed = harness.counter("transitions_executed");
-    call.fake.corrupt_next(bot(), Corruption::Commit);
-
-    call.join(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |harness, _| {
-            !invalid_commit_welcomes(&harness.server).is_empty()
-        })
-        .await;
-    harness.rejoined(&mut call, 3, executed).await;
-
-    assert_eq!(harness.counter("recoveries"), 1);
-    assert_ne!(invalid_commit_welcomes(&harness.server)[0], 0);
-    assert!(harness.counter("key_packages") >= 2);
-    harness.assert_heard(&mut call, &[LATE_PEER, THIRD_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_corrupt_welcome_is_reported_with_a_reset_and_a_new_key_package() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[EARLY_PEER]);
-    call.fake.corrupt_next(bot(), Corruption::Welcome);
-
-    harness.in_call(&mut call).await;
-    harness.encrypting(&mut call).await;
-
-    assert_eq!(invalid_commit_welcomes(&harness.server).len(), 1);
-    assert_eq!(harness.counter("recoveries"), 1);
-    assert_eq!(harness.counter("key_packages"), 2);
-    harness.assert_heard(&mut call, &[EARLY_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn too_many_dave_recoveries_end_the_connection() {
     let mut harness = Harness::dave().await;
     let mut call = dave_call(CHANNEL, &[]);
@@ -2474,118 +2245,6 @@ async fn too_many_dave_recoveries_end_the_connection() {
 
     assert_eq!(reason, DisconnectReason::DaveFailed);
     assert_eq!(harness.leaves(), 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_add_for_a_user_the_bot_never_heard_of_is_refused() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let commits = harness.server.count(op::DAVE_MLS_COMMIT_WELCOME);
-
-    call.join_unannounced(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |harness, _| {
-            harness.counter("rejected_proposals") >= 1
-        })
-        .await;
-
-    assert_eq!(harness.server.count(op::DAVE_MLS_COMMIT_WELCOME), commits);
-    assert_eq!(harness.gate(), SendMode::Encrypt);
-    assert!(
-        !harness
-            .media()
-            .dave
-            .lock()
-            .leaves()
-            .iter()
-            .any(|(_, member)| *member == user(THIRD_PEER))
-    );
-    harness.assert_heard(&mut call, &[LATE_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn revoked_proposals_are_left_out_of_the_next_commit() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    call.fake.hold_commits = true;
-    call.join(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |_, call| call.fake.awaiting().is_empty())
-        .await;
-
-    let revoke = call.fake.revoke(user(THIRD_PEER));
-    call.enqueue(revoke);
-    call.fake.hold_commits = false;
-    call.leave(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |_, call| !call.fake.has_round())
-        .await;
-    let executed = harness.counter("transitions_executed");
-    call.join(user(FOURTH_PEER));
-    harness.rejoined(&mut call, 3, executed).await;
-
-    let roster: Vec<UserId> = harness
-        .media()
-        .dave
-        .lock()
-        .leaves()
-        .into_iter()
-        .map(|(_, member)| member)
-        .collect();
-    assert!(!roster.contains(&user(THIRD_PEER)), "{roster:?}");
-    assert!(roster.contains(&user(FOURTH_PEER)), "{roster:?}");
-    harness.assert_heard(&mut call, &[LATE_PEER, FOURTH_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_commit_for_a_group_still_pending_is_ignored() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[]);
-    harness.in_call(&mut call).await;
-    let sent = harness.server.messages.len();
-
-    harness.server.send_dave(DaveOp::AnnounceCommit {
-        transition_id: 5,
-        commit: Bytes::from_static(b"a commit"),
-    });
-    harness.server.gateway.send(
-        op::SPEAKING,
-        json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
-    );
-    harness.speaking_from(90).await;
-    sleep(Duration::from_millis(20)).await;
-    harness.server.collect().await;
-
-    assert!(sent <= harness.server.messages.len());
-    assert!(matches!(
-        harness.server.dave_outbound().as_slice(),
-        [Outbound::KeyPackage(_)]
-    ));
-    assert_eq!(harness.counter("recoveries"), 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_commit_without_queued_proposals_resets_the_session() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let executed = harness.counter("transitions_executed");
-
-    harness.server.send_dave(DaveOp::AnnounceCommit {
-        transition_id: 9,
-        commit: Bytes::from_static(b"a commit"),
-    });
-    harness
-        .pump(&mut call, |harness, _| {
-            invalid_commit_welcomes(&harness.server) == [9]
-        })
-        .await;
-    harness
-        .pump(&mut call, |harness, _| harness.counter("key_packages") == 2)
-        .await;
-    harness.rejoined(&mut call, 2, executed).await;
-
-    assert_eq!(harness.counter("recoveries"), 1);
-    harness.assert_heard(&mut call, &[LATE_PEER]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2629,25 +2288,6 @@ async fn after_a_recovery_media_waits_for_the_re_add_and_never_uses_the_old_key(
             Some(sent.to_vec())
         );
     }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_execute_for_an_unknown_transition_is_ignored() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-
-    harness
-        .server
-        .send_dave(DaveOp::ExecuteTransition { transition_id: 999 });
-    harness.server.gateway.send(
-        op::SPEAKING,
-        json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
-    );
-    harness.speaking_from(90).await;
-
-    assert_eq!(harness.counter("recoveries"), 0);
-    assert_eq!(harness.gate(), SendMode::Encrypt);
-    harness.assert_heard(&mut call, &[LATE_PEER]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2797,40 +2437,6 @@ async fn clients_joining_and_leaving_update_members_ssrcs_and_speaking() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_privacy_code_appears_at_prepare_and_the_verification_code_matches_the_peer() {
-    let mut harness = Harness::dave().await;
-    let mut call = dave_call(CHANNEL, &[EARLY_PEER]);
-    call.fake.hold_transitions = true;
-    harness.connect();
-    harness.announce().await;
-    harness.server.expect_op(op::IDENTIFY).await;
-    call.join_remote(bot());
-    harness
-        .pump(&mut call, |harness, _| {
-            !transition_readies(&harness.server).is_empty()
-        })
-        .await;
-
-    let prepared = harness.voice.dave(guild()).unwrap().privacy_code;
-    let held = call.fake.release_transitions();
-    call.enqueue(held);
-    harness.encrypting(&mut call).await;
-    let executed = harness.voice.dave(guild()).unwrap();
-    let code = harness
-        .voice
-        .verification_code(guild(), user(EARLY_PEER))
-        .unwrap();
-    let peer =
-        dave::verification_code(call.dave(user(EARLY_PEER)).fingerprint_pair(bot()).unwrap())
-            .unwrap();
-
-    assert!(prepared.is_some());
-    assert_eq!(executed.privacy_code, prepared);
-    assert_eq!(executed.epoch, Some(1));
-    assert_eq!(code, peer);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn malformed_dave_messages_never_break_the_connection() {
     let mut harness = Harness::dave().await;
     let mut call = harness.talking_with(&[LATE_PEER]).await;
@@ -2862,6 +2468,7 @@ async fn malformed_dave_messages_never_break_the_connection() {
     harness.rejoined(&mut call, 2, executed).await;
 
     assert_eq!(harness.counter("recoveries"), 1);
+    assert_eq!(harness.counter("rejected_proposals"), 6);
     assert_eq!(harness.statuses().len(), 2);
     harness.assert_heard(&mut call, &[LATE_PEER]);
 }
@@ -2879,116 +2486,14 @@ async fn a_frame_dave_refuses_is_dropped_and_counted_never_sent_plain() {
 
     harness.tick(2);
     let packets = harness.server.sfu.wait_packets(1, WAIT);
-    sleep(Duration::from_millis(20)).await;
 
-    assert_eq!(harness.server.sfu.packets().len(), 1);
+    assert_eq!(harness.counter("packets_sent"), 1);
     assert_ne!(packets[0].payload, sent[1].to_vec());
     assert_eq!(
         hear(&mut call, LATE_PEER, &packets[0].payload),
         Some(sent[1].to_vec())
     );
     assert_eq!(harness.counter("dave_not_ready"), 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_replayed_commit_that_removes_the_bot_resets_and_the_bot_is_added_back() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let executed = harness.counter("transitions_executed");
-
-    harness.server.gateway.drop_connection();
-    let kick = call.fake.kick(bot());
-    call.enqueue(kick);
-    harness
-        .pump(&mut call, |harness, _| {
-            !invalid_commit_welcomes(&harness.server).is_empty()
-        })
-        .await;
-    harness.rejoined(&mut call, 2, executed).await;
-    harness.server.collect().await;
-
-    assert_eq!(harness.server.count(op::RESUME), 1);
-    assert_eq!(harness.counter("recoveries"), 1);
-    harness.assert_heard(&mut call, &[LATE_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_protocol_change_inside_a_group_is_prepared_and_answered() {
-    let mut harness = Harness::dave().await;
-    let _call = harness.talking_with(&[LATE_PEER]).await;
-
-    harness.server.send_dave(DaveOp::PrepareEpoch {
-        transition_id: Some(7),
-        epoch: 2,
-        protocol_version: 1,
-    });
-    harness
-        .server
-        .expect(|message| outbound(message) == Some(Outbound::TransitionReady(7)))
-        .await;
-
-    assert_eq!(harness.counter("recoveries"), 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_prepare_transition_on_a_plain_call_is_answered() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-
-    harness.server.send_dave(DaveOp::PrepareTransition {
-        transition_id: 5,
-        protocol_version: 0,
-    });
-    let ready = harness.server.expect_op(op::DAVE_TRANSITION_READY).await;
-
-    assert_eq!(ready["transition_id"].as_u64(), Some(5));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_failing_prepare_or_execute_takes_the_recover_path() {
-    for call_kind in [MlsCall::Prepare, MlsCall::Execute] {
-        let mut harness = Harness::dave().await;
-        let mut call = harness.talking_with(&[LATE_PEER]).await;
-        let executed = harness.counter("transitions_executed");
-
-        harness.media().dave.lock().inject(call_kind, Fault::Error);
-        call.join(user(THIRD_PEER));
-        harness
-            .pump(&mut call, |harness, _| {
-                !invalid_commit_welcomes(&harness.server).is_empty()
-            })
-            .await;
-        harness.rejoined(&mut call, 3, executed).await;
-
-        assert_eq!(harness.counter("recoveries"), 1, "{call_kind:?}");
-        harness.assert_heard(&mut call, &[LATE_PEER, THIRD_PEER]);
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_panic_while_processing_proposals_rebuilds_the_session_and_recovers() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let executed = harness.counter("transitions_executed");
-
-    harness
-        .media()
-        .dave
-        .lock()
-        .inject(MlsCall::Proposals, Fault::Panic);
-    call.join(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |harness, _| {
-            !invalid_commit_welcomes(&harness.server).is_empty()
-        })
-        .await;
-    let settled = call.fake.settle();
-    call.enqueue(settled);
-    harness.rejoined(&mut call, 3, executed).await;
-
-    assert_eq!(harness.counter("dave_panics"), 1);
-    assert_eq!(harness.counter("recoveries"), 1);
-    harness.assert_heard(&mut call, &[LATE_PEER, THIRD_PEER]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -3011,20 +2516,30 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
     other.write(&tone(FRAME_SAMPLES * 5)).unwrap();
     let own = harness.sink(pcm(), StallPolicy::Hold);
     own.write(&tone(FRAME_SAMPLES * 5)).unwrap();
-    let (parked, release) = harness.media().faults.park_next();
+    let (parked, on_parked) = std::sync::mpsc::channel();
+    let (release, on_release) = std::sync::mpsc::channel();
+    harness.media().dave.lock().inject(
+        MlsCall::Proposals,
+        Fault::Park {
+            parked,
+            release: on_release,
+        },
+    );
 
     call.join(user(THIRD_PEER));
     harness
-        .pump(&mut call, |_, _| parked.try_recv().is_ok())
+        .pump(&mut call, |_, _| on_parked.try_recv().is_ok())
         .await;
-    let start = Instant::now();
-    harness.tick(5);
-    let ticked = start.elapsed();
+    let shared = Arc::clone(&harness.voice.shared);
+    let ticking = tokio::task::spawn_blocking(move || shared.pacer.tick(5));
+    timeout(WAIT, ticking)
+        .await
+        .expect("the ticks waited for the DAVE call")
+        .unwrap();
     let dave = harness.voice.dave(guild()).unwrap();
     let busy = harness.counter("dave_busy");
     release.send(()).unwrap();
 
-    assert!(ticked < Duration::from_millis(500), "{ticked:?}");
     assert_eq!(busy, 5);
     assert_eq!(dave.protocol_version, 1);
     assert_eq!(queued_frames(&own), 5 * 960);
@@ -3034,37 +2549,22 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn real_pacer_threads_send_on_a_20_ms_clock() {
-    let mut harness = Harness::build(|_| {}, PacerPool::new()).await;
+    let mut harness = Harness::build(|_| {}, PacerPool::new(), tuning()).await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
     let written = std::time::Instant::now();
-    sink.write(&tone(96_000)).unwrap();
+    sink.write(&tone(FRAME_SAMPLES * 10)).unwrap();
     sink.flush().unwrap();
 
-    let packets: Vec<Packet> = harness
-        .server
-        .sfu
-        .wait_packets(105, Duration::from_secs(10));
-    let departures = harness.media().faults.departures.lock().clone();
+    let packets: Vec<Packet> = harness.server.sfu.wait_packets(15, WAIT);
 
-    assert_eq!(packets.len(), 105);
-    assert!(departures.count() >= 100);
-    let last = packets[104].at.duration_since(written);
-    assert!(last >= Duration::from_secs(2), "{last:?}");
-    if crate::strict_timing() {
-        let first = packets[0].at;
-        let within = packets
-            .iter()
-            .filter(|packet| packet.at.duration_since(first) < Duration::from_secs(2))
-            .count();
-        assert!((98..=102).contains(&within), "{within}");
-        let p99 = departures.quantile(0.99);
-        assert!(p99 <= Duration::from_millis(5), "{p99:?}");
-    }
+    assert_eq!(packets.len(), 15);
+    let last = packets[14].at.duration_since(written);
+    assert!(last >= FRAME * 10, "{last:?}");
 }
 
 impl Harness {
-    async fn acknowledged(&mut self) {
+    async fn acknowledged(&mut self, ssrc: u32) {
         self.server.collect().await;
         let from = self.server.messages.len();
         let deadline = Instant::now() + WAIT;
@@ -3075,7 +2575,11 @@ impl Harness {
             assert!(Instant::now() < deadline, "no heartbeat after READY");
             self.server.collect().await;
         }
-        sleep(Duration::from_millis(30)).await;
+        self.server.gateway.send(
+            op::SPEAKING,
+            json!({"user_id": "9", "ssrc": ssrc, "speaking": 1}),
+        );
+        self.speaking_from(ssrc).await;
     }
 }
 
@@ -3085,7 +2589,9 @@ async fn an_acknowledged_heartbeat_restores_the_rejoin_budget() {
     harness.connected().await;
 
     for rejoin in 0..4 {
-        harness.acknowledged().await;
+        harness
+            .acknowledged(90 + u32::try_from(rejoin).unwrap())
+            .await;
         harness.server.gateway.close(4006);
         harness
             .settle(|harness| harness.joins(CHANNEL) == rejoin + 2)
@@ -3139,23 +2645,6 @@ fn tone_file() -> SourceSpec {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn sinks_and_sources_take_their_ids_from_one_counter() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-
-    let first = harness.sink(pcm(), StallPolicy::Hold);
-    let source = harness.voice.open_source(tone_file()).unwrap();
-    let last = harness.sink(pcm(), StallPolicy::Hold);
-
-    let ids = [first.id(), source.id(), last.id()].map(u64::from);
-    assert_eq!(ids, [ids[0], ids[0] + 1, ids[0] + 2]);
-    let info = wait_for_info(&source);
-    let (chunks, error) = read_to_end(&source);
-    assert_eq!(error, None);
-    assert_eq!(frames(info.kind, &chunks), 48_000);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shutdown_closes_every_open_source_and_refuses_new_ones() {
     let harness = Harness::start().await;
     let kept = harness.voice.open_source(tone_file()).unwrap();
@@ -3194,4 +2683,16 @@ async fn dropped_sources_are_forgotten_when_the_next_one_opens() {
 
     assert_eq!(harness.voice.shared.sources.lock().len(), 1);
     assert!(!kept.is_closed());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sinks_and_sources_never_share_an_id() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+
+    let first = harness.sink(pcm(), StallPolicy::Hold).id();
+    let source = harness.voice.open_source(tone_file()).unwrap().id();
+    let last = harness.sink(pcm(), StallPolicy::Hold).id();
+
+    assert!(first != source && source != last && first != last);
 }

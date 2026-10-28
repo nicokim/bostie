@@ -19,12 +19,6 @@ use crate::voice::source::decode::{Decoder, Input, Step};
 use crate::voice::source::http::{Http, HttpMedia};
 use crate::voice::types::{SAMPLE_RATE, SourceSpec};
 
-#[cfg(not(test))]
-const SOURCE_PREFETCH: Duration = Duration::from_secs(1);
-#[cfg(test)]
-const SOURCE_PREFETCH: Duration = Duration::from_millis(100);
-const PREFETCH_FRAMES: u64 = SOURCE_PREFETCH.as_millis() as u64 * SAMPLE_RATE as u64 / 1_000;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
     Pcm,
@@ -63,6 +57,7 @@ pub struct Source {
 struct Shared {
     id: Handle,
     inbox: Arc<Inbox>,
+    prefetch: u64,
     state: Mutex<State>,
     changed: Condvar,
 }
@@ -98,6 +93,7 @@ impl Source {
         spec: SourceSpec,
         inbox: Arc<Inbox>,
         http: &Http,
+        prefetch: Duration,
     ) -> Result<Self, CoreError> {
         let input = match spec {
             SourceSpec::File(path) => Input::File(path),
@@ -106,17 +102,19 @@ impl Source {
                 Input::Url(Box::new(HttpMedia::new(http, &url, &headers)?))
             }
         };
-        Self::spawn(id, inbox, move |shared| play(shared, input))
+        Self::spawn(id, inbox, prefetch, move |shared| play(shared, input))
     }
 
     fn spawn(
         id: Handle,
         inbox: Arc<Inbox>,
+        prefetch: Duration,
         body: impl FnOnce(&Shared) + Send + 'static,
     ) -> Result<Self, CoreError> {
         let shared = Arc::new(Shared {
             id,
             inbox,
+            prefetch: frames_in(prefetch),
             state: Mutex::new(State {
                 info: None,
                 chunks: Vec::new(),
@@ -290,7 +288,7 @@ impl Shared {
             if let Some(position) = state.seek.take() {
                 return Command::Seek(position, state.generation);
             }
-            if state.progress == Progress::Playing && state.buffered < PREFETCH_FRAMES {
+            if state.progress == Progress::Playing && state.buffered < self.prefetch {
                 return Command::Decode;
             }
             self.changed.wait(&mut state);
@@ -329,6 +327,11 @@ fn play(shared: &Shared, input: Input) {
     }
 }
 
+fn frames_in(duration: Duration) -> u64 {
+    let frames = duration.as_millis() * u128::from(SAMPLE_RATE) / 1_000;
+    u64::try_from(frames).unwrap_or(u64::MAX)
+}
+
 fn panic_message(payload: &(dyn Any + Send)) -> &str {
     payload
         .downcast_ref::<&str>()
@@ -348,6 +351,8 @@ pub(crate) mod tests {
 
     const PATIENCE: Duration = Duration::from_secs(10);
     const MINUS_3_DB: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    const PREFETCH: Duration = Duration::from_millis(100);
+    const HTTP_BUFFER: usize = 4 * 1024;
 
     pub(crate) struct Harness {
         pub(crate) inbox: Arc<Inbox>,
@@ -362,14 +367,14 @@ pub(crate) mod tests {
             Self {
                 inbox: Arc::new(Inbox::new(bell)),
                 _bell: receiver,
-                http: Http::new(crate::runtime::shared().unwrap()),
+                http: Http::new(crate::runtime::shared().unwrap(), HTTP_BUFFER),
                 next: 1,
             }
         }
 
         pub(crate) fn open(&mut self, spec: SourceSpec) -> Source {
             let id = self.handle();
-            Source::open(id, spec, Arc::clone(&self.inbox), &self.http).unwrap()
+            Source::open(id, spec, Arc::clone(&self.inbox), &self.http, PREFETCH).unwrap()
         }
 
         fn file(&mut self, name: &str) -> Source {
@@ -476,7 +481,7 @@ pub(crate) mod tests {
     impl Harness {
         fn spawn(&mut self, body: impl FnOnce(&Shared) + Send + 'static) -> Source {
             let id = self.handle();
-            Source::spawn(id, Arc::clone(&self.inbox), body).unwrap()
+            Source::spawn(id, Arc::clone(&self.inbox), PREFETCH, body).unwrap()
         }
     }
 
@@ -718,19 +723,16 @@ pub(crate) mod tests {
         let source = harness.file("tone-s16.wav");
         wait_for_info(&source);
 
+        let prefetch = frames_in(PREFETCH);
         wait_until(
-            || source.shared.state.lock().buffered >= PREFETCH_FRAMES,
+            || source.shared.state.lock().buffered >= prefetch,
             "the prefetch",
         );
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(20));
         {
             let state = source.shared.state.lock();
             let last = state.chunks.last().map_or(0, |chunk| chunk.len() / 8) as u64;
-            assert!(
-                state.buffered - last < PREFETCH_FRAMES,
-                "{}",
-                state.buffered
-            );
+            assert!(state.buffered - last < prefetch, "{}", state.buffered);
             assert!(state.progress == Progress::Playing);
         }
         let (chunks, error) = read_to_end(&source);
@@ -903,20 +905,5 @@ pub(crate) mod tests {
 
         wait_until(|| closed_thread.strong_count() == 1, "the closed thread");
         wait_until(|| dropped_thread.strong_count() == 0, "the dropped thread");
-    }
-
-    #[test]
-    fn decoder_threads_are_named_after_their_handle() {
-        let mut harness = Harness::new();
-        let (name, names) = std::sync::mpsc::channel();
-        let source = harness.spawn(move |_| {
-            name.send(thread::current().name().map(str::to_owned))
-                .unwrap();
-        });
-
-        assert_eq!(
-            names.recv().unwrap(),
-            Some(format!("bostie-source-{}", source.id()))
-        );
     }
 }

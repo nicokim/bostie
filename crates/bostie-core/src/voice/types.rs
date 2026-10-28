@@ -473,53 +473,43 @@ mod tests {
     }
 
     #[test]
-    fn encoder_settings_accept_their_bounds() {
-        for settings in [
-            encoder(),
-            EncoderSettings {
-                bitrate: 500,
-                packet_loss: 0,
-                complexity: 0,
-                ..encoder()
-            },
-            EncoderSettings {
-                bitrate: 512_000,
-                packet_loss: 100,
-                complexity: 10,
-                ..encoder()
-            },
-        ] {
+    fn encoder_settings_are_checked_against_their_bounds() {
+        let with = |bitrate, packet_loss, complexity| EncoderSettings {
+            bitrate,
+            packet_loss,
+            complexity,
+            ..encoder()
+        };
+
+        for settings in [encoder(), with(500, 0, 0), with(512_000, 100, 10)] {
             assert!(settings.validate().is_ok(), "{settings:?}");
+        }
+        for (settings, field) in [
+            (with(499, 10, 10), "bitrate"),
+            (with(512_001, 10, 10), "bitrate"),
+            (with(64_000, 101, 10), "packet loss"),
+            (with(64_000, 10, 11), "complexity"),
+        ] {
+            assert!(
+                rejection(settings.validate()).contains(field),
+                "{settings:?}"
+            );
         }
     }
 
     #[test]
-    fn encoder_settings_reject_values_past_their_bounds() {
-        let low_bitrate = EncoderSettings {
-            bitrate: 499,
-            ..encoder()
-        };
-        let high_bitrate = EncoderSettings {
-            bitrate: 512_001,
-            ..encoder()
-        };
-        let packet_loss = EncoderSettings {
-            packet_loss: 101,
-            ..encoder()
-        };
-        let complexity = EncoderSettings {
-            complexity: 11,
-            ..encoder()
-        };
+    fn pcm_formats_are_checked_against_their_bounds() {
+        let refused: [(u32, u8, &[&str]); 8] = [
+            (8_001, 2, &["gcd(rate, 48000)", "8001"]),
+            (44_101, 2, &["gcd(rate, 48000)", "44101"]),
+            (0, 2, &["from 8000 to 192000 Hz"]),
+            (7_999, 2, &["from 8000 to 192000 Hz"]),
+            (192_001, 2, &["from 8000 to 192000 Hz"]),
+            (48_000, 0, &["channels"]),
+            (48_000, 3, &["channels"]),
+            (48_000, 6, &["channels"]),
+        ];
 
-        assert!(rejection(low_bitrate.validate()).contains("bitrate"));
-        assert!(rejection(high_bitrate.validate()).contains("bitrate"));
-        assert!(rejection(packet_loss.validate()).contains("packet loss"));
-        assert!(rejection(complexity.validate()).contains("complexity"));
-    }
-
-    #[test]
-    fn common_rates_pass_the_resampler_rule() {
         for rate in [
             8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 88_200, 96_000,
             176_400, 192_000,
@@ -528,68 +518,36 @@ mod tests {
                 assert!(pcm(rate, channels).validate().is_ok(), "{rate} Hz");
             }
         }
-    }
-
-    #[test]
-    fn rates_whose_resampler_block_exceeds_a_frame_name_the_rule() {
-        for rate in [8_001, 44_101] {
-            let message = rejection(pcm(rate, 2).validate());
-
-            assert!(message.contains("gcd(rate, 48000)"), "{message}");
-            assert!(message.contains(&rate.to_string()), "{message}");
+        for (rate, channels, fragments) in refused {
+            let message = rejection(pcm(rate, channels).validate());
+            for fragment in fragments {
+                assert!(message.contains(fragment), "{message}");
+            }
         }
     }
 
     #[test]
-    fn rates_outside_8_to_192_khz_are_rejected() {
-        for rate in [0, 7_999, 192_001] {
-            assert!(rejection(pcm(rate, 2).validate()).contains("from 8000 to 192000 Hz"));
-        }
-    }
+    fn sink_options_are_checked_against_their_bounds() {
+        let opus = |buffer, volume| sink(SinkFormat::Opus, buffer, volume);
+        let long = Duration::from_secs(60);
 
-    #[test]
-    fn only_mono_and_stereo_are_accepted() {
-        for channels in [0, 3, 6] {
-            assert!(rejection(pcm(48_000, channels).validate()).contains("channels"));
-        }
-    }
-
-    #[test]
-    fn sink_options_accept_their_bounds() {
         for options in [
-            sink(SinkFormat::Opus, FRAME, 0.0),
-            sink(
-                SinkFormat::Pcm(pcm(24_000, 1)),
-                Duration::from_secs(60),
-                2.5,
-            ),
+            opus(FRAME, 0.0),
+            sink(SinkFormat::Pcm(pcm(24_000, 1)), long, 2.5),
         ] {
             assert!(options.validate().is_ok(), "{options:?}");
         }
-    }
-
-    #[test]
-    fn sink_options_reject_buffers_outside_20_ms_to_60_s() {
-        for buffer in [
-            Duration::ZERO,
-            Duration::from_millis(19),
-            Duration::from_secs(60) + Duration::from_nanos(1),
+        for (options, field) in [
+            (opus(Duration::ZERO, 1.0), "buffer"),
+            (opus(Duration::from_millis(19), 1.0), "buffer"),
+            (opus(long + Duration::from_nanos(1), 1.0), "buffer"),
+            (opus(FRAME, -0.1), "volume"),
+            (opus(FRAME, f32::NAN), "volume"),
+            (opus(FRAME, f32::INFINITY), "volume"),
+            (opus(FRAME, f32::NEG_INFINITY), "volume"),
+            (sink(SinkFormat::Pcm(pcm(8_001, 2)), FRAME, 1.0), "gcd"),
         ] {
-            assert!(rejection(sink(SinkFormat::Opus, buffer, 1.0).validate()).contains("buffer"));
+            assert!(rejection(options.validate()).contains(field), "{options:?}");
         }
-    }
-
-    #[test]
-    fn sink_options_reject_negative_and_non_finite_volumes() {
-        for volume in [-0.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-            assert!(rejection(sink(SinkFormat::Opus, FRAME, volume).validate()).contains("volume"));
-        }
-    }
-
-    #[test]
-    fn sink_options_check_their_pcm_format() {
-        let options = sink(SinkFormat::Pcm(pcm(8_001, 2)), FRAME, 1.0);
-
-        assert!(rejection(options.validate()).contains("gcd"));
     }
 }

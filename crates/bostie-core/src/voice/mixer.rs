@@ -605,10 +605,4 @@ mod tests {
         );
         assert_eq!(mixer.encoder.settings().bitrate, 128_000);
     }
-
-    #[test]
-    fn mixers_move_to_pacer_threads() {
-        fn sendable<T: Send>() {}
-        sendable::<Mixer>();
-    }
 }

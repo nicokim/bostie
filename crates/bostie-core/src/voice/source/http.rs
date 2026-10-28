@@ -14,23 +14,20 @@ use crate::error::{CoreError, describe};
 const USER_AGENT: &str = concat!("bostie/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
-#[cfg(not(test))]
-const HTTP_CHANNEL: usize = 256 * 1024;
-#[cfg(test)]
-const HTTP_CHANNEL: usize = 4 * 1024;
 const HTTP_PIECES: usize = 16;
-const HTTP_PIECE: usize = HTTP_CHANNEL / HTTP_PIECES;
 
 pub struct Http {
     runtime: Handle,
     client: OnceLock<reqwest::Client>,
+    piece: usize,
 }
 
 impl Http {
-    pub fn new(runtime: Handle) -> Self {
+    pub fn new(runtime: Handle, buffer: usize) -> Self {
         Self {
             runtime,
             client: OnceLock::new(),
+            piece: (buffer / HTTP_PIECES).max(1),
         }
     }
 
@@ -54,6 +51,7 @@ impl Http {
 pub struct HttpMedia {
     runtime: Handle,
     client: reqwest::Client,
+    piece: usize,
     url: Url,
     headers: HeaderMap,
     length: Option<u64>,
@@ -95,6 +93,7 @@ impl HttpMedia {
         Ok(Self {
             runtime: http.runtime.clone(),
             client: http.client()?,
+            piece: http.piece,
             url,
             headers: map,
             length: None,
@@ -135,8 +134,14 @@ impl HttpMedia {
         let (head_sender, head) = oneshot::channel();
         let (sender, pieces) = mpsc::channel(HTTP_PIECES);
         self.body = None;
-        self.runtime
-            .spawn(stream(request, ranged, host, head_sender, sender));
+        self.runtime.spawn(stream(
+            request,
+            ranged,
+            host,
+            head_sender,
+            sender,
+            self.piece,
+        ));
         let head = head
             .blocking_recv()
             .map_err(|_| io::Error::other("the HTTP request stopped"))??;
@@ -220,6 +225,7 @@ async fn stream(
     host: String,
     head: oneshot::Sender<io::Result<Head>>,
     pieces: mpsc::Sender<io::Result<Bytes>>,
+    piece: usize,
 ) {
     let mut response = match respond(request, ranged, &host).await {
         Ok(response) => response,
@@ -246,8 +252,8 @@ async fn stream(
             }
         };
         while !chunk.is_empty() {
-            let piece = chunk.split_to(chunk.len().min(HTTP_PIECE));
-            if pieces.send(Ok(piece)).await.is_err() {
+            let next = chunk.split_to(chunk.len().min(piece));
+            if pieces.send(Ok(next)).await.is_err() {
                 return;
             }
         }

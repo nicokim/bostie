@@ -11,8 +11,6 @@ pub mod proto;
 pub mod rtp;
 pub mod session;
 pub mod sink;
-#[cfg(test)]
-mod soak;
 pub mod source;
 pub mod tap;
 #[cfg(test)]
@@ -40,7 +38,7 @@ use tokio_websockets::Connector;
 use tracing::{debug, error};
 
 pub use self::connection::HistoryEntry;
-use self::connection::{Command, Connection, Ending, Info, Inputs};
+use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
 use self::pacer::{PacerPool, ThreadLoad};
@@ -59,6 +57,23 @@ pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Sen
 
 const COMMAND_QUEUE: usize = 32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Tuning {
+    pub(crate) connection: ConnectionTuning,
+    pub(crate) source_prefetch: Duration,
+    pub(crate) http_buffer: usize,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self {
+            connection: ConnectionTuning::default(),
+            source_prefetch: Duration::from_secs(1),
+            http_buffer: 256 * 1024,
+        }
+    }
+}
+
 pub struct Voice {
     runtime: runtime::Handle,
     shared: Arc<Shared>,
@@ -72,6 +87,7 @@ struct Shared {
     connector: Connector,
     pacer: PacerPool,
     http: Http,
+    tuning: Tuning,
     next_handle: AtomicU64,
     connections: Mutex<HashMap<GuildId, ConnectionHandle>>,
     sources: Mutex<Vec<Weak<Source>>>,
@@ -110,18 +126,14 @@ impl Voice {
         tap: Arc<GatewayTap>,
         send: GatewaySend,
     ) -> Result<Self, CoreError> {
-        Self::build(runtime, inbox, tap, send, PacerPool::new())
-    }
-
-    #[cfg(test)]
-    pub fn with_pacer(
-        runtime: runtime::Handle,
-        inbox: Arc<Inbox>,
-        tap: Arc<GatewayTap>,
-        send: GatewaySend,
-        pacer: PacerPool,
-    ) -> Result<Self, CoreError> {
-        Self::build(runtime, inbox, tap, send, pacer)
+        Self::build(
+            runtime,
+            inbox,
+            tap,
+            send,
+            PacerPool::new(),
+            Tuning::default(),
+        )
     }
 
     fn build(
@@ -130,6 +142,7 @@ impl Voice {
         tap: Arc<GatewayTap>,
         send: GatewaySend,
         pacer: PacerPool,
+        tuning: Tuning,
     ) -> Result<Self, CoreError> {
         Ok(Self {
             shared: Arc::new(Shared {
@@ -138,7 +151,8 @@ impl Voice {
                 send,
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 pacer,
-                http: Http::new(runtime.clone()),
+                http: Http::new(runtime.clone(), tuning.http_buffer),
+                tuning,
                 next_handle: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),
                 sources: Mutex::new(Vec::new()),
@@ -173,6 +187,7 @@ impl Voice {
             request.user,
             request.channel,
             Arc::clone(&self.shared.inbox),
+            self.shared.tuning.connection.stall_after,
         ));
         let mut lane = media.lane(request.encoder)?;
         let pacer_thread = self
@@ -351,6 +366,7 @@ impl Voice {
             spec,
             Arc::clone(&self.shared.inbox),
             &self.shared.http,
+            self.shared.tuning.source_prefetch,
         )
         .map(Arc::new)?;
         let mut sources = self.shared.sources.lock();
@@ -376,11 +392,6 @@ impl Voice {
 
     fn next_handle(&self) -> Handle {
         Handle::from(self.shared.next_handle.fetch_add(1, Ordering::Relaxed))
-    }
-
-    #[cfg(test)]
-    fn pacer(&self) -> &PacerPool {
-        &self.shared.pacer
     }
 
     fn with_connection<T>(

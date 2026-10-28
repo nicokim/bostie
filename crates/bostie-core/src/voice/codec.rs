@@ -267,7 +267,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn frame_encoder_turns_one_second_of_24_khz_mono_into_50_packets() {
+    fn frame_encoder_turns_24_khz_mono_into_20_ms_packets_and_pads_the_last_one() {
         let format = PcmFormat {
             rate: 24_000,
             channels: 1,
@@ -294,6 +294,11 @@ pub(crate) mod tests {
                 .all(|packet| packet_samples(packet) == Some(960))
         );
         assert!(encoder.flush().is_empty());
+
+        let mut tail = encoder.encode(&second[..480]);
+        tail.extend(encoder.flush());
+        let tail: Vec<Option<u32>> = tail.iter().map(|packet| packet_samples(packet)).collect();
+        assert_eq!(tail, [Some(960)]);
     }
 
     #[test]

@@ -24,21 +24,6 @@ use super::udp::{self, Answer, DiscoveryError};
 use super::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
 use crate::inbox::Delivery;
 
-#[cfg(not(test))]
-const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
-#[cfg(test)]
-const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(100);
-
-#[cfg(not(test))]
-const EARLY_OPS: usize = 256;
-#[cfg(test)]
-const EARLY_OPS: usize = 8;
-
-#[cfg(not(test))]
-const SPEAKING_COALESCE: Duration = Duration::from_millis(200);
-#[cfg(test)]
-const SPEAKING_COALESCE: Duration = Duration::from_millis(20);
-
 const LOG_EVERY: Duration = Duration::from_secs(1);
 
 pub(super) struct Credentials {
@@ -129,8 +114,9 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
         return SessionEnd::Failed("there is no voice session to resume".to_owned());
     };
     let shared = Arc::clone(&conn.shared);
+    let timeouts = conn.tuning.ws;
     let socket = match conn
-        .interruptible(VoiceSocket::dial(&url, &shared.connector))
+        .interruptible(VoiceSocket::dial(&url, &shared.connector, timeouts))
         .await
     {
         Ok(Ok(socket)) => socket,
@@ -158,20 +144,29 @@ enum Progress {
 
 type Discovery = Pin<Box<dyn Future<Output = Result<SocketAddr, DiscoveryError>> + Send>>;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Coalescer {
+    window: Duration,
     last: Option<Instant>,
     due: Option<Instant>,
 }
 
 impl Coalescer {
+    const fn new(window: Duration) -> Self {
+        Self {
+            window,
+            last: None,
+            due: None,
+        }
+    }
+
     fn request(&mut self, now: Instant) -> bool {
         if self.due.is_some() {
             return false;
         }
         match self.last {
-            Some(last) if now < last + SPEAKING_COALESCE => {
-                self.due = Some(last + SPEAKING_COALESCE);
+            Some(last) if now < last + self.window => {
+                self.due = Some(last + self.window);
                 false
             }
             _ => true,
@@ -185,15 +180,17 @@ impl Coalescer {
 }
 
 struct Keepalive {
+    interval: Duration,
     next: Instant,
     sent_at: Option<std::time::Instant>,
     listening: bool,
 }
 
 impl Keepalive {
-    fn new() -> Self {
+    fn new(interval: Duration) -> Self {
         Self {
-            next: Instant::now() + KEEPALIVE_INTERVAL,
+            interval,
+            next: Instant::now() + interval,
             sent_at: None,
             listening: true,
         }
@@ -233,6 +230,7 @@ struct Session<'c> {
 
 impl<'c> Session<'c> {
     fn new(conn: &'c mut Connection, socket: VoiceSocket, progress: Progress) -> Self {
+        let speaking = Coalescer::new(conn.tuning.speaking_coalesce);
         Self {
             conn,
             socket,
@@ -242,7 +240,7 @@ impl<'c> Session<'c> {
             mode: None,
             early: Vec::new(),
             discovery: None,
-            speaking: Coalescer::default(),
+            speaking,
             keepalive: None,
             stable: false,
             unknown: RateLimit::default(),
@@ -410,9 +408,10 @@ impl<'c> Session<'c> {
                     self.progress,
                     Progress::Identifying | Progress::Discovering | Progress::Describing
                 ) {
-                    if self.early.len() >= EARLY_OPS {
+                    let limit = self.conn.tuning.early_ops;
+                    if self.early.len() >= limit {
                         return Err(SessionEnd::Invalid(format!(
-                            "invalid frame: more than {EARLY_OPS} messages arrived before the \
+                            "invalid frame: more than {limit} messages arrived before the \
                              session description"
                         )));
                     }
@@ -474,7 +473,8 @@ impl<'c> Session<'c> {
             let socket = Arc::clone(&socket);
             let mut answers = answers.clone();
             let ssrc = ready.ssrc;
-            Box::pin(async move { udp::discover(&socket, &mut answers, ssrc).await })
+            let interval = self.conn.tuning.discovery_interval;
+            Box::pin(async move { udp::discover(&socket, &mut answers, ssrc, interval).await })
         });
         if let Some(voice) = &mut self.conn.voice {
             voice.udp = Some(Udp {
@@ -506,7 +506,7 @@ impl<'c> Session<'c> {
         .await?;
         self.progress = Progress::Describing;
         self.conn.set_step(Step::Session);
-        self.keepalive = Some(Keepalive::new());
+        self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         Ok(())
     }
 
@@ -539,8 +539,9 @@ impl<'c> Session<'c> {
             .await?;
         let (user, channel) = (self.conn.user, self.conn.dave_channel());
         let protocol_version = description.dave_protocol_version;
+        let recovery = self.conn.tuning.dave;
         let started = spawn_blocking(move || {
-            let mut dave = Dave::new(user, channel);
+            let mut dave = Dave::new(user, channel).with_recovery(recovery);
             let mut out = Vec::new();
             dave.start(protocol_version, &mut out).map(|()| (dave, out))
         })
@@ -568,7 +569,7 @@ impl<'c> Session<'c> {
     async fn resumed(&mut self) -> Result<(), SessionEnd> {
         self.progress = Progress::Ready;
         bump(&self.conn.media.counters.resumes);
-        self.keepalive = Some(Keepalive::new());
+        self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         self.conn.became_ready();
         self.request_speaking().await
     }
@@ -625,8 +626,6 @@ impl<'c> Session<'c> {
         let media = Arc::clone(&self.conn.media);
         let handled = spawn_blocking(move || {
             media.with_dave(|dave| {
-                #[cfg(test)]
-                media.faults.park_if_asked();
                 let mut out = Vec::new();
                 let result = dave.handle(op, std::time::Instant::now(), &mut out);
                 (result, out)
@@ -704,7 +703,7 @@ impl<'c> Session<'c> {
         let Some(keepalive) = &mut self.keepalive else {
             return Ok(());
         };
-        keepalive.next += KEEPALIVE_INTERVAL;
+        keepalive.next += keepalive.interval;
         let Some(udp) = self
             .conn
             .voice
@@ -775,7 +774,7 @@ impl<'c> Session<'c> {
     }
 
     async fn send_text(&mut self, payload: Bytes) -> Result<(), SessionEnd> {
-        let patience = ws::patience(self.heartbeat.as_ref());
+        let patience = self.conn.tuning.ws.patience(self.heartbeat.as_ref());
         self.socket
             .send_text(payload, patience)
             .await
@@ -783,7 +782,7 @@ impl<'c> Session<'c> {
     }
 
     async fn send_binary(&mut self, payload: Bytes) -> Result<(), SessionEnd> {
-        let patience = ws::patience(self.heartbeat.as_ref());
+        let patience = self.conn.tuning.ws.patience(self.heartbeat.as_ref());
         self.socket
             .send_binary(payload, patience)
             .await
@@ -811,18 +810,19 @@ mod tests {
 
     #[test]
     fn speaking_goes_out_at_once_and_then_once_per_window() {
+        let window = Duration::from_millis(200);
         let start = Instant::now();
-        let mut coalescer = Coalescer::default();
+        let mut coalescer = Coalescer::new(window);
 
         assert!(coalescer.request(start));
         coalescer.sent(start);
-        assert!(!coalescer.request(start + SPEAKING_COALESCE / 4));
-        assert!(!coalescer.request(start + SPEAKING_COALESCE / 2));
-        assert_eq!(coalescer.due, Some(start + SPEAKING_COALESCE));
+        assert!(!coalescer.request(start + window / 4));
+        assert!(!coalescer.request(start + window / 2));
+        assert_eq!(coalescer.due, Some(start + window));
 
-        coalescer.sent(start + SPEAKING_COALESCE);
+        coalescer.sent(start + window);
         assert_eq!(coalescer.due, None);
-        assert!(coalescer.request(start + SPEAKING_COALESCE * 3));
+        assert!(coalescer.request(start + window * 3));
     }
 
     #[test]

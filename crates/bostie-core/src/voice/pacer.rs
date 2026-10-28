@@ -12,10 +12,7 @@ use parking_lot::Mutex;
 use crate::error::CoreError;
 use crate::voice::types::FRAME;
 
-#[cfg(not(test))]
 const LANES_PER_THREAD: usize = 4;
-#[cfg(test)]
-const LANES_PER_THREAD: usize = 2;
 const LATE_REANCHOR: Duration = FRAME.saturating_mul(3);
 const WORK_SMOOTHING: u64 = 8;
 
@@ -419,7 +416,7 @@ mod tests {
         let pool = PacerPool::new();
         let mut receivers = Vec::new();
 
-        let threads: Vec<usize> = (0..3)
+        let threads: Vec<usize> = (0..=LANES_PER_THREAD)
             .map(|_| {
                 let (lane, receiver) = recorder();
                 let thread = pool.assign(lane).unwrap();
@@ -429,9 +426,9 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(threads, [0, 0, 1]);
+        assert_eq!(threads, [vec![0; LANES_PER_THREAD], vec![1]].concat());
         assert_eq!(pool.threads().len(), 2);
-        assert_eq!(pool.lanes(), 3);
+        assert_eq!(pool.lanes(), LANES_PER_THREAD + 1);
     }
 
     #[test]
@@ -482,7 +479,7 @@ mod tests {
         wait_until(|| pool.lanes() == 0);
         let before = pool.threads()[0];
 
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(FRAME * 3);
 
         assert!(before.work_ewma > Duration::ZERO);
         assert_eq!(pool.threads()[0], before);
@@ -517,7 +514,7 @@ mod tests {
     #[test]
     fn dropping_the_pool_ends_its_idle_threads() {
         let pool = PacerPool::new();
-        for _ in 0..3 {
+        for _ in 0..=LANES_PER_THREAD {
             pool.assign(Box::new(|_| false)).unwrap();
         }
         wait_until(|| pool.lanes() == 0);

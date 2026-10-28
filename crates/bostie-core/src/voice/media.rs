@@ -20,11 +20,6 @@ use crate::voice::types::{Direction, EncoderSettings, FRAME_SAMPLES, SILENCE_FRA
 
 pub const SILENCE_TAIL: u8 = 5;
 
-#[cfg(not(test))]
-const STALL_AFTER: Duration = Duration::from_secs(2);
-#[cfg(test)]
-const STALL_AFTER: Duration = Duration::from_millis(100);
-
 const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
 
 macro_rules! send_counters {
@@ -86,6 +81,7 @@ pub struct DaveView {
 pub struct Media {
     guild: GuildId,
     inbox: Arc<Inbox>,
+    stall_after: Duration,
     pub transport: Mutex<Option<Arc<Transport>>>,
     pub gate: AtomicU8,
     pub dave: Mutex<Dave>,
@@ -102,7 +98,13 @@ pub struct Media {
 }
 
 impl Media {
-    pub fn new(guild: GuildId, user: UserId, channel: ChannelId, inbox: Arc<Inbox>) -> Self {
+    pub fn new(
+        guild: GuildId,
+        user: UserId,
+        channel: ChannelId,
+        inbox: Arc<Inbox>,
+        stall_after: Duration,
+    ) -> Self {
         let dave = Dave::new(user, channel);
         let view = DaveView {
             info: dave.info(),
@@ -111,6 +113,7 @@ impl Media {
         Self {
             guild,
             inbox,
+            stall_after,
             transport: Mutex::new(None),
             gate: AtomicU8::new(SendMode::Hold as u8),
             dave: Mutex::new(dave),
@@ -137,8 +140,6 @@ impl Media {
             dave_out: Vec::new(),
             silence_left: 0,
             stall: Stall::default(),
-            #[cfg(test)]
-            frames: 0,
         })
     }
 
@@ -225,8 +226,6 @@ pub struct Lane {
     dave_out: Vec<u8>,
     silence_left: u8,
     stall: Stall,
-    #[cfg(test)]
-    frames: u64,
 }
 
 impl Lane {
@@ -234,8 +233,6 @@ impl Lane {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }
-        #[cfg(test)]
-        self.media.faults.panic_if_asked();
         self.media
             .counters
             .late_ticks
@@ -263,10 +260,6 @@ impl Lane {
                         .wrapping_add(SAMPLES_PER_TICK.wrapping_mul(tick.skipped.wrapping_add(1)));
                 }
             }
-        }
-        #[cfg(test)]
-        {
-            self.frames += 1 + u64::from(tick.skipped);
         }
         true
     }
@@ -415,12 +408,6 @@ impl Lane {
             self.stalling(now);
             return;
         }
-        #[cfg(test)]
-        self.media
-            .faults
-            .departures
-            .lock()
-            .record(self.frames, Instant::now());
         if let Some(since) = self.stall.since.take()
             && mem::take(&mut self.stall.reported)
         {
@@ -444,7 +431,7 @@ impl Lane {
         }
         let since = *self.stall.since.get_or_insert(now);
         let duration = now.saturating_duration_since(since);
-        if !self.stall.reported && duration >= STALL_AFTER {
+        if !self.stall.reported && duration >= self.media.stall_after {
             self.stall.reported = true;
             self.media.stalled(true, duration);
         }
@@ -484,6 +471,13 @@ fn first_nonce(_: &Media) -> u32 {
 #[cfg(test)]
 fn first_nonce(media: &Media) -> u32 {
     media.faults.nonce_start.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+#[derive(Default)]
+pub struct Faults {
+    pub nonce_start: std::sync::atomic::AtomicU32,
+    pub encrypt: Mutex<Option<EncryptFailure>>,
 }
 
 fn send(
@@ -529,118 +523,11 @@ fn send(
 }
 
 #[cfg(test)]
-#[derive(Default)]
-pub struct Faults {
-    pub panic_lane: AtomicBool,
-    pub nonce_start: std::sync::atomic::AtomicU32,
-    pub encrypt: Mutex<Option<EncryptFailure>>,
-    pub departures: Mutex<Departures>,
-    park: Mutex<Option<Park>>,
-}
-
-#[cfg(test)]
-struct Park {
-    parked: std::sync::mpsc::Sender<()>,
-    release: std::sync::mpsc::Receiver<()>,
-}
-
-#[cfg(test)]
-impl Faults {
-    fn panic_if_asked(&self) {
-        if self.panic_lane.load(Ordering::Relaxed) {
-            panic!("injected lane panic");
-        }
-    }
-
-    pub fn park_next(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
-        let (parked, on_parked) = std::sync::mpsc::channel();
-        let (release, on_release) = std::sync::mpsc::channel();
-        *self.park.lock() = Some(Park {
-            parked,
-            release: on_release,
-        });
-        (on_parked, release)
-    }
-
-    pub fn park_if_asked(&self) {
-        let park = self.park.lock().take();
-        if let Some(park) = park {
-            park.parked.send(()).unwrap();
-            park.release.recv().unwrap();
-        }
-    }
-}
-
-#[cfg(test)]
-const DEPARTURE_BUCKET: Duration = Duration::from_micros(100);
-#[cfg(test)]
-const DEPARTURE_BUCKETS: usize = 256;
-
-#[cfg(test)]
-#[derive(Debug, Clone)]
-pub struct Departures {
-    anchor: Option<Instant>,
-    buckets: [u64; DEPARTURE_BUCKETS],
-    count: u64,
-    max: Duration,
-}
-
-#[cfg(test)]
-impl Default for Departures {
-    fn default() -> Self {
-        Self {
-            anchor: None,
-            buckets: [0; DEPARTURE_BUCKETS],
-            count: 0,
-            max: Duration::ZERO,
-        }
-    }
-}
-
-#[cfg(test)]
-impl Departures {
-    fn record(&mut self, frames: u64, at: Instant) {
-        let offset = Duration::from_nanos(
-            u64::try_from(crate::voice::types::FRAME.as_nanos()).unwrap() * frames,
-        );
-        let anchor = *self.anchor.get_or_insert(at - offset);
-        let lateness = match at.checked_duration_since(anchor + offset) {
-            Some(lateness) => lateness,
-            None => {
-                self.anchor = Some(at - offset);
-                Duration::ZERO
-            }
-        };
-        let bucket = usize::try_from(lateness.as_nanos() / DEPARTURE_BUCKET.as_nanos())
-            .unwrap()
-            .min(DEPARTURE_BUCKETS - 1);
-        self.buckets[bucket] += 1;
-        self.count += 1;
-        self.max = self.max.max(lateness);
-    }
-
-    pub fn count(&self) -> u64 {
-        self.count
-    }
-
-    pub fn quantile(&self, quantile: f64) -> Duration {
-        let wanted = (self.count as f64 * quantile).ceil() as u64;
-        let mut seen = 0;
-        for (index, count) in self.buckets.iter().enumerate() {
-            seen += count;
-            if seen >= wanted {
-                return DEPARTURE_BUCKET * u32::try_from(index + 1).unwrap();
-            }
-        }
-        self.max
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
+    use futures_util::FutureExt;
 
     use super::*;
     use crate::bell;
@@ -661,6 +548,7 @@ mod tests {
     const OTHER_KEY: [u8; 32] = [4; 32];
     const SSRC: u32 = 77;
     const WAIT: Duration = Duration::from_secs(5);
+    const STALL: Duration = Duration::from_millis(100);
 
     fn settings() -> EncoderSettings {
         EncoderSettings {
@@ -717,6 +605,7 @@ mod tests {
                 UserId::from(BOT),
                 ChannelId::from(CHANNEL),
                 Arc::clone(&inbox),
+                STALL,
             ));
             let lane = media.lane(settings()).unwrap();
             Self {
@@ -811,9 +700,8 @@ mod tests {
             packets
         }
 
-        fn quiet(&self, count: usize) {
-            std::thread::sleep(Duration::from_millis(30));
-            assert_eq!(self.sfu.packets().len(), count);
+        fn sent(&self, count: u64) {
+            assert_eq!(self.counter("packets_sent"), count);
         }
     }
 
@@ -919,7 +807,7 @@ mod tests {
         assert_eq!(resolved, [(pcm_marker, true), (opus_marker, true)]);
         assert_eq!(rig.counter("alone_ticks"), 6);
         assert_eq!(rig.counter("packets_sent"), 0);
-        rig.quiet(0);
+        rig.sent(0);
     }
 
     #[test]
@@ -942,7 +830,7 @@ mod tests {
         assert_eq!(rig.sfu.silence_runs(), [5]);
         assert_eq!(rig.counter("silence_packets"), 5);
         assert_eq!(rig.counter("encoded_packets"), 3);
-        rig.quiet(8);
+        rig.sent(8);
     }
 
     #[test]
@@ -991,7 +879,7 @@ mod tests {
         assert_eq!(rig.counter("dave_frames"), 7);
         assert_eq!(rig.counter("passthrough_packets"), 2);
         assert_eq!(rig.counter("silence_packets"), 5);
-        rig.quiet(7);
+        rig.sent(7);
     }
 
     #[test]
@@ -1006,7 +894,7 @@ mod tests {
             .store(SendMode::Hold as u8, Ordering::Release);
 
         rig.tick(2);
-        rig.quiet(0);
+        rig.sent(0);
         rig.plain();
         rig.tick(2);
 
@@ -1094,25 +982,15 @@ mod tests {
         let sink = rig.pcm_sink(StallPolicy::Hold);
         sink.write(&tone(FRAME_SAMPLES * 4)).unwrap();
 
-        rig.tick(3);
+        rig.tick(2);
+        let asked = rig.media.exhausted.notified().now_or_never();
+        rig.tick(2);
 
         let packets = rig.packets(1);
         assert_eq!(packets[0].nonce, u32::MAX - 1);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            tokio::time::timeout(WAIT, rig.media.exhausted.notified())
-                .await
-                .unwrap();
-            assert!(
-                tokio::time::timeout(Duration::from_millis(20), rig.media.exhausted.notified())
-                    .await
-                    .is_err()
-            );
-        });
-        rig.quiet(1);
+        assert!(asked.is_some());
+        assert!(rig.media.exhausted.notified().now_or_never().is_none());
+        rig.sent(1);
     }
 
     #[test]
@@ -1131,7 +1009,7 @@ mod tests {
         assert_eq!(rig.counter("dave_busy"), 2);
         assert_eq!(rig.counter("held_ticks"), 2);
         assert_eq!(queued_frames(&sink), 2_880);
-        rig.quiet(0);
+        rig.sent(0);
         rig.tick(1);
         rig.packets(1);
     }
@@ -1156,7 +1034,7 @@ mod tests {
 
         assert_eq!(rig.counter("held_ticks"), 2);
         assert_eq!(queued_frames(&sink), 1_920);
-        rig.quiet(0);
+        rig.sent(0);
     }
 
     #[test]
@@ -1193,7 +1071,7 @@ mod tests {
         rig.tick(5);
         assert!(stalls(&rig.deliveries()).is_empty());
         rig.tick(1);
-        assert_eq!(stalls(&rig.deliveries()), [(true, STALL_AFTER)]);
+        assert_eq!(stalls(&rig.deliveries()), [(true, STALL)]);
         rig.tick(3);
         assert!(stalls(&rig.deliveries()).is_empty());
         rig.connect(&KEY);
@@ -1232,19 +1110,11 @@ mod tests {
     fn dropping_the_lane_marks_the_media_closed_and_wakes_the_connection() {
         let rig = Rig::new();
         let media = Arc::clone(&rig.media);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
 
         drop(rig);
 
         assert!(media.closed.load(Ordering::Acquire));
-        runtime.block_on(async {
-            tokio::time::timeout(WAIT, media.lost.notified())
-                .await
-                .unwrap();
-        });
+        assert!(media.lost.notified().now_or_never().is_some());
     }
 
     #[test]

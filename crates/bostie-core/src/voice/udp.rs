@@ -18,11 +18,6 @@ const MAX_DATAGRAM: usize = 2048;
 
 const DISCOVERY_ATTEMPTS: usize = 3;
 
-#[cfg(not(test))]
-const DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
-#[cfg(test)]
-const DISCOVERY_INTERVAL: Duration = Duration::from_millis(50);
-
 #[derive(Debug, thiserror::Error)]
 pub enum DiscoveryError {
     #[error("a {0}-byte datagram is not a {DISCOVERY_LEN}-byte discovery response")]
@@ -113,6 +108,7 @@ pub async fn discover(
     socket: &UdpSocket,
     answers: &mut watch::Receiver<Option<Answer>>,
     ssrc: u32,
+    interval: Duration,
 ) -> Result<SocketAddr, DiscoveryError> {
     let peer = socket.peer_addr().map_err(DiscoveryError::Socket)?;
     let request = discovery_request(ssrc);
@@ -122,7 +118,7 @@ pub async fn discover(
             .send(&request)
             .await
             .map_err(|source| DiscoveryError::Send { peer, source })?;
-        if let Ok(Ok(())) = timeout(DISCOVERY_INTERVAL, answers.changed()).await
+        if let Ok(Ok(())) = timeout(interval, answers.changed()).await
             && let Some(answer) = *answers.borrow_and_update()
         {
             return Ok(answer.address);
@@ -174,6 +170,7 @@ mod tests {
 
     const SSRC: u32 = 0x8000_0001;
     const WAIT: Duration = Duration::from_secs(5);
+    const INTERVAL: Duration = Duration::from_millis(50);
 
     fn external() -> SocketAddr {
         "203.0.113.7:50004".parse().unwrap()
@@ -403,7 +400,9 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let (_answers, mut receiver) = watch::channel(None);
 
-        let error = discover(&socket, &mut receiver, SSRC).await.unwrap_err();
+        let error = discover(&socket, &mut receiver, SSRC, INTERVAL)
+            .await
+            .unwrap_err();
 
         assert!(matches!(error, DiscoveryError::Socket(_)), "{error:?}");
     }
@@ -416,7 +415,9 @@ mod tests {
         let socket = Arc::new(socket);
         let (mut answers, _) = spawn_receiver(Arc::clone(&socket));
 
-        let address = discover(&socket, &mut answers, SSRC).await.unwrap();
+        let address = discover(&socket, &mut answers, SSRC, INTERVAL)
+            .await
+            .unwrap();
 
         assert_eq!(address, SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port));
         assert_eq!(sfu.discoveries(), 1);
@@ -430,7 +431,9 @@ mod tests {
         let socket = Arc::new(socket);
         let (mut answers, _) = spawn_receiver(Arc::clone(&socket));
 
-        let address = discover(&socket, &mut answers, SSRC).await.unwrap();
+        let address = discover(&socket, &mut answers, SSRC, INTERVAL)
+            .await
+            .unwrap();
 
         assert_eq!(address.port(), socket.local_addr().unwrap().port());
         assert_eq!(sfu.discoveries(), DISCOVERY_ATTEMPTS);
@@ -444,7 +447,9 @@ mod tests {
         let socket = Arc::new(socket);
         let (mut answers, _) = spawn_receiver(Arc::clone(&socket));
 
-        let error = discover(&socket, &mut answers, SSRC).await.unwrap_err();
+        let error = discover(&socket, &mut answers, SSRC, INTERVAL)
+            .await
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),

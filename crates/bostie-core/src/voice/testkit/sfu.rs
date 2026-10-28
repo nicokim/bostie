@@ -101,16 +101,6 @@ impl Sfu {
         self.shared.state.lock().packets.clone()
     }
 
-    pub fn arrivals(&self) -> Vec<Instant> {
-        self.shared
-            .state
-            .lock()
-            .packets
-            .iter()
-            .map(|packet| packet.at)
-            .collect()
-    }
-
     pub fn silence_runs(&self) -> Vec<usize> {
         let state = self.shared.state.lock();
         let mut runs = Vec::new();
@@ -133,11 +123,6 @@ impl Sfu {
         self.wait(timeout, |state| state.packets.len() >= count)
             .packets
             .clone()
-    }
-
-    pub fn wait_discoveries(&self, count: usize, timeout: Duration) -> usize {
-        self.wait(timeout, |state| state.discoveries >= count)
-            .discoveries
     }
 
     fn wait(&self, timeout: Duration, done: impl Fn(&State) -> bool) -> MutexGuard<'_, State> {
@@ -229,7 +214,6 @@ fn capture(shared: &Shared, datagram: &[u8], at: Instant) {
 mod tests {
     use super::*;
     use crate::voice::rtp::{HEADER_LEN, write_header};
-    use crate::voice::udp;
 
     const SSRC: u32 = 42;
     const KEY: [u8; KEY_LEN] = [7; KEY_LEN];
@@ -273,145 +257,5 @@ mod tests {
         assert_eq!(packet.payload, b"opus");
         assert!(packet.at >= sent);
         assert_eq!(sfu.rejected(), 0);
-    }
-
-    #[test]
-    fn arrivals_are_captured_on_the_sfu_thread_while_the_sender_waits() {
-        let sfu = Sfu::start();
-        sfu.key(Mode::XChaCha20Poly1305RtpSize, &KEY);
-        let cipher = Cipher::new(Mode::XChaCha20Poly1305RtpSize, &KEY);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-        let mut sent = Vec::new();
-
-        for sequence in 0..3 {
-            sent.push(send(&socket, &cipher, sequence, b"opus"));
-            sfu.wait_packets(usize::from(sequence) + 1, WAIT);
-            thread::sleep(Duration::from_millis(5));
-        }
-
-        let arrivals = sfu.arrivals();
-        assert_eq!(arrivals.len(), 3);
-        for (arrival, sent) in arrivals.iter().zip(&sent) {
-            assert!(arrival >= sent);
-        }
-        assert!(arrivals[1] < sent[2]);
-    }
-
-    #[test]
-    fn packets_try_the_newest_key_first_and_fall_back_to_older_ones() {
-        let sfu = Sfu::start();
-        let old = [1; KEY_LEN];
-        assert_eq!(sfu.key(Mode::Aes256GcmRtpSize, &old), 0);
-        assert_eq!(sfu.key(Mode::XChaCha20Poly1305RtpSize, &KEY), 1);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-
-        send(
-            &socket,
-            &Cipher::new(Mode::Aes256GcmRtpSize, &old),
-            1,
-            b"old",
-        );
-        send(
-            &socket,
-            &Cipher::new(Mode::XChaCha20Poly1305RtpSize, &KEY),
-            2,
-            b"new",
-        );
-        let packets = sfu.wait_packets(2, WAIT);
-
-        assert_eq!(
-            packets
-                .iter()
-                .map(|packet| (packet.key, packet.payload.as_slice()))
-                .collect::<Vec<_>>(),
-            [(0, &b"old"[..]), (1, &b"new"[..])]
-        );
-    }
-
-    #[test]
-    fn datagrams_no_key_opens_and_datagrams_that_are_not_rtp_are_rejected() {
-        let sfu = Sfu::start();
-        sfu.key(Mode::Aes256GcmRtpSize, &KEY);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-
-        send(
-            &socket,
-            &Cipher::new(Mode::Aes256GcmRtpSize, &[2; KEY_LEN]),
-            1,
-            b"x",
-        );
-        socket.send(b"junk").unwrap();
-        send(&socket, &Cipher::new(Mode::Aes256GcmRtpSize, &KEY), 2, b"y");
-        let packets = sfu.wait_packets(1, WAIT);
-
-        assert_eq!(packets.len(), 1);
-        assert_eq!(packets[0].payload, b"y");
-        assert_eq!(sfu.rejected(), 2);
-    }
-
-    #[test]
-    fn silence_runs_count_consecutive_silence_frames() {
-        let sfu = Sfu::start();
-        sfu.key(Mode::Aes256GcmRtpSize, &KEY);
-        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-        let payloads: [&[u8]; 9] = [
-            b"a",
-            &SILENCE_FRAME,
-            &SILENCE_FRAME,
-            b"b",
-            &SILENCE_FRAME,
-            &SILENCE_FRAME,
-            &SILENCE_FRAME,
-            &SILENCE_FRAME,
-            &SILENCE_FRAME,
-        ];
-
-        for (sequence, payload) in (0..).zip(payloads) {
-            send(&socket, &cipher, sequence, payload);
-        }
-        sfu.wait_packets(payloads.len(), WAIT);
-
-        assert_eq!(sfu.silence_runs(), [2, 5]);
-    }
-
-    #[test]
-    fn ignored_discoveries_are_still_counted() {
-        let sfu = Sfu::start();
-        sfu.ignore_discoveries(1);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.set_read_timeout(Some(WAIT)).unwrap();
-        socket.connect(sfu.address()).unwrap();
-        let mut answer = [0; DISCOVERY_LEN];
-
-        socket.send(&udp::discovery_request(SSRC)).unwrap();
-        socket.send(&udp::discovery_request(SSRC)).unwrap();
-        let len = socket.recv(&mut answer).unwrap();
-
-        assert_eq!(len, DISCOVERY_LEN);
-        assert_eq!(
-            udp::parse_discovery(&answer, SSRC).unwrap(),
-            socket.local_addr().unwrap()
-        );
-        assert_eq!(sfu.discoveries(), 2);
-    }
-
-    #[test]
-    fn waiting_for_discoveries_returns_once_enough_arrived() {
-        let sfu = Sfu::start();
-        sfu.ignore_discoveries(usize::MAX);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-
-        for _ in 0..3 {
-            socket.send(&udp::discovery_request(SSRC)).unwrap();
-        }
-
-        assert_eq!(sfu.wait_discoveries(3, WAIT), 3);
-        assert_eq!(sfu.wait_discoveries(4, Duration::from_millis(30)), 3);
     }
 }

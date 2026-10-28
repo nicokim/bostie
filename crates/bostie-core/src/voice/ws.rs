@@ -13,17 +13,28 @@ use tracing::debug;
 use super::proto::{self, Frame, ProtoError};
 use super::types::VOICE_GATEWAY_VERSION;
 
-#[cfg(not(test))]
-pub const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(test)]
-pub const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
-
 pub const WS_MAX_MESSAGE: usize = 1024 * 1024;
 
-#[cfg(not(test))]
-pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(test)]
-pub const CLOSE_TIMEOUT: Duration = Duration::from_millis(200);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Timeouts {
+    pub(crate) connect: Duration,
+    pub(crate) close: Duration,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            connect: Duration::from_secs(10),
+            close: Duration::from_secs(2),
+        }
+    }
+}
+
+impl Timeouts {
+    pub(crate) fn patience(self, heartbeat: Option<&Heartbeat>) -> Duration {
+        heartbeat.map_or(self.connect, Heartbeat::interval)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum WsError {
@@ -76,27 +87,29 @@ pub fn endpoint_url(endpoint: &str) -> Result<Url, WsError> {
     Ok(url)
 }
 
-pub fn patience(heartbeat: Option<&Heartbeat>) -> Duration {
-    heartbeat.map_or(WS_CONNECT_TIMEOUT, Heartbeat::interval)
-}
-
 pub struct VoiceSocket {
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    close_timeout: Duration,
     oversized: bool,
 }
 
 impl VoiceSocket {
-    pub async fn dial(url: &Url, connector: &Connector) -> Result<Self, WsError> {
+    pub(crate) async fn dial(
+        url: &Url,
+        connector: &Connector,
+        timeouts: Timeouts,
+    ) -> Result<Self, WsError> {
         let builder = ClientBuilder::new()
             .uri(url.as_str())
             .map_err(|_| WsError::Endpoint(url.as_str().into()))?
             .connector(connector)
             .limits(Limits::default().max_payload_len(Some(WS_MAX_MESSAGE)));
-        let (stream, _) = timeout(WS_CONNECT_TIMEOUT, builder.connect())
+        let (stream, _) = timeout(timeouts.connect, builder.connect())
             .await
-            .map_err(|_| WsError::ConnectTimeout(WS_CONNECT_TIMEOUT))??;
+            .map_err(|_| WsError::ConnectTimeout(timeouts.connect))??;
         Ok(Self {
             stream,
+            close_timeout: timeouts.close,
             oversized: false,
         })
     }
@@ -135,7 +148,10 @@ impl VoiceSocket {
             };
             if let Some((code, _)) = message.as_close() {
                 let code = code.into();
-                if timeout(CLOSE_TIMEOUT, self.stream.flush()).await.is_err() {
+                if timeout(self.close_timeout, self.stream.flush())
+                    .await
+                    .is_err()
+                {
                     debug!(code, "the voice close echo timed out");
                 }
                 return Received::Closed(code);
@@ -151,13 +167,14 @@ impl VoiceSocket {
 
     pub async fn close(mut self, close: Close) {
         let code = close.code();
+        let patience = self.close_timeout;
         let closing = async {
             let frame = Message::close(CloseCode::try_from(code).ok(), "");
             if self.stream.send(frame).await.is_ok() {
                 while self.stream.next().await.is_some() {}
             }
         };
-        if timeout(CLOSE_TIMEOUT, closing).await.is_err() {
+        if timeout(patience, closing).await.is_err() {
             debug!(code, "the voice close handshake timed out");
         }
     }
@@ -255,6 +272,10 @@ mod tests {
 
     const INTERVAL: Duration = Duration::from_millis(13_750);
     const WAIT: Duration = Duration::from_secs(5);
+    const TIMEOUTS: Timeouts = Timeouts {
+        connect: Duration::from_millis(100),
+        close: Duration::from_millis(200),
+    };
 
     fn url(endpoint: &str) -> String {
         endpoint_url(endpoint).unwrap().to_string()
@@ -262,7 +283,9 @@ mod tests {
 
     async fn dial(endpoint: &str) -> VoiceSocket {
         let url = endpoint_url(endpoint).unwrap();
-        VoiceSocket::dial(&url, &Connector::Plain).await.unwrap()
+        VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS)
+            .await
+            .unwrap()
     }
 
     async fn receive(socket: &mut VoiceSocket) -> Received {
@@ -398,8 +421,8 @@ mod tests {
     fn writes_wait_one_heartbeat_interval_and_the_connect_timeout_before_hello() {
         let heartbeat = Heartbeat::new(INTERVAL, Instant::now());
 
-        assert_eq!(patience(None), WS_CONNECT_TIMEOUT);
-        assert_eq!(patience(Some(&heartbeat)), INTERVAL);
+        assert_eq!(TIMEOUTS.patience(None), TIMEOUTS.connect);
+        assert_eq!(TIMEOUTS.patience(Some(&heartbeat)), INTERVAL);
     }
 
     #[test]
@@ -600,11 +623,11 @@ mod tests {
         });
         let url = endpoint_url(&format!("ws://{address}")).unwrap();
 
-        let dialed = VoiceSocket::dial(&url, &Connector::Plain).await;
+        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS).await;
 
         assert!(matches!(
             dialed,
-            Err(WsError::ConnectTimeout(WS_CONNECT_TIMEOUT))
+            Err(WsError::ConnectTimeout(waited)) if waited == TIMEOUTS.connect
         ));
         server.abort();
     }
@@ -615,7 +638,7 @@ mod tests {
         let address = refusing.local_addr().unwrap();
         let url = endpoint_url(&format!("ws://{address}")).unwrap();
 
-        let dialed = VoiceSocket::dial(&url, &Connector::Plain).await;
+        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS).await;
 
         assert!(matches!(dialed, Err(WsError::Socket(_))));
     }

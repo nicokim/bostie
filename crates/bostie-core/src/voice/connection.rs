@@ -14,33 +14,59 @@ use tracing::debug;
 use super::Shared;
 use super::close::{self, CloseAction};
 use super::crypto::Mode;
+use super::dave::Recovery;
 use super::media::{Media, bump};
 use super::proto;
 use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, VoiceStatus};
+use super::ws::Timeouts;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
 
-#[cfg(not(test))]
-const MOVE_WINDOW: Duration = Duration::from_secs(5);
-#[cfg(test)]
-const MOVE_WINDOW: Duration = Duration::from_millis(200);
-
 const REJOIN_LIMIT: u32 = 3;
 const RESUME_ATTEMPTS: u32 = 2;
-
-#[cfg(not(test))]
-const RESUME_BACKOFF: Duration = Duration::from_millis(500);
-#[cfg(not(test))]
-const RESUME_BACKOFF_MAX: Duration = Duration::from_secs(5);
-#[cfg(test)]
-const RESUME_BACKOFF: Duration = Duration::from_millis(10);
-#[cfg(test)]
-const RESUME_BACKOFF_MAX: Duration = Duration::from_millis(50);
-
 const HISTORY: usize = 20;
 const UNKNOWN_LATENCY: u64 = u64::MAX;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConnectionTuning {
+    pub(crate) move_window: Duration,
+    pub(crate) resume_backoff: Duration,
+    pub(crate) resume_backoff_max: Duration,
+    pub(crate) keepalive_interval: Duration,
+    pub(crate) early_ops: usize,
+    pub(crate) speaking_coalesce: Duration,
+    pub(crate) discovery_interval: Duration,
+    pub(crate) stall_after: Duration,
+    pub(crate) ws: Timeouts,
+    pub(crate) dave: Recovery,
+}
+
+impl Default for ConnectionTuning {
+    fn default() -> Self {
+        Self {
+            move_window: Duration::from_secs(5),
+            resume_backoff: Duration::from_millis(500),
+            resume_backoff_max: Duration::from_secs(5),
+            keepalive_interval: Duration::from_secs(5),
+            early_ops: 256,
+            speaking_coalesce: Duration::from_millis(200),
+            discovery_interval: Duration::from_secs(1),
+            stall_after: Duration::from_secs(2),
+            ws: Timeouts::default(),
+            dave: Recovery::default(),
+        }
+    }
+}
+
+impl ConnectionTuning {
+    fn backoff(&self, failures: u32) -> Duration {
+        let base = self.resume_backoff.saturating_mul(1 << failures.min(16));
+        base.mul_f64(0.5 + fastrand::f64() / 2.0)
+            .min(self.resume_backoff_max)
+    }
+}
 
 #[derive(Debug)]
 pub enum Command {
@@ -277,6 +303,7 @@ pub(super) struct Connection {
     pub(super) generation: u64,
     pub(super) deadline: Option<Instant>,
     pub(super) fresh: bool,
+    pub(super) tuning: ConnectionTuning,
     shard: ShardId,
     self_mute: bool,
     self_deaf: bool,
@@ -317,6 +344,7 @@ impl Connection {
             main: inputs.gateway.borrow().main_session,
             ..Seen::default()
         };
+        let tuning = shared.tuning.connection;
         Self {
             shared,
             guild: request.guild,
@@ -331,6 +359,7 @@ impl Connection {
             generation: 0,
             deadline: Some(Instant::now() + request.timeout),
             fresh: false,
+            tuning,
             shard: request.shard,
             self_mute: request.self_mute,
             self_deaf: request.self_deaf,
@@ -681,7 +710,7 @@ impl Connection {
         if self.resume_attempts >= RESUME_ATTEMPTS {
             return Next::Rejoin;
         }
-        let delay = backoff(self.resume_attempts);
+        let delay = self.tuning.backoff(self.resume_attempts);
         self.resume_attempts += 1;
         let cause = self.last_failure.clone().unwrap_or_default();
         self.set_status(VoiceStatus::Resuming, &cause);
@@ -729,11 +758,12 @@ impl Connection {
     async fn wait_for_gateway(&mut self, reason: DisconnectReason, code: u16) -> Next {
         self.drop_session();
         self.reconnecting(Step::WaitingForGateway);
-        match self.interruptible(sleep(MOVE_WINDOW)).await {
+        let window = self.tuning.move_window;
+        match self.interruptible(sleep(window)).await {
             Ok(()) => Next::End(Ending::new(
                 reason,
                 Some(code),
-                format!("closed with {code} and no voice update followed within {MOVE_WINDOW:?}"),
+                format!("closed with {code} and no voice update followed within {window:?}"),
             )),
             Err(SessionEnd::Gateway(event)) => self.on_event(event).await,
             Err(end) => self.after(end),
@@ -779,7 +809,7 @@ impl Connection {
                 Ok(()) => return Ok(()),
                 Err(error) => {
                     debug!(%error, guild = %self.guild, "the voice state update was not queued");
-                    let delay = backoff(failures);
+                    let delay = self.tuning.backoff(failures);
                     failures += 1;
                     self.interruptible(sleep(delay)).await?;
                 }
@@ -829,12 +859,6 @@ pub(super) async fn until(deadline: Option<Instant>) {
     }
 }
 
-fn backoff(failures: u32) -> Duration {
-    let base = RESUME_BACKOFF.saturating_mul(1 << failures.min(16));
-    base.mul_f64(0.5 + fastrand::f64() / 2.0)
-        .min(RESUME_BACKOFF_MAX)
-}
-
 #[cfg(test)]
 fn injected_panic() -> ! {
     panic!("injected connection panic")
@@ -846,29 +870,16 @@ mod tests {
 
     #[test]
     fn backoff_doubles_with_jitter_and_stays_under_its_cap() {
+        let tuning = ConnectionTuning::default();
         for failures in 0..40 {
-            let delay = backoff(failures);
-            let base = RESUME_BACKOFF.saturating_mul(1 << failures.min(16));
-            assert!(delay <= RESUME_BACKOFF_MAX, "{failures}: {delay:?}");
+            let delay = tuning.backoff(failures);
+            let base = tuning.resume_backoff.saturating_mul(1 << failures.min(16));
+            assert!(delay <= tuning.resume_backoff_max, "{failures}: {delay:?}");
             assert!(
-                delay >= (base / 2).min(RESUME_BACKOFF_MAX),
+                delay >= (base / 2).min(tuning.resume_backoff_max),
                 "{failures}: {delay:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_history_keeps_the_last_twenty_changes() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2), 0);
-        for index in 0..25 {
-            info.record(VoiceStatus::Reconnecting, None, Some(index), "step");
-        }
-
-        let view = info.view();
-        assert_eq!(view.history.len(), HISTORY);
-        assert_eq!(view.history.front().unwrap().code, Some(5));
-        assert_eq!(view.history.back().unwrap().code, Some(24));
-        assert_eq!(view.status, VoiceStatus::Reconnecting);
     }
 
     #[test]
@@ -886,6 +897,20 @@ mod tests {
                 Some(Duration::from_millis(3))
             )
         );
+    }
+
+    #[test]
+    fn the_history_keeps_the_last_twenty_changes() {
+        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2), 0);
+        for index in 0..25 {
+            info.record(VoiceStatus::Reconnecting, None, Some(index), "step");
+        }
+
+        let view = info.view();
+        assert_eq!(view.history.len(), HISTORY);
+        assert_eq!(view.history.front().unwrap().code, Some(5));
+        assert_eq!(view.history.back().unwrap().code, Some(24));
+        assert_eq!(view.status, VoiceStatus::Reconnecting);
     }
 
     #[test]

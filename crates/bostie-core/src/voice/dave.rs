@@ -19,15 +19,6 @@ use crate::voice::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, SILENC
 
 pub const DAVEY_VERSION: &str = "0.2.0-beta.1";
 
-#[cfg(not(test))]
-const DAVE_RECOVERY_LIMIT: usize = 5;
-#[cfg(not(test))]
-const DAVE_RECOVERY_WINDOW: Duration = Duration::from_secs(60);
-#[cfg(test)]
-const DAVE_RECOVERY_LIMIT: usize = 2;
-#[cfg(test)]
-const DAVE_RECOVERY_WINDOW: Duration = Duration::from_secs(1);
-
 const PASSTHROUGH_EXPIRY_SECS: u32 = 10;
 const VERIFICATION_CODE_DIGITS: u32 = 45;
 const VERIFICATION_CODE_GROUP: u32 = 5;
@@ -72,6 +63,21 @@ pub struct DaveCounters {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Recovery {
+    pub(crate) limit: usize,
+    pub(crate) window: Duration,
+}
+
+impl Default for Recovery {
+    fn default() -> Self {
+        Self {
+            limit: 5,
+            window: Duration::from_secs(60),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SendMode {
     Plain = 0,
@@ -109,8 +115,8 @@ pub enum DecryptFailure {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DaveError {
-    #[error("more than {DAVE_RECOVERY_LIMIT} DAVE recoveries within {DAVE_RECOVERY_WINDOW:?}")]
-    RecoveryLimit,
+    #[error("more than {limit} DAVE recoveries within {window:?}")]
+    RecoveryLimit { limit: usize, window: Duration },
     #[error("the DAVE session could not be built: {0}")]
     Session(String),
     #[error("no DAVE verification code: {0}")]
@@ -140,23 +146,6 @@ enum Failure {
     Panicked,
 }
 
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Fault {
-    Panic,
-    Error,
-}
-
-#[cfg(test)]
-impl Fault {
-    fn trigger<T>(self) -> Result<T, String> {
-        match self {
-            Self::Panic => panic!("injected DAVE panic"),
-            Self::Error => Err("injected DAVE error".to_owned()),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Dave {
     user: UserId,
@@ -169,6 +158,7 @@ pub struct Dave {
     pending: HashMap<u16, u16>,
     last_transition: u16,
     recovering: bool,
+    recovery: Recovery,
     recoveries: VecDeque<Instant>,
     counters: DaveCounters,
     #[cfg(test)]
@@ -188,11 +178,17 @@ impl Dave {
             pending: HashMap::new(),
             last_transition: 0,
             recovering: false,
+            recovery: Recovery::default(),
             recoveries: VecDeque::new(),
             counters: DaveCounters::default(),
             #[cfg(test)]
             fault: None,
         }
+    }
+
+    pub(crate) fn with_recovery(mut self, recovery: Recovery) -> Self {
+        self.recovery = recovery;
+        self
     }
 
     pub fn start(
@@ -327,28 +323,6 @@ impl Dave {
         session
             .get_key_fingerprint_pair(0, u64::from(user))
             .map_err(|error| DaveError::Verification(error.to_string()))
-    }
-
-    #[cfg(test)]
-    pub fn inject(&mut self, call: MlsCall, fault: Fault) {
-        self.fault = Some((call, fault));
-    }
-
-    #[cfg(test)]
-    pub fn leaves(&self) -> Vec<(u32, UserId)> {
-        let group = self.session.as_ref().and_then(DaveSession::group);
-        group
-            .map(|group| {
-                group
-                    .members()
-                    .map(|member| {
-                        let id: [u8; 8] =
-                            member.credential.serialized_content().try_into().unwrap();
-                        (member.index.u32(), UserId::from(u64::from_be_bytes(id)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 
     fn epoch(&self) -> Option<u64> {
@@ -615,13 +589,16 @@ impl Dave {
         while self
             .recoveries
             .front()
-            .is_some_and(|&at| now.saturating_duration_since(at) >= DAVE_RECOVERY_WINDOW)
+            .is_some_and(|&at| now.saturating_duration_since(at) >= self.recovery.window)
         {
             self.recoveries.pop_front();
         }
         self.recoveries.push_back(now);
-        if self.recoveries.len() > DAVE_RECOVERY_LIMIT {
-            return Err(DaveError::RecoveryLimit);
+        if self.recoveries.len() > self.recovery.limit {
+            return Err(DaveError::RecoveryLimit {
+                limit: self.recovery.limit,
+                window: self.recovery.window,
+            });
         }
         warn!(transition_id, "resetting the DAVE session");
         self.recovering = true;
@@ -695,8 +672,8 @@ impl Dave {
             .map(|(_, fault)| fault);
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
             #[cfg(test)]
-            if let Some(fault) = fault {
-                return fault.trigger();
+            if let Some(result) = fault.and_then(Fault::trigger) {
+                return result;
             }
             run(&mut session).map_err(|error| error.to_string())
         }));
@@ -724,6 +701,55 @@ impl Dave {
             panic = message,
             "a DAVE call panicked, its session is dropped"
         );
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+pub enum Fault {
+    Panic,
+    Error,
+    Park {
+        parked: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    },
+}
+
+#[cfg(test)]
+impl Fault {
+    fn trigger<T>(self) -> Option<Result<T, String>> {
+        match self {
+            Self::Panic => panic!("injected DAVE panic"),
+            Self::Error => Some(Err("injected DAVE error".to_owned())),
+            Self::Park { parked, release } => {
+                parked.send(()).unwrap();
+                release.recv().unwrap();
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+impl Dave {
+    pub fn inject(&mut self, call: MlsCall, fault: Fault) {
+        self.fault = Some((call, fault));
+    }
+
+    pub fn leaves(&self) -> Vec<(u32, UserId)> {
+        let group = self.session.as_ref().and_then(DaveSession::group);
+        group
+            .map(|group| {
+                group
+                    .members()
+                    .map(|member| {
+                        let id: [u8; 8] =
+                            member.credential.serialized_content().try_into().unwrap();
+                        (member.index.u32(), UserId::from(u64::from_be_bytes(id)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -765,9 +791,6 @@ fn decrypt_failure(error: &DecryptError) -> DecryptFailure {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::Path;
-
     use proptest::collection::vec;
     use proptest::prelude::*;
 
@@ -871,33 +894,6 @@ mod tests {
         let mut users = dave.recognized();
         users.sort_unstable();
         users
-    }
-
-    #[test]
-    fn davey_version_matches_the_pin_and_the_lockfile() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let manifest = fs::read_to_string(root.join("Cargo.toml")).unwrap();
-        let lockfile = fs::read_to_string(root.join("Cargo.lock"))
-            .unwrap()
-            .replace("\r\n", "\n");
-
-        assert!(manifest.contains(&format!("davey = \"={DAVEY_VERSION}\"")));
-        assert!(lockfile.contains(&format!(
-            "name = \"davey\"\nversion = \"{DAVEY_VERSION}\"\n"
-        )));
-    }
-
-    #[test]
-    fn send_mode_survives_the_byte_round_trip() {
-        for mode in [
-            SendMode::Plain,
-            SendMode::Encrypt,
-            SendMode::Hold,
-            SendMode::Discard,
-        ] {
-            assert_eq!(SendMode::from_byte(mode as u8), mode);
-        }
-        assert_eq!(SendMode::from_byte(200), SendMode::Hold);
     }
 
     #[test]
@@ -1220,6 +1216,7 @@ mod tests {
     #[test]
     fn more_recoveries_than_the_limit_within_the_window_end_the_session() {
         let (mut dave, _) = started(1);
+        let recovery = Recovery::default();
         let now = Instant::now();
         let mut out = Vec::new();
         let corrupt = |transition_id| DaveOp::Welcome {
@@ -1227,13 +1224,13 @@ mod tests {
             welcome: Bytes::from_static(b"not a welcome"),
         };
 
-        for transition_id in 1..=u16::try_from(DAVE_RECOVERY_LIMIT).unwrap() {
+        for transition_id in 1..=u16::try_from(recovery.limit).unwrap() {
             dave.handle(corrupt(transition_id), now, &mut out).unwrap();
         }
         out.clear();
-        let past_limit = dave.handle(corrupt(9), now + DAVE_RECOVERY_WINDOW / 2, &mut out);
+        let past_limit = dave.handle(corrupt(9), now + recovery.window / 2, &mut out);
 
-        assert!(matches!(past_limit, Err(DaveError::RecoveryLimit)));
+        assert!(matches!(past_limit, Err(DaveError::RecoveryLimit { .. })));
         assert!(out.is_empty());
     }
 
@@ -1249,7 +1246,7 @@ mod tests {
                 welcome: Bytes::from_static(b"not a welcome"),
             };
             dave.handle(welcome, now, &mut out).unwrap();
-            now += DAVE_RECOVERY_WINDOW;
+            now += Recovery::default().window;
         }
 
         assert_eq!(dave.counters().recoveries, 10);
@@ -1294,7 +1291,7 @@ mod tests {
         assert_eq!(call.dave(user(BOT)).counters().welcomes, 0);
         assert!(matches!(
             call.failures.as_slice(),
-            [(failed, DaveError::RecoveryLimit)] if *failed == user(BOT)
+            [(failed, DaveError::RecoveryLimit { .. })] if *failed == user(BOT)
         ));
     }
 

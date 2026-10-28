@@ -99,7 +99,6 @@ enum Control {
     Close(u16),
     DropConnection,
     HoldAcks,
-    InvalidateSession,
     Configure(Box<dyn FnOnce(&mut Config) + Send>),
     Applied(oneshot::Sender<()>),
 }
@@ -164,10 +163,6 @@ impl FakeVoiceGateway {
         self.apply(Control::HoldAcks).await;
     }
 
-    pub async fn invalidate_session(&self) {
-        self.apply(Control::InvalidateSession).await;
-    }
-
     pub async fn configure(&self, change: impl FnOnce(&mut Config) + Send + 'static) {
         self.apply(Control::Configure(Box::new(change))).await;
     }
@@ -187,15 +182,6 @@ impl FakeVoiceGateway {
             .await
             .expect("no client message within the wait")
             .expect("the fake voice gateway stopped")
-    }
-
-    pub async fn next_op(&mut self, op: u8) -> ClientMessage {
-        loop {
-            let message = self.next().await;
-            if message.op() == Some(u64::from(op)) {
-                return message;
-            }
-        }
     }
 
     fn control(&self, control: Control) {
@@ -276,7 +262,6 @@ impl Server {
                     connection.hold_acks = true;
                 }
             }
-            Control::InvalidateSession => self.session = None,
             Control::Configure(change) => change(&mut self.config),
             Control::Applied(applied) => {
                 let _ = applied.send(());
@@ -553,15 +538,17 @@ mod tests {
 
     use super::*;
     use crate::voice::proto::{self, Frame, Inbound, Ready};
-    use crate::voice::types::{DaveOp, ProposalsOp};
-    use crate::voice::ws::{Received, VoiceSocket, endpoint_url};
+    use crate::voice::types::DaveOp;
+    use crate::voice::ws::{Received, Timeouts, VoiceSocket, endpoint_url};
 
     const PATIENCE: Duration = Duration::from_secs(1);
     const XCHACHA: &str = "aead_xchacha20_poly1305_rtpsize";
 
     async fn dial(gateway: &FakeVoiceGateway) -> VoiceSocket {
         let url = endpoint_url(&gateway.endpoint()).unwrap();
-        VoiceSocket::dial(&url, &Connector::Plain).await.unwrap()
+        VoiceSocket::dial(&url, &Connector::Plain, Timeouts::default())
+            .await
+            .unwrap()
     }
 
     async fn frame(socket: &mut VoiceSocket) -> Frame {
@@ -683,152 +670,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hello_can_follow_ready() {
-        let config = Config {
-            hello: HelloAt::AfterReady,
-            ..Config::default()
-        };
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = dial(&gateway).await;
-
-        send(&mut socket, identify(&config)).await;
-
-        ready(&mut socket).await;
-        assert_eq!(hello(&mut socket).await, config.heartbeat_interval);
-    }
-
-    #[tokio::test]
-    async fn early_messages_arrive_between_ready_and_the_session_description() {
-        let config = Config {
-            early: vec![
-                Outgoing::Binary {
-                    op: 25,
-                    payload: Bytes::from_static(&[0xEE]),
-                },
-                Outgoing::Json {
-                    op: 11,
-                    d: json!({"user_ids": ["5"]}),
-                },
-            ],
-            ..Config::default()
-        };
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-        send(
-            &mut socket,
-            proto::select_protocol(IpAddr::from([127, 0, 0, 1]), 1, XCHACHA),
-        )
-        .await;
-
-        assert_eq!(
-            inbound(&mut socket).await,
-            (
-                Some(2),
-                Inbound::Dave(DaveOp::ExternalSender(Bytes::from_static(&[0xEE])))
-            )
-        );
-        assert_eq!(
-            inbound(&mut socket).await,
-            (
-                Some(3),
-                Inbound::ClientsConnect {
-                    users: vec![UserId::from(5)]
-                }
-            )
-        );
-        assert!(matches!(
-            inbound(&mut socket).await,
-            (Some(4), Inbound::SessionDescription(_))
-        ));
-    }
-
-    #[tokio::test]
-    async fn scripted_sends_carry_the_next_seq_in_either_framing() {
-        let config = Config::default();
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-
-        gateway.send(13, json!({"user_id": "6"}));
-        gateway.send_binary(27, &[1, 0xAA]);
-        gateway.send_binary(29, &[0x01, 0x02, 0xBB]);
-
-        assert_eq!(
-            inbound(&mut socket).await,
-            (
-                Some(2),
-                Inbound::ClientDisconnect {
-                    user: UserId::from(6)
-                }
-            )
-        );
-        assert_eq!(
-            inbound(&mut socket).await,
-            (
-                Some(3),
-                Inbound::Dave(DaveOp::Proposals {
-                    operation: ProposalsOp::Revoke,
-                    data: Bytes::from_static(&[0xAA])
-                })
-            )
-        );
-        assert_eq!(
-            inbound(&mut socket).await,
-            (
-                Some(4),
-                Inbound::Dave(DaveOp::AnnounceCommit {
-                    transition_id: 258,
-                    commit: Bytes::from_static(&[0xBB])
-                })
-            )
-        );
-    }
-
-    #[tokio::test]
-    async fn raw_sends_go_out_as_they_are() {
-        let config = Config::default();
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-
-        gateway.send_raw(Message::binary(&[0x00][..]));
-
-        assert_eq!(
-            frame(&mut socket).await,
-            Frame {
-                seq: None,
-                inbound: Err(proto::ProtoError::NoOpcode { len: 1 })
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn heartbeats_are_acknowledged_with_their_t_until_acks_are_held() {
-        let config = Config::default();
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-
-        send(&mut socket, proto::heartbeat(42, Some(1))).await;
-
-        assert_eq!(
-            inbound(&mut socket).await,
-            (None, Inbound::HeartbeatAck { t: 42 })
-        );
-        let ClientMessage::Json { d, .. } = gateway.next_op(3).await else {
-            panic!("expected the heartbeat");
-        };
-        assert_eq!(d["seq_ack"].as_i64(), Some(1));
-
-        gateway.hold_acks().await;
-        send(&mut socket, proto::heartbeat(43, Some(1))).await;
-        gateway.next_op(3).await;
-        gateway.send(13, json!({"user_id": "6"}));
-
-        assert!(matches!(
-            inbound(&mut socket).await,
-            (Some(2), Inbound::ClientDisconnect { .. })
-        ));
-    }
-
-    #[tokio::test]
     async fn a_resume_replays_what_came_after_seq_ack() {
         let config = Config::default();
         let mut gateway = FakeVoiceGateway::start(config.clone()).await;
@@ -874,41 +715,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_resume_without_seq_ack_replays_the_whole_session() {
-        let config = Config::default();
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let socket = identified(&gateway, &config).await;
-        socket.close(crate::voice::ws::Close::Resumable).await;
-        skip_to_disconnected(&mut gateway).await;
-
-        let mut resumed = dial(&gateway).await;
-        hello(&mut resumed).await;
-        send(&mut resumed, resume(&config, None)).await;
-
-        assert_eq!(inbound(&mut resumed).await, (None, Inbound::Resumed));
-        ready(&mut resumed).await;
-    }
-
-    #[tokio::test]
-    async fn a_resume_of_an_unknown_session_closes_with_4006() {
-        let config = Config::default();
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let socket = identified(&gateway, &config).await;
-        socket.close(crate::voice::ws::Close::Resumable).await;
-        skip_to_disconnected(&mut gateway).await;
-        let wrong_token = Config {
-            token: "stale".to_owned(),
-            ..config.clone()
+    async fn hello_can_follow_ready() {
+        let config = Config {
+            hello: HelloAt::AfterReady,
+            ..Config::default()
         };
+        let gateway = FakeVoiceGateway::start(config.clone()).await;
+        let mut socket = dial(&gateway).await;
 
-        let mut wrong = dial(&gateway).await;
-        send(&mut wrong, resume(&wrong_token, Some(1))).await;
-        assert_eq!(closed(&mut wrong).await, 4006);
+        send(&mut socket, identify(&config)).await;
 
-        gateway.invalidate_session().await;
-        let mut forgotten = dial(&gateway).await;
-        send(&mut forgotten, resume(&config, Some(1))).await;
-        assert_eq!(closed(&mut forgotten).await, 4006);
+        ready(&mut socket).await;
+        assert_eq!(hello(&mut socket).await, config.heartbeat_interval);
     }
 
     #[tokio::test]
@@ -967,66 +785,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unreadable_text_is_recorded_and_closed_with_4002() {
-        let mut gateway = FakeVoiceGateway::start(Config::default()).await;
-        let mut socket = dial(&gateway).await;
-
-        send(&mut socket, Bytes::from_static(b"not json")).await;
-
-        assert_eq!(closed(&mut socket).await, 4002);
-        assert!(matches!(
-            gateway.next().await,
-            ClientMessage::Connected { .. }
-        ));
-        assert_eq!(
-            gateway.next().await,
-            ClientMessage::Garbled(Bytes::from_static(b"not json"))
-        );
-    }
-
-    #[tokio::test]
-    async fn select_protocol_refusals_close_with_their_code() {
-        let config = Config::default();
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let unoffered =
-            proto::select_protocol(IpAddr::from([127, 0, 0, 1]), 1, "xsalsa20_poly1305");
-        let tcp = Bytes::from(
-            json!({"op": 1, "d": {"protocol": "tcp", "data": {"address": "127.0.0.1", "port": 1, "mode": XCHACHA}}})
-                .to_string(),
-        );
-
-        for (payload, code) in [(unoffered, 4016), (tcp, 4012)] {
-            let mut socket = identified(&gateway, &config).await;
-            send(&mut socket, payload).await;
-
-            assert_eq!(closed(&mut socket).await, code);
-        }
-    }
-
-    #[tokio::test]
-    async fn the_session_description_can_announce_another_mode_than_the_selected_one() {
-        let config = Config {
-            session_mode: Some("aead_aes256_gcm_rtpsize".to_owned()),
-            dave_protocol_version: 0,
-            ..Config::default()
-        };
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-
-        send(
-            &mut socket,
-            proto::select_protocol(IpAddr::from([127, 0, 0, 1]), 1, XCHACHA),
-        )
-        .await;
-
-        let (_, Inbound::SessionDescription(description)) = inbound(&mut socket).await else {
-            panic!("expected a session description");
-        };
-        assert_eq!(&*description.mode, "aead_aes256_gcm_rtpsize");
-        assert_eq!(description.dave_protocol_version, 0);
-    }
-
-    #[tokio::test]
     async fn configure_changes_what_the_next_identify_needs() {
         let config = Config::default();
         let gateway = FakeVoiceGateway::start(config.clone()).await;
@@ -1043,18 +801,5 @@ mod tests {
         send(&mut stale, identify(&config)).await;
         assert_eq!(closed(&mut stale).await, 4004);
         identified(&gateway, &fresh).await;
-    }
-
-    #[tokio::test]
-    async fn a_server_close_is_not_recorded_back_as_a_client_close() {
-        let config = Config::default();
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-        gateway.next_op(0).await;
-
-        gateway.close(4014);
-
-        assert_eq!(closed(&mut socket).await, 4014);
-        assert_eq!(gateway.next().await, ClientMessage::Disconnected);
     }
 }

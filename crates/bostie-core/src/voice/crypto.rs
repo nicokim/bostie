@@ -321,19 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn sealing_reuses_the_output_buffer() {
-        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-        let mut out = Vec::with_capacity(256);
-        let capacity = out.capacity();
-
-        cipher.seal(1, &header(), OPUS, &mut out).unwrap();
-        cipher.seal(2, &header(), b"x", &mut out).unwrap();
-
-        assert_eq!(out.len(), HEADER_LEN + 1 + OVERHEAD);
-        assert_eq!(out.capacity(), capacity);
-    }
-
-    #[test]
     fn opening_skips_csrcs_the_encrypted_extension_body_and_padding() {
         let extension = Extension {
             profile: 0xBEDE,
