@@ -7,7 +7,7 @@ name = "bostie"
 description = "Discord library for Python with a Rust core, built around reliable voice"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
-license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+license-files = ["LICENSE-MIT", "LICENSE-APACHE", "THIRD-PARTY-NOTICES.md"]
 requires-python = ">=3.12"
 dependencies = ["msgspec>=0.22.0"]
 dynamic = ["version"]
@@ -23,6 +23,7 @@ classifiers = [
 [dependency-groups]
 dev = [
     "aiohttp>=3.14.5",
+    "cryptography>=50.0.2",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.3",

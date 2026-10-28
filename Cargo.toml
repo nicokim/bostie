@@ -10,17 +10,27 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
 bostie-core = { path = "crates/bostie-core" }
 bytes = "1.12.1"
+chacha20poly1305 = { version = "0.11.0", default-features = false }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+davey = "=0.2.0-beta.1"
 fastrand = "2.5.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 mimalloc = { version = "0.1.52", default-features = false, features = ["v2", "local_dynamic_tls"] }
+openmls = "0.8.3"
+openmls_basic_credential = "0.5.0"
+openmls_rust_crypto = "0.5.1"
+opus = "0.4.0"
 parking_lot = "0.13.0"
 percent-encoding = "2.3.2"
+proptest = "1.12.0"
 pyo3 = { version = "=0.30.1", features = ["abi3-py312"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2"] }
+rubato = "5.0.1"
 sonic-rs = "0.5.10"
+symphonia = { version = "0.6.1", default-features = false, features = ["ogg", "mkv", "flac", "vorbis", "mp3", "wav", "pcm", "id3v2", "opt-simd"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 tokio-websockets = { version = "0.13.3", features = ["client", "fastrand", "aws_lc_rs", "rustls-platform-verifier"] }
@@ -39,6 +49,12 @@ panic = "deny"
 indexing_slicing = "deny"
 dbg_macro = "deny"
 todo = "deny"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.tls_codec]
+debug-assertions = false
 
 [profile.release]
 panic = "unwind"

@@ -39,3 +39,30 @@ impl fmt::Display for ShardId {
         self.0.fmt(formatter)
     }
 }
+
+macro_rules! u64_ids {
+    ($($name:ident),+) => {$(
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $name(u64);
+
+        impl From<u64> for $name {
+            fn from(value: u64) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<$name> for u64 {
+            fn from(id: $name) -> Self {
+                id.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.fmt(formatter)
+            }
+        }
+    )+};
+}
+
+u64_ids!(GuildId, ChannelId, UserId, Handle);

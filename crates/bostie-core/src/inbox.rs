@@ -1,12 +1,14 @@
 use std::mem;
 use std::pin::pin;
+use std::time::Duration;
 
 use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
 use crate::bell::Bell;
-use crate::ids::{ShardId, Ticket};
+use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
+use crate::voice::types::{Direction, DisconnectReason, VoiceStatus};
 
 #[cfg(not(test))]
 pub(crate) const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
@@ -48,6 +50,60 @@ pub enum Delivery {
     },
     InvalidRequests {
         count: u32,
+    },
+    VoiceState {
+        guild: GuildId,
+        status: VoiceStatus,
+        reason: Option<DisconnectReason>,
+        code: Option<u16>,
+        detail: Box<str>,
+    },
+    VoiceMoved {
+        guild: GuildId,
+        from: ChannelId,
+        to: ChannelId,
+        by_us: bool,
+    },
+    VoiceDave {
+        guild: GuildId,
+        protocol_version: u16,
+        epoch: Option<u64>,
+        transition_id: u16,
+    },
+    VoiceSelf {
+        guild: GuildId,
+        self_mute: bool,
+        self_deaf: bool,
+        mute: bool,
+        suppress: bool,
+    },
+    VoiceSpeaking {
+        guild: GuildId,
+        user: UserId,
+        ssrc: u32,
+        flags: u32,
+    },
+    VoiceClients {
+        guild: GuildId,
+        users: Vec<UserId>,
+    },
+    VoiceClientLeft {
+        guild: GuildId,
+        user: UserId,
+    },
+    VoiceStalled {
+        guild: GuildId,
+        direction: Direction,
+        stalled: bool,
+        duration: Duration,
+    },
+    VoiceWake {
+        handle: Handle,
+    },
+    VoiceMarker {
+        handle: Handle,
+        marker: u64,
+        played: bool,
     },
 }
 

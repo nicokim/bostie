@@ -1,4 +1,4 @@
-from enum import KEEP, IntEnum, IntFlag
+from enum import KEEP, IntEnum, IntFlag, StrEnum
 from typing import Self
 
 FLAG_WIDTH = 128
@@ -300,3 +300,36 @@ class ApplicationFlags(DiscordIntFlag):
     GATEWAY_MESSAGE_CONTENT = 1 << 18
     GATEWAY_MESSAGE_CONTENT_LIMITED = 1 << 19
     APPLICATION_COMMAND_BADGE = 1 << 23
+
+
+class SpeakingFlags(DiscordIntFlag):
+    MICROPHONE = 1 << 0
+    SOUNDSHARE = 1 << 1
+    PRIORITY = 1 << 2
+
+
+class State(StrEnum):
+    CONNECTING = "connecting"
+    READY = "ready"
+    RESUMING = "resuming"
+    RECONNECTING = "reconnecting"
+    DISCONNECTED = "disconnected"
+
+
+class DisconnectReason(StrEnum):
+    REQUESTED = "requested"
+    REMOVED = "removed"
+    CALL_TERMINATED = "call_terminated"
+    RATE_LIMITED = "rate_limited"
+    TIMEOUT = "timeout"
+    SESSION_INVALID = "session_invalid"
+    AUTHENTICATION_FAILED = "authentication_failed"
+    DAVE_REQUIRED = "dave_required"
+    DAVE_FAILED = "dave_failed"
+    PROTOCOL_ERROR = "protocol_error"
+    CLOSED = "closed"
+
+
+class Direction(StrEnum):
+    SEND = "send"
+    RECEIVE = "receive"

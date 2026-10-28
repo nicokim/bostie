@@ -6,6 +6,7 @@ pub mod inbox;
 pub mod rest;
 mod runtime;
 mod tasks;
+pub mod voice;
 
 use std::collections::HashMap;
 use std::num::NonZeroU16;
@@ -21,7 +22,7 @@ use tokio::runtime::Handle;
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
 pub use crate::gateway::IdentifyLimit;
-pub use crate::ids::{ShardId, Ticket};
+pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind};
 pub use crate::rest::RestRequest;
 

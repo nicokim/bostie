@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::io;
 
-use crate::ids::ShardId;
+use crate::ids::{GuildId, Handle, ShardId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
@@ -20,6 +20,14 @@ pub enum CoreError {
     ShardRunning(ShardId),
     #[error("the send queue of shard {0} is full")]
     SendQueueFull(ShardId),
+    #[error("no voice connection in guild {0}")]
+    UnknownVoice(GuildId),
+    #[error("guild {0} already has a voice connection")]
+    VoiceRunning(GuildId),
+    #[error("the voice command queue of guild {0} is full")]
+    VoiceQueueFull(GuildId),
+    #[error("voice handle {0} is closed")]
+    HandleClosed(Handle),
     #[error("failed to start the async runtime")]
     Runtime(#[source] io::Error),
     #[error("failed to create the wake-up socket")]

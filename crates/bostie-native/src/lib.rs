@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::time::Duration;
 
+use bostie_core::voice::types::DisconnectReason;
 use bostie_core::{
     Core, CoreError, Delivery, FailureKind, IdentifyLimit, RawBellHandle, RestRequest, ShardId,
     Ticket, describe,
@@ -181,6 +182,114 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         Delivery::InvalidRequests { count } => {
             (intern!(py, "invalid_requests"), count).into_bound_py_any(py)
         }
+        Delivery::VoiceState {
+            guild,
+            status,
+            reason,
+            code,
+            detail,
+        } => (
+            intern!(py, "voice_state"),
+            u64::from(guild),
+            status.as_str(),
+            reason.map(DisconnectReason::as_str),
+            code,
+            &*detail,
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceMoved {
+            guild,
+            from,
+            to,
+            by_us,
+        } => (
+            intern!(py, "voice_moved"),
+            u64::from(guild),
+            u64::from(from),
+            u64::from(to),
+            by_us,
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceDave {
+            guild,
+            protocol_version,
+            epoch,
+            transition_id,
+        } => (
+            intern!(py, "voice_dave"),
+            u64::from(guild),
+            protocol_version,
+            epoch,
+            transition_id,
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceSelf {
+            guild,
+            self_mute,
+            self_deaf,
+            mute,
+            suppress,
+        } => (
+            intern!(py, "voice_self"),
+            u64::from(guild),
+            self_mute,
+            self_deaf,
+            mute,
+            suppress,
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceSpeaking {
+            guild,
+            user,
+            ssrc,
+            flags,
+        } => (
+            intern!(py, "voice_speaking"),
+            u64::from(guild),
+            u64::from(user),
+            ssrc,
+            flags,
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceClients { guild, users } => (
+            intern!(py, "voice_clients"),
+            u64::from(guild),
+            users.into_iter().map(u64::from).collect::<Vec<_>>(),
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceClientLeft { guild, user } => (
+            intern!(py, "voice_client_left"),
+            u64::from(guild),
+            u64::from(user),
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceStalled {
+            guild,
+            direction,
+            stalled,
+            duration,
+        } => (
+            intern!(py, "voice_stalled"),
+            u64::from(guild),
+            direction.as_str(),
+            stalled,
+            duration.as_secs_f64(),
+        )
+            .into_bound_py_any(py),
+        Delivery::VoiceWake { handle } => {
+            (intern!(py, "voice_wake"), u64::from(handle)).into_bound_py_any(py)
+        }
+        Delivery::VoiceMarker {
+            handle,
+            marker,
+            played,
+        } => (
+            intern!(py, "voice_marker"),
+            u64::from(handle),
+            marker,
+            played,
+        )
+            .into_bound_py_any(py),
     }
 }
 
@@ -201,7 +310,11 @@ fn to_python_error(error: CoreError) -> PyErr {
         | CoreError::Closed
         | CoreError::UnknownShard(_)
         | CoreError::ShardRunning(_)
-        | CoreError::SendQueueFull(_) => PyRuntimeError::new_err(message),
+        | CoreError::SendQueueFull(_)
+        | CoreError::UnknownVoice(_)
+        | CoreError::VoiceRunning(_)
+        | CoreError::VoiceQueueFull(_)
+        | CoreError::HandleClosed(_) => PyRuntimeError::new_err(message),
         CoreError::Runtime(_)
         | CoreError::Bell(_)
         | CoreError::HttpClient(_)

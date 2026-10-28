@@ -2,7 +2,7 @@
 
 ## Setup
 
-You need Python 3.12 or newer, [Rust](https://rustup.rs) 1.95 or newer, and [uv](https://docs.astral.sh/uv/).
+You need Python 3.12 or newer, [Rust](https://rustup.rs) 1.95 or newer, [uv](https://docs.astral.sh/uv/), and [CMake](https://cmake.org/download/), which builds the bundled libopus.
 
 ```sh
 uv sync                    # builds the Rust extension and installs the dev tools

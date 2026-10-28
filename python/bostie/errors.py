@@ -1,5 +1,7 @@
 from typing import Any
 
+from bostie.enums import DisconnectReason
+
 
 class BostieError(Exception):
     """Base class of every error bostie raises."""
@@ -132,3 +134,50 @@ class InteractionExpired(CommandError):
 
     It is over 15 minutes old, or Discord already rejected or forgot its token.
     """
+
+
+class VoiceError(BostieError):
+    """Base class of voice errors."""
+
+
+class VoiceConnectError(VoiceError):
+    """A voice connection ended before it was ready."""
+
+    def __init__(self, reason: DisconnectReason, code: int | None, detail: str) -> None:
+        super().__init__(reason, code, detail)
+        self.reason = reason
+        self.code = code
+        self.detail = detail
+
+    def __str__(self) -> str:
+        code = "" if self.code is None else f" (close code {self.code})"
+        detail = f": {self.detail}" if self.detail else ""
+        return f"voice connection failed: {self.reason}{code}{detail}"
+
+
+class NotInVoice(VoiceError):
+    """The user is not in a voice channel of this guild."""
+
+
+class VoiceNotConnected(VoiceError):
+    """The voice connection has ended."""
+
+
+class SinkClosed(VoiceError):
+    """The sink is closed."""
+
+
+class BufferFull(VoiceError):
+    """The sink has no room for this write."""
+
+
+class SourceError(VoiceError):
+    """A source failed to open, decode or seek."""
+
+    def __init__(self, source: str, detail: str) -> None:
+        super().__init__(source, detail)
+        self.source = source
+        self.detail = detail
+
+    def __str__(self) -> str:
+        return f"{self.source}: {self.detail}"

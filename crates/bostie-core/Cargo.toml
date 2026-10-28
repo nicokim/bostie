@@ -8,13 +8,19 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+aes-gcm.workspace = true
 bytes.workspace = true
+chacha20poly1305.workspace = true
+davey.workspace = true
 fastrand.workspace = true
 futures-util.workspace = true
+opus.workspace = true
 parking_lot.workspace = true
 percent-encoding.workspace = true
 reqwest.workspace = true
+rubato.workspace = true
 sonic-rs.workspace = true
+symphonia.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-websockets.workspace = true
@@ -26,6 +32,10 @@ zstd-safe.workspace = true
 criterion.workspace = true
 bostie-core = { path = ".", features = ["bench"] }
 mimalloc.workspace = true
+openmls.workspace = true
+openmls_basic_credential.workspace = true
+openmls_rust_crypto.workspace = true
+proptest.workspace = true
 tokio-websockets = { workspace = true, features = ["server"] }
 tracing-subscriber.workspace = true
 

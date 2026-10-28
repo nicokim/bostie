@@ -153,6 +153,20 @@ class Bridge:
                     self._resolve(ticket, (status, body))
                 case ("failure", ticket, kind, detail):
                     self._reject(ticket, FAILURE_ERRORS[kind](detail))
+                case (
+                    "voice_state"
+                    | "voice_moved"
+                    | "voice_dave"
+                    | "voice_self"
+                    | "voice_speaking"
+                    | "voice_clients"
+                    | "voice_client_left"
+                    | "voice_stalled"
+                    | "voice_wake"
+                    | "voice_marker",
+                    *_,
+                ):
+                    pass
                 case _:
                     try:
                         self._on_gateway(delivery, received)

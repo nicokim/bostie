@@ -1,1 +1,1 @@
-bostie\._native\.(\w*Delivery|FailureKind)
+bostie\._native\.(\w*Delivery|\w*Name|FailureKind)
