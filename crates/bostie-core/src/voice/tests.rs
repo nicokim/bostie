@@ -1393,6 +1393,18 @@ async fn a_replaced_main_session_sends_the_voice_state_again_and_starts_fresh() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_connect_after_the_main_session_started_joins_once() {
+    let mut harness = Harness::start().await;
+    harness.tap.session_started(ShardId::from(SHARD));
+
+    harness.connected().await;
+    harness.server.collect().await;
+
+    assert_eq!(harness.joins(CHANNEL), 1);
+    assert_eq!(harness.server.count(op::IDENTIFY), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn no_voice_events_time_out_naming_the_voice_server_update_and_leave() {
     let mut harness = Harness::start().await;
     harness

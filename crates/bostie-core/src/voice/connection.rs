@@ -310,6 +310,10 @@ impl Connection {
         media: Arc<Media>,
         inputs: Inputs,
     ) -> Self {
+        let seen = Seen {
+            main: inputs.gateway.borrow().main_session,
+            ..Seen::default()
+        };
         Self {
             shared,
             guild: request.guild,
@@ -333,7 +337,7 @@ impl Connection {
             status: VoiceStatus::Connecting,
             step: Step::VoiceEvents,
             timeout: request.timeout,
-            seen: Seen::default(),
+            seen,
             server_used: 0,
             server_settled: 0,
             rejoins: 0,
