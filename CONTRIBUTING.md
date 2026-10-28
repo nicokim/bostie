@@ -36,7 +36,7 @@ uv run pytest
 
 CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
-Keep a pull request to one change. A commit message has a short imperative subject, like "Add the GUILD_EMOJIS_UPDATE event", and a body that says why. A bug fix comes with the test that failed before it.
+Keep a pull request to one change. Its title goes into the release notes as it is, so say what changes for someone using bostie. A pull request that changes nothing for them gets the `skip-changelog` label. A commit message has a short imperative subject, like "Add the GUILD_EMOJIS_UPDATE event", and a body that says why. A bug fix comes with the test that failed before it.
 
 ## Adding a gateway event
 
