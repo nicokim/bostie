@@ -11,6 +11,7 @@ type Json = dict[str, Any]
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "models"
 DISCORD_EPOCH_MS = 1_420_070_400_000
 INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete"}
+STAGE_CHANNEL_ID = "1335174052137131073"
 
 _increments = itertools.count()
 
@@ -117,3 +118,20 @@ def select(custom_id: str, *values: str) -> Json:
     """The ``data`` of a string select interaction."""
     data: Json = fixture("events/INTERACTION_CREATE.select")["data"]
     return data | {"custom_id": custom_id, "values": list(values)}
+
+
+def voice_channel(**fields: Any) -> Json:
+    """The guild's voice channel, as ``GET /channels/{id}`` returns it."""
+    guild = fixture("events/GUILD_CREATE")
+    channel: Json = next(c for c in guild["channels"] if c["type"] == 2)
+    return channel | {"guild_id": guild["id"]} | fields
+
+
+def stage_channel(**fields: Any) -> Json:
+    """A stage channel in the same guild."""
+    return voice_channel(id=STAGE_CHANNEL_ID, type=13, name="Town Hall") | fields
+
+
+def voice_state(**fields: Any) -> Json:
+    """A VOICE_STATE_UPDATE payload, by default the bot's own."""
+    return fixture("events/VOICE_STATE_UPDATE") | fields

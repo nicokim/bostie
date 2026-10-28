@@ -17,6 +17,7 @@ from aiohttp.typedefs import Handler
 
 from fakediscord import payloads
 from fakediscord.payloads import Json
+from fakediscord.voice import VoiceGateway
 
 API = "/api/v10"
 ROUTE_LIMIT = 5
@@ -30,6 +31,7 @@ LOCALIZATIONS = ("name_localizations", "description_localizations")
 TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
 
 type Respond = Callable[[dict[str, str]], web.Response]
+type Order = Literal["state_first", "server_first"]
 
 
 @dataclass(frozen=True)
@@ -95,8 +97,13 @@ class _Fault:
 RECORD = web.RequestKey("record", Recorded)
 
 
-class FakeDiscord:
-    """A local Discord gateway and REST API for tests, served inside ``async with``."""
+class FakeDiscord(VoiceGateway):
+    """A local Discord gateway and REST API for tests, served inside ``async with``.
+
+    ``voice=True`` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
+    ``full=True`` leaves op 4 joins unanswered, as Discord does for a full channel.
+    ``mute`` and ``suppress`` go into every voice state the fake sends for the bot.
+    """
 
     api_url: str
     gateway_url: str
@@ -109,7 +116,12 @@ class FakeDiscord:
         token: str = "fake-token",
         heartbeat_interval: int = 500,
         compress: bool = False,
+        voice: bool = False,
+        voice_heartbeat_interval: float = 500.0,
+        voice_order: Order = "state_first",
+        full: bool = False,
     ) -> None:
+        super().__init__(voice_heartbeat_interval)
         self.token = token
         self.application_id = int(payloads.fixture("rest/application_me")["id"])
         self.bot_user: Json = payloads.fixture("events/READY")["user"]
@@ -144,6 +156,16 @@ class FakeDiscord:
         self._interactions: dict[str, Json] = {}
         self._responses: dict[str, dict[str, Json]] = {}
         self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
+        self.voice_order = voice_order
+        self.full = full
+        self.mute = False
+        self.suppress = False
+        self.voice_states: dict[tuple[str, str], Json] = {}
+        self._voice = voice
+        self._voice_state_updates: asyncio.Queue[Any] = asyncio.Queue()
+        if voice:
+            for voice_channel in (payloads.voice_channel(), payloads.stage_channel()):
+                self.channels[voice_channel["id"]] = voice_channel
 
     async def __aenter__(self) -> Self:
         rest_routes: list[tuple[str, str, Handler]] = [
@@ -189,11 +211,24 @@ class FakeDiscord:
             ("GET", "/guilds/{guild_id}/members/{user_id}", self._member),
             ("GET", "/users/{user_id}", self._user),
         ]
+        routes = [
+            web.get("/gateway", self._gateway),
+            web.get("/gateway-resume", self._gateway),
+        ]
+        if self._voice:
+            rest_routes += [
+                ("GET", "/guilds/{guild_id}/voice-states/{user_id}", self._voice_state),
+                (
+                    "PATCH",
+                    "/guilds/{guild_id}/voice-states/@me",
+                    self._edit_voice_state,
+                ),
+            ]
+            routes.append(web.get("/voice", self._voice_gateway))
         app = web.Application(middlewares=[self._rest])
         app.add_routes(
             [
-                web.get("/gateway", self._gateway),
-                web.get("/gateway-resume", self._gateway),
+                *routes,
                 *(
                     web.route(method, API + path, handler)
                     for method, path, handler in rest_routes
@@ -207,6 +242,8 @@ class FakeDiscord:
         self.api_url = f"http://127.0.0.1:{port}{API}"
         self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
         self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
+        if self._voice:
+            await self._start_voice(port)
         return self
 
     async def __aexit__(
@@ -217,6 +254,7 @@ class FakeDiscord:
     ) -> None:
         for connection in self.connections:
             await connection.ws.close(code=WSCloseCode.GOING_AWAY)
+        await self._stop_voice()
         await self._runner.cleanup()
 
     async def dispatch(self, name: str, d: Any) -> int:
@@ -247,6 +285,39 @@ class FakeDiscord:
     def hold_acks(self, flag: bool) -> None:
         """While ``flag`` is true, leave heartbeats unanswered like a zombie link."""
         self._hold_acks = flag
+
+    async def next_voice_state_update(self) -> Any:
+        """Wait for the next op 4 the bot sent and return its ``d``."""
+        return await self._voice_state_updates.get()
+
+    async def move_bot(self, channel_id: int, *, order: Order = "state_first") -> None:
+        """Move the bot to ``channel_id`` as a moderator would.
+
+        The voice socket of the old channel then closes with 4014.
+        """
+        state = self._bot_voice_state()
+        await self._join_voice(
+            state["guild_id"],
+            str(channel_id),
+            state["self_mute"],
+            state["self_deaf"],
+            order,
+        )
+
+    async def kick_bot(self) -> None:
+        """Disconnect the bot from voice: a voice state without channel, then 4014."""
+        state = self._bot_voice_state()
+        await self._leave_voice(
+            state["guild_id"], state["self_mute"], state["self_deaf"]
+        )
+
+    async def server_update(self, endpoint: str | None) -> None:
+        """Send VOICE_SERVER_UPDATE with a new token; ``None`` means no voice server."""
+        state = self._bot_voice_state()
+        guild_id = state["guild_id"]
+        token = self._grant_voice(guild_id, state["user_id"], state["session_id"])
+        server = {"token": token, "guild_id": guild_id, "endpoint": endpoint}
+        await self.dispatch("VOICE_SERVER_UPDATE", server)
 
     async def next_identify(self) -> Json:
         """Wait for the next IDENTIFY and return its ``d``."""
@@ -352,6 +423,8 @@ class FakeDiscord:
             case {"op": 6, "d": dict() as resume}:
                 await self._resume(connection, resume)
                 self._resumes.put_nowait(resume)
+            case {"op": 4, "d": update} if self._voice:
+                await self._update_voice_state(connection, update)
 
     async def _identify(self, connection: Connection, identify: Json) -> None:
         if connection.live:
@@ -382,6 +455,75 @@ class FakeDiscord:
         else:
             self._append("RESUMED", {"_trace": [TRACE]})
             await self._catch_up(connection, seq)
+
+    async def _update_voice_state(self, connection: Connection, update: Any) -> None:
+        self._voice_state_updates.put_nowait(update)
+        match update:
+            case {
+                "guild_id": str() as guild_id,
+                "channel_id": str() | None as channel_id,
+                "self_mute": bool() as self_mute,
+                "self_deaf": bool() as self_deaf,
+            }:
+                if channel_id is None:
+                    await self._leave_voice(guild_id, self_mute, self_deaf)
+                elif not self.full:
+                    await self._join_voice(
+                        guild_id, channel_id, self_mute, self_deaf, self.voice_order
+                    )
+            case _:
+                await connection.ws.close(code=4002, message=b"Decode error")
+
+    async def _join_voice(
+        self,
+        guild_id: str,
+        channel_id: str,
+        self_mute: bool,
+        self_deaf: bool,
+        order: Order,
+    ) -> None:
+        key = (guild_id, self.bot_user["id"])
+        previous = self.voice_states.get(key)
+        session = self._voice_session(guild_id)
+        state = self._bot_voice(guild_id, channel_id, self_mute, self_deaf)
+        self.voice_states[key] = state
+        token = self._grant_voice(guild_id, state["user_id"], state["session_id"])
+        server = {"token": token, "guild_id": guild_id, "endpoint": self.voice_endpoint}
+        events = [("VOICE_STATE_UPDATE", state), ("VOICE_SERVER_UPDATE", server)]
+        for name, d in events if order == "state_first" else events[::-1]:
+            await self.dispatch(name, d)
+        if previous is not None and previous["channel_id"] != channel_id:
+            await self._end_voice_session(session, 4014)
+
+    async def _leave_voice(
+        self, guild_id: str, self_mute: bool, self_deaf: bool
+    ) -> None:
+        if self.voice_states.pop((guild_id, self.bot_user["id"]), None) is None:
+            return
+        session = self._voice_session(guild_id)
+        state = self._bot_voice(guild_id, None, self_mute, self_deaf)
+        await self.dispatch("VOICE_STATE_UPDATE", state)
+        await self._end_voice_session(session, 4014)
+
+    def _bot_voice(
+        self, guild_id: str, channel_id: str | None, self_mute: bool, self_deaf: bool
+    ) -> Json:
+        return payloads.voice_state(
+            guild_id=guild_id,
+            channel_id=channel_id,
+            user_id=self.bot_user["id"],
+            session_id=self._session_id,
+            self_mute=self_mute,
+            self_deaf=self_deaf,
+            mute=self.mute,
+            suppress=self.suppress,
+        )
+
+    def _bot_voice_state(self) -> Json:
+        for (_, user_id), state in reversed(self.voice_states.items()):
+            if user_id == self.bot_user["id"]:
+                return state
+        raise RuntimeError("the bot is in no voice channel")
 
     @web.middleware
     async def _rest(self, request: web.Request, handler: Handler) -> web.StreamResponse:
@@ -586,6 +728,28 @@ class FakeDiscord:
     async def _member(self, request: web.Request) -> web.Response:
         key = (request.match_info["guild_id"], request.match_info["user_id"])
         return _found(self.members.get(key), 10007, "Unknown Member")
+
+    async def _voice_state(self, request: web.Request) -> web.Response:
+        user_id = request.match_info["user_id"]
+        if user_id == "@me":
+            user_id = self.bot_user["id"]
+        state = self.voice_states.get((request.match_info["guild_id"], user_id))
+        return _found(state, 10065, "Unknown Voice State")
+
+    async def _edit_voice_state(self, request: web.Request) -> web.Response:
+        state = self.voice_states.get(
+            (request.match_info["guild_id"], self.bot_user["id"])
+        )
+        if state is None:
+            return _error(404, 10065, "Unknown Voice State")
+        edit = request[RECORD].json or {}
+        state |= {
+            key: edit[key]
+            for key in ("suppress", "request_to_speak_timestamp")
+            if key in edit
+        }
+        await self.dispatch("VOICE_STATE_UPDATE", state)
+        return web.Response(status=204)
 
     async def _user(self, request: web.Request) -> web.Response:
         user_id = request.match_info["user_id"]

@@ -1,17 +1,24 @@
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from bostie import Bot
 from fakediscord import payloads
-from fakediscord.server import Connection, FakeDiscord, Part, Recorded
+from fakediscord.server import Connection, FakeDiscord, Order, Part, Recorded
+from fakediscord.voice import Packet, VoiceSession, VoiceSocket
+
+if TYPE_CHECKING:
+    from bostie import Bot
 
 __all__ = [
     "Connection",
     "FakeDiscord",
+    "Order",
+    "Packet",
     "Part",
     "Recorded",
+    "VoiceSession",
+    "VoiceSocket",
     "payloads",
     "run",
     "running",
@@ -31,7 +38,7 @@ def run(scenario: Scenario, **options: Any) -> None:
 
 
 @contextlib.asynccontextmanager
-async def running(bot: Bot, fake: FakeDiscord) -> AsyncIterator[None]:
+async def running(bot: "Bot", fake: FakeDiscord) -> AsyncIterator[None]:
     """Start ``bot`` on ``fake``, wait for READY, and close the bot on exit."""
     started = asyncio.create_task(bot.start(fake.token))
     ready = asyncio.create_task(bot.wait_until_ready())
