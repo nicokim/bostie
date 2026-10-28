@@ -137,7 +137,7 @@ The sync is a bulk overwrite, so it replaces every guild command the application
 
 `tests/live/voice_check.py` checks voice with you listening in the Discord client. It syncs no commands.
 
-1. Use the bot from the live check, and let it connect and speak in a voice channel that nobody is in. To check moves, give it a second voice channel. To check stages, give it a stage channel where it may request to speak.
+1. Use the bot from the live check, and let it connect, speak and manage the channel in a voice channel that nobody is in. It switches the channel's region and back to check a voice server change. To check moves, give it a second voice channel. To check stages, give it a stage channel where it may request to speak.
 2. Run:
 
    ```sh

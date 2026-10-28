@@ -294,6 +294,7 @@ pub(super) struct Connection {
     last_code: Option<u16>,
     last_failure: Option<String>,
     connected: bool,
+    joined: bool,
 }
 
 pub(super) struct Inputs {
@@ -345,6 +346,7 @@ impl Connection {
             last_code: None,
             last_failure: None,
             connected: false,
+            joined: false,
         }
     }
 
@@ -435,7 +437,12 @@ impl Connection {
         let snapshot = self.gateway.borrow_and_update().clone();
         if snapshot.state_seq > self.seen.state {
             self.seen.state = snapshot.state_seq;
-            if let Some(state) = &snapshot.state {
+            if let Some(state) = snapshot
+                .state
+                .as_ref()
+                .filter(|state| self.joined || state.channel.is_some())
+            {
+                self.joined = true;
                 let flags = [state.self_mute, state.self_deaf, state.mute, state.suppress];
                 if self.reported.replace(flags) != Some(flags) {
                     self.push(Delivery::VoiceSelf {

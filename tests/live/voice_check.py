@@ -148,6 +148,23 @@ def recovery_hold(runs: list[list[Sample]]) -> bool | None:
     return None
 
 
+async def switch_region(
+    bot: Bot, guild_id: int, channel_id: int, region: str | None
+) -> None:
+    server = asyncio.ensure_future(
+        bot.wait_for(VoiceServerUpdate, check=lambda event: event.guild_id == guild_id)
+    )
+    await bot.http.request(
+        "PATCH",
+        "/channels/{channel_id}",
+        channel_id=channel_id,
+        json={"rtc_region": region},
+        reason="bostie voice check",
+    )
+    await within(VOICE_TIMEOUT, server)
+    await asyncio.sleep(1)
+
+
 async def play(vc: voice.VoiceConnection, seconds: float) -> None:
     async with vc.sink() as out:
         await out.write(tone(seconds))
@@ -287,32 +304,31 @@ async def voice_check(
             and after.rejoins == before.rejoins,
         )
 
-        mark = len(timeline)
-        server = asyncio.ensure_future(
-            bot.wait_for(
-                VoiceServerUpdate, check=lambda event: event.guild_id == guild_id
+        original = (
+            await bot.http.request(
+                "GET", "/channels/{channel_id}", channel_id=channel_id
             )
+        ).get("rtc_region")
+        regions = await bot.http.request("GET", "/voice/regions")
+        region = next(
+            entry["id"]
+            for entry in regions
+            if not entry["deprecated"] and entry["id"] != original
         )
-        bot.gateway.send(
-            4,
-            {
-                "guild_id": str(guild_id),
-                "channel_id": str(channel_id),
-                "self_mute": vc.self_mute,
-                "self_deaf": vc.self_deaf,
-            },
-        )
-        await within(VOICE_TIMEOUT, server)
-        await asyncio.sleep(1)
+        mark = len(timeline)
+        await switch_region(bot, guild_id, channel_id, region)
         await within(VOICE_TIMEOUT, asyncio.ensure_future(vc.wait_until(State.READY)))
         reconnecting = first_index(
             timeline, mark, became(State.RECONNECTING, "server_changed")
         )
         report(
-            "a forced rejoin goes RECONNECTING (server_changed) and back to READY",
+            f"a region change to {region} goes RECONNECTING (server_changed) "
+            "and back to READY",
             reconnecting is not None
             and first_index(timeline, reconnecting, ready) is not None,
         )
+        await switch_region(bot, guild_id, channel_id, original)
+        await within(VOICE_TIMEOUT, asyncio.ensure_future(vc.wait_until(State.READY)))
 
         send = vc.stats().send
         report(

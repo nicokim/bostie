@@ -1447,6 +1447,23 @@ async fn an_update_to_another_channel_is_a_move_by_us() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_last_leave_arriving_after_a_new_connect_is_not_a_removal() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    harness.voice.disconnect(guild()).unwrap();
+    harness.ended().await;
+
+    harness.connect();
+    harness.state(None);
+    harness.announce().await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness.state(None);
+    let (reason, _, _) = harness.ended().await;
+    assert_eq!(reason, DisconnectReason::Removed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn disconnect_closes_with_1000_leaves_and_closes_the_sinks() {
     let mut harness = Harness::start().await;
     harness.connected().await;
