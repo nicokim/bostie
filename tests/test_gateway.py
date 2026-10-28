@@ -32,9 +32,7 @@ class Harness:
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
         self.deliveries.put_nowait(delivery)
         match delivery:
-            case ("dispatch", _, _, _, _):
-                pass
-            case _:
+            case ("disconnected" | "stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway.handle(delivery)
 
     def start(self, **identify: Any) -> "asyncio.Task[None]":

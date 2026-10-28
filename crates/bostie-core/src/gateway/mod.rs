@@ -31,6 +31,7 @@ use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
 use crate::rest::Rest;
+use crate::voice::tap::GatewayTap;
 
 const COMMAND_QUEUE: usize = 128;
 
@@ -49,6 +50,7 @@ struct Shared {
     filter: RwLock<Filter>,
     identify: IdentifyGate,
     rest: Weak<Rest>,
+    tap: Arc<GatewayTap>,
 }
 
 struct ShardHandle {
@@ -63,6 +65,7 @@ impl Gateway {
         inbox: Arc<Inbox>,
         token: &str,
         rest: Weak<Rest>,
+        tap: Arc<GatewayTap>,
     ) -> Result<Self, CoreError> {
         Ok(Self {
             runtime,
@@ -73,6 +76,7 @@ impl Gateway {
                 filter: RwLock::new(None),
                 identify: IdentifyGate::default(),
                 rest,
+                tap,
             }),
             shards: Mutex::new(HashMap::new()),
         })

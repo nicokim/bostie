@@ -25,8 +25,10 @@ pub mod ws;
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::mem;
+use std::process;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -43,8 +45,12 @@ pub use self::dave::DaveInfo;
 use self::media::Media;
 use self::pacer::{PacerPool, ThreadLoad};
 use self::sink::Sink;
+use self::source::Source;
+use self::source::http::Http;
 use self::tap::GatewayTap;
-use self::types::{ConnectRequest, DisconnectReason, EncoderSettings, SinkOptions, VoiceStatus};
+use self::types::{
+    ConnectRequest, DisconnectReason, EncoderSettings, SinkOptions, SourceSpec, VoiceStatus,
+};
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
@@ -56,6 +62,7 @@ const COMMAND_QUEUE: usize = 32;
 pub struct Voice {
     runtime: runtime::Handle,
     shared: Arc<Shared>,
+    owner: u32,
 }
 
 struct Shared {
@@ -64,8 +71,10 @@ struct Shared {
     send: GatewaySend,
     connector: Connector,
     pacer: PacerPool,
+    http: Http,
     next_handle: AtomicU64,
     connections: Mutex<HashMap<GuildId, ConnectionHandle>>,
+    sources: Mutex<Vec<Weak<Source>>>,
     closed: AtomicBool,
 }
 
@@ -123,17 +132,20 @@ impl Voice {
         pacer: PacerPool,
     ) -> Result<Self, CoreError> {
         Ok(Self {
-            runtime,
             shared: Arc::new(Shared {
                 inbox,
                 tap,
                 send,
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 pacer,
+                http: Http::new(runtime.clone()),
                 next_handle: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),
+                sources: Mutex::new(Vec::new()),
                 closed: AtomicBool::new(false),
             }),
+            runtime,
+            owner: process::id(),
         })
     }
 
@@ -320,8 +332,11 @@ impl Voice {
 
     pub fn open_sink(&self, guild: GuildId, options: SinkOptions) -> Result<Arc<Sink>, CoreError> {
         let media = self.media(guild)?;
-        let id = Handle::from(self.shared.next_handle.fetch_add(1, Ordering::Relaxed));
-        let sink = Arc::new(Sink::new(id, options, Arc::clone(&self.shared.inbox))?);
+        let sink = Arc::new(Sink::new(
+            self.next_handle(),
+            options,
+            Arc::clone(&self.shared.inbox),
+        )?);
         let mut sinks = media.sinks.lock();
         if media.closed.load(Ordering::Acquire) {
             return Err(CoreError::UnknownVoice(guild));
@@ -330,12 +345,37 @@ impl Voice {
         Ok(sink)
     }
 
+    pub fn open_source(&self, spec: SourceSpec) -> Result<Arc<Source>, CoreError> {
+        let source = Source::open(
+            self.next_handle(),
+            spec,
+            Arc::clone(&self.shared.inbox),
+            &self.shared.http,
+        )
+        .map(Arc::new)?;
+        let mut sources = self.shared.sources.lock();
+        if self.shared.closed.load(Ordering::Acquire) {
+            return Err(CoreError::Closed);
+        }
+        sources.retain(|source| source.strong_count() > 0);
+        sources.push(Arc::downgrade(&source));
+        Ok(source)
+    }
+
     pub fn shutdown(&self) {
         self.shared.closed.store(true, Ordering::Release);
         for handle in self.shared.connections.lock().values() {
             handle.stop.send_replace(true);
             handle.media.close();
         }
+        let sources = mem::take(&mut *self.shared.sources.lock());
+        for source in sources.iter().filter_map(Weak::upgrade) {
+            source.close();
+        }
+    }
+
+    fn next_handle(&self) -> Handle {
+        Handle::from(self.shared.next_handle.fetch_add(1, Ordering::Relaxed))
     }
 
     #[cfg(test)]
@@ -371,7 +411,9 @@ impl Voice {
 
 impl Drop for Voice {
     fn drop(&mut self) {
-        self.shutdown();
+        if process::id() == self.owner {
+            self.shutdown();
+        }
     }
 }
 

@@ -1,17 +1,22 @@
+mod voice;
+
 use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::time::Duration;
 
-use bostie_core::voice::types::DisconnectReason;
+use bostie_core::voice::Voice;
+use bostie_core::voice::types::{ConnectRequest, DisconnectReason, SourceSpec};
 use bostie_core::{
-    Core, CoreError, Delivery, FailureKind, IdentifyLimit, RawBellHandle, RestRequest, ShardId,
-    Ticket, describe,
+    ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
+    RestRequest, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyString};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+
+use crate::voice::{NativeSink, NativeSource};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -117,6 +122,190 @@ impl NativeCore {
 
     fn close(&self) -> PyResult<()> {
         self.0.close().map_err(to_python_error)
+    }
+
+    #[pyo3(signature = (
+        guild_id, channel_id, *, shard_id, user_id, self_mute, self_deaf, timeout, bitrate,
+        application, fec, packet_loss, complexity, speaking,
+    ))]
+    #[expect(clippy::too_many_arguments)]
+    fn voice_connect(
+        &self,
+        guild_id: u64,
+        channel_id: u64,
+        shard_id: u32,
+        user_id: u64,
+        self_mute: bool,
+        self_deaf: bool,
+        timeout: f64,
+        bitrate: u32,
+        application: &str,
+        fec: bool,
+        packet_loss: u8,
+        complexity: u8,
+        speaking: u8,
+    ) -> PyResult<()> {
+        let request = ConnectRequest {
+            guild: GuildId::from(guild_id),
+            channel: ChannelId::from(channel_id),
+            shard: ShardId::from(shard_id),
+            user: UserId::from(user_id),
+            self_mute,
+            self_deaf,
+            timeout: voice::seconds("timeout", timeout)?,
+            encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
+            speaking,
+        };
+        self.voice()?.connect(request).map_err(to_python_error)
+    }
+
+    fn voice_update(
+        &self,
+        guild_id: u64,
+        channel_id: u64,
+        self_mute: bool,
+        self_deaf: bool,
+    ) -> PyResult<()> {
+        self.voice()?
+            .update(
+                GuildId::from(guild_id),
+                ChannelId::from(channel_id),
+                self_mute,
+                self_deaf,
+            )
+            .map_err(to_python_error)
+    }
+
+    fn voice_disconnect(&self, guild_id: u64) -> PyResult<()> {
+        self.voice()?
+            .disconnect(GuildId::from(guild_id))
+            .map_err(to_python_error)
+    }
+
+    fn voice_reconnect(&self, guild_id: u64) -> PyResult<()> {
+        self.voice()?
+            .reconnect(GuildId::from(guild_id))
+            .map_err(to_python_error)
+    }
+
+    #[pyo3(signature = (guild_id, *, bitrate, application, fec, packet_loss, complexity))]
+    fn voice_encoder(
+        &self,
+        guild_id: u64,
+        bitrate: u32,
+        application: &str,
+        fec: bool,
+        packet_loss: u8,
+        complexity: u8,
+    ) -> PyResult<()> {
+        let settings = voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?;
+        self.voice()?
+            .set_encoder(GuildId::from(guild_id), settings)
+            .map_err(to_python_error)
+    }
+
+    fn voice_speaking(&self, guild_id: u64, flags: u8) -> PyResult<()> {
+        self.voice()?
+            .set_speaking(GuildId::from(guild_id), flags)
+            .map_err(to_python_error)
+    }
+
+    fn voice_latency(&self, guild_id: u64) -> PyResult<(Option<f64>, Option<f64>)> {
+        let (ws, udp) = self
+            .voice()?
+            .latency(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        Ok((
+            ws.map(|latency| latency.as_secs_f64()),
+            udp.map(|latency| latency.as_secs_f64()),
+        ))
+    }
+
+    fn voice_dave(&self, guild_id: u64) -> PyResult<(u16, Option<u64>, Option<String>)> {
+        let dave = self
+            .voice()?
+            .dave(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        Ok((dave.protocol_version, dave.epoch, dave.privacy_code))
+    }
+
+    fn voice_verification_code(
+        &self,
+        py: Python<'_>,
+        guild_id: u64,
+        user_id: u64,
+    ) -> PyResult<String> {
+        let voice = self.voice()?;
+        py.detach(|| voice.verification_code(GuildId::from(guild_id), UserId::from(user_id)))
+            .map_err(to_python_error)
+    }
+
+    fn voice_stats(&self, guild_id: u64) -> PyResult<HashMap<&'static str, u64>> {
+        let stats = self
+            .voice()?
+            .stats(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        Ok(stats.into_iter().collect())
+    }
+
+    fn voice_diagnostics<'py>(
+        &self,
+        py: Python<'py>,
+        guild_id: u64,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let diagnostics = self
+            .voice()?
+            .diagnostics(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        voice::diagnostics(py, diagnostics)
+    }
+
+    #[pyo3(signature = (guild_id, *, kind, rate, channels, sample, buffer, volume, stall))]
+    #[expect(clippy::too_many_arguments)]
+    fn voice_sink(
+        &self,
+        guild_id: u64,
+        kind: &str,
+        rate: u32,
+        channels: u8,
+        sample: &str,
+        buffer: f64,
+        volume: f32,
+        stall: &str,
+    ) -> PyResult<NativeSink> {
+        let options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
+        self.voice()?
+            .open_sink(GuildId::from(guild_id), options)
+            .map(NativeSink)
+            .map_err(to_python_error)
+    }
+
+    fn voice_file(&self, path: &str) -> PyResult<NativeSource> {
+        self.open_source(voice::file(path))
+    }
+
+    fn voice_bytes(&self, data: &[u8], hint: Option<String>) -> PyResult<NativeSource> {
+        self.open_source(SourceSpec::Bytes {
+            data: data.to_vec().into(),
+            hint,
+        })
+    }
+
+    fn voice_url(&self, url: String, headers: Vec<(String, String)>) -> PyResult<NativeSource> {
+        self.open_source(SourceSpec::Url { url, headers })
+    }
+}
+
+impl NativeCore {
+    fn voice(&self) -> PyResult<&Voice> {
+        self.0.voice().map_err(to_python_error)
+    }
+
+    fn open_source(&self, spec: SourceSpec) -> PyResult<NativeSource> {
+        self.voice()?
+            .open_source(spec)
+            .map(NativeSource)
+            .map_err(to_python_error)
     }
 }
 
@@ -302,7 +491,7 @@ fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
     }
 }
 
-fn to_python_error(error: CoreError) -> PyErr {
+pub(crate) fn to_python_error(error: CoreError) -> PyErr {
     let message = describe(&error);
     match error {
         CoreError::InvalidRequest(_) => PyValueError::new_err(message),
@@ -326,4 +515,6 @@ fn to_python_error(error: CoreError) -> PyErr {
 mod _native {
     #[pymodule_export]
     use super::NativeCore;
+    #[pymodule_export]
+    use super::voice::{NativeOpusEncoder, NativeSink, NativeSource, versions};
 }

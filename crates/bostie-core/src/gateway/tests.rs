@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::num::NonZeroU16;
+use std::pin::pin;
 use std::sync::Arc;
+use std::task::{Context, Wake, Waker};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -20,16 +23,20 @@ use super::inflate::tests::{compress, discord_compressor};
 use super::{Gateway, IdentifyLimit};
 use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
-use crate::ids::ShardId;
+use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery, Inbox};
 use crate::rest::Rest;
 use crate::rest::tests::{NO_REPLY, Server, reply};
+use crate::voice::tap::GatewayTap;
 
 const TOKEN: &str = "test-token";
 const SESSION_ID: &str = "70374e9c7263b9d5e16c4f418ff85dc1";
 const IDENTIFY: &[u8] = br#"{"token": "test-token", "intents": 33281, "properties": {"os": "linux", "browser": "bostie", "device": "bostie"}}"#;
 const WAIT: Duration = Duration::from_secs(5);
 const SLOW_HEARTBEAT: u64 = 41_250;
+const GUILD: u64 = 1_335_172_792_320_131_073;
+const BOT: u64 = 1_329_027_298_099_331_073;
+const VOICE_CHANNEL: u64 = 1_335_173_295_636_611_074;
 
 const HELLO: &str = r#""op":10"#;
 const READY: &str = r#""t":"READY""#;
@@ -66,6 +73,18 @@ fn voice_state(guild: u64) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":4,"d":{{"guild_id":"{guild}","channel_id":null,"self_mute":false,"self_deaf":false}}}}"#
     ))
+}
+
+fn voice_server_update(seq: u64) -> String {
+    format!(
+        r#"{{"t":"VOICE_SERVER_UPDATE","s":{seq},"op":0,"d":{{"token":"voice-token","guild_id":"{GUILD}","endpoint":"voice.discord.media:443"}}}}"#
+    )
+}
+
+fn voice_state_update(seq: u64) -> String {
+    format!(
+        r#"{{"t":"VOICE_STATE_UPDATE","s":{seq},"op":0,"d":{{"guild_id":"{GUILD}","user_id":"{BOT}","channel_id":"{VOICE_CHANNEL}","session_id":"voice-session","self_mute":false,"self_deaf":true,"mute":false,"suppress":false,"deaf":false}}}}"#
+    )
 }
 
 fn assert_resume(payload: &Value, seq: u64) {
@@ -256,7 +275,8 @@ impl Peer {
 }
 
 struct Harness {
-    gateway: Gateway,
+    gateway: Arc<Gateway>,
+    tap: Arc<GatewayTap>,
     inbox: Arc<Inbox>,
     _rest: Arc<Rest>,
     _bell: BellReceiver,
@@ -283,9 +303,18 @@ impl Harness {
         let global_limit = NonZeroU16::new(50).unwrap();
         let rest = Arc::new(Rest::new(TOKEN, api_url, global_limit, Arc::clone(&inbox)).unwrap());
         let rest_handle = Arc::downgrade(&rest);
+        let tap = Arc::new(GatewayTap::new());
+        let gateway = Gateway::new(
+            Handle::current(),
+            Arc::clone(&inbox),
+            TOKEN,
+            rest_handle,
+            Arc::clone(&tap),
+        )
+        .unwrap();
         Self {
-            gateway: Gateway::new(Handle::current(), Arc::clone(&inbox), TOKEN, rest_handle)
-                .unwrap(),
+            gateway: Arc::new(gateway),
+            tap,
             inbox,
             _rest: rest,
             _bell: receiver,
@@ -1159,4 +1188,98 @@ async fn invalid_frames_reconnect_instead_of_panicking() {
 #[test]
 fn the_tls_connector_builds_with_one_rustls_provider() {
     Connector::new().unwrap();
+}
+
+#[tokio::test]
+async fn filtered_voice_updates_still_reach_the_voice_tap() {
+    let mut harness = Harness::new(false).await;
+    harness
+        .gateway
+        .set_filter(Some(vec!["MESSAGE_CREATE".to_owned()]));
+    let mut slot = harness
+        .tap
+        .register(GuildId::from(GUILD), shard(), UserId::from(BOT));
+    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
+
+    peer.send(&voice_server_update(2)).await;
+    peer.send(&voice_state_update(3)).await;
+    peer.send(&message(4)).await;
+
+    let (seq, name, _) = harness.dispatch().await;
+    assert_eq!((seq, &*name), (4, "MESSAGE_CREATE"));
+    let snapshot = slot.borrow_and_update().clone();
+    let server = snapshot.server.unwrap();
+    assert_eq!(&*server.token, "voice-token");
+    assert_eq!(server.endpoint.as_deref(), Some("voice.discord.media:443"));
+    let state = snapshot.state.unwrap();
+    assert_eq!(state.channel, Some(ChannelId::from(VOICE_CHANNEL)));
+    assert!(state.self_deaf);
+    assert_eq!((snapshot.server_seq, snapshot.state_seq), (1, 1));
+}
+
+#[tokio::test]
+async fn voice_updates_the_filter_wants_reach_both_python_and_the_voice_tap() {
+    let mut harness = Harness::new(false).await;
+    let mut slot = harness
+        .tap
+        .register(GuildId::from(GUILD), shard(), UserId::from(BOT));
+    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
+
+    peer.send(&voice_server_update(2)).await;
+
+    let (seq, name, data) = harness.dispatch().await;
+    assert_eq!((seq, &*name), (2, "VOICE_SERVER_UPDATE"));
+    assert_eq!(data, raw_data(&voice_server_update(2)));
+    assert_eq!(slot.borrow_and_update().server_seq, 1);
+}
+
+struct SendOnWake {
+    gateway: Arc<Gateway>,
+    sent: std::sync::Mutex<Option<Result<(), CoreError>>>,
+}
+
+impl Wake for SendOnWake {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        let mut sent = self.sent.lock().unwrap();
+        if sent.is_none() {
+            *sent = Some(self.gateway.send(shard(), voice_state(5)));
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_later_ready_reaches_the_voice_tap_after_the_stale_commands_are_dropped() {
+    let mut harness = Harness::new(false).await;
+    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
+    let mut slot = harness
+        .tap
+        .register(GuildId::from(GUILD), shard(), UserId::from(BOT));
+    let first_session = slot.borrow().main_session;
+    let on_wake = Arc::new(SendOnWake {
+        gateway: Arc::clone(&harness.gateway),
+        sent: std::sync::Mutex::new(None),
+    });
+
+    peer.send(fixture(INVALID_SESSION)).await;
+    harness.disconnected().await;
+    harness.gateway.send(shard(), voice_state(4)).unwrap();
+    {
+        let waker = Waker::from(Arc::clone(&on_wake));
+        let mut changed = pin!(slot.changed());
+        let polled = changed.as_mut().poll(&mut Context::from_waker(&waker));
+        assert!(polled.is_pending());
+        let mut peer = harness.fake.accept().await;
+        peer.send(&hello(SLOW_HEARTBEAT)).await;
+        assert_identify(&peer.receive().await);
+        peer.send(&harness.fake.ready()).await;
+        harness.until_dispatch("READY").await;
+
+        on_wake.sent.lock().unwrap().take().unwrap().unwrap();
+        assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("5"));
+    }
+    assert_eq!(slot.borrow().main_session, first_session + 1);
 }

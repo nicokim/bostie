@@ -4,7 +4,7 @@ import socket
 import weakref
 from collections.abc import Callable
 from types import TracebackType
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from bostie import _native
 from bostie.errors import (
@@ -13,6 +13,9 @@ from bostie.errors import (
     RequestBudgetExhausted,
     TransportError,
 )
+
+if TYPE_CHECKING:
+    from bostie.voice.connection import VoiceDelivery
 
 BELL_READ_SIZE = 4096
 FAILURE_ERRORS = {
@@ -28,7 +31,7 @@ type StatusDelivery = (
     | _native.BackpressureDelivery
     | _native.InvalidRequestsDelivery
 )
-type GatewayDelivery = _native.DispatchDelivery | StatusDelivery
+type GatewayDelivery = _native.DispatchDelivery | StatusDelivery | VoiceDelivery
 type OnGateway = Callable[[GatewayDelivery, float], object]
 
 log = logging.getLogger("bostie.bridge")
@@ -153,20 +156,6 @@ class Bridge:
                     self._resolve(ticket, (status, body))
                 case ("failure", ticket, kind, detail):
                     self._reject(ticket, FAILURE_ERRORS[kind](detail))
-                case (
-                    "voice_state"
-                    | "voice_moved"
-                    | "voice_dave"
-                    | "voice_self"
-                    | "voice_speaking"
-                    | "voice_clients"
-                    | "voice_client_left"
-                    | "voice_stalled"
-                    | "voice_wake"
-                    | "voice_marker",
-                    *_,
-                ):
-                    pass
                 case _:
                     try:
                         self._on_gateway(delivery, received)

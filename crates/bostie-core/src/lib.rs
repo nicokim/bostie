@@ -11,8 +11,8 @@ pub mod voice;
 use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::process;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -30,6 +30,25 @@ use crate::gateway::Gateway;
 use crate::inbox::Inbox;
 use crate::rest::Rest;
 use crate::tasks::{PendingTicket, TaskTable};
+use crate::voice::tap::GatewayTap;
+use crate::voice::types::MAX_DAVE_PROTOCOL_VERSION;
+use crate::voice::{GatewaySend, Voice};
+
+pub fn versions() -> Vec<(&'static str, String)> {
+    let libopus = opus::version();
+    vec![
+        ("bostie", env!("CARGO_PKG_VERSION").to_owned()),
+        (
+            "libopus",
+            libopus
+                .strip_prefix("libopus ")
+                .unwrap_or(libopus)
+                .to_owned(),
+        ),
+        ("davey", voice::dave::DAVEY_VERSION.to_owned()),
+        ("dave_protocol", MAX_DAVE_PROTOCOL_VERSION.to_string()),
+    ]
+}
 
 pub struct Core {
     owner: u32,
@@ -37,7 +56,8 @@ pub struct Core {
     runtime: Handle,
     inbox: Arc<Inbox>,
     tasks: Arc<Mutex<TaskTable>>,
-    gateway: Gateway,
+    gateway: Arc<Gateway>,
+    voice: Voice,
 }
 
 impl Core {
@@ -49,16 +69,24 @@ impl Core {
         let runtime = runtime::shared()?;
         let (bell, receiver) = bell::pair().map_err(CoreError::Bell)?;
         let inbox = Arc::new(Inbox::new(bell));
-        let (rest, gateway) = {
+        let (rest, gateway, voice) = {
             let _context = runtime.enter();
             let rest = Arc::new(Rest::new(token, api_url, global_limit, Arc::clone(&inbox))?);
-            let gateway = Gateway::new(
+            let tap = Arc::new(GatewayTap::new());
+            let gateway = Arc::new(Gateway::new(
                 runtime.clone(),
                 Arc::clone(&inbox),
                 token,
                 Arc::downgrade(&rest),
+                Arc::clone(&tap),
+            )?);
+            let voice = Voice::new(
+                runtime.clone(),
+                Arc::clone(&inbox),
+                tap,
+                gateway_send(Arc::downgrade(&gateway)),
             )?;
-            (rest, gateway)
+            (rest, gateway, voice)
         };
         let core = Self {
             owner: process::id(),
@@ -70,6 +98,7 @@ impl Core {
                 rest: Some(rest),
             })),
             gateway,
+            voice,
         };
         Ok((core, receiver))
     }
@@ -144,6 +173,11 @@ impl Core {
         self.gateway.latency(shard)
     }
 
+    pub fn voice(&self) -> Result<&Voice, CoreError> {
+        self.ensure_same_process()?;
+        Ok(&self.voice)
+    }
+
     pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {
         self.ensure_same_process()?;
         Ok(self.inbox.drain())
@@ -166,6 +200,7 @@ impl Core {
         for (_, task) in table.running.drain() {
             task.abort();
         }
+        self.voice.shutdown();
         self.gateway.shutdown();
     }
 
@@ -176,6 +211,15 @@ impl Core {
             Err(CoreError::Forked { owner: self.owner })
         }
     }
+}
+
+fn gateway_send(gateway: Weak<Gateway>) -> GatewaySend {
+    Arc::new(move |shard, payload| {
+        gateway
+            .upgrade()
+            .ok_or(CoreError::Closed)?
+            .send(shard, payload)
+    })
 }
 
 impl Drop for Core {
@@ -203,6 +247,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::voice::types::{Application, ConnectRequest, EncoderSettings, SourceSpec};
 
     const TOKEN: &str = "token";
     const GLOBAL_LIMIT: NonZeroU16 = NonZeroU16::new(50).unwrap();
@@ -361,5 +406,74 @@ mod tests {
             ),
             Err(CoreError::Closed)
         ));
+    }
+
+    fn voice_request() -> ConnectRequest {
+        ConnectRequest {
+            guild: GuildId::from(1),
+            channel: ChannelId::from(2),
+            shard: ShardId::from(0),
+            user: UserId::from(3),
+            self_mute: false,
+            self_deaf: false,
+            timeout: Duration::from_secs(5),
+            encoder: EncoderSettings {
+                bitrate: 64_000,
+                application: Application::Audio,
+                fec: true,
+                packet_loss: 10,
+                complexity: 10,
+            },
+            speaking: 1,
+        }
+    }
+
+    fn some_bytes() -> SourceSpec {
+        SourceSpec::Bytes {
+            data: Bytes::from_static(b"not audio"),
+            hint: None,
+        }
+    }
+
+    #[test]
+    fn voice_sends_its_voice_state_through_the_gateway() {
+        let (core, _receiver) = core("http://127.0.0.1:1").unwrap();
+
+        let joined = core.voice().unwrap().connect(voice_request());
+
+        assert!(
+            matches!(joined, Err(CoreError::UnknownShard(shard)) if shard == ShardId::from(0)),
+            "{joined:?}"
+        );
+    }
+
+    #[test]
+    fn closing_the_core_shuts_voice_down() {
+        let (core, _receiver) = core("http://127.0.0.1:1").unwrap();
+        let source = core.voice().unwrap().open_source(some_bytes()).unwrap();
+
+        core.close().unwrap();
+
+        assert!(source.is_closed());
+        let voice = core.voice().unwrap();
+        assert!(matches!(
+            voice.open_source(some_bytes()),
+            Err(CoreError::Closed)
+        ));
+        assert!(matches!(
+            voice.connect(voice_request()),
+            Err(CoreError::Closed)
+        ));
+    }
+
+    #[test]
+    fn versions_name_bostie_libopus_davey_and_the_dave_protocol() {
+        let versions: HashMap<_, _> = versions().into_iter().collect();
+
+        assert_eq!(versions["bostie"], env!("CARGO_PKG_VERSION"));
+        assert!(versions["libopus"].starts_with("1."), "{versions:?}");
+        assert_eq!(versions["davey"], voice::dave::DAVEY_VERSION);
+        assert_eq!(versions["dave_protocol"], "1");
+        assert_eq!(versions.len(), 4);
     }
 }

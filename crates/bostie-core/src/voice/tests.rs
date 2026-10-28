@@ -18,6 +18,7 @@ use crate::voice::codec::FrameEncoder;
 use crate::voice::crypto::Mode;
 use crate::voice::dave::{Fault, MlsCall, Outbound, SendMode};
 use crate::voice::proto::op;
+use crate::voice::source::tests::{fixture, frames, read_to_end, wait_for_info};
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
 use crate::voice::testkit::mls::{Call, Corruption, Signal};
@@ -2505,6 +2506,49 @@ async fn a_commit_without_queued_proposals_resets_the_session() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn after_a_recovery_media_waits_for_the_re_add_and_never_uses_the_old_key() {
+    let mut harness = Harness::dave().await;
+    let mut call = harness.talking_with(&[LATE_PEER]).await;
+    let readies = transition_readies(&harness.server).len();
+    call.fake.hold_transitions = true;
+    let sink = harness.opus_sink();
+    let before = harness.server.sfu.packets().len();
+
+    harness.server.send_dave(DaveOp::AnnounceCommit {
+        transition_id: 9,
+        commit: Bytes::from_static(b"a commit"),
+    });
+    harness
+        .pump(&mut call, |harness, _| {
+            transition_readies(&harness.server).len() > readies
+        })
+        .await;
+    let rejoining = harness.gate();
+    let packets = opus(2);
+    for packet in &packets {
+        sink.write(packet).unwrap();
+    }
+    harness.tick(2);
+    let sent_while_rejoining = harness.server.sfu.packets().len() - before;
+    let released = call.fake.release_transitions();
+    call.enqueue(released);
+    harness.encrypting(&mut call).await;
+    harness.tick(2);
+
+    assert_eq!(harness.counter("recoveries"), 1);
+    assert_eq!(rejoining, SendMode::Hold);
+    assert_eq!(sent_while_rejoining, 0);
+    let arrived = harness.server.sfu.wait_packets(before + 2, WAIT);
+    assert_eq!(arrived.len(), before + 2);
+    for (packet, sent) in arrived[before..].iter().zip(&packets) {
+        assert_eq!(
+            hear(&mut call, LATE_PEER, &packet.payload),
+            Some(sent.to_vec())
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_execute_for_an_unknown_transition_is_ignored() {
     let mut harness = Harness::dave().await;
     let mut call = harness.talking_with(&[LATE_PEER]).await;
@@ -3000,4 +3044,66 @@ async fn clients_announced_after_the_session_description_hold_media_until_the_gr
     );
     let statuses: Vec<VoiceStatus> = harness.statuses().iter().map(|state| state.0).collect();
     assert_eq!(statuses, [VoiceStatus::Connecting, VoiceStatus::Ready]);
+}
+
+fn tone_file() -> SourceSpec {
+    SourceSpec::File(fixture("tone.flac"))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sinks_and_sources_take_their_ids_from_one_counter() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+
+    let first = harness.sink(pcm(), StallPolicy::Hold);
+    let source = harness.voice.open_source(tone_file()).unwrap();
+    let last = harness.sink(pcm(), StallPolicy::Hold);
+
+    let ids = [first.id(), source.id(), last.id()].map(u64::from);
+    assert_eq!(ids, [ids[0], ids[0] + 1, ids[0] + 2]);
+    let info = wait_for_info(&source);
+    let (chunks, error) = read_to_end(&source);
+    assert_eq!(error, None);
+    assert_eq!(frames(info.kind, &chunks), 48_000);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shutdown_closes_every_open_source_and_refuses_new_ones() {
+    let harness = Harness::start().await;
+    let kept = harness.voice.open_source(tone_file()).unwrap();
+    drop(harness.voice.open_source(tone_file()).unwrap());
+
+    harness.voice.shutdown();
+
+    assert!(kept.is_closed());
+    assert!(matches!(kept.read(), Err(CoreError::HandleClosed(_))));
+    assert!(matches!(
+        harness.voice.open_source(tone_file()),
+        Err(CoreError::Closed)
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dropping_voice_in_another_process_leaves_its_sources_open() {
+    let harness = Harness::start().await;
+    let kept = harness.voice.open_source(tone_file()).unwrap();
+    let mut voice = harness.voice;
+    voice.owner = voice.owner.wrapping_add(1);
+
+    drop(voice);
+
+    assert!(!kept.is_closed());
+    kept.close();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dropped_sources_are_forgotten_when_the_next_one_opens() {
+    let harness = Harness::start().await;
+    for _ in 0..10 {
+        drop(harness.voice.open_source(tone_file()).unwrap());
+    }
+    let kept = harness.voice.open_source(tone_file()).unwrap();
+
+    assert_eq!(harness.voice.shared.sources.lock().len(), 1);
+    assert!(!kept.is_closed());
 }

@@ -480,7 +480,7 @@ class Bot(Router):
             case ("disconnected", _, _, _, resuming):
                 self._replaying = resuming
                 self.gateway.handle(delivery)
-            case _:
+            case ("stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway.handle(delivery)
 
     def _dispatch(

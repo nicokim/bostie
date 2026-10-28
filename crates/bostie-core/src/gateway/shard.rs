@@ -24,6 +24,7 @@ use super::limits::{
 use crate::error::describe;
 use crate::ids::ShardId;
 use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery};
+use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
 const NORMAL_CLOSE: u16 = 1000;
 const SESSION_KEEPING_CLOSE: u16 = 4000;
@@ -418,6 +419,10 @@ impl Shard {
     }
 
     fn wants(&self, name: &str) -> bool {
+        self.forwards(name) || (is_voice_update(name) && self.shared.tap.has_guilds())
+    }
+
+    fn forwards(&self, name: &str) -> bool {
         ends_the_handshake(name)
             || self
                 .shared
@@ -433,7 +438,16 @@ impl Shard {
             Frame::Dispatch {
                 seq,
                 forward: Some(forward),
-            } => self.forward(connection, Held { seq, forward }),
+            } => {
+                if is_voice_update(&forward.name) {
+                    self.shared.tap.offer(self.id, &forward.name, &forward.data);
+                }
+                if self.forwards(&forward.name) {
+                    self.forward(connection, Held { seq, forward });
+                } else {
+                    self.commit(seq);
+                }
+            }
             Frame::Heartbeat => return self.send_heartbeat(connection).await,
             Frame::HeartbeatAck => self.on_heartbeat_ack(connection),
             Frame::Hello { heartbeat_interval } => {
@@ -535,6 +549,7 @@ impl Shard {
         if self.had_session {
             while self.commands.try_recv().is_ok() {}
         }
+        self.shared.tap.session_started(self.id);
         self.had_session = true;
         self.session = envelope::ready_session(data).and_then(|ready| {
             Some(Session {
@@ -641,6 +656,10 @@ impl Shard {
 
 fn ends_the_handshake(name: &str) -> bool {
     matches!(name, "READY" | "RESUMED")
+}
+
+fn is_voice_update(name: &str) -> bool {
+    matches!(name, VOICE_STATE_UPDATE | VOICE_SERVER_UPDATE)
 }
 
 async fn connect(url: &Url, connector: &Connector) -> Result<Socket, String> {
