@@ -16,11 +16,11 @@ bostie is not on PyPI yet. Clone this repository and install the clone into your
 pip install path/to/bostie
 ```
 
-You need Python 3.12 or newer and Rust 1.95 or newer ([rustup.rs](https://rustup.rs)). The install compiles the Rust core, which can take a few minutes.
+You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs)) and [CMake](https://cmake.org/download/). The install compiles the Rust core and libopus, which takes a few minutes.
 
 ## Goals
 
-- Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026, and most Python libraries still struggle with it, especially when receiving audio. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
+- Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
 - Bots keep working when Discord adds things. Unknown fields, enum values and components never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
 - The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
 
@@ -76,14 +76,12 @@ async def wave_back(event: MessageCreate) -> None:
 bot.run()
 ```
 
-What the example relies on:
+A few things the example takes for granted:
 
 - `bot.run()` reads the token from `BOSTIE_TOKEN`.
 - Commands sync on startup, and only when they changed. With `dev_guilds`, they sync to those guilds only.
 - A handler that has not answered after 2.5 s is deferred for you.
-- Options come from the type hints. `str`, `int`, `float` and `bool` map to the matching option types, `User` or `Member` to a user, `Channel` to a channel, `Role` to a role, `Attachment` to an attachment, and `User | Role` to a mentionable.
-- `Range[int, 2, 100]` bounds a number, or a string's length. A string in `Annotated` is the description. A default or `| None` makes the option optional.
-- Choices come from a `Literal` of strings or ints, an `Enum`, or `Option(choices=...)`.
+- Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `Channel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
@@ -137,7 +135,7 @@ bot.run()
 - `connect()` returns once audio can flow, or raises `voice.VoiceConnectError` with the reason. Dropped connections, voice server changes, moves and DAVE transitions are handled for you. `voice.StateChange`, `voice.Moved`, `voice.UserJoin` and the other voice events reach `@bot.listen` and `bot.wait_for`.
 - `voice.File`, `voice.Bytes` and `voice.Url` decode Ogg Opus and Vorbis, WebM, FLAC, WAV and MP3 in Rust. `voice.FFmpeg(args)` plays anything ffmpeg reads, and `voice.Stream(chunks, format)` plays an async iterator. `vc.play(source)` plays a source on its own, mixed with whatever else plays. `voice.Queue` plays tracks back to back without gaps.
 - `vc.sink(format)` is what they all build on: a bounded writer of PCM (16-bit or float, 8 to 192 kHz, mono or stereo) or Opus packets. `await sink.write(data)` waits while `buffer` seconds are queued. A sink that runs dry sends silence; the stream goes on.
-- `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, sink buffer, stall policy and stage role. Each call can override them.
+- `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, speaking flags, sink buffer, stall policy and stage role. Each call can override them.
 - Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`.
 - Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
 
@@ -176,16 +174,6 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `global_rate_limit`: requests per second across all routes, 50 by default. Interaction responses and follow-ups do not count.
 - `api_url`: the REST API base URL, for a proxy or a fake Discord in tests.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
-
-## Layout
-
-| Path | What lives there |
-|---|---|
-| `crates/bostie-core` | Rust core: async runtime, networking, protocol. No Python dependency. |
-| `crates/bostie-native` | Thin PyO3 bindings exposing the core as `bostie._native`. |
-| `python/bostie` | The public Python API. |
-| `tests` | Python tests, an offline fake Discord (`tests/fakediscord`), sample payloads (`tests/fixtures`) and a check against real Discord (`tests/live`). |
-| `assets` | The logo and the mascot. |
 
 ## License
 

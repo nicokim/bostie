@@ -1,22 +1,22 @@
 # Contributing
 
+Thanks for helping with bostie. Questions, bug reports and feature ideas go in the GitHub issue tracker. If you want to change the public API, open an issue first so we can agree on the design before you build it. A new event, a clearer name or a missing test can go straight to a pull request.
+
 ## Setup
 
-You need Python 3.12 or newer, [Rust](https://rustup.rs) 1.95 or newer, [uv](https://docs.astral.sh/uv/), and [CMake](https://cmake.org/download/), which builds the bundled libopus.
+You need Python 3.12 or newer, [Rust](https://rustup.rs) 1.95 or newer, [uv](https://docs.astral.sh/uv/) and [CMake](https://cmake.org/download/), which builds the bundled libopus.
 
 ```sh
 uv sync                    # builds the Rust extension and installs the dev tools
-uv run pytest              # Python tests; rebuilds the extension when Rust files change
-cargo test -p bostie-core  # Rust tests
+uv run pytest              # rebuilds the extension first if a Rust file changed
+cargo test -p bostie-core
 ```
 
-The first `uv sync` compiles the whole Rust workspace and prints only `Building bostie`, so it can look stuck for a few minutes.
+The first `uv sync` compiles the whole workspace and prints only `Building bostie` for a few minutes. It isn't stuck.
 
-The tests that measure the voice clock against real time use bounds that hold on a busy machine or a shared CI runner. To check its precision, run them on an idle machine with `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer`, which holds them to a p99 lateness of 5 ms.
+The zstd gateway tests need `compression.zstd` from Python 3.14, so they skip on 3.12. Run them with `uv run --python 3.14 pytest`. That rebuilds `.venv` for 3.14, and the next plain `uv run` switches it back.
 
-The project uses Python 3.12 by default. The tests of zstd-compressed gateway traffic need `compression.zstd`, new in Python 3.14, so they skip on older versions. `uv run --python 3.14 pytest` runs them. It rebuilds `.venv` for 3.14, and the next plain `uv run` switches it back.
-
-## Before opening a pull request
+## Before you open a pull request
 
 Run what CI runs:
 
@@ -32,69 +32,34 @@ uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
 uv run pytest
 ```
 
-- `cargo fmt --all` and `uv run ruff format` apply the formatting. `ruff format` does not wrap long strings or docstrings, so `ruff check` can still report E501.
-- `uv run mypy` checks `python/bostie`, `tests` and `benches` in strict mode.
-- stubtest checks that `python/bostie/_native.pyi` matches the compiled `bostie._native` module. If you change `crates/bostie-native`, update the `.pyi`.
-- If you change `.github/workflows`, also run `uvx --from actionlint-py actionlint`.
+`cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. mypy runs in strict mode on the tests and benchmarks as well as the library. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails. If you change `.github/workflows`, also run `uvx --from actionlint-py actionlint`.
 
-CI runs the tests on Linux, macOS and Windows, with Python 3.12, 3.13, 3.14, 3.15, 3.14t and 3.15t. A `t` build is free-threaded CPython, which runs without the GIL.
+CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
-## How an event reaches a listener
-
-Terms the code uses:
-
-- **delivery**: one item the Rust core hands to Python: a dispatch, a REST response or failure, a connection status, or a voice update. It is `Delivery` in `crates/bostie-core/src/inbox.rs`, and Python receives it as a tuple typed in `python/bostie/_native.pyi`.
-- **inbox**: the queue of deliveries waiting for Python (`Inbox` in `inbox.rs`).
-- **bell**: a socket pair (`crates/bostie-core/src/bell.rs`). The core writes one byte to it when the inbox gets its first delivery since the last drain. Python's event loop watches the other end.
-- **drain**: Python taking every queued delivery at once (`Core.drain()`).
-- **ticket**: the number that identifies a REST request. Its response or failure delivery carries the same ticket.
-- **filter**: the dispatch names Python wants. The shard skips the others without copying their payload.
-- **tap**: the voice side of the shard (`crates/bostie-core/src/voice/tap.rs`). It reads VOICE_STATE_UPDATE and VOICE_SERVER_UPDATE before the filter, so voice works whatever Python listens to.
-- **sink**: a bounded queue of audio for one voice connection (`voice/sink.rs`), written from Python through `vc.sink()`.
-- **pacer**: the OS threads that run every voice connection's **lane** each 20 ms (`voice/pacer.rs`, `voice/media.rs`). A lane mixes the connection's sinks, encodes Opus, encrypts and sends one packet. It never takes the GIL.
-
-The path of one dispatch:
-
-1. `Bot.start` in `python/bostie/bot.py` creates a `Bridge` (`python/bostie/_bridge.py`). The bridge calls `Core.create` in `crates/bostie-native/src/lib.rs`, which calls `Core::new` in `crates/bostie-core/src/lib.rs`. That takes the shared tokio runtime and builds the bell and the inbox. The bridge then watches the bell with `loop.add_reader`. The core never calls into Python.
-2. `Bot._dispatch_names` sends the filter through `GatewayClient.filter` (`python/bostie/gateway.py`) to `Gateway::set_filter` (`crates/bostie-core/src/gateway/mod.rs`). It is sent again whenever the listeners or the `wait_for` waiters change.
-3. `GatewayClient.start` calls `Gateway::start`, which spawns `Shard::run` (`gateway/shard.rs`). It connects, identifies or resumes, and reconnects with backoff.
-4. `Shard::serve` waits on the socket, the heartbeat and outgoing commands. For each message, `Shard::on_message` inflates compressed frames (`gateway/inflate.rs`), and `Frame::parse` (`gateway/envelope.rs`) reads `op`, `s` and `t`. It copies `d` only when the filter wants the event.
-5. `Shard::forward` pushes a `Delivery::Dispatch` with `Inbox::push`. When the inbox already holds 64 MiB of dispatches, the shard holds the frame and stops reading the socket until Python drains, so TCP pushes back on Discord.
-6. The bell wakes `Bridge._on_bell`, which calls `core.drain()`. A response or failure settles the future waiting on its ticket. Everything else goes to `Bot._on_gateway`.
-7. `Bot._dispatch` decodes the payload at most once per event class (`decode_event` in `python/bostie/events.py`). It then updates the READY state, the cache, the `wait_for` waiters and the interaction routes, in that order, and last starts one task per listener.
-
-Voice uses the same path for everything but audio. `Bot._on_gateway` hands each `voice_*` delivery to `VoiceManager.handle` (`python/bostie/voice/connection.py`). That updates the `VoiceConnection` and emits `voice.*` events through `Bot._emit` to the same listeners and `wait_for` waiters, without the filter. Audio never rides in a delivery: `voice_wake` tells a waiting `Sink.write` that its sink has room again, and `voice_marker` settles a marker once the audio before it has left.
+Keep a pull request to one change. A commit message has a short imperative subject, like "Add the GUILD_EMOJIS_UPDATE event", and a body that says why. A bug fix comes with the test that failed before it.
 
 ## Adding a gateway event
 
-1. Add a class to `python/bostie/events.py` that subclasses `Event` with `kw_only=True`, and set `NAME` to the dispatch name. `MessageDelete` and `TypingStart` are short ones to copy. Every subclass repeats `kw_only=True` because msgspec does not inherit it.
-2. Set `INTENTS` to the intents Discord needs to send the event. At startup, the bot warns about a listener whose [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents) is missing.
-3. Add the class to the `EVENTS` registry in `events.py`.
-4. Add a fixture, `tests/fixtures/models/events/NAME.json`, that holds only the `d` payload. A second shape goes in `NAME.variant.json`. `test_every_dispatch_decodes_to_its_event` picks it up by itself, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
+Rust needs no change: the core forwards any dispatch name Python asks for.
+
+1. Add a class to `python/bostie/events.py` that subclasses `Event` with `kw_only=True`, and set `NAME` to the dispatch name. `MessageDelete` and `TypingStart` are short ones to copy. msgspec doesn't inherit `kw_only`, so every subclass repeats it.
+2. Set `INTENTS` to the intents Discord needs to send the event. The bot uses it to warn at startup when a listener's [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents) is missing.
+3. Add the class to the `EVENTS` registry in the same file.
+4. Save the `d` payload as `tests/fixtures/models/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.
 6. If the event changes cached state, add it to `Cache.NAMES` and `Cache.apply` in `python/bostie/cache.py`.
 
-Rust needs no change: the core forwards any dispatch name in the filter. Follow the decoding rules below.
+Discord adds fields and enum values without notice, and a bot must not break when it does. So models never reject what they don't know:
 
-## Decoding rules
+- Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values.
+- Every field except an id or `type` has a default, usually `None`. `test_fields_have_defaults_so_a_missing_field_never_drops_an_event` checks every model and event.
+- `decoder()` in `python/bostie/models/base.py` runs msgspec in lax mode. Snowflake strings become `int` and unix timestamps become `datetime` without a converter.
 
-- Never reject unknown fields or enum values. Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values.
-- Every field but an id or `type` has a default, usually `None`, so a payload without it does not drop the event. `test_fields_have_defaults_so_a_missing_field_never_drops_an_event` checks every model and event.
-- `decoder()` in `python/bostie/models/base.py` uses msgspec's lax mode. It turns [snowflake](https://docs.discord.com/developers/reference#snowflakes) strings into `int` and unix timestamps into `datetime`, so fields use those types without a converter.
-- When a payload does not fit its event, `decode_event` returns `None` and logs a warning, once per event name. Typed listeners skip that event, and `RawEvent` listeners still get it.
+If a payload still doesn't fit, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it.
 
-## Testing without Discord
+## Tests
 
-`tests/fakediscord` is a local fake of the Discord gateway and REST API, for tests only. It serves the payloads in `tests/fixtures/models` and records every REST request in `fake.requests`.
-
-- `run(scenario)` runs `async def scenario(fake)` against a new `FakeDiscord`.
-- `async with running(bot, fake):` starts the bot on the fake, waits for READY, and closes the bot at the end.
-- `await fake.dispatch(name, d)` sends a dispatch. `await fake.interaction(type, data)` sends an interaction and returns the bot's answer as a recorded request.
-- `fake.fail(method, route_prefix, status, json)` answers the next matching request with `status` and `json`. It also stubs routes the fake does not model.
-
-`FakeDiscord(voice=True)` adds voice. It answers op 4 with VOICE_STATE_UPDATE and VOICE_SERVER_UPDATE, serves a voice gateway (v8), and runs a UDP server that decrypts every RTP packet into `fake.packets`. It never negotiates DAVE; DAVE is tested in Rust. Scripts move or kick the bot (`move_bot`, `kick_bot`), change the voice server (`server_update`), close or drop the voice socket (`close_voice`, `drop_voice`) and send voice opcodes (`clients_connect`, `client_disconnect`, `speaking`, `voice_op`). `full=True` leaves joins unanswered, as Discord does for a full channel. `tests/test_bot_voice.py` runs a real bot against it.
-
-pytest puts `tests/` on the import path, so tests import it as `fakediscord`:
+`tests/fakediscord` is a local fake of the Discord gateway and REST API. It serves the payloads in `tests/fixtures/models` and records every REST request in `fake.requests`. pytest puts `tests/` on the import path, so you import it as `fakediscord`:
 
 ```python
 from fakediscord import FakeDiscord, payloads, run, running
@@ -118,51 +83,44 @@ def test_ping_answers_pong() -> None:
     run(scenario)
 ```
 
-## Live check against real Discord
+`running(bot, fake)` starts the bot, waits for READY and closes it at the end. `fake.dispatch(name, d)` sends a dispatch, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that status, which also covers routes the fake doesn't model. `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `move_bot` and `kick_bot` move the bot around. It doesn't speak DAVE; the Rust tests cover that. Use these fakes rather than `unittest.mock`.
 
-`tests/live/live_check.py` runs the checks that need real Discord. pytest never collects it and CI never runs it. You need a bot in a test server:
+Test what a user could notice: a return value, an event, a packet sent, an error raised. Log text and call order count only when they are the feature. Anything mypy, stubtest or clippy already catches needs no test.
 
-1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an application with a bot. Invite it to a test server with the `bot` and `applications.commands` scopes, and let it send messages and attach files in one channel.
-2. Turn on Developer Mode in Discord to copy the server and channel ids, then run:
+Each behaviour gets one test, at the lowest layer that shows it. Codecs, crypto and state machines have a `mod tests` at the bottom of their Rust file. Python tests cover what the Python layer adds. The end-to-end tests in `tests/test_bot_voice.py` and `crates/bostie-core/src/voice/tests.rs` are there to prove the parts are connected, not to repeat the unit tests. When two tests differ only in their inputs, make them one `pytest.mark.parametrize` table or one loop over cases.
 
-   ```sh
-   BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
-   ```
+Parsers and crypto get a round trip, a known-answer vector when one exists, and a malformed input that comes back as an error instead of a panic. Wire formats get one fixture per payload under `tests/fixtures`, taken from Discord's documentation.
 
-3. When the script asks, within 120 s: type `/bostie-check`, pick a suggested flavor, send the command and click its button.
+Don't wait on the clock. Pass short timeouts and intervals through configuration, not a `#[cfg(test)]` constant. The pacer tests are the exception, because real time is what they measure. Their default bound holds on a busy CI runner. To check the clock's precision, run `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer` on an idle machine, which holds it to 5 ms at p99.
 
-Each step prints PASS or FAIL, and the script exits with a non-zero status if any step fails. It registers `/bostie-check` as a guild command in the test server and leaves it there.
+Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending`. Python tests go in `tests/test_<module>.py`. Nothing in the suite touches the network or real Discord.
 
-The sync is a bulk overwrite, so it replaces every guild command the application already has in that server. Use a bot or server without guild commands you care about. If you can't, save them first (`GET /applications/{application_id}/guilds/{guild_id}/commands`) and `PUT` them back afterwards.
+## Checking against real Discord
 
-### Voice
+The scripts in `tests/live` need a real bot, so pytest and CI never run them. In the [Developer Portal](https://discord.com/developers/applications), create an application with a bot, invite it to a test server with the `bot` and `applications.commands` scopes, and let it send messages and attach files in one channel. Turn on Developer Mode in Discord to copy ids.
 
-`tests/live/voice_check.py` checks voice with you listening in the Discord client. It syncs no commands.
+```sh
+BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
+```
 
-1. Use the bot from the live check, and let it connect, speak and manage the channel in a voice channel that nobody is in. It switches the channel's region and back to check a voice server change. To check moves, give it a second voice channel. To check stages, give it a stage channel where it may request to speak.
-2. Run:
+When the script asks, within 120 s, type `/bostie-check`, pick a suggested flavor, send the command and click its button. Each step prints PASS or FAIL, and the script exits non-zero if any step failed.
 
-   ```sh
-   BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_VOICE=<empty voice channel id> uv run python tests/live/voice_check.py
-   ```
+**The script syncs `/bostie-check` with a bulk overwrite, which replaces every guild command the application already has in that server.** Use a bot or server whose guild commands you don't need, or save them first with `GET /applications/{application_id}/guilds/{guild_id}/commands` and `PUT` them back afterwards. `/bostie-check` stays registered when the script ends.
 
-   Add `BOSTIE_LIVE_VOICE_2=<channel id>` for the moves and `BOSTIE_LIVE_STAGE=<channel id>` for the stage.
-3. When the script asks, join the voice channel, and answer its y/n questions about what you hear. Follow the bot when it moves.
+The voice check needs you listening in the Discord client, and it syncs no commands. Let the bot connect, speak and manage the channel in a voice channel nobody is in. It switches the channel's region and back to test a voice server change.
 
-The script prints the call's privacy code and your verification code, which should match the call's details in the client. It also prints whether Discord sent the call's member list (op 11) before or after the session description. Its DAVE recovery step runs only if Discord starts a recovery during the check, which a bot cannot cause; otherwise it prints SKIP.
+```sh
+BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_VOICE=<empty voice channel id> uv run python tests/live/voice_check.py
+```
+
+Add `BOSTIE_LIVE_VOICE_2=<channel id>` to test moves, and `BOSTIE_LIVE_STAGE=<channel id>` for a stage channel where the bot may request to speak. Join the channel when asked, answer the y/n questions about what you hear, and follow the bot when it moves. The privacy code and verification code it prints should match the call's details in your client. The DAVE recovery step prints SKIP unless Discord starts a recovery during the run, which a bot can't trigger.
 
 ## Style
 
-- Write code that explains itself through names and structure. Don't add comments: they go stale, and names and tests don't.
-- Public Python API may have a short docstring when the name and signature are not enough. One line is usually right.
-- `bostie-core` never depends on PyO3 and never calls into Python. Python-facing glue lives in `bostie-native` and `python/bostie`.
-- No `unsafe`. No `unwrap`, `expect`, `panic!` or slice indexing outside tests; clippy enforces this because a panic on a background thread is invisible to Python users.
-- Use the latest release of every dependency. Performance claims need a benchmark in `benches/`.
-- Rust tests go in a `#[cfg(test)]` module next to the code. Python tests go in `tests/`.
-- Every change in behaviour comes with a test that fails without it.
+We don't write comments in code. If a block seems to need one, rename it or split it until it doesn't. Public Python API may have a docstring when the name and signature aren't enough, and one line is usually right.
 
-## Your first contribution
+`bostie-core` never depends on PyO3 and never calls into Python. Everything that faces Python lives in `bostie-native` or `python/bostie`.
 
-- A new event, a clearer name or a missing test is a good first change.
-- Open an issue before a change to the public API, so the design can be agreed first.
-- Write commit messages with a short imperative subject, then a body that explains why.
+No `unsafe`, and no `unwrap`, `expect`, `panic!` or slice indexing outside tests. clippy denies all of them. A panic on one of the core's threads would never reach the Python user, so return an error instead.
+
+When you add or bump a dependency, use its latest release. A change made for speed needs a benchmark in `benches/` that shows the gain.
