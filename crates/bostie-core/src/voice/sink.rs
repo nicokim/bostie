@@ -54,6 +54,7 @@ struct Queue {
     closed: bool,
     passthrough: bool,
     playing: bool,
+    flushed: bool,
     stats: SinkStats,
 }
 
@@ -167,6 +168,7 @@ impl Sink {
             let added = (queue.pcm.len() - before) / CHANNELS;
             queue.add(added as u64);
         }
+        queue.flushed = true;
         Ok(self.place_marker(&mut queue))
     }
 
@@ -379,6 +381,7 @@ impl Queue {
     fn add(&mut self, frames: u64) {
         self.queued += frames;
         self.written += frames;
+        self.flushed = false;
     }
 
     fn take(&mut self, frames: u64) -> u64 {
@@ -398,7 +401,7 @@ impl Queue {
     }
 
     fn starve(&mut self) {
-        if mem::take(&mut self.playing) {
+        if mem::take(&mut self.playing) && !self.flushed {
             self.stats.underruns += 1;
         }
     }
@@ -729,6 +732,24 @@ pub(crate) mod tests {
 
         assert_eq!(before_playing, 0);
         assert_eq!(stat(&sink, "underruns"), 2);
+    }
+
+    #[test]
+    fn running_dry_after_a_flush_is_no_underrun_until_the_next_write() {
+        let mut fixture = Fixture::new();
+        let sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
+        sink.write(&frames_of(0.1, 960)).unwrap();
+        sink.flush().unwrap();
+
+        pull(&sink).unwrap();
+        assert!(pull(&sink).is_none());
+        let after_the_flush = stat(&sink, "underruns");
+        sink.write(&frames_of(0.1, 960)).unwrap();
+        pull(&sink).unwrap();
+        assert!(pull(&sink).is_none());
+
+        assert_eq!(after_the_flush, 0);
+        assert_eq!(stat(&sink, "underruns"), 1);
     }
 
     #[test]

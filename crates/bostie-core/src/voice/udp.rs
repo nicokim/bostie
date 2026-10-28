@@ -374,19 +374,24 @@ mod tests {
 
     #[tokio::test]
     async fn the_receiver_outlives_port_unreachable_errors() {
-        let closed = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        let address = closed.local_addr().unwrap();
-        drop(closed);
-        let (socket, sender) = bind(address).unwrap();
-        let client = SocketAddr::new(
-            Ipv4Addr::LOCALHOST.into(),
-            socket.local_addr().unwrap().port(),
-        );
-        let (mut answers, _) = spawn_receiver(Arc::new(socket));
+        let (server, client, mut answers) = loop {
+            let closed = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let address = closed.local_addr().unwrap();
+            drop(closed);
+            let (socket, sender) = bind(address).unwrap();
+            let client = SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                socket.local_addr().unwrap().port(),
+            );
+            let (answers, _) = spawn_receiver(Arc::new(socket));
 
-        sender.send(b"anyone there").unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let server = std::net::UdpSocket::bind(address).unwrap();
+            sender.send(b"anyone there").unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if let Ok(server) = std::net::UdpSocket::bind(address) {
+                break (server, client, answers);
+            }
+        };
+
         server.send_to(&response(SSRC, external()), client).unwrap();
 
         timeout(WAIT, answers.changed()).await.unwrap().unwrap();

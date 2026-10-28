@@ -611,11 +611,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_dial_is_a_socket_error() {
-        let address = TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap()
-            .local_addr()
-            .unwrap();
+        let refusing = crate::refusing_socket();
+        let address = refusing.local_addr().unwrap();
         let url = endpoint_url(&format!("ws://{address}")).unwrap();
 
         let dialed = VoiceSocket::dial(&url, &Connector::Plain).await;

@@ -10,7 +10,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use sonic_rs::{JsonValueTrait, Value};
-use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::net::{TcpSocket, TcpStream};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep, timeout, timeout_at};
@@ -98,12 +98,8 @@ fn assert_identify(payload: &Value) {
     assert_eq!(payload["op"].as_u64(), Some(2), "{payload:?}");
 }
 
-async fn unused_address() -> SocketAddr {
-    TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
+fn address_of(socket: &TcpSocket) -> SocketAddr {
+    socket.local_addr().unwrap()
 }
 
 struct FakeGateway {
@@ -282,6 +278,7 @@ struct Harness {
     _bell: BellReceiver,
     fake: FakeGateway,
     received: VecDeque<Delivery>,
+    _refusing_api: Option<TcpSocket>,
 }
 
 impl Drop for Harness {
@@ -292,8 +289,11 @@ impl Drop for Harness {
 
 impl Harness {
     async fn new(zstd: bool) -> Self {
-        let api_url = format!("http://{}/api/v10", unused_address().await);
-        Self::with(FakeGateway::start(zstd).await, &api_url)
+        let refusing = crate::refusing_socket();
+        let api_url = format!("http://{}/api/v10", address_of(&refusing));
+        let mut harness = Self::with(FakeGateway::start(zstd).await, &api_url);
+        harness._refusing_api = Some(refusing);
+        harness
     }
 
     fn with(fake: FakeGateway, api_url: &str) -> Self {
@@ -320,6 +320,7 @@ impl Harness {
             _bell: receiver,
             fake,
             received: VecDeque::new(),
+            _refusing_api: None,
         }
     }
 
@@ -552,7 +553,8 @@ async fn a_silent_connection_is_closed_and_resumed() {
 #[tokio::test]
 async fn an_unreachable_resume_url_reidentifies_at_the_base_url() {
     let mut harness = Harness::new(false).await;
-    let dead = unused_address().await.to_string();
+    let closed = crate::refusing_socket();
+    let dead = address_of(&closed).to_string();
     harness.start();
     let mut peer = harness.fake.accept().await;
     peer.send(&hello(SLOW_HEARTBEAT)).await;
@@ -604,7 +606,8 @@ async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway()
     let gateway = format!(r#"{{"url":"{}"}}"#, fake.url());
     let mut api = Server::start(vec![reply("200 OK", &[], &gateway)]).await;
     let mut harness = Harness::with(fake, &api.url);
-    let refusing = format!("ws://{}", unused_address().await);
+    let closed = crate::refusing_socket();
+    let refusing = format!("ws://{}", address_of(&closed));
 
     harness
         .gateway
@@ -631,7 +634,8 @@ async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway()
 async fn only_consecutive_failures_on_the_base_url_refresh_it() {
     let mut api = Server::start(Vec::new()).await;
     let mut harness = Harness::with(FakeGateway::start(false).await, &api.url);
-    let dead = unused_address().await.to_string();
+    let closed = crate::refusing_socket();
+    let dead = address_of(&closed).to_string();
     harness.start();
 
     let _without_hello = harness.fake.accept().await;
@@ -657,7 +661,8 @@ async fn only_consecutive_failures_on_the_base_url_refresh_it() {
 async fn a_get_gateway_that_never_answers_delays_neither_reconnecting_nor_closing() {
     let mut api = Server::start(vec![NO_REPLY, NO_REPLY]).await;
     let mut harness = Harness::with(FakeGateway::start(false).await, &api.url);
-    let refusing = format!("ws://{}", unused_address().await);
+    let closed = crate::refusing_socket();
+    let refusing = format!("ws://{}", address_of(&closed));
 
     harness
         .gateway
@@ -1133,6 +1138,51 @@ async fn the_api_rejects_bad_input_and_full_queues() {
     ));
 }
 
+struct DropWaitsForRelease {
+    payload: &'static [u8],
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl AsRef<[u8]> for DropWaitsForRelease {
+    fn as_ref(&self) -> &[u8] {
+        self.payload
+    }
+}
+
+impl Drop for DropWaitsForRelease {
+    fn drop(&mut self) {
+        let _ = tokio::task::block_in_place(|| self.release.recv());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds() {
+    let mut harness = Harness::new(false).await;
+    harness.start();
+    let _peer = harness.fake.accept().await;
+    let (release, held) = std::sync::mpsc::channel();
+    let queued = Bytes::from_owner(DropWaitsForRelease {
+        payload: br#"{"op":3,"d":{}}"#,
+        release: held,
+    });
+    harness.gateway.send(shard(), queued).unwrap();
+
+    harness.gateway.close(shard()).unwrap();
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    let latency = harness.gateway.latency(shard());
+    let restarted =
+        harness
+            .gateway
+            .start(shard(), &harness.fake.url(), Bytes::from_static(IDENTIFY));
+    release.send(()).unwrap();
+
+    assert!(
+        matches!(latency, Err(CoreError::UnknownShard(_))),
+        "{latency:?}"
+    );
+    assert!(restarted.is_ok(), "{restarted:?}");
+}
+
 #[tokio::test]
 async fn reconnect_resumes_and_close_stops() {
     let mut harness = Harness::new(false).await;
@@ -1149,11 +1199,6 @@ async fn reconnect_resumes_and_close_stops() {
     harness.gateway.close(shard()).unwrap();
     assert_eq!(peer.close_code().await, Some(1000));
     assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
-    let deadline = Instant::now() + WAIT;
-    while harness.gateway.latency(shard()).is_ok() {
-        assert!(Instant::now() < deadline, "the shard never finished");
-        sleep(Duration::from_millis(2)).await;
-    }
     harness.start();
 }
 

@@ -59,6 +59,12 @@ struct ShardHandle {
     task: AbortHandle,
 }
 
+impl ShardHandle {
+    fn is_running(&self) -> bool {
+        !self.task.is_finished() && !self.signals.stopped.load(Ordering::Acquire)
+    }
+}
+
 impl Gateway {
     pub fn new(
         runtime: Handle,
@@ -92,10 +98,7 @@ impl Gateway {
         })?;
         let identify = envelope::identify_frame(&identify)?;
         let mut shards = self.shards.lock();
-        if shards
-            .get(&shard)
-            .is_some_and(|handle| !handle.task.is_finished())
-        {
+        if shards.get(&shard).is_some_and(ShardHandle::is_running) {
             return Err(CoreError::ShardRunning(shard));
         }
         let (commands, queued) = mpsc::channel(COMMAND_QUEUE);
@@ -171,7 +174,7 @@ impl Gateway {
         action: impl FnOnce(&ShardHandle) -> Result<T, CoreError>,
     ) -> Result<T, CoreError> {
         match self.shards.lock().get(&shard) {
-            Some(handle) if !handle.task.is_finished() => action(handle),
+            Some(handle) if handle.is_running() => action(handle),
             _ => Err(CoreError::UnknownShard(shard)),
         }
     }

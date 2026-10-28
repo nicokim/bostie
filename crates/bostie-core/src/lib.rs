@@ -239,6 +239,20 @@ fn init_test_tracing() {
 }
 
 #[cfg(test)]
+fn refusing_socket() -> tokio::net::TcpSocket {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket
+        .bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
+        .unwrap();
+    socket
+}
+
+#[cfg(test)]
+fn strict_timing() -> bool {
+    std::env::var_os("BOSTIE_STRICT_TIMING").is_some_and(|value| !value.is_empty())
+}
+
+#[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
@@ -340,11 +354,9 @@ mod tests {
     #[test]
     fn reports_connection_failures_as_transport() {
         init_test_tracing();
-        let unused_port = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap();
-        let (core, receiver) = core(&format!("http://{unused_port}")).unwrap();
+        let refusing = refusing_socket();
+        let address = refusing.local_addr().unwrap();
+        let (core, receiver) = core(&format!("http://{address}")).unwrap();
 
         core.request(me()).unwrap();
 

@@ -512,9 +512,8 @@ mod tests {
     #[test]
     fn a_failed_connection_reports_the_error_without_the_url() {
         let mut harness = Harness::new();
-        let closed = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = closed.local_addr().unwrap().port();
-        drop(closed);
+        let refusing = crate::refusing_socket();
+        let port = refusing.local_addr().unwrap().port();
         let source = url_source(
             &mut harness,
             format!("http://127.0.0.1:{port}/tone.ogg?token=hunter2"),

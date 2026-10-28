@@ -12,6 +12,8 @@ cargo test -p bostie-core  # Rust tests
 
 The first `uv sync` compiles the whole Rust workspace and prints only `Building bostie`, so it can look stuck for a few minutes.
 
+The tests that measure the voice clock against real time use bounds that hold on a busy machine or a shared CI runner. To check its precision, run them on an idle machine with `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer`, which holds them to a p99 lateness of 5 ms.
+
 The project uses Python 3.12 by default. The tests of zstd-compressed gateway traffic need `compression.zstd`, new in Python 3.14, so they skip on older versions. `uv run --python 3.14 pytest` runs them. It rebuilds `.venv` for 3.14, and the next plain `uv run` switches it back.
 
 ## Before opening a pull request

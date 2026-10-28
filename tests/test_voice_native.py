@@ -241,6 +241,7 @@ def test_a_connection_reports_latency_dave_stats_and_diagnostics(
     stats = connected.voice_stats(GUILD)
     assert stats["packets_sent"] == 0
     assert stats["recoveries"] == 0
+    wait_until(lambda: bool(connected.voice_diagnostics(GUILD)["history"]))
 
     diagnostics = connected.voice_diagnostics(GUILD)
 

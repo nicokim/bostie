@@ -195,6 +195,20 @@ def test_a_second_of_pcm_goes_out_as_fifty_opus_packets_then_five_silent_ones() 
     run(scenario)
 
 
+def test_a_sink_that_plays_to_its_end_counts_no_underrun() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            async with vc.sink() as out:
+                await out.write(tone(0.2))
+                await out.drain()
+                await played(fake)
+
+            assert out.stats().underruns == 0
+
+    run(scenario)
+
+
 def test_opus_passes_through_byte_for_byte_unless_the_volume_changes() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
@@ -230,18 +244,19 @@ def test_two_sinks_mix_into_one_packet_per_tick() -> None:
             encoder = voice.OpusEncoder()
             encoded = encoder.encode(tone(1.0)) + encoder.flush()
 
+            pcm_frames = FRAMES_PER_SECOND + 10
             opus = vc.sink(voice.Opus(), buffer=2.0)
             pcm = vc.sink(voice.PCM(24_000, 1), buffer=2.0)
+            pcm.write_nowait(b"\x10\x00" * 480 * pcm_frames)
             for packet in encoded:
                 opus.write_nowait(packet)
-            pcm.write_nowait(b"\x10\x00" * 24_000)
             await asyncio.gather(opus.drain(), pcm.drain())
             passthrough = opus.passthrough
             packets = await played(fake)
             stats = vc.stats().send
 
             assert not passthrough
-            assert FRAMES_PER_SECOND <= stats.encoded_packets <= FRAMES_PER_SECOND + 2
+            assert pcm_frames <= stats.encoded_packets <= pcm_frames + 2
             assert stats.passthrough_packets == 0
             assert not set(encoded) & {packet.payload for packet in packets}
             assert_contiguous(packets)

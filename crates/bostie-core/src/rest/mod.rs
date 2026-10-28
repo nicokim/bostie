@@ -1120,11 +1120,9 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn connection_failures_are_retried_and_reported_without_the_url() {
         crate::init_test_tracing();
-        let unused = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap();
-        let (rest, _receiver) = rest(&format!("http://{unused}/api/v10"));
+        let refusing = crate::refusing_socket();
+        let address = refusing.local_addr().unwrap();
+        let (rest, _receiver) = rest(&format!("http://{address}/api/v10"));
         let webhook = request(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}",

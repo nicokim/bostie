@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -47,6 +47,7 @@ pub(super) struct Signals {
     pub(super) close: Notify,
     pub(super) reconnect: Notify,
     pub(super) latency: AtomicU64,
+    pub(super) stopped: AtomicBool,
 }
 
 impl Signals {
@@ -55,6 +56,7 @@ impl Signals {
             close: Notify::new(),
             reconnect: Notify::new(),
             latency: AtomicU64::new(UNKNOWN_LATENCY),
+            stopped: AtomicBool::new(false),
         }
     }
 }
@@ -642,6 +644,7 @@ impl Shard {
     }
 
     fn stopped(&self, code: Option<u16>, reason: &str) {
+        self.signals.stopped.store(true, Ordering::Release);
         self.push(Delivery::Stopped {
             shard: self.id,
             code,
