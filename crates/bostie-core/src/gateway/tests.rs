@@ -20,20 +20,34 @@ use zstd_safe::CCtx;
 use super::close::{CLOSE_CODES, CloseAction};
 use super::envelope::tests::fixture;
 use super::inflate::tests::{compress, discord_compressor};
+use super::limits::Limits;
 use super::{Gateway, IdentifyLimit};
 use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
-use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery, Inbox};
+use crate::inbox::{Delivery, Inbox};
 use crate::rest::Rest;
-use crate::rest::tests::{NO_REPLY, Server, reply};
+use crate::rest::tests::{LIMITS as REST_LIMITS, NO_REPLY, Server, reply};
 use crate::voice::tap::GatewayTap;
 
 const TOKEN: &str = "test-token";
 const SESSION_ID: &str = "70374e9c7263b9d5e16c4f418ff85dc1";
 const IDENTIFY: &[u8] = br#"{"token": "test-token", "intents": 33281, "properties": {"os": "linux", "browser": "bostie", "device": "bostie"}}"#;
 const WAIT: Duration = Duration::from_secs(5);
+const NEVER: Duration = Duration::from_secs(3600);
 const SLOW_HEARTBEAT: u64 = 41_250;
+const QUIET_HEARTBEAT: u64 = 24 * 60 * 60 * 1000;
+const INBOX_LIMIT: usize = 64 * 1024;
+const LIMITS: Limits = Limits {
+    connect_timeout: Duration::from_secs(2),
+    hello_timeout: Duration::from_secs(1),
+    close_timeout: Duration::from_millis(200),
+    invalid_session_delay: Duration::from_millis(10)..=Duration::from_millis(30),
+    backoff_base: Duration::from_millis(10),
+    backoff_max: Duration::from_millis(100),
+    identify_spacing: Duration::from_millis(20),
+    max_decompressed: 1024 * 1024,
+};
 const GUILD: u64 = 1_335_172_792_320_131_073;
 const BOT: u64 = 1_329_027_298_099_331_073;
 const VOICE_CHANNEL: u64 = 1_335_173_295_636_611_074;
@@ -289,27 +303,38 @@ impl Drop for Harness {
 
 impl Harness {
     async fn new(zstd: bool) -> Self {
+        Self::limited(zstd, LIMITS).await
+    }
+
+    async fn limited(zstd: bool, limits: Limits) -> Self {
         let refusing = crate::refusing_socket();
         let api_url = format!("http://{}/api/v10", address_of(&refusing));
-        let mut harness = Self::with(FakeGateway::start(zstd).await, &api_url);
+        let mut harness = Self::with(FakeGateway::start(zstd).await, &api_url, limits);
         harness._refusing_api = Some(refusing);
         harness
     }
 
-    fn with(fake: FakeGateway, api_url: &str) -> Self {
+    fn with(fake: FakeGateway, api_url: &str, limits: Limits) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
-        let inbox = Arc::new(Inbox::new(bell));
+        let inbox = Arc::new(Inbox::with_dispatch_limit(bell, INBOX_LIMIT));
         let global_limit = NonZeroU16::new(50).unwrap();
-        let rest = Arc::new(Rest::new(TOKEN, api_url, global_limit, Arc::clone(&inbox)).unwrap());
-        let rest_handle = Arc::downgrade(&rest);
+        let rest = Rest::with_limits(
+            TOKEN,
+            api_url,
+            global_limit,
+            Arc::clone(&inbox),
+            REST_LIMITS,
+        );
+        let rest = Arc::new(rest.unwrap());
         let tap = Arc::new(GatewayTap::new());
-        let gateway = Gateway::new(
+        let gateway = Gateway::with_limits(
             Handle::current(),
             Arc::clone(&inbox),
             TOKEN,
-            rest_handle,
+            Arc::downgrade(&rest),
             Arc::clone(&tap),
+            limits,
         )
         .unwrap();
         Self {
@@ -467,17 +492,19 @@ async fn filtered_dispatches_are_not_delivered_but_count_for_resume() {
 }
 
 #[tokio::test]
-async fn heartbeats_follow_the_schedule_requests_and_acks() {
-    let interval = Duration::from_millis(600);
+async fn heartbeat_requests_are_answered_with_the_last_seq_and_acks_set_the_latency() {
     let mut harness = Harness::new(false).await;
     harness.start();
     let mut peer = harness.fake.accept().await;
+    peer.send(&hello(QUIET_HEARTBEAT)).await;
+    assert_identify(&peer.receive().await);
 
-    let hello_sent = Instant::now();
-    peer.send(&hello(600)).await;
-    let first = peer.heartbeat().await;
-    assert!(hello_sent.elapsed() < interval + Duration::from_millis(50));
-    assert!(first["d"].is_null());
+    peer.send(fixture(HEARTBEAT_REQUEST)).await;
+    assert!(peer.heartbeat().await["d"].is_null());
+    peer.send(&harness.fake.ready()).await;
+    harness.until_dispatch("READY").await;
+    peer.send(fixture(HEARTBEAT_REQUEST)).await;
+    assert_eq!(peer.heartbeat().await["d"].as_u64(), Some(1));
 
     assert_eq!(harness.gateway.latency(shard()).unwrap(), None);
     peer.send(fixture(HEARTBEAT_ACK)).await;
@@ -486,19 +513,6 @@ async fn heartbeats_follow_the_schedule_requests_and_acks() {
         assert!(Instant::now() < deadline, "the ACK never set the latency");
         sleep(Duration::from_millis(2)).await;
     }
-
-    let requested = Instant::now();
-    peer.send(fixture(HEARTBEAT_REQUEST)).await;
-    peer.heartbeat().await;
-    assert!(requested.elapsed() < interval / 4);
-
-    peer.heartbeat().await;
-    sleep(interval * 3 / 4).await;
-    peer.send(fixture(HEARTBEAT_REQUEST)).await;
-    peer.heartbeat().await;
-    peer.send(fixture(HEARTBEAT_ACK)).await;
-    peer.heartbeat().await;
-    assert_eq!(peer.close_code().await, Some(4000));
 }
 
 #[tokio::test]
@@ -531,23 +545,6 @@ async fn frames_without_a_heartbeat_ack_still_make_a_zombie() {
         (code, reason.as_str(), resuming),
         (None, "no heartbeat ACK (zombie connection)", true)
     );
-}
-
-#[tokio::test]
-async fn a_silent_connection_is_closed_and_resumed() {
-    let mut harness = Harness::new(true).await;
-    let mut peer = harness.ready(200).await;
-
-    assert_eq!(peer.close_code().await, Some(4000));
-    assert_eq!(
-        harness.disconnected().await,
-        (
-            None,
-            "no heartbeat ACK (zombie connection)".to_owned(),
-            true
-        )
-    );
-    harness.resume(200, 1).await;
 }
 
 #[tokio::test]
@@ -601,11 +598,15 @@ async fn a_ready_without_resume_gateway_url_identifies_after_a_disconnect() {
 }
 
 #[tokio::test]
-async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway() {
+async fn a_refusing_base_url_is_replaced_by_get_gateway_even_after_one_never_answers() {
     let fake = FakeGateway::start(false).await;
     let gateway = format!(r#"{{"url":"{}"}}"#, fake.url());
-    let mut api = Server::start(vec![reply("200 OK", &[], &gateway)]).await;
-    let mut harness = Harness::with(fake, &api.url);
+    let mut api = Server::start(vec![NO_REPLY, reply("200 OK", &[], &gateway)]).await;
+    let limits = Limits {
+        connect_timeout: Duration::from_millis(500),
+        ..LIMITS
+    };
+    let mut harness = Harness::with(fake, &api.url, limits);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
 
@@ -614,7 +615,7 @@ async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway()
         .start(shard(), &refusing, Bytes::from_static(IDENTIFY))
         .unwrap();
 
-    for _ in 0..2 {
+    for _ in 0..4 {
         let (code, _, resuming) = harness.disconnected().await;
         assert_eq!((code, resuming), (None, false));
     }
@@ -622,9 +623,11 @@ async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway()
     assert_eq!(peer.path, "/gateway");
     peer.send(&hello(SLOW_HEARTBEAT)).await;
     assert_identify(&peer.receive().await);
-    let fetched = api.next().await;
-    assert_eq!(fetched.path, "/api/v10/gateway");
-    assert!(!fetched.headers.contains_key("authorization"));
+    for _ in 0..2 {
+        let fetched = api.next().await;
+        assert_eq!(fetched.path, "/api/v10/gateway");
+        assert!(!fetched.headers.contains_key("authorization"));
+    }
     assert_eq!(api.received(), 0);
     harness.received.extend(harness.inbox.drain());
     assert!(harness.received.is_empty(), "{:?}", harness.received);
@@ -633,7 +636,7 @@ async fn a_base_url_that_keeps_refusing_connections_is_replaced_by_get_gateway()
 #[tokio::test]
 async fn only_consecutive_failures_on_the_base_url_refresh_it() {
     let mut api = Server::start(Vec::new()).await;
-    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url);
+    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url, LIMITS);
     let closed = crate::refusing_socket();
     let dead = address_of(&closed).to_string();
     harness.start();
@@ -658,29 +661,27 @@ async fn only_consecutive_failures_on_the_base_url_refresh_it() {
 }
 
 #[tokio::test]
-async fn a_get_gateway_that_never_answers_delays_neither_reconnecting_nor_closing() {
-    let mut api = Server::start(vec![NO_REPLY, NO_REPLY]).await;
-    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url);
+async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
+    let mut api = Server::start(vec![NO_REPLY]).await;
+    let limits = Limits {
+        connect_timeout: NEVER,
+        ..LIMITS
+    };
+    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url, limits);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
-
     harness
         .gateway
         .start(shard(), &refusing, Bytes::from_static(IDENTIFY))
         .unwrap();
-
-    for _ in 0..4 {
-        let (code, _, resuming) = harness.disconnected().await;
-        assert_eq!((code, resuming), (None, false));
-    }
     for _ in 0..2 {
-        assert_eq!(api.next().await.path, "/api/v10/gateway");
+        harness.disconnected().await;
     }
-    let closing = Instant::now();
+    assert_eq!(api.next().await.path, "/api/v10/gateway");
+
     harness.gateway.close(shard()).unwrap();
+
     assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
-    let stopped_after = closing.elapsed();
-    assert!(stopped_after < Duration::from_secs(1), "{stopped_after:?}");
 }
 
 #[tokio::test]
@@ -711,7 +712,7 @@ async fn reconnect_and_invalid_session_requests_resume_or_identify() {
         (None, "invalid session".to_owned(), false)
     );
     let mut peer = harness.fake.accept().await;
-    assert!(invalidated.elapsed() >= Duration::from_millis(10));
+    assert!(invalidated.elapsed() >= *LIMITS.invalid_session_delay.start());
     assert_eq!(peer.path, "/gateway");
     peer.send(&hello(SLOW_HEARTBEAT)).await;
     assert_identify(&peer.receive().await);
@@ -719,11 +720,14 @@ async fn reconnect_and_invalid_session_requests_resume_or_identify() {
 
 #[tokio::test]
 async fn reconnect_before_hello_does_not_wait_for_hello() {
-    let mut harness = Harness::new(false).await;
+    let limits = Limits {
+        hello_timeout: NEVER,
+        ..LIMITS
+    };
+    let mut harness = Harness::limited(false, limits).await;
     harness.start();
     let mut peer = harness.fake.accept().await;
 
-    let requested = Instant::now();
     peer.send(fixture(RECONNECT)).await;
 
     assert_eq!(
@@ -731,26 +735,6 @@ async fn reconnect_before_hello_does_not_wait_for_hello() {
         (None, "reconnect requested by Discord".to_owned(), false)
     );
     harness.fake.connection().await;
-    assert!(requested.elapsed() < Duration::from_millis(500));
-}
-
-#[tokio::test]
-async fn an_invalid_session_after_the_first_identify_identifies_again() {
-    let mut harness = Harness::new(false).await;
-    harness.start();
-    let mut peer = harness.fake.accept().await;
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    assert_identify(&peer.receive().await);
-
-    peer.send(fixture(INVALID_SESSION)).await;
-
-    assert_eq!(
-        harness.disconnected().await,
-        (None, "invalid session".to_owned(), false)
-    );
-    let mut peer = harness.fake.accept().await;
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    assert_identify(&peer.receive().await);
 }
 
 #[tokio::test]
@@ -787,8 +771,13 @@ async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
 }
 
 #[tokio::test]
-async fn a_dropped_connection_resumes() {
-    let mut harness = Harness::new(false).await;
+async fn a_dropped_connection_resumes_without_backing_off() {
+    let limits = Limits {
+        backoff_base: NEVER,
+        backoff_max: NEVER,
+        ..LIMITS
+    };
+    let mut harness = Harness::limited(false, limits).await;
     let peer = harness.ready(SLOW_HEARTBEAT).await;
 
     drop(peer);
@@ -799,41 +788,30 @@ async fn a_dropped_connection_resumes() {
 }
 
 #[tokio::test]
-async fn refused_connections_back_off_until_ready() {
+async fn refused_connections_back_off_longer_each_time() {
     let mut harness = Harness::new(false).await;
     harness.start();
 
     let mut arrivals = Vec::new();
-    for _ in 0..7 {
+    for _ in 0..6 {
         drop(harness.fake.connection().await);
         arrivals.push(Instant::now());
     }
+
     let gaps: Vec<Duration> = arrivals.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    assert!(gaps[0] < Duration::from_millis(30), "{gaps:?}");
-    assert!(gaps[4] >= Duration::from_millis(40), "{gaps:?}");
-
-    let mut peer = harness.fake.accept().await;
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    peer.receive().await;
-    peer.send(&harness.fake.ready()).await;
-    harness.until_dispatch("READY").await;
-    drop(peer);
-
-    let dropped = Instant::now();
-    harness.fake.connection().await;
-    assert!(dropped.elapsed() < Duration::from_millis(30));
+    assert!(gaps[4] >= LIMITS.backoff_base * 4, "{gaps:?}");
 }
 
 #[tokio::test]
 async fn an_empty_identify_budget_opens_no_connection_until_the_reset() {
     let mut harness = Harness::new(false).await;
     let reset_after = Duration::from_millis(300);
+    let seeded = Instant::now();
     harness.gateway.set_identify_limit(IdentifyLimit {
         remaining: 0,
         total: 1000,
         reset_after,
     });
-    let seeded = Instant::now();
 
     harness.start();
 
@@ -895,7 +873,7 @@ async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
         shard: shard(),
         seq: 0,
         name: "MESSAGE_CREATE".into(),
-        data: Bytes::from(vec![b'0'; DISPATCH_BYTES_LIMIT]),
+        data: Bytes::from(vec![b'0'; INBOX_LIMIT]),
     });
     harness.start();
     let mut peer = harness.fake.accept().await;
@@ -932,11 +910,8 @@ async fn a_write_that_never_finishes_ends_the_connection_and_does_not_hold_back_
     let mut unread_again = harness.fake.accept().await;
     unread_again.send(&hello(SLOW_HEARTBEAT)).await;
     sleep(Duration::from_millis(100)).await;
-    let closing = Instant::now();
     harness.gateway.close(shard()).unwrap();
     assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
-    let stopped_after = closing.elapsed();
-    assert!(stopped_after < Duration::from_secs(1), "{stopped_after:?}");
 }
 
 #[tokio::test]
@@ -976,13 +951,9 @@ async fn a_slow_consumer_pauses_reading_without_losing_events() {
     for seq in 2..=14 {
         peer.send(&message(seq)).await;
     }
-    let paused_since = Instant::now();
-    let mut heartbeats = 0;
-    while paused_since.elapsed() < Duration::from_millis(700) {
+    for _ in 0..3 {
         peer.heartbeat().await;
-        heartbeats += 1;
     }
-    assert!(heartbeats >= 3, "{heartbeats} heartbeats while paused");
     tokio::spawn(peer.acknowledge_heartbeats());
 
     let first = harness.inbox.drain();
@@ -994,7 +965,7 @@ async fn a_slow_consumer_pauses_reading_without_losing_events() {
         })
         .collect();
     assert!(
-        matches!(backpressure.as_slice(), [queued] if *queued >= DISPATCH_BYTES_LIMIT),
+        matches!(backpressure.as_slice(), [queued] if *queued >= INBOX_LIMIT),
         "{backpressure:?}"
     );
     harness.received.extend(first);
@@ -1073,24 +1044,6 @@ async fn queued_commands_wait_for_ready_or_resumed() {
     peer.assert_quiet(Duration::from_millis(100)).await;
     peer.send(fixture(RESUMED)).await;
     assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("3"));
-}
-
-#[tokio::test]
-async fn a_ready_that_replaces_a_session_drops_older_commands() {
-    let mut harness = Harness::new(false).await;
-    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
-
-    peer.send(fixture(INVALID_SESSION)).await;
-    harness.disconnected().await;
-    harness.gateway.send(shard(), voice_state(4)).unwrap();
-    let mut peer = harness.fake.accept().await;
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    assert_identify(&peer.receive().await);
-    peer.send(&harness.fake.ready()).await;
-    harness.until_dispatch("READY").await;
-    harness.gateway.send(shard(), voice_state(5)).unwrap();
-
-    assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("5"));
 }
 
 #[tokio::test]

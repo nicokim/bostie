@@ -10,10 +10,7 @@ use crate::bell::Bell;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
 use crate::voice::types::{Direction, DisconnectReason, VoiceStatus};
 
-#[cfg(not(test))]
-pub(crate) const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
-#[cfg(test)]
-pub(crate) const DISPATCH_BYTES_LIMIT: usize = 64 * 1024;
+const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum Delivery {
@@ -130,6 +127,7 @@ pub struct Inbox {
     state: Mutex<State>,
     room: Notify,
     bell: Bell,
+    dispatch_bytes_limit: usize,
 }
 
 #[derive(Default)]
@@ -141,10 +139,15 @@ struct State {
 
 impl Inbox {
     pub(crate) fn new(bell: Bell) -> Self {
+        Self::with_dispatch_limit(bell, DISPATCH_BYTES_LIMIT)
+    }
+
+    pub(crate) fn with_dispatch_limit(bell: Bell, dispatch_bytes_limit: usize) -> Self {
         Self {
             state: Mutex::new(State::default()),
             room: Notify::new(),
             bell,
+            dispatch_bytes_limit,
         }
     }
 
@@ -173,15 +176,16 @@ impl Inbox {
         deliveries
     }
 
-    pub(crate) fn queued_bytes(&self) -> usize {
-        self.state.lock().dispatch_bytes
+    pub(crate) fn backlog(&self) -> Option<usize> {
+        let queued_bytes = self.state.lock().dispatch_bytes;
+        (queued_bytes >= self.dispatch_bytes_limit).then_some(queued_bytes)
     }
 
     pub async fn wait_for_room(&self) {
         loop {
             let mut room = pin!(self.room.notified());
             room.as_mut().enable();
-            if self.state.lock().dispatch_bytes < DISPATCH_BYTES_LIMIT {
+            if self.backlog().is_none() {
                 return;
             }
             room.await;
@@ -199,9 +203,11 @@ mod tests {
     use super::*;
     use crate::bell;
 
+    const LIMIT: usize = 64 * 1024;
+
     fn inbox() -> (Inbox, bell::BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
-        (Inbox::new(bell), receiver)
+        (Inbox::with_dispatch_limit(bell, LIMIT), receiver)
     }
 
     fn failure(ticket: u64) -> Delivery {
@@ -262,8 +268,11 @@ mod tests {
     }
 
     #[test]
-    fn rings_again_after_a_drain() {
+    fn rings_again_after_a_drain_and_never_while_empty() {
         let (inbox, receiver) = inbox();
+
+        assert!(inbox.drain().is_empty());
+        assert_eq!(pending_rings(&receiver), 0);
 
         inbox.push(failure(0));
         assert_eq!(pending_rings(&receiver), 1);
@@ -275,18 +284,10 @@ mod tests {
     }
 
     #[test]
-    fn drain_without_deliveries_is_empty() {
-        let (inbox, receiver) = inbox();
-
-        assert!(inbox.drain().is_empty());
-        assert_eq!(pending_rings(&receiver), 0);
-    }
-
-    #[test]
     fn dispatches_fill_the_budget_until_drained() {
         let (inbox, _receiver) = inbox();
 
-        inbox.push(dispatch(DISPATCH_BYTES_LIMIT - 1));
+        inbox.push(dispatch(LIMIT - 1));
         assert!(has_room(&inbox));
         inbox.push(dispatch(1));
         assert!(!has_room(&inbox));
@@ -302,7 +303,7 @@ mod tests {
         inbox.push(Delivery::Response {
             ticket: Ticket::from(1),
             status: 200,
-            body: Bytes::from(vec![0; DISPATCH_BYTES_LIMIT * 2]),
+            body: Bytes::from(vec![0; LIMIT * 2]),
         });
         inbox.push(failure(2));
 
@@ -312,7 +313,7 @@ mod tests {
     #[test]
     fn an_oversized_dispatch_passes_when_it_is_alone() {
         let (inbox, _receiver) = inbox();
-        let oversized = DISPATCH_BYTES_LIMIT * 4;
+        let oversized = LIMIT * 4;
 
         assert!(has_room(&inbox));
         inbox.push(dispatch(oversized));
@@ -329,7 +330,7 @@ mod tests {
         crate::init_test_tracing();
         let (inbox, _receiver) = inbox();
         let inbox = Arc::new(inbox);
-        inbox.push(dispatch(DISPATCH_BYTES_LIMIT));
+        inbox.push(dispatch(LIMIT));
 
         let waiters: Vec<_> = (0..3)
             .map(|_| {

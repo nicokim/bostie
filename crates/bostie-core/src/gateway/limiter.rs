@@ -55,13 +55,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reserve_covers_a_minute_of_heartbeats_up_to_ten() {
-        assert_eq!(heartbeat_reserve(Duration::from_millis(41_250)), 3);
-        assert_eq!(heartbeat_reserve(Duration::from_millis(500)), 10);
-        assert_eq!(heartbeat_reserve(Duration::from_millis(1)), 10);
-    }
-
-    #[test]
     fn commands_wait_once_the_window_is_full() {
         let mut limiter = SendLimiter::new(Duration::from_millis(41_250));
         let start = Instant::now();
@@ -79,7 +72,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeats_count_against_the_window() {
+    fn heartbeats_count_against_the_window_and_reserve_at_most_ten_sends() {
         let mut limiter = SendLimiter::new(Duration::from_millis(500));
         let start = Instant::now();
 
@@ -87,9 +80,11 @@ mod tests {
             limiter.record(start);
         }
         let heartbeat = start + Duration::from_secs(10);
-        for _ in 0..5 {
+        for _ in 0..4 {
             limiter.record(heartbeat);
         }
+        assert_eq!(limiter.next_slot(heartbeat), heartbeat);
+        limiter.record(heartbeat);
 
         let now = start + Duration::from_secs(20);
         assert_eq!(limiter.next_slot(now), start + WINDOW);

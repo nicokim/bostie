@@ -1,11 +1,16 @@
 use std::time::Duration;
 
-#[cfg(not(test))]
-pub(super) const MAX_RETRY_WAIT: Duration = Duration::from_secs(30);
-#[cfg(test)]
-pub(super) const MAX_RETRY_WAIT: Duration = Duration::from_secs(1);
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Limits {
+    pub(super) max_retry_wait: Duration,
+    pub(super) backoff_base: Duration,
+}
 
-#[cfg(not(test))]
-pub(super) const BACKOFF_BASE: Duration = Duration::from_millis(500);
-#[cfg(test)]
-pub(super) const BACKOFF_BASE: Duration = Duration::from_millis(10);
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_retry_wait: Duration::from_secs(30),
+            backoff_base: Duration::from_millis(500),
+        }
+    }
+}

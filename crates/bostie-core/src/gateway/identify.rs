@@ -3,8 +3,6 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::Instant;
 
-use super::limits::IDENTIFY_SPACING;
-
 const BUDGET_PERIOD: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,9 +12,9 @@ pub struct IdentifyLimit {
     pub reset_after: Duration,
 }
 
-#[derive(Default)]
 pub(crate) struct IdentifyGate {
     state: Mutex<GateState>,
+    spacing: Duration,
 }
 
 #[derive(Default)]
@@ -41,6 +39,13 @@ impl Budget {
 }
 
 impl IdentifyGate {
+    pub(crate) fn new(spacing: Duration) -> Self {
+        Self {
+            state: Mutex::default(),
+            spacing,
+        }
+    }
+
     pub(crate) fn seed(&self, limit: IdentifyLimit, now: Instant) {
         self.state.lock().budget = Some(Budget {
             remaining: limit.remaining,
@@ -65,7 +70,7 @@ impl IdentifyGate {
             budget.remaining = budget.remaining.checked_sub(1)?;
         }
         let slot = state.next_slot.map_or(now, |next| next.max(now));
-        state.next_slot = Some(slot + IDENTIFY_SPACING);
+        state.next_slot = Some(slot + self.spacing);
         Some(slot)
     }
 }
@@ -74,8 +79,10 @@ impl IdentifyGate {
 mod tests {
     use super::*;
 
+    const SPACING: Duration = Duration::from_secs(5);
+
     fn seeded(remaining: u32, reset_after: Duration, now: Instant) -> IdentifyGate {
-        let gate = IdentifyGate::default();
+        let gate = IdentifyGate::new(SPACING);
         gate.seed(
             IdentifyLimit {
                 remaining,
@@ -89,18 +96,18 @@ mod tests {
 
     #[test]
     fn identifies_are_spaced() {
-        let gate = IdentifyGate::default();
+        let gate = IdentifyGate::new(SPACING);
         let start = Instant::now();
 
         assert_eq!(gate.reserve(start), Some(start));
-        assert_eq!(gate.reserve(start), Some(start + IDENTIFY_SPACING));
-        let later = start + IDENTIFY_SPACING * 10;
+        assert_eq!(gate.reserve(start), Some(start + SPACING));
+        let later = start + SPACING * 10;
         assert_eq!(gate.reserve(later), Some(later));
     }
 
     #[test]
     fn an_unseeded_gate_never_runs_out() {
-        let gate = IdentifyGate::default();
+        let gate = IdentifyGate::new(SPACING);
         let now = Instant::now();
 
         for _ in 0..2000 {

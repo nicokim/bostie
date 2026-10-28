@@ -18,12 +18,9 @@ use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
-use super::limits::{
-    BACKOFF_BASE, BACKOFF_MAX, CLOSE_TIMEOUT, CONNECT_TIMEOUT, HELLO_TIMEOUT, INVALID_SESSION_DELAY,
-};
 use crate::error::describe;
 use crate::ids::ShardId;
-use crate::inbox::{DISPATCH_BYTES_LIMIT, Delivery};
+use crate::inbox::Delivery;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
 const NORMAL_CLOSE: u16 = 1000;
@@ -94,9 +91,29 @@ struct Heartbeat {
     paused: bool,
 }
 
+impl Heartbeat {
+    fn after_hello(interval: Duration, hello_at: Instant, fraction: f64) -> Self {
+        Self {
+            interval,
+            next: hello_at + interval.mul_f64(fraction),
+            sent_at: None,
+            acked: true,
+            paused: false,
+        }
+    }
+
+    fn beat(&mut self, paused: bool) {
+        self.acked = false;
+        self.paused = paused;
+        self.next += self.interval;
+    }
+}
+
 struct Connection {
     socket: Socket,
     signals: Arc<Signals>,
+    hello_timeout: Duration,
+    close_timeout: Duration,
     inflater: Inflater,
     hello_deadline: Instant,
     heartbeat: Option<Heartbeat>,
@@ -128,7 +145,7 @@ impl Connection {
         let patience = self
             .heartbeat
             .as_ref()
-            .map_or(HELLO_TIMEOUT, |heartbeat| heartbeat.interval);
+            .map_or(self.hello_timeout, |heartbeat| heartbeat.interval);
         tokio::select! {
             biased;
             () = self.signals.close.notified() => return Err(Ending::Stop),
@@ -155,7 +172,7 @@ impl Connection {
                 while self.socket.next().await.is_some() {}
             }
         };
-        if timeout(CLOSE_TIMEOUT, closing).await.is_err() {
+        if timeout(self.close_timeout, closing).await.is_err() {
             debug!(code, "the close handshake timed out");
         }
     }
@@ -259,7 +276,7 @@ impl Shard {
         let fetched = tokio::select! {
             biased;
             () = self.signals.close.notified() => return false,
-            fetched = timeout(CONNECT_TIMEOUT, rest.fetch_gateway_url()) => fetched.ok().flatten(),
+            fetched = timeout(self.shared.limits.connect_timeout, rest.fetch_gateway_url()) => fetched.ok().flatten(),
         };
         match fetched.as_deref().and_then(gateway_url) {
             Some(url) => {
@@ -276,14 +293,17 @@ impl Shard {
             return Duration::ZERO;
         };
         let factor = 1_u32.checked_shl(doublings).unwrap_or(u32::MAX);
-        BACKOFF_BASE
+        let limits = &self.shared.limits;
+        limits
+            .backoff_base
             .saturating_mul(factor)
-            .min(BACKOFF_MAX)
+            .min(limits.backoff_max)
             .mul_f64(0.5 + fastrand::f64() / 2.0)
     }
 
     async fn connect_and_serve(&mut self) -> Ending {
-        let Some(inflater) = Inflater::new() else {
+        let limits = &self.shared.limits;
+        let Some(inflater) = Inflater::new(limits.max_decompressed) else {
             return Ending::Lost("zstd could not allocate a decompression context".to_owned());
         };
         let url = self
@@ -295,17 +315,19 @@ impl Shard {
             biased;
             () = self.signals.close.notified() => return Ending::Stop,
             () = self.signals.reconnect.notified() => return Ending::Requested,
-            connected = timeout(CONNECT_TIMEOUT, connect(url, &self.shared.connector)) => match connected {
+            connected = timeout(limits.connect_timeout, connect(url, &self.shared.connector)) => match connected {
                 Ok(Ok(socket)) => socket,
                 Ok(Err(error)) => return Ending::Unreachable(error),
-                Err(_) => return Ending::Unreachable(format!("no connection within {CONNECT_TIMEOUT:?}")),
+                Err(_) => return Ending::Unreachable(format!("no connection within {:?}", limits.connect_timeout)),
             },
         };
         let mut connection = Connection {
             socket,
             signals: Arc::clone(&self.signals),
+            hello_timeout: limits.hello_timeout,
+            close_timeout: limits.close_timeout,
             inflater,
-            hello_deadline: Instant::now() + HELLO_TIMEOUT,
+            hello_deadline: Instant::now() + limits.hello_timeout,
             heartbeat: None,
             limiter: None,
             identify_at: None,
@@ -358,15 +380,14 @@ impl Shard {
     async fn on_tick(&self, connection: &mut Connection) -> Result<(), Ending> {
         let Some(heartbeat) = &mut connection.heartbeat else {
             return Err(Ending::Unreachable(format!(
-                "no HELLO within {HELLO_TIMEOUT:?}"
+                "no HELLO within {:?}",
+                connection.hello_timeout
             )));
         };
         if !heartbeat.acked && !heartbeat.paused {
             return Err(Ending::Zombie);
         }
-        heartbeat.acked = false;
-        heartbeat.paused = connection.held.is_some();
-        heartbeat.next += heartbeat.interval;
+        heartbeat.beat(connection.held.is_some());
         self.send_heartbeat(connection).await
     }
 
@@ -471,13 +492,7 @@ impl Shard {
     ) -> Result<(), Ending> {
         self.base_url_failures = 0;
         let now = Instant::now();
-        connection.heartbeat = Some(Heartbeat {
-            interval,
-            next: now + interval.mul_f64(fastrand::f64()),
-            sent_at: None,
-            acked: true,
-            paused: false,
-        });
+        connection.heartbeat = Some(Heartbeat::after_hello(interval, now, fastrand::f64()));
         connection.limiter = Some(SendLimiter::new(interval));
         let Some(session) = &self.session else {
             let slot = self.shared.identify.reserve(now);
@@ -506,11 +521,11 @@ impl Shard {
     }
 
     fn forward(&mut self, connection: &mut Connection, held: Held) {
-        let queued_bytes = self.shared.inbox.queued_bytes();
-        if queued_bytes < DISPATCH_BYTES_LIMIT || ends_the_handshake(&held.forward.name) {
+        let backlog = self.shared.inbox.backlog();
+        let Some(queued_bytes) = backlog.filter(|_| !ends_the_handshake(&held.forward.name)) else {
             self.deliver(connection, held);
             return;
-        }
+        };
         debug!(shard = %self.id, seq = held.seq, "pausing until the inbox has room");
         self.push(Delivery::Backpressure {
             shard: self.id,
@@ -607,8 +622,8 @@ impl Shard {
                 };
                 self.disconnected(None, reason.to_owned());
                 if self.session.is_none() {
-                    let (shortest, longest) =
-                        (*INVALID_SESSION_DELAY.start(), *INVALID_SESSION_DELAY.end());
+                    let delay = &self.shared.limits.invalid_session_delay;
+                    let (shortest, longest) = (*delay.start(), *delay.end());
                     return Some(shortest + (longest - shortest).mul_f64(fastrand::f64()));
                 }
             }
@@ -676,4 +691,28 @@ async fn connect(url: &Url, connector: &Connector) -> Result<Socket, String> {
         .await
         .map_err(|error| describe(&error))?;
     Ok(socket)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_first_beat_falls_within_one_interval_after_hello_and_later_beats_follow_the_interval() {
+        let interval = Duration::from_millis(41_250);
+        let hello_at = Instant::now();
+        for fraction in [0.0, 0.5, 0.999] {
+            let mut heartbeat = Heartbeat::after_hello(interval, hello_at, fraction);
+            let first = heartbeat.next;
+
+            heartbeat.beat(false);
+            heartbeat.beat(true);
+
+            assert!(
+                first >= hello_at && first < hello_at + interval,
+                "{fraction}"
+            );
+            assert_eq!(heartbeat.next, first + interval * 2, "{fraction}");
+        }
+    }
 }

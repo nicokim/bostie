@@ -22,7 +22,7 @@ use twilight_http_ratelimiting::{Bucket, Permit, RateLimitHeaders, RateLimiter};
 pub use self::request::RestRequest;
 
 use self::invalid::InvalidRequests;
-use self::limits::{BACKOFF_BASE, MAX_RETRY_WAIT};
+use self::limits::Limits;
 use self::ratelimit::{GlobalGate, InteractionBuckets, Limited, ResponseLimits, Scope};
 use self::request::RouteClass;
 use crate::error::{CoreError, describe};
@@ -50,6 +50,7 @@ pub struct Rest {
     base: Url,
     token_invalid: AtomicBool,
     inbox: Arc<Inbox>,
+    limits: Limits,
 }
 
 impl Rest {
@@ -58,6 +59,16 @@ impl Rest {
         api_url: &str,
         global_limit: NonZeroU16,
         inbox: Arc<Inbox>,
+    ) -> Result<Self, CoreError> {
+        Self::with_limits(token, api_url, global_limit, inbox, Limits::default())
+    }
+
+    pub(crate) fn with_limits(
+        token: &str,
+        api_url: &str,
+        global_limit: NonZeroU16,
+        inbox: Arc<Inbox>,
+        limits: Limits,
     ) -> Result<Self, CoreError> {
         let base = Url::parse(api_url)
             .ok()
@@ -85,12 +96,13 @@ impl Rest {
             base,
             token_invalid: AtomicBool::new(false),
             inbox,
+            limits,
         })
     }
 
     pub async fn execute(&self, ticket: Ticket, request: RestRequest) -> Delivery {
         let url = request.url(&self.base);
-        let mut retries = Retries::default();
+        let mut retries = Retries::new(self.limits);
         loop {
             if let Some(failure) = self.refusal(ticket, &request) {
                 return failure;
@@ -176,6 +188,7 @@ impl Rest {
     }
 
     async fn permit(&self, request: &RestRequest) -> Result<PermitGuard, Duration> {
+        let max_wait = self.limits.max_retry_wait;
         match request.class {
             RouteClass::Callback => return Ok(PermitGuard(None)),
             RouteClass::Interaction => {
@@ -183,7 +196,7 @@ impl Rest {
                     .interaction_buckets
                     .lock()
                     .wait(&request.endpoint, Instant::now());
-                if wait > MAX_RETRY_WAIT {
+                if wait > max_wait {
                     return Err(wait);
                 }
                 if !wait.is_zero() {
@@ -193,17 +206,20 @@ impl Rest {
             }
             RouteClass::Webhook | RouteClass::Anonymous | RouteClass::Bot => {}
         }
-        let mut acquire = pin!(self.limiter.acquire_if(request.endpoint.clone(), |bucket| {
-            bucket.is_none_or(within_reach)
-        }));
+        let acquire = self
+            .limiter
+            .acquire_if(request.endpoint.clone(), move |bucket| {
+                bucket.is_none_or(|bucket| within_reach(bucket, max_wait))
+            });
+        let mut acquire = pin!(acquire);
         loop {
-            let refused = match tokio::time::timeout(MAX_RETRY_WAIT, acquire.as_mut()).await {
+            let refused = match tokio::time::timeout(max_wait, acquire.as_mut()).await {
                 Ok(Some(permit)) => return Ok(PermitGuard(Some(permit))),
                 Ok(None) => true,
                 Err(_) => false,
             };
             let bucket = self.limiter.bucket(request.endpoint.clone()).await;
-            if refused || bucket.is_some_and(|bucket| !within_reach(bucket)) {
+            if refused || bucket.is_some_and(|bucket| !within_reach(bucket, max_wait)) {
                 return Err(bucket.map_or(Duration::ZERO, |bucket| {
                     bucket.reset_at.saturating_duration_since(Instant::now())
                 }));
@@ -300,9 +316,8 @@ impl Drop for PermitGuard {
     }
 }
 
-fn within_reach(bucket: Bucket) -> bool {
-    bucket.remaining > 0
-        || bucket.reset_at.saturating_duration_since(Instant::now()) <= MAX_RETRY_WAIT
+fn within_reach(bucket: Bucket, max_wait: Duration) -> bool {
+    bucket.remaining > 0 || bucket.reset_at.saturating_duration_since(Instant::now()) <= max_wait
 }
 
 fn after_transport_error(
@@ -337,13 +352,21 @@ fn held_back(retry_after: Duration) -> Bytes {
     ))
 }
 
-#[derive(Default)]
 struct Retries {
+    limits: Limits,
     rate_limited: u32,
     failed: u32,
 }
 
 impl Retries {
+    fn new(limits: Limits) -> Self {
+        Self {
+            limits,
+            rate_limited: 0,
+            failed: 0,
+        }
+    }
+
     fn after_response(
         &mut self,
         method: &Method,
@@ -351,7 +374,7 @@ impl Retries {
         limited: Option<Limited>,
     ) -> Option<Duration> {
         if let Some(Limited { retry_after, .. }) = limited {
-            if retry_after > MAX_RETRY_WAIT || self.rate_limited == RATE_LIMIT_RETRIES {
+            if retry_after > self.limits.max_retry_wait || self.rate_limited == RATE_LIMIT_RETRIES {
                 return None;
             }
             self.rate_limited += 1;
@@ -383,7 +406,9 @@ impl Retries {
         if self.failed == FAILURE_RETRIES {
             return None;
         }
-        let wait = BACKOFF_BASE
+        let wait = self
+            .limits
+            .backoff_base
             .saturating_mul(1 << self.failed)
             .mul_f64(1.0 + fastrand::f64() / 2.0);
         self.failed += 1;
@@ -406,6 +431,10 @@ pub(crate) mod tests {
     use crate::bell::{self, BellReceiver};
 
     const PATIENCE: Duration = Duration::from_secs(5);
+    pub(crate) const LIMITS: Limits = Limits {
+        max_retry_wait: Duration::from_secs(1),
+        backoff_base: Duration::from_millis(10),
+    };
     pub(crate) const NO_REPLY: String = String::new();
 
     pub(crate) struct Captured {
@@ -528,7 +557,8 @@ pub(crate) mod tests {
     fn limited_rest(url: &str, global_limit: u16) -> (Rest, BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
         let global_limit = NonZeroU16::new(global_limit).unwrap();
-        let rest = Rest::new("token", url, global_limit, Arc::new(Inbox::new(bell))).unwrap();
+        let inbox = Arc::new(Inbox::new(bell));
+        let rest = Rest::with_limits("token", url, global_limit, inbox, LIMITS).unwrap();
         (rest, receiver)
     }
 
@@ -600,18 +630,18 @@ pub(crate) mod tests {
     fn rate_limits_are_retried_three_times_when_the_wait_is_short() {
         let short = Some(Limited {
             scope: Scope::Route,
-            retry_after: MAX_RETRY_WAIT,
+            retry_after: LIMITS.max_retry_wait,
         });
         let long = Some(Limited {
             scope: Scope::Shared,
-            retry_after: MAX_RETRY_WAIT + Duration::from_millis(1),
+            retry_after: LIMITS.max_retry_wait + Duration::from_millis(1),
         });
-        let mut retries = Retries::default();
+        let mut retries = Retries::new(LIMITS);
 
         for _ in 0..RATE_LIMIT_RETRIES {
             assert_eq!(
                 retries.after_response(&Method::POST, StatusCode::TOO_MANY_REQUESTS, short),
-                Some(MAX_RETRY_WAIT)
+                Some(LIMITS.max_retry_wait)
             );
         }
         assert_eq!(
@@ -619,21 +649,22 @@ pub(crate) mod tests {
             None
         );
         assert_eq!(
-            Retries::default().after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, long),
+            Retries::new(LIMITS).after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, long),
             None
         );
     }
 
     #[test]
     fn server_errors_are_retried_twice_with_growing_jittered_waits_unless_posted() {
-        let mut retries = Retries::default();
+        let mut retries = Retries::new(LIMITS);
 
         let first = retries.after_response(&Method::GET, StatusCode::BAD_GATEWAY, None);
         let second = retries.after_response(&Method::DELETE, StatusCode::SERVICE_UNAVAILABLE, None);
         let third = retries.after_response(&Method::GET, StatusCode::BAD_GATEWAY, None);
 
-        assert!(first.is_some_and(|wait| wait >= BACKOFF_BASE && wait <= BACKOFF_BASE * 3 / 2));
-        assert!(second.is_some_and(|wait| wait >= BACKOFF_BASE * 2 && wait <= BACKOFF_BASE * 3));
+        let base = LIMITS.backoff_base;
+        assert!(first.is_some_and(|wait| wait >= base && wait <= base * 3 / 2));
+        assert!(second.is_some_and(|wait| wait >= base * 2 && wait <= base * 3));
         assert_eq!(third, None);
         for (method, status) in [
             (Method::POST, StatusCode::INTERNAL_SERVER_ERROR),
@@ -645,7 +676,7 @@ pub(crate) mod tests {
             (Method::PUT, StatusCode::NO_CONTENT),
         ] {
             assert_eq!(
-                Retries::default().after_response(&method, status, None),
+                Retries::new(LIMITS).after_response(&method, status, None),
                 None,
                 "{method} {status}"
             );
@@ -660,7 +691,7 @@ pub(crate) mod tests {
             (Method::PATCH, false, true),
         ] {
             assert_eq!(
-                Retries::default()
+                Retries::new(LIMITS)
                     .after_error(&method, before_sending)
                     .is_some(),
                 retried,
@@ -766,16 +797,11 @@ pub(crate) mod tests {
 
         let arrivals = arrivals(&mut server, 3).await;
         let first = arrivals["/api/v10/channels/1/messages/10"];
-        let same_channel = arrivals["/api/v10/channels/1/messages/20"] - first;
-        let other_channel = arrivals["/api/v10/channels/2/messages/30"] - first;
-        assert!(
-            same_channel >= Duration::from_millis(190),
-            "{same_channel:?}"
-        );
-        assert!(
-            other_channel < Duration::from_millis(190),
-            "{other_channel:?}"
-        );
+        let same_channel = arrivals["/api/v10/channels/1/messages/20"];
+        let other_channel = arrivals["/api/v10/channels/2/messages/30"];
+        let waited = same_channel - first;
+        assert!(waited >= Duration::from_millis(190), "{waited:?}");
+        assert!(other_channel < same_channel);
     }
 
     #[tokio::test]
@@ -803,12 +829,11 @@ pub(crate) mod tests {
 
         let first = server.next().await.at;
         let arrivals = arrivals(&mut server, 3).await;
-        let same_token = arrivals["/api/v10/webhooks/1/first"] - first;
-        let other_token = arrivals["/api/v10/webhooks/1/second"] - first;
-        let callback = arrivals["/api/v10/interactions/1/abc/callback"] - first;
-        assert!(same_token >= Duration::from_millis(190), "{same_token:?}");
-        assert!(other_token < Duration::from_millis(190), "{other_token:?}");
-        assert!(callback < Duration::from_millis(190), "{callback:?}");
+        let same_token = arrivals["/api/v10/webhooks/1/first"];
+        let waited = same_token - first;
+        assert!(waited >= Duration::from_millis(190), "{waited:?}");
+        assert!(arrivals["/api/v10/webhooks/1/second"] < same_token);
+        assert!(arrivals["/api/v10/interactions/1/abc/callback"] < same_token);
     }
 
     #[tokio::test]
@@ -826,12 +851,11 @@ pub(crate) mod tests {
 
         let first = server.next().await.at;
         let arrivals = arrivals(&mut server, 3).await;
-        let bot = arrivals["/api/v10/channels/1/messages/10"] - first;
-        let followup = arrivals["/api/v10/webhooks/1/first"] - first;
-        let callback = arrivals["/api/v10/interactions/1/abc/callback"] - first;
-        assert!(bot >= Duration::from_millis(900), "{bot:?}");
-        assert!(followup < Duration::from_millis(500), "{followup:?}");
-        assert!(callback < Duration::from_millis(500), "{callback:?}");
+        let bot = arrivals["/api/v10/channels/1/messages/10"];
+        let waited = bot - first;
+        assert!(waited >= Duration::from_millis(900), "{waited:?}");
+        assert!(arrivals["/api/v10/webhooks/1/first"] < bot);
+        assert!(arrivals["/api/v10/interactions/1/abc/callback"] < bot);
     }
 
     #[tokio::test]
@@ -1132,7 +1156,7 @@ pub(crate) mod tests {
 
         let delivery = rest.execute(Ticket::from(1), webhook).await;
 
-        assert!(started.elapsed() >= BACKOFF_BASE * 3);
+        assert!(started.elapsed() >= LIMITS.backoff_base * 3);
         let Delivery::Failure {
             kind: FailureKind::Transport,
             detail,

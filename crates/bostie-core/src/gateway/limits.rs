@@ -1,49 +1,29 @@
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
-#[cfg(not(test))]
-pub(super) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-#[cfg(test)]
-pub(super) const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+#[derive(Debug, Clone)]
+pub(crate) struct Limits {
+    pub(super) connect_timeout: Duration,
+    pub(super) hello_timeout: Duration,
+    pub(super) close_timeout: Duration,
+    pub(super) invalid_session_delay: RangeInclusive<Duration>,
+    pub(super) backoff_base: Duration,
+    pub(super) backoff_max: Duration,
+    pub(super) identify_spacing: Duration,
+    pub(super) max_decompressed: usize,
+}
 
-#[cfg(not(test))]
-pub(super) const HELLO_TIMEOUT: Duration = Duration::from_secs(20);
-#[cfg(test)]
-pub(super) const HELLO_TIMEOUT: Duration = Duration::from_secs(1);
-
-#[cfg(not(test))]
-pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-#[cfg(test)]
-pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_millis(200);
-
-#[cfg(not(test))]
-pub(super) const INVALID_SESSION_DELAY: RangeInclusive<Duration> =
-    Duration::from_secs(1)..=Duration::from_secs(5);
-#[cfg(test)]
-pub(super) const INVALID_SESSION_DELAY: RangeInclusive<Duration> =
-    Duration::from_millis(10)..=Duration::from_millis(30);
-
-#[cfg(not(test))]
-pub(super) const BACKOFF_BASE: Duration = Duration::from_secs(1);
-#[cfg(test)]
-pub(super) const BACKOFF_BASE: Duration = Duration::from_millis(10);
-
-#[cfg(not(test))]
-pub(super) const BACKOFF_MAX: Duration = Duration::from_secs(60);
-#[cfg(test)]
-pub(super) const BACKOFF_MAX: Duration = Duration::from_millis(100);
-
-#[cfg(not(test))]
-pub(super) const IDENTIFY_SPACING: Duration = Duration::from_secs(5);
-#[cfg(test)]
-pub(super) const IDENTIFY_SPACING: Duration = Duration::from_millis(20);
-
-#[cfg(not(test))]
-pub(super) const MAX_DECOMPRESSED: usize = 128 * 1024 * 1024;
-#[cfg(test)]
-pub(super) const MAX_DECOMPRESSED: usize = 1024 * 1024;
-
-#[cfg(not(test))]
-pub(super) const SCRATCH_KEEP: usize = 8 * 1024 * 1024;
-#[cfg(test)]
-pub(super) const SCRATCH_KEEP: usize = 64 * 1024;
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(10),
+            hello_timeout: Duration::from_secs(20),
+            close_timeout: Duration::from_secs(2),
+            invalid_session_delay: Duration::from_secs(1)..=Duration::from_secs(5),
+            backoff_base: Duration::from_secs(1),
+            backoff_max: Duration::from_secs(60),
+            identify_spacing: Duration::from_secs(5),
+            max_decompressed: 128 * 1024 * 1024,
+        }
+    }
+}

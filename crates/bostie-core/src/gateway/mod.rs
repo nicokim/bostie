@@ -26,6 +26,7 @@ use tokio_websockets::Connector;
 
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
+use self::limits::Limits;
 use self::shard::{Shard, Signals, UNKNOWN_LATENCY};
 use crate::error::CoreError;
 use crate::ids::ShardId;
@@ -51,6 +52,7 @@ struct Shared {
     identify: IdentifyGate,
     rest: Weak<Rest>,
     tap: Arc<GatewayTap>,
+    limits: Limits,
 }
 
 struct ShardHandle {
@@ -73,6 +75,17 @@ impl Gateway {
         rest: Weak<Rest>,
         tap: Arc<GatewayTap>,
     ) -> Result<Self, CoreError> {
+        Self::with_limits(runtime, inbox, token, rest, tap, Limits::default())
+    }
+
+    fn with_limits(
+        runtime: Handle,
+        inbox: Arc<Inbox>,
+        token: &str,
+        rest: Weak<Rest>,
+        tap: Arc<GatewayTap>,
+        limits: Limits,
+    ) -> Result<Self, CoreError> {
         Ok(Self {
             runtime,
             shared: Arc::new(Shared {
@@ -80,9 +93,10 @@ impl Gateway {
                 token: token.into(),
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 filter: RwLock::new(None),
-                identify: IdentifyGate::default(),
+                identify: IdentifyGate::new(limits.identify_spacing),
                 rest,
                 tap,
+                limits,
             }),
             shards: Mutex::new(HashMap::new()),
         })

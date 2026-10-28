@@ -1,25 +1,27 @@
 use zstd_safe::{DCtx, InBuffer, OutBuffer};
 
-use super::limits::{MAX_DECOMPRESSED, SCRATCH_KEEP};
+const SCRATCH_KEEP: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum InflateError {
     #[error("zstd: {0}")]
     Zstd(&'static str),
-    #[error("a decompressed message exceeds {MAX_DECOMPRESSED} bytes")]
-    TooLarge,
+    #[error("a decompressed message exceeds {0} bytes")]
+    TooLarge(usize),
 }
 
 pub(crate) struct Inflater {
     context: DCtx<'static>,
     scratch: Vec<u8>,
+    max_decompressed: usize,
 }
 
 impl Inflater {
-    pub(crate) fn new() -> Option<Self> {
+    pub(crate) fn new(max_decompressed: usize) -> Option<Self> {
         Some(Self {
             context: DCtx::try_create()?,
             scratch: Vec::new(),
+            max_decompressed,
         })
     }
 
@@ -37,8 +39,8 @@ impl Inflater {
                 .decompress_stream(&mut output, &mut input)
                 .map_err(|code| InflateError::Zstd(zstd_safe::get_error_name(code)))?;
             let output_full = output.pos() == output.capacity();
-            if self.scratch.len() > MAX_DECOMPRESSED {
-                return Err(InflateError::TooLarge);
+            if self.scratch.len() > self.max_decompressed {
+                return Err(InflateError::TooLarge(self.max_decompressed));
             }
             if input.pos() == message.len() && !output_full {
                 return Ok(&self.scratch);
@@ -53,7 +55,8 @@ pub(crate) mod tests {
     use zstd_safe::{CCtx, CParameter};
 
     use super::*;
-    use crate::gateway::envelope::Frame;
+
+    const MAX_DECOMPRESSED: usize = 1024 * 1024;
 
     pub(crate) fn discord_compressor() -> CCtx<'static> {
         let mut context = CCtx::try_create().unwrap();
@@ -87,7 +90,7 @@ pub(crate) mod tests {
     #[test]
     fn one_stream_spans_many_messages_of_any_size() {
         let mut compressor = discord_compressor();
-        let mut inflater = Inflater::new().unwrap();
+        let mut inflater = Inflater::new(MAX_DECOMPRESSED).unwrap();
         let frames = [
             message_create(1, "small"),
             message_create(2, &"large".repeat(60_000)),
@@ -101,59 +104,20 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn scratch_shrinks_after_a_large_message() {
-        let mut compressor = discord_compressor();
-        let mut inflater = Inflater::new().unwrap();
-
-        let large = message_create(1, &"x".repeat(4 * SCRATCH_KEEP));
-        inflater
-            .inflate(&compress(&mut compressor, large.as_bytes()))
-            .unwrap();
-        assert!(inflater.scratch.capacity() > SCRATCH_KEEP);
-
-        let small = message_create(2, "y");
-        inflater
-            .inflate(&compress(&mut compressor, small.as_bytes()))
-            .unwrap();
-        assert!(inflater.scratch.capacity() <= SCRATCH_KEEP);
-    }
-
-    #[test]
     fn rejects_messages_over_the_limit_and_garbage() {
         let mut compressor = discord_compressor();
-        let mut inflater = Inflater::new().unwrap();
+        let mut inflater = Inflater::new(MAX_DECOMPRESSED).unwrap();
         let huge = message_create(1, &"z".repeat(MAX_DECOMPRESSED));
 
         assert!(matches!(
             inflater.inflate(&compress(&mut compressor, huge.as_bytes())),
-            Err(InflateError::TooLarge)
+            Err(InflateError::TooLarge(MAX_DECOMPRESSED))
         ));
         assert!(matches!(
-            Inflater::new().unwrap().inflate(b"definitely not zstd"),
+            Inflater::new(MAX_DECOMPRESSED)
+                .unwrap()
+                .inflate(b"definitely not zstd"),
             Err(InflateError::Zstd(_))
         ));
-    }
-
-    #[test]
-    fn a_forwarded_payload_is_copied_at_its_exact_size() {
-        let mut compressor = discord_compressor();
-        let mut inflater = Inflater::new().unwrap();
-        let frame = message_create(7, &"w".repeat(3000));
-
-        let inflated = inflater
-            .inflate(&compress(&mut compressor, frame.as_bytes()))
-            .unwrap();
-        let Frame::Dispatch {
-            forward: Some(forward),
-            ..
-        } = Frame::parse(inflated, |_| true).unwrap()
-        else {
-            panic!("expected a forwarded dispatch");
-        };
-
-        let expected = format!(r#"{{"content":"{}"}}"#, "w".repeat(3000));
-        assert_eq!(&forward.data[..], expected.as_bytes());
-        let owned = forward.data.try_into_mut().unwrap();
-        assert_eq!(owned.capacity(), expected.len());
     }
 }

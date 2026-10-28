@@ -348,7 +348,10 @@ mod tests {
             buckets.wait(&key(Method::Patch, "second"), now),
             Duration::ZERO
         );
-        assert_eq!(buckets.exhausted_until.len(), 2);
+        assert_eq!(
+            buckets.wait(&key(Method::Patch, "third"), now),
+            Duration::from_secs(9)
+        );
 
         buckets.observe(&key(Method::Patch, "third"), Some(&bucket(3, 9)), now);
         buckets.observe(
@@ -357,10 +360,12 @@ mod tests {
             now + Duration::from_secs(2),
         );
 
-        assert_eq!(
-            buckets.wait(&key(Method::Patch, "first"), now),
-            Duration::ZERO
-        );
-        assert!(buckets.exhausted_until.is_empty());
+        for released in ["first", "third"] {
+            assert_eq!(
+                buckets.wait(&key(Method::Patch, released), now),
+                Duration::ZERO,
+                "{released}"
+            );
+        }
     }
 }

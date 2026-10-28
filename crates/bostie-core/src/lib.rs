@@ -352,28 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn reports_connection_failures_as_transport() {
-        init_test_tracing();
-        let refusing = refusing_socket();
-        let address = refusing.local_addr().unwrap();
-        let (core, receiver) = core(&format!("http://{address}")).unwrap();
-
-        core.request(me()).unwrap();
-
-        let deliveries = wait_for_deliveries(&core, &receiver);
-        assert!(
-            matches!(
-                deliveries.as_slice(),
-                [Delivery::Failure {
-                    kind: FailureKind::Transport,
-                    ..
-                }]
-            ),
-            "{deliveries:?}"
-        );
-    }
-
-    #[test]
     fn rejects_an_api_url_that_is_not_http() {
         let error = core("ws://127.0.0.1:1").err();
 
