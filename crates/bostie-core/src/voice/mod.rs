@@ -11,6 +11,8 @@ pub mod proto;
 pub mod rtp;
 pub mod session;
 pub mod sink;
+#[cfg(test)]
+mod soak;
 pub mod source;
 pub mod tap;
 #[cfg(test)]

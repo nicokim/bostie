@@ -50,5 +50,9 @@ harness = false
 name = "gateway_mimalloc"
 harness = false
 
+[[bench]]
+name = "voice"
+harness = false
+
 [lints]
 workspace = true
