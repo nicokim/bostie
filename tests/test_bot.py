@@ -664,6 +664,12 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
         async with running(bot, fake):
             await bot.wait_until_ready()
 
+        connections = len(fake.connections)
+        started = asyncio.create_task(bot.start(fake.token))
+        await bot.close()
+        await started
+        assert len(fake.connections) == connections
+
         first = asyncio.create_task(bot.start(fake.token))
         await bot.wait_until_ready()
         await bot.close()

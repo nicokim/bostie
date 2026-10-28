@@ -236,7 +236,7 @@ class Bot(Router):
 
     async def close(self) -> None:
         """Disconnect with code 1000, cancel running handlers and close the bridge."""
-        if self._closing is None:
+        if self._closing is None or self._closing.done():
             self._closing = asyncio.ensure_future(self._shut_down())
         await asyncio.shield(self._closing)
 
