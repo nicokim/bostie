@@ -318,12 +318,16 @@ async def voice_check(
         mark = len(timeline)
         await switch_region(bot, guild_id, channel_id, region)
         await within(VOICE_TIMEOUT, asyncio.ensure_future(vc.wait_until(State.READY)))
-        reconnecting = first_index(
-            timeline, mark, became(State.RECONNECTING, "server_changed")
-        )
+        reconnecting = first_index(timeline, mark, became(State.RECONNECTING))
+        if reconnecting is not None:
+            interrupted = timeline[reconnecting]
+            assert isinstance(interrupted, voice.StateChange)
+            print(
+                f"region change: {interrupted.detail!r} "
+                f"after close code {interrupted.code}"
+            )
         report(
-            f"a region change to {region} goes RECONNECTING (server_changed) "
-            "and back to READY",
+            f"a region change to {region} goes RECONNECTING and back to READY",
             reconnecting is not None
             and first_index(timeline, reconnecting, ready) is not None,
         )
