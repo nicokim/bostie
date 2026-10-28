@@ -14,7 +14,6 @@ aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
 bostie-core = { path = "crates/bostie-core" }
 bytes = "1.12.1"
 chacha20poly1305 = { version = "0.11.0", default-features = false }
-criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 davey = "=0.2.0-beta.1"
 fastrand = "2.5.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }

@@ -29,30 +29,12 @@ twilight-http-ratelimiting.workspace = true
 zstd-safe.workspace = true
 
 [dev-dependencies]
-criterion.workspace = true
-bostie-core = { path = ".", features = ["bench"] }
-mimalloc.workspace = true
 openmls.workspace = true
 openmls_basic_credential.workspace = true
 openmls_rust_crypto.workspace = true
 proptest.workspace = true
 tokio-websockets = { workspace = true, features = ["server"] }
 tracing-subscriber.workspace = true
-
-[features]
-bench = []
-
-[[bench]]
-name = "gateway"
-harness = false
-
-[[bench]]
-name = "gateway_mimalloc"
-harness = false
-
-[[bench]]
-name = "voice"
-harness = false
 
 [lints]
 workspace = true

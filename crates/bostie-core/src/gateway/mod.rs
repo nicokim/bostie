@@ -1,6 +1,3 @@
-#[cfg(feature = "bench")]
-#[doc(hidden)]
-pub mod bench;
 mod close;
 mod envelope;
 mod identify;

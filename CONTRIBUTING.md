@@ -32,7 +32,7 @@ uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
 uv run pytest
 ```
 
-`cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. mypy runs in strict mode on the tests and benchmarks as well as the library. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails. If you change `.github/workflows`, also run `uvx --from actionlint-py actionlint`. When you add or bump a Rust dependency, regenerate the notices with `cargo about generate --locked -m crates/bostie-native/Cargo.toml -o THIRD-PARTY-NOTICES.md about.hbs`, using the cargo-about version CI pins (`cargo install cargo-about --locked --features cli --version 0.9.3`).
+`cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. mypy runs in strict mode on the tests as well as the library. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails. If you change `.github/workflows`, also run `uvx --from actionlint-py actionlint`. When you add or bump a Rust dependency, regenerate the notices with `cargo about generate --locked -m crates/bostie-native/Cargo.toml -o THIRD-PARTY-NOTICES.md about.hbs`, using the cargo-about version CI pins (`cargo install cargo-about --locked --features cli --version 0.9.3`).
 
 CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
@@ -123,4 +123,4 @@ We don't write comments in code. If a block seems to need one, rename it or spli
 
 No `unsafe`, and no `unwrap`, `expect`, `panic!` or slice indexing outside tests. clippy denies all of them. A panic on one of the core's threads would never reach the Python user, so return an error instead.
 
-When you add or bump a dependency, use its latest release. A change made for speed needs a benchmark in `benches/` that shows the gain.
+When you add or bump a dependency, use its latest release. A change made for speed says in the pull request how you measured the gain.

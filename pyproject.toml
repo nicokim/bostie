@@ -62,27 +62,15 @@ banned-module-level-imports = [
 
 [tool.ruff.lint.per-file-ignores]
 "!python/bostie/voice/layers.py" = ["SLF001", "TID251", "TID253"]
-"benches/harness/bot_runner.py" = ["E402"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 
 [tool.mypy]
 strict = true
-files = ["python/bostie", "tests", "benches"]
+files = ["python/bostie", "tests"]
 
 [[tool.mypy.overrides]]
-module = [
-    "compression.*",
-    "discord.*",
-    "interactions.*",
-    "orjson",
-    "pyperf",
-    "uvloop",
-]
+module = ["compression.*"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "bot_runner"
-disallow_untyped_defs = false
 
 [tool.pytest]
 testpaths = ["tests"]

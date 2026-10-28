@@ -33,7 +33,7 @@ use crate::voice::ws::Timeouts;
 
 const WAIT: Duration = Duration::from_secs(15);
 const SHARD: u32 = 0;
-pub(super) const CHANNEL: u64 = 1_400_000_000_000_000_001;
+const CHANNEL: u64 = 1_400_000_000_000_000_001;
 const OTHER_CHANNEL: u64 = 1_400_000_000_000_000_002;
 const SECOND_GUILD: u64 = 1_335_172_792_320_131_099;
 const EARLY_PEER: u64 = 50;
@@ -70,7 +70,7 @@ fn tuning() -> Tuning {
     }
 }
 
-pub(super) fn guild() -> GuildId {
+fn guild() -> GuildId {
     Config::default().server_id
 }
 
@@ -78,7 +78,7 @@ fn bot() -> UserId {
     Config::default().user_id
 }
 
-pub(super) fn user(id: u64) -> UserId {
+fn user(id: u64) -> UserId {
     UserId::from(id)
 }
 
@@ -92,7 +92,7 @@ fn encoder() -> EncoderSettings {
     }
 }
 
-pub(super) fn pcm() -> SinkFormat {
+fn pcm() -> SinkFormat {
     SinkFormat::Pcm(PcmFormat {
         rate: 48_000,
         channels: 2,
@@ -100,7 +100,7 @@ pub(super) fn pcm() -> SinkFormat {
     })
 }
 
-pub(super) fn tone(frames: usize) -> Vec<u8> {
+fn tone(frames: usize) -> Vec<u8> {
     (0..frames * 2)
         .flat_map(|index| {
             let sample = ((index / 2) as f32 * 0.05).sin() * 8_000.0;
@@ -109,7 +109,7 @@ pub(super) fn tone(frames: usize) -> Vec<u8> {
         .collect()
 }
 
-pub(super) fn opus(frames: usize) -> Vec<Bytes> {
+fn opus(frames: usize) -> Vec<Bytes> {
     let format = PcmFormat {
         rate: 48_000,
         channels: 2,
@@ -160,9 +160,9 @@ impl Recorder {
     }
 }
 
-pub(super) struct Server {
+struct Server {
     gateway: FakeVoiceGateway,
-    pub(super) sfu: Sfu,
+    sfu: Sfu,
     config: Config,
     messages: Vec<ClientMessage>,
     read: usize,
@@ -170,7 +170,7 @@ pub(super) struct Server {
 }
 
 impl Server {
-    pub(super) async fn start(guild: GuildId, change: impl FnOnce(&mut Config)) -> Self {
+    async fn start(guild: GuildId, change: impl FnOnce(&mut Config)) -> Self {
         let sfu = Sfu::start();
         let mut config = Config {
             server_id: guild,
@@ -192,7 +192,7 @@ impl Server {
         }
     }
 
-    pub(super) fn endpoint(&self) -> String {
+    fn endpoint(&self) -> String {
         self.gateway.endpoint()
     }
 
@@ -257,7 +257,7 @@ impl Server {
             .collect()
     }
 
-    pub(super) async fn token(&mut self, token: &str) {
+    async fn token(&mut self, token: &str) {
         self.config.token = token.to_owned();
         let token = token.to_owned();
         self.gateway
@@ -370,13 +370,13 @@ fn outbound(message: &ClientMessage) -> Option<Outbound> {
 
 type State = (VoiceStatus, Option<DisconnectReason>, Option<u16>, String);
 
-pub(super) struct Harness {
-    pub(super) voice: Voice,
+struct Harness {
+    voice: Voice,
     inbox: Arc<Inbox>,
     _bell: BellReceiver,
     tap: Arc<GatewayTap>,
     recorder: Arc<Recorder>,
-    pub(super) server: Server,
+    server: Server,
     deliveries: Vec<Delivery>,
     used: Vec<bool>,
     tokens: u32,
@@ -397,11 +397,7 @@ impl Harness {
         Self::build(|_| {}, PacerPool::manual(), tuning).await
     }
 
-    pub(super) async fn build(
-        change: impl FnOnce(&mut Config),
-        pacer: PacerPool,
-        tuning: Tuning,
-    ) -> Self {
+    async fn build(change: impl FnOnce(&mut Config), pacer: PacerPool, tuning: Tuning) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::new(bell));
@@ -433,7 +429,7 @@ impl Harness {
         }
     }
 
-    pub(super) fn request(&self) -> ConnectRequest {
+    fn request(&self) -> ConnectRequest {
         ConnectRequest {
             guild: guild(),
             channel: ChannelId::from(CHANNEL),
@@ -452,7 +448,7 @@ impl Harness {
         self.voice.connect(self.request()).unwrap();
     }
 
-    pub(super) fn offer_state(&self, guild: GuildId, channel: Option<u64>, extra: &str) {
+    fn offer_state(&self, guild: GuildId, channel: Option<u64>, extra: &str) {
         let channel = channel.map_or_else(|| "null".to_owned(), |id| format!(r#""{id}""#));
         let data = format!(
             r#"{{"guild_id":"{guild}","user_id":"{}","channel_id":{channel},"session_id":"{}","deaf":false{extra}}}"#,
@@ -467,7 +463,7 @@ impl Harness {
         self.offer_state(guild(), channel, "");
     }
 
-    pub(super) fn offer_server(&self, guild: GuildId, token: &str, endpoint: Option<&str>) {
+    fn offer_server(&self, guild: GuildId, token: &str, endpoint: Option<&str>) {
         let endpoint = endpoint.map_or_else(|| "null".to_owned(), |text| format!(r#""{text}""#));
         let data = format!(r#"{{"token":"{token}","guild_id":"{guild}","endpoint":{endpoint}}}"#);
         self.tap
@@ -509,7 +505,7 @@ impl Harness {
         self.deliveries.extend(fresh);
     }
 
-    pub(super) async fn wait_for<T>(&mut self, pick: impl Fn(&Delivery) -> Option<T>) -> T {
+    async fn wait_for<T>(&mut self, pick: impl Fn(&Delivery) -> Option<T>) -> T {
         let deadline = Instant::now() + WAIT;
         loop {
             self.drain();
@@ -562,7 +558,7 @@ impl Harness {
         }
     }
 
-    pub(super) async fn ended(&mut self) -> (DisconnectReason, Option<u16>, String) {
+    async fn ended(&mut self) -> (DisconnectReason, Option<u16>, String) {
         loop {
             let (status, reason, code, detail) = self.status().await;
             if status == VoiceStatus::Disconnected {
@@ -617,7 +613,7 @@ impl Harness {
         self.media().gate()
     }
 
-    pub(super) fn counter(&self, name: &str) -> u64 {
+    fn counter(&self, name: &str) -> u64 {
         counter(&self.voice, guild(), name)
     }
 
@@ -694,7 +690,7 @@ impl Harness {
             .is_some_and(|handle| handle.info.status() == VoiceStatus::Ready)
     }
 
-    pub(super) async fn encrypting(&mut self, call: &mut Call) {
+    async fn encrypting(&mut self, call: &mut Call) {
         self.pump(call, |harness, _| {
             harness.ready() && harness.gate() == SendMode::Encrypt
         })
@@ -702,7 +698,7 @@ impl Harness {
     }
 }
 
-pub(super) fn counter(voice: &Voice, guild: GuildId, name: &str) -> u64 {
+fn counter(voice: &Voice, guild: GuildId, name: &str) -> u64 {
     voice
         .stats(guild)
         .unwrap()
@@ -1202,7 +1198,7 @@ fn queued_frames(sink: &Sink) -> u64 {
     sink.queued().unwrap().as_micros() as u64 * 48 / 1000
 }
 
-pub(super) fn sink_stat(sink: &Sink, name: &str) -> u64 {
+fn sink_stat(sink: &Sink, name: &str) -> u64 {
     sink.stats()
         .unwrap()
         .into_iter()
@@ -2111,7 +2107,7 @@ impl Harness {
         Self::with(|config| config.dave_protocol_version = 1).await
     }
 
-    pub(super) async fn in_call(&mut self, call: &mut Call) {
+    async fn in_call(&mut self, call: &mut Call) {
         self.connect();
         self.announce().await;
         self.join_call(call).await;
@@ -2124,7 +2120,7 @@ impl Harness {
         call
     }
 
-    pub(super) async fn rejoined(&mut self, call: &mut Call, members: usize, executed: u64) {
+    async fn rejoined(&mut self, call: &mut Call, members: usize, executed: u64) {
         self.pump(call, |harness, call| {
             call.fake.members().len() == members
                 && harness.counter("transitions_executed") > executed
