@@ -13,7 +13,8 @@ use crate::voice::types::{
 };
 
 pub struct Mixer {
-    encoder: Encoder,
+    settings: EncoderSettings,
+    encoder: Option<Encoder>,
     soft_clip: SoftClip,
     strips: HashMap<Handle, Strip>,
     sum: Vec<f32>,
@@ -41,8 +42,10 @@ struct Strip {
 
 impl Mixer {
     pub fn new(settings: EncoderSettings) -> Result<Self, CoreError> {
+        settings.validate()?;
         Ok(Self {
-            encoder: Encoder::new(settings)?,
+            settings,
+            encoder: None,
             soft_clip: SoftClip::new(Channels::Stereo),
             strips: HashMap::new(),
             sum: vec![0.0; FRAME_LEN],
@@ -54,7 +57,12 @@ impl Mixer {
     }
 
     pub fn set_encoder(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
-        self.encoder.set(settings)
+        match &mut self.encoder {
+            Some(encoder) => encoder.set(settings)?,
+            None => settings.validate()?,
+        }
+        self.settings = settings;
+        Ok(())
     }
 
     pub fn retain(&mut self, sinks: &[Arc<Sink>]) {
@@ -166,11 +174,20 @@ impl Mixer {
     }
 
     fn encode(&mut self) -> Option<&[u8]> {
-        if self.stale {
-            self.encoder.reset();
-            self.stale = false;
+        match &mut self.encoder {
+            Some(encoder) if self.stale => encoder.reset(),
+            Some(_) => {}
+            None => match Encoder::new(self.settings) {
+                Ok(encoder) => self.encoder = Some(encoder),
+                Err(error) => {
+                    tracing::debug!(%error, "opus could not build the encoder");
+                    self.encode_errors += 1;
+                    return None;
+                }
+            },
         }
-        let packet = self.encoder.encode(&self.sum);
+        self.stale = false;
+        let packet = self.encoder.as_mut()?.encode(&self.sum);
         if packet.is_none() {
             self.encode_errors += 1;
         }
@@ -566,6 +583,7 @@ mod tests {
 
         assert!(mixer.mix(&[]).is_none());
         assert!(mixer.mix(&sinks).is_none());
+        assert!(mixer.encoder.is_none());
     }
 
     #[test]
@@ -584,8 +602,12 @@ mod tests {
     }
 
     #[test]
-    fn encoder_changes_are_validated() {
+    fn encoder_changes_are_validated_and_reach_the_encoder_built_on_first_use() {
         let mut mixer = Mixer::new(settings()).unwrap();
+        let faster = EncoderSettings {
+            bitrate: 128_000,
+            ..settings()
+        };
 
         assert!(
             mixer
@@ -595,14 +617,9 @@ mod tests {
                 })
                 .is_err()
         );
-        assert!(
-            mixer
-                .set_encoder(EncoderSettings {
-                    bitrate: 128_000,
-                    ..settings()
-                })
-                .is_ok()
-        );
-        assert_eq!(mixer.encoder.settings().bitrate, 128_000);
+        assert!(mixer.set_encoder(faster).is_ok());
+        mixer.silence().unwrap();
+
+        assert_eq!(mixer.encoder.as_ref().map(Encoder::settings), Some(faster));
     }
 }
