@@ -1,1 +1,486 @@
+use std::collections::VecDeque;
+use std::mem;
+use std::process;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use bytes::Bytes;
+use parking_lot::Mutex;
+
+use crate::error::CoreError;
+use crate::ids::{Handle, UserId};
+use crate::inbox::{Delivery, Inbox};
+use crate::voice::types::ReceiveOptions;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    Frame {
+        user: Option<UserId>,
+        ssrc: Option<u32>,
+        timestamp: Option<u32>,
+        offset: u64,
+        samples: u32,
+        at: Instant,
+        data: Bytes,
+        lost: bool,
+    },
+    Packet {
+        user: UserId,
+        ssrc: u32,
+        sequence: u16,
+        timestamp: u32,
+        at: Instant,
+        opus: Bytes,
+        extensions: Vec<(u8, Bytes)>,
+    },
+    Speech {
+        user: UserId,
+        ssrc: u32,
+        speaking: bool,
+        offset: Option<u64>,
+        at: Instant,
+        duration: Duration,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ended {
+    Closed,
+    Disconnected,
+    Moved,
+}
+
+impl Ended {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Closed => "closed",
+            Self::Disconnected => "disconnected",
+            Self::Moved => "moved",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiveRead {
+    Pending,
+    Items(Vec<Item>),
+    Ended(Ended),
+}
+
+pub struct Receiver {
+    id: Handle,
+    options: ReceiveOptions,
+    owner: u32,
+    inbox: Arc<Inbox>,
+    opened: Instant,
+    queue: Mutex<Queue>,
+}
+
+#[derive(Default)]
+struct Queue {
+    stale_markers: Vec<(Instant, Item)>,
+    items: VecDeque<(Instant, Item)>,
+    wake_armed: bool,
+    ended: Option<Ended>,
+    stats: ReceiverStats,
+}
+
+#[derive(Default)]
+struct ReceiverStats {
+    delivered: u64,
+    dropped: u64,
+    lost: u64,
+}
+
+impl Receiver {
+    pub fn new(id: Handle, options: ReceiveOptions, inbox: Arc<Inbox>) -> Result<Self, CoreError> {
+        options.validate()?;
+        Ok(Self {
+            id,
+            options,
+            owner: process::id(),
+            inbox,
+            opened: Instant::now(),
+            queue: Mutex::default(),
+        })
+    }
+
+    pub fn id(&self) -> Handle {
+        self.id
+    }
+
+    pub fn options(&self) -> &ReceiveOptions {
+        &self.options
+    }
+
+    pub fn opened(&self) -> Instant {
+        self.opened
+    }
+
+    pub fn read(&self, limit: usize) -> Result<ReceiveRead, CoreError> {
+        self.ensure_owner()?;
+        let mut queue = self.queue.lock();
+        if queue.ended == Some(Ended::Closed) {
+            return Err(CoreError::HandleClosed(self.id));
+        }
+        let items = queue.take(limit.max(1));
+        if !items.is_empty() {
+            return Ok(ReceiveRead::Items(items));
+        }
+        Ok(match queue.ended {
+            Some(why) => ReceiveRead::Ended(why),
+            None => {
+                queue.wake_armed = true;
+                ReceiveRead::Pending
+            }
+        })
+    }
+
+    pub fn queued(&self) -> Result<Duration, CoreError> {
+        self.ensure_owner()?;
+        let queue = self.queue.lock();
+        let oldest = queue.stale_markers.first().or(queue.items.front());
+        Ok(oldest.map_or(Duration::ZERO, |(queued, _)| queued.elapsed()))
+    }
+
+    pub fn clear(&self) -> Result<(), CoreError> {
+        self.ensure_owner()?;
+        self.queue.lock().discard();
+        Ok(())
+    }
+
+    pub fn stats(&self) -> Result<Vec<(&'static str, u64)>, CoreError> {
+        self.ensure_owner()?;
+        let queue = self.queue.lock();
+        Ok(vec![
+            ("delivered", queue.stats.delivered),
+            ("dropped", queue.stats.dropped),
+            ("lost", queue.stats.lost),
+        ])
+    }
+
+    pub fn ended(&self) -> Option<Ended> {
+        self.queue.lock().ended
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.ended().is_some()
+    }
+
+    pub fn close(&self) {
+        if process::id() != self.owner {
+            return;
+        }
+        let mut queue = self.queue.lock();
+        queue.discard();
+        queue.ended = Some(Ended::Closed);
+        self.wake(&mut queue);
+    }
+
+    pub fn end(&self, why: Ended) {
+        let mut queue = self.queue.lock();
+        if queue.ended.is_none() {
+            queue.ended = Some(why);
+            self.wake(&mut queue);
+        }
+    }
+
+    pub fn push(&self, items: impl IntoIterator<Item = Item>, now: Instant) {
+        let mut queue = self.queue.lock();
+        if queue.ended.is_some() {
+            return;
+        }
+        let before = queue.items.len();
+        for item in items {
+            queue.add(item, now);
+        }
+        let added = queue.items.len() > before;
+        queue.overflow(now, self.options.buffer);
+        if added {
+            self.wake(&mut queue);
+        }
+    }
+
+    pub fn add_lost(&self, packets: u64) {
+        self.queue.lock().stats.lost += packets;
+    }
+
+    pub fn add_dropped(&self, frames: u64) {
+        self.queue.lock().stats.dropped += frames;
+    }
+
+    fn ensure_owner(&self) -> Result<(), CoreError> {
+        if process::id() == self.owner {
+            Ok(())
+        } else {
+            Err(CoreError::Forked { owner: self.owner })
+        }
+    }
+
+    fn wake(&self, queue: &mut Queue) {
+        if mem::take(&mut queue.wake_armed) {
+            self.inbox.push(Delivery::VoiceWake { handle: self.id });
+        }
+    }
+}
+
+impl Queue {
+    fn add(&mut self, item: Item, now: Instant) {
+        match &item {
+            Item::Frame { lost, .. } => {
+                self.stats.delivered += 1;
+                self.stats.lost += u64::from(*lost);
+            }
+            Item::Packet { .. } => self.stats.delivered += 1,
+            Item::Speech { user, .. } => {
+                let user = *user;
+                self.stale_markers
+                    .retain(|(_, marker)| !marker.is_speech_of(user));
+            }
+        }
+        self.items.push_back((now, item));
+    }
+
+    fn overflow(&mut self, now: Instant, buffer: Duration) {
+        while self
+            .items
+            .front()
+            .is_some_and(|(queued, _)| now.saturating_duration_since(*queued) > buffer)
+            && let Some((queued, item)) = self.items.pop_front()
+        {
+            match item {
+                Item::Speech { user, .. } => {
+                    if !self.items.iter().any(|(_, later)| later.is_speech_of(user)) {
+                        self.stale_markers.push((queued, item));
+                    }
+                }
+                Item::Frame { .. } | Item::Packet { .. } => self.stats.dropped += 1,
+            }
+        }
+    }
+
+    fn take(&mut self, limit: usize) -> Vec<Item> {
+        let stale = limit.min(self.stale_markers.len());
+        let fresh = limit.saturating_sub(stale).min(self.items.len());
+        let mut taken = Vec::with_capacity(stale + fresh);
+        taken.extend(self.stale_markers.drain(..stale).map(|(_, item)| item));
+        taken.extend(self.items.drain(..fresh).map(|(_, item)| item));
+        taken
+    }
+
+    fn discard(&mut self) {
+        self.stale_markers.clear();
+        self.items.clear();
+    }
+}
+
+impl Item {
+    fn is_speech_of(&self, speaker: UserId) -> bool {
+        matches!(self, Self::Speech { user, .. } if *user == speaker)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::voice::sink::tests::Fixture;
+    use crate::voice::types::{Overflow, ReceiveFormat, ReceiveStall, SILENCE_FRAME};
+
+    const ALICE: u64 = 1;
+    const BOB: u64 = 2;
+
+    fn open(fixture: &Fixture, buffer_ms: u64) -> Receiver {
+        let options = ReceiveOptions {
+            format: ReceiveFormat::Opus,
+            users: None,
+            exclude: HashSet::new(),
+            include_self: false,
+            buffer: Duration::from_millis(buffer_ms),
+            jitter: Duration::ZERO,
+            markers: true,
+            mix: false,
+            overflow: Overflow::DropOldest,
+            stall: ReceiveStall::Wait,
+        };
+        Receiver::new(Handle::from(1), options, Arc::clone(&fixture.inbox)).unwrap()
+    }
+
+    fn frame(user: u64, offset: u64, at: Instant) -> Item {
+        Item::Frame {
+            user: Some(UserId::from(user)),
+            ssrc: Some(1),
+            timestamp: Some(0),
+            offset,
+            samples: 960,
+            at,
+            data: Bytes::from_static(&SILENCE_FRAME),
+            lost: false,
+        }
+    }
+
+    fn speech(user: u64, speaking: bool, at: Instant) -> Item {
+        Item::Speech {
+            user: UserId::from(user),
+            ssrc: 1,
+            speaking,
+            offset: Some(0),
+            at,
+            duration: Duration::ZERO,
+        }
+    }
+
+    fn wakes(fixture: &Fixture) -> usize {
+        fixture
+            .inbox
+            .drain()
+            .iter()
+            .filter(|delivery| matches!(delivery, Delivery::VoiceWake { .. }))
+            .count()
+    }
+
+    #[test]
+    fn items_wait_for_read_and_one_wake_fires_per_waiting_read() {
+        let fixture = Fixture::new();
+        let receiver = open(&fixture, 60_000);
+        let now = Instant::now();
+        let early = now.checked_sub(Duration::from_secs(10)).unwrap();
+        let later = now.checked_sub(Duration::from_secs(1)).unwrap();
+        let gap = Item::Frame {
+            user: Some(UserId::from(ALICE)),
+            ssrc: Some(1),
+            timestamp: Some(2_880),
+            offset: 2_880,
+            samples: 960,
+            at: now,
+            data: Bytes::new(),
+            lost: true,
+        };
+
+        receiver.push([frame(ALICE, 0, now)], early);
+        let unwaited = wakes(&fixture);
+        let first = receiver.read(256).unwrap();
+        let waits = [receiver.read(256).unwrap(), receiver.read(256).unwrap()];
+        let batch = [
+            frame(ALICE, 960, now),
+            frame(ALICE, 1_920, now),
+            gap.clone(),
+        ];
+        receiver.push(batch, early);
+        receiver.push([frame(ALICE, 3_840, now)], later);
+        let woken = wakes(&fixture);
+        let oldest = receiver.queued().unwrap();
+        let partial = receiver.read(2).unwrap();
+        receiver.push([frame(ALICE, 4_800, now)], later);
+        let while_more_remain = wakes(&fixture);
+        let rest = receiver.read(0).unwrap();
+        let next_oldest = receiver.queued().unwrap();
+        receiver.add_lost(3);
+        receiver.clear().unwrap();
+
+        assert_eq!((unwaited, woken, while_more_remain), (0, 1, 0));
+        assert_eq!(first, ReceiveRead::Items(vec![frame(ALICE, 0, now)]));
+        assert_eq!(waits, [ReceiveRead::Pending, ReceiveRead::Pending]);
+        assert_eq!(
+            partial,
+            ReceiveRead::Items(vec![frame(ALICE, 960, now), frame(ALICE, 1_920, now)])
+        );
+        assert_eq!(rest, ReceiveRead::Items(vec![gap]));
+        assert!(oldest >= Duration::from_secs(10), "{oldest:?}");
+        assert!(
+            (Duration::from_secs(1)..Duration::from_secs(10)).contains(&next_oldest),
+            "{next_oldest:?}"
+        );
+        assert_eq!(receiver.queued().unwrap(), Duration::ZERO);
+        assert_eq!(receiver.read(256).unwrap(), ReceiveRead::Pending);
+        assert_eq!(
+            receiver.stats().unwrap(),
+            [("delivered", 6), ("dropped", 0), ("lost", 4)]
+        );
+    }
+
+    #[test]
+    fn overflow_drops_the_oldest_audio_beyond_the_buffer_and_counts_it() {
+        let fixture = Fixture::new();
+        let receiver = open(&fixture, 100);
+        let start = Instant::now();
+        let at = |millis| start + Duration::from_millis(millis);
+
+        let opening = [
+            speech(ALICE, true, start),
+            frame(ALICE, 0, start),
+            frame(ALICE, 960, start),
+        ];
+        receiver.push(opening, at(0));
+        let turn = [
+            frame(ALICE, 1_920, start),
+            speech(ALICE, false, start),
+            speech(BOB, true, start),
+        ];
+        receiver.push(turn, at(60));
+        receiver.push([frame(BOB, 0, start)], at(120));
+        receiver.push([frame(BOB, 960, start)], at(180));
+        receiver.push([speech(BOB, false, start)], at(200));
+        receiver.add_dropped(2);
+
+        assert_eq!(
+            receiver.read(256).unwrap(),
+            ReceiveRead::Items(vec![
+                speech(ALICE, false, start),
+                frame(BOB, 0, start),
+                frame(BOB, 960, start),
+                speech(BOB, false, start),
+            ])
+        );
+        assert_eq!(
+            receiver.stats().unwrap(),
+            [("delivered", 5), ("dropped", 5), ("lost", 0)]
+        );
+    }
+
+    #[test]
+    fn close_discards_and_a_disconnect_keeps_queued_items_until_read() {
+        let fixture = Fixture::new();
+        let now = Instant::now();
+        let closed = open(&fixture, 60_000);
+        let waiting = open(&fixture, 60_000);
+        closed.push([frame(ALICE, 0, now)], now);
+        assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Pending);
+
+        closed.close();
+        closed.close();
+        waiting.close();
+        closed.push([frame(ALICE, 960, now)], now);
+
+        assert_eq!(wakes(&fixture), 1);
+        assert_eq!(closed.ended(), Some(Ended::Closed));
+        assert_eq!(closed.queued().unwrap(), Duration::ZERO);
+        assert!(matches!(
+            closed.read(256),
+            Err(CoreError::HandleClosed(handle)) if handle == closed.id()
+        ));
+
+        for why in [Ended::Disconnected, Ended::Moved] {
+            let ended = open(&fixture, 60_000);
+            let waiting = open(&fixture, 60_000);
+            ended.push([frame(ALICE, 0, now)], now);
+            assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Pending);
+
+            for receiver in [&ended, &waiting] {
+                receiver.end(why);
+                receiver.end(Ended::Disconnected);
+            }
+            ended.push([frame(ALICE, 960, now)], now);
+
+            assert_eq!(wakes(&fixture), 1);
+            assert_eq!(ended.ended(), Some(why));
+            assert_eq!(
+                ended.read(256).unwrap(),
+                ReceiveRead::Items(vec![frame(ALICE, 0, now)])
+            );
+            assert_eq!(ended.read(256).unwrap(), ReceiveRead::Ended(why));
+            assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Ended(why));
+        }
+    }
+}

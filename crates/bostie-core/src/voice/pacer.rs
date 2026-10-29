@@ -12,9 +12,12 @@ use parking_lot::Mutex;
 use crate::error::CoreError;
 use crate::voice::types::FRAME;
 
+pub const AFTER_MARGIN: Duration = Duration::from_millis(2);
+
 const LANES_PER_THREAD: usize = 4;
 const LATE_REANCHOR: Duration = FRAME.saturating_mul(3);
 const WORK_SMOOTHING: u64 = 8;
+const AFTER_BUCKETS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tick {
@@ -23,12 +26,17 @@ pub struct Tick {
 }
 
 pub type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;
+pub type AfterFn = Box<dyn FnMut(Tick, Instant) -> bool + Send>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadLoad {
     pub lanes: usize,
     pub work_ewma: Duration,
     pub work_max: Duration,
+    pub after_ewma: Duration,
+    pub after_max: Duration,
+    pub after_p50: Duration,
+    pub after_p99: Duration,
     pub late_ticks: u64,
     pub lane_panics: u64,
 }
@@ -41,12 +49,17 @@ pub struct PacerPool {
 enum Mode {
     Threads(Mutex<Vec<Worker>>),
     #[cfg(test)]
-    Manual(Mutex<Manual>),
+    Manual(Box<Mutex<Manual>>),
 }
 
 struct Worker {
-    sender: Sender<LaneFn>,
+    sender: Sender<Assignment>,
     load: Arc<Load>,
+}
+
+struct Assignment {
+    lane: LaneFn,
+    after: Option<AfterFn>,
 }
 
 #[derive(Default)]
@@ -54,6 +67,9 @@ struct Load {
     lanes: AtomicUsize,
     work_ewma: AtomicU64,
     work_max: AtomicU64,
+    after_ewma: AtomicU64,
+    after_max: AtomicU64,
+    after_micros: [AtomicU64; AFTER_BUCKETS],
     late_ticks: AtomicU64,
     lane_panics: AtomicU64,
 }
@@ -61,6 +77,7 @@ struct Load {
 #[cfg(test)]
 struct Manual {
     lanes: Vec<LaneFn>,
+    afters: Vec<AfterFn>,
     now: Instant,
     load: Load,
 }
@@ -76,11 +93,12 @@ impl PacerPool {
     #[cfg(test)]
     pub fn manual() -> Self {
         Self {
-            mode: Mode::Manual(Mutex::new(Manual {
+            mode: Mode::Manual(Box::new(Mutex::new(Manual {
                 lanes: Vec::new(),
+                afters: Vec::new(),
                 now: Instant::now(),
                 load: Load::default(),
-            })),
+            }))),
             epoch: Instant::now(),
         }
     }
@@ -98,22 +116,46 @@ impl PacerPool {
             return;
         };
         let mut manual = manual.lock();
-        let Manual { lanes, now, load } = &mut *manual;
+        let Manual {
+            lanes,
+            afters,
+            now,
+            load,
+        } = &mut *manual;
         *now += FRAME.saturating_mul(skipped.saturating_add(1));
         load.late_ticks
             .fetch_add(u64::from(skipped), Ordering::Relaxed);
-        run_lanes(lanes, Tick { now: *now, skipped }, load);
+        let tick = Tick { now: *now, skipped };
+        run_lanes(lanes, tick, load);
+        run_afters(afters, tick, Instant::now() + FRAME, load);
         load.lanes.store(lanes.len(), Ordering::Relaxed);
     }
 
     pub fn assign(&self, lane: LaneFn) -> Result<usize, CoreError> {
+        self.place(Assignment { lane, after: None })
+    }
+
+    pub fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<usize, CoreError> {
+        self.place(Assignment {
+            lane,
+            after: Some(after),
+        })
+    }
+
+    fn place(&self, assignment: Assignment) -> Result<usize, CoreError> {
         match &self.mode {
-            Mode::Threads(workers) => assign(&mut workers.lock(), lane, self.epoch),
+            Mode::Threads(workers) => assign(&mut workers.lock(), assignment, self.epoch),
             #[cfg(test)]
             Mode::Manual(manual) => {
                 let mut manual = manual.lock();
-                manual.lanes.push(lane);
-                manual.load.lanes.fetch_add(1, Ordering::Relaxed);
+                let Manual {
+                    lanes,
+                    afters,
+                    load,
+                    ..
+                } = &mut *manual;
+                assignment.join(lanes, afters);
+                load.lanes.fetch_add(1, Ordering::Relaxed);
                 Ok(0)
             }
         }
@@ -142,7 +184,11 @@ impl Default for PacerPool {
     }
 }
 
-fn assign(workers: &mut Vec<Worker>, lane: LaneFn, epoch: Instant) -> Result<usize, CoreError> {
+fn assign(
+    workers: &mut Vec<Worker>,
+    assignment: Assignment,
+    epoch: Instant,
+) -> Result<usize, CoreError> {
     let index = workers
         .iter()
         .enumerate()
@@ -163,10 +209,10 @@ fn assign(workers: &mut Vec<Worker>, lane: LaneFn, epoch: Instant) -> Result<usi
         )));
     };
     worker.load.lanes.fetch_add(1, Ordering::Relaxed);
-    if let Err(mpsc::SendError(lane)) = worker.sender.send(lane) {
+    if let Err(mpsc::SendError(assignment)) = worker.sender.send(assignment) {
         *worker = Worker::spawn(index, epoch)?;
         worker.load.lanes.fetch_add(1, Ordering::Relaxed);
-        worker.sender.send(lane).map_err(|_| {
+        worker.sender.send(assignment).map_err(|_| {
             CoreError::Runtime(io::Error::other("the voice pacer thread ended at once"))
         })?;
     }
@@ -187,26 +233,72 @@ impl Worker {
     }
 }
 
+impl Assignment {
+    fn join(self, lanes: &mut Vec<LaneFn>, afters: &mut Vec<AfterFn>) {
+        lanes.push(self.lane);
+        afters.extend(self.after);
+    }
+}
+
 impl Load {
     fn snapshot(&self) -> ThreadLoad {
+        let after_max = Duration::from_nanos(self.after_max.load(Ordering::Relaxed));
+        let after_micros = self
+            .after_micros
+            .each_ref()
+            .map(|count| count.load(Ordering::Relaxed));
         ThreadLoad {
             lanes: self.lanes.load(Ordering::Relaxed),
             work_ewma: Duration::from_nanos(self.work_ewma.load(Ordering::Relaxed)),
             work_max: Duration::from_nanos(self.work_max.load(Ordering::Relaxed)),
+            after_ewma: Duration::from_nanos(self.after_ewma.load(Ordering::Relaxed)),
+            after_max,
+            after_p50: quantile(&after_micros, 50).min(after_max),
+            after_p99: quantile(&after_micros, 99).min(after_max),
             late_ticks: self.late_ticks.load(Ordering::Relaxed),
             lane_panics: self.lane_panics.load(Ordering::Relaxed),
         }
     }
 
     fn record_work(&self, work: Duration) {
-        let work = u64::try_from(work.as_nanos()).unwrap_or(u64::MAX);
-        let ewma = self.work_ewma.load(Ordering::Relaxed);
-        self.work_ewma.store(
-            ewma - ewma / WORK_SMOOTHING + work / WORK_SMOOTHING,
-            Ordering::Relaxed,
-        );
-        self.work_max.fetch_max(work, Ordering::Relaxed);
+        smooth(&self.work_ewma, &self.work_max, work);
     }
+
+    fn record_after(&self, after: Duration) {
+        smooth(&self.after_ewma, &self.after_max, after);
+        let bucket =
+            usize::try_from(u128::BITS - after.as_micros().leading_zeros()).unwrap_or(usize::MAX);
+        if let Some(count) = self.after_micros.get(bucket).or(self.after_micros.last()) {
+            count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+fn smooth(ewma: &AtomicU64, max: &AtomicU64, took: Duration) {
+    let took = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+    let average = ewma.load(Ordering::Relaxed);
+    ewma.store(
+        average - average / WORK_SMOOTHING + took / WORK_SMOOTHING,
+        Ordering::Relaxed,
+    );
+    max.fetch_max(took, Ordering::Relaxed);
+}
+
+fn quantile(micros: &[u64], percent: u64) -> Duration {
+    let rank = micros
+        .iter()
+        .sum::<u64>()
+        .saturating_mul(percent)
+        .div_ceil(100)
+        .max(1);
+    let mut seen = 0;
+    for (&count, bucket) in micros.iter().zip(0_u32..) {
+        seen += count;
+        if seen >= rank {
+            return Duration::from_micros(1 << bucket);
+        }
+    }
+    Duration::ZERO
 }
 
 trait Clock {
@@ -247,18 +339,21 @@ fn grid_ceil(origin: Instant, at: Instant) -> Instant {
     if floor < at { floor + FRAME } else { floor }
 }
 
-fn pace(receiver: &Receiver<LaneFn>, load: &Load, clock: &impl Clock, origin: Instant) {
+fn pace(receiver: &Receiver<Assignment>, load: &Load, clock: &impl Clock, origin: Instant) {
     let mut lanes: Vec<LaneFn> = Vec::new();
+    let mut afters: Vec<AfterFn> = Vec::new();
     let mut next = clock.now();
     loop {
-        if lanes.is_empty() {
-            let Ok(lane) = receiver.recv() else {
+        if lanes.is_empty() && afters.is_empty() {
+            let Ok(assignment) = receiver.recv() else {
                 return;
             };
-            lanes.push(lane);
+            assignment.join(&mut lanes, &mut afters);
             next = grid_ceil(origin, clock.now());
         }
-        lanes.extend(receiver.try_iter());
+        for assignment in receiver.try_iter() {
+            assignment.join(&mut lanes, &mut afters);
+        }
         clock.sleep_until(next);
         let now = clock.now();
         let late = now.saturating_duration_since(next);
@@ -272,29 +367,41 @@ fn pace(receiver: &Receiver<LaneFn>, load: &Load, clock: &impl Clock, origin: In
         };
         load.late_ticks
             .fetch_add(u64::from(skipped), Ordering::Relaxed);
+        let tick = Tick { now, skipped };
         let before = lanes.len();
-        run_lanes(&mut lanes, Tick { now, skipped }, load);
-        load.record_work(clock.now().saturating_duration_since(now));
+        run_lanes(&mut lanes, tick, load);
+        let sent = clock.now();
+        load.record_work(sent.saturating_duration_since(now));
         load.lanes
             .fetch_sub(before - lanes.len(), Ordering::Relaxed);
+        if !afters.is_empty() {
+            run_afters(&mut afters, tick, next + FRAME - AFTER_MARGIN, load);
+            load.record_after(clock.now().saturating_duration_since(sent));
+        }
         next += FRAME;
     }
 }
 
 fn run_lanes(lanes: &mut Vec<LaneFn>, tick: Tick, load: &Load) {
-    lanes.retain_mut(
-        |lane| match panic::catch_unwind(AssertUnwindSafe(|| lane(tick))) {
-            Ok(keep) => keep,
-            Err(payload) => {
-                load.lane_panics.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
-                    panic = panic_message(payload.as_ref()),
-                    "a voice lane panicked and was dropped"
-                );
-                false
-            }
-        },
-    );
+    lanes.retain_mut(|lane| contained(load, "a voice lane", || lane(tick)));
+}
+
+fn run_afters(afters: &mut Vec<AfterFn>, tick: Tick, deadline: Instant, load: &Load) {
+    afters.retain_mut(|after| contained(load, "a voice receive phase", || after(tick, deadline)));
+    if !afters.is_empty() {
+        afters.rotate_left(1);
+    }
+}
+
+fn contained(load: &Load, what: &str, call: impl FnOnce() -> bool) -> bool {
+    panic::catch_unwind(AssertUnwindSafe(call)).unwrap_or_else(|payload| {
+        load.lane_panics.fetch_add(1, Ordering::Relaxed);
+        tracing::error!(
+            panic = panic_message(payload.as_ref()),
+            "{what} panicked and was dropped"
+        );
+        false
+    })
 }
 
 fn panic_message(payload: &(dyn Any + Send)) -> &str {
@@ -338,14 +445,25 @@ mod tests {
         }
     }
 
-    fn pace_on(clock: &Synthetic, lanes: Vec<LaneFn>) -> Sender<LaneFn> {
+    fn pace_on(clock: &Synthetic, lanes: Vec<LaneFn>) -> Sender<Assignment> {
+        let lanes = lanes
+            .into_iter()
+            .map(|lane| Assignment { lane, after: None });
+        pace_loaded(clock, lanes.collect(), Arc::default())
+    }
+
+    fn pace_loaded(
+        clock: &Synthetic,
+        assignments: Vec<Assignment>,
+        load: Arc<Load>,
+    ) -> Sender<Assignment> {
         let (sender, receiver) = mpsc::channel();
-        for lane in lanes {
-            sender.send(lane).unwrap();
+        for assignment in assignments {
+            sender.send(assignment).unwrap();
         }
         let clock = clock.clone();
         let origin = clock.now();
-        thread::spawn(move || pace(&receiver, &Load::default(), &clock, origin));
+        thread::spawn(move || pace(&receiver, &load, &clock, origin));
         sender
     }
 
@@ -527,7 +645,7 @@ mod tests {
         clock.advance(Duration::from_millis(5));
         let (lane, ticks) = synthetic_recorder(&clock, usize::MAX, Duration::ZERO);
 
-        pacer.send(lane).unwrap();
+        pacer.send(Assignment { lane, after: None }).unwrap();
         let (tick, _) = take(&ticks, 1)[0];
 
         assert_eq!(
@@ -609,6 +727,93 @@ mod tests {
         assert_eq!(first[5].skipped, 3);
         let load = pool.threads()[0];
         assert_eq!((load.lanes, load.lane_panics, load.late_ticks), (2, 1, 3));
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Call {
+        Lane(usize),
+        After(usize),
+    }
+
+    #[test]
+    fn after_closures_run_once_per_tick_after_every_lane() {
+        let clock = Synthetic::new();
+        let origin = clock.now();
+        let (sender, calls) = mpsc::sync_channel(0);
+        let assignments = (0..3)
+            .map(|index| {
+                let (lane_calls, after_calls) = (sender.clone(), sender.clone());
+                let clock = clock.clone();
+                let mut count = 0;
+                let lane: LaneFn = Box::new(move |tick| {
+                    lane_calls.send((Call::Lane(index), tick.now, None)).is_ok()
+                });
+                let after: AfterFn = Box::new(move |tick, deadline| {
+                    count += 1;
+                    assert!(index != 1 || count < 2, "receive failure");
+                    if index == 0 {
+                        let work = if count == 3 { 12_000 } else { 500 };
+                        clock.advance(Duration::from_micros(work));
+                    }
+                    after_calls
+                        .send((Call::After(index), tick.now, Some(deadline)))
+                        .is_ok()
+                });
+                Assignment {
+                    lane,
+                    after: Some(after),
+                }
+            })
+            .collect();
+        let load = Arc::new(Load::default());
+        let _pacer = pace_loaded(&clock, assignments, Arc::clone(&load));
+
+        let calls: Vec<_> = (0..22)
+            .map(|_| calls.recv_timeout(PATIENCE).unwrap())
+            .collect();
+
+        let mut expected = Vec::new();
+        for (tick, afters) in (0..).zip([vec![0, 1, 2], vec![2, 0], vec![0, 2], vec![2, 0]]) {
+            let now = origin + FRAME * tick;
+            let deadline = now + FRAME - AFTER_MARGIN;
+            expected.extend((0..3).map(|lane| (Call::Lane(lane), now, None)));
+            expected.extend(
+                afters
+                    .into_iter()
+                    .map(|after| (Call::After(after), now, Some(deadline))),
+            );
+        }
+        expected.push((Call::Lane(0), origin + FRAME * 4, None));
+        assert_eq!(calls, expected);
+        let load = load.snapshot();
+        assert_eq!(load.lane_panics, 1);
+        assert_eq!(load.work_max, Duration::ZERO);
+        assert_eq!(
+            (load.after_p50, load.after_p99, load.after_max),
+            (
+                Duration::from_micros(512),
+                Duration::from_millis(12),
+                Duration::from_millis(12)
+            )
+        );
+    }
+
+    #[test]
+    fn an_after_closure_keeps_its_thread_ticking_after_its_lane_left() {
+        let clock = Synthetic::new();
+        let origin = clock.now();
+        let (sender, ticks) = mpsc::sync_channel(0);
+        let assignment = Assignment {
+            lane: Box::new(|_| false),
+            after: Some(Box::new(move |tick, _| sender.send(tick.now).is_ok())),
+        };
+        let _pacer = pace_loaded(&clock, vec![assignment], Arc::default());
+
+        let ticks: Vec<Instant> = (0..3)
+            .map(|_| ticks.recv_timeout(PATIENCE).unwrap())
+            .collect();
+
+        assert_eq!(ticks, [0, 1, 2].map(|tick| origin + FRAME * tick));
     }
 
     #[test]
