@@ -50,6 +50,77 @@ pub struct Opened<'a> {
     pub header: Header,
     pub nonce: u32,
     pub payload: &'a [u8],
+    pub extension: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayWindow {
+    window: u32,
+    capacity: u64,
+    highest: Option<u32>,
+    seen: Box<[u64]>,
+}
+
+impl ReplayWindow {
+    pub fn new(bits: u32) -> Self {
+        let words = bits.div_ceil(u64::BITS).next_power_of_two();
+        Self {
+            window: bits,
+            capacity: u64::from(words) * u64::from(u64::BITS),
+            highest: None,
+            seen: (0..words).map(|_| 0).collect(),
+        }
+    }
+
+    pub fn accept(&mut self, nonce: u32) -> bool {
+        let Some(highest) = self.highest else {
+            self.highest = Some(nonce);
+            return self.mark(nonce);
+        };
+        let ahead = nonce.wrapping_sub(highest).cast_signed();
+        if ahead > 0 {
+            self.forget_after(highest, ahead.unsigned_abs());
+            self.highest = Some(nonce);
+            self.mark(nonce)
+        } else {
+            ahead.unsigned_abs() < self.window && self.mark(nonce)
+        }
+    }
+
+    fn forget_after(&mut self, highest: u32, count: u32) {
+        if u64::from(count) >= self.capacity {
+            self.seen.fill(0);
+            return;
+        }
+        let mut from = highest.wrapping_add(1);
+        let mut left = count;
+        while left > 0 {
+            let offset = from % u64::BITS;
+            let span = left.min(u64::BITS - offset);
+            if let Some(word) = self.word(from) {
+                *word &= !((u64::MAX >> (u64::BITS - span)) << offset);
+            }
+            from = from.wrapping_add(span);
+            left -= span;
+        }
+    }
+
+    fn mark(&mut self, nonce: u32) -> bool {
+        let bit = 1 << (nonce % u64::BITS);
+        let Some(word) = self.word(nonce) else {
+            return false;
+        };
+        let fresh = *word & bit == 0;
+        *word |= bit;
+        fresh
+    }
+
+    fn word(&mut self, nonce: u32) -> Option<&mut u64> {
+        let index = usize::try_from(nonce / u64::BITS)
+            .ok()?
+            .checked_rem(self.seen.len())?;
+        self.seen.get_mut(index)
+    }
 }
 
 pub struct Cipher(Aead);
@@ -142,6 +213,7 @@ impl Cipher {
             header,
             nonce,
             payload: header.payload(body)?,
+            extension: header.extension_body(body),
         })
     }
 }
@@ -294,6 +366,7 @@ mod tests {
             assert_eq!(opened.header, Header::parse(&header()).unwrap());
             assert_eq!(opened.nonce, 7);
             assert_eq!(opened.payload, OPUS);
+            assert_eq!(opened.extension, b"");
         }
     }
 
@@ -327,7 +400,8 @@ mod tests {
             words: 2,
         };
         let header = header_bytes(true, &[11, 22, 33], Some(extension), 9);
-        let mut body = vec![0x51, 0x02, 0x80, 0x00, 0x92, 0x01, 0x00, 0x00];
+        let elements = [0x51, 0x02, 0x80, 0x00, 0x92, 0x01, 0x00, 0x00];
+        let mut body = elements.to_vec();
         body.extend_from_slice(OPUS);
         body.extend_from_slice(&[0, 0, 0, 4]);
 
@@ -340,7 +414,64 @@ mod tests {
 
             assert_eq!(opened.header.csrc_count, 3);
             assert_eq!(opened.header.extension, Some(extension));
+            assert_eq!(opened.extension, elements);
             assert_eq!(opened.payload, OPUS);
+        }
+    }
+
+    #[test]
+    fn the_replay_window_accepts_reordered_nonces_once_and_refuses_old_ones() {
+        let cases: [(u32, &[(u32, bool)]); 3] = [
+            (
+                64,
+                &[
+                    (1, true),
+                    (66, true),
+                    (65, true),
+                    (65, false),
+                    (66, false),
+                    (3, true),
+                    (2, false),
+                    (70, true),
+                    (67, true),
+                    (67, false),
+                    (7, true),
+                    (6, false),
+                ],
+            ),
+            (
+                256,
+                &[
+                    (u32::MAX - 25, true),
+                    (40, true),
+                    (41, true),
+                    (133, true),
+                    (296, true),
+                    (230, true),
+                    (133, false),
+                    (41, false),
+                ],
+            ),
+            (
+                4096,
+                &[
+                    (u32::MAX - 1, true),
+                    (1, true),
+                    (u32::MAX, true),
+                    (u32::MAX - 1, false),
+                    (0, true),
+                    (1, false),
+                    (u32::MAX - 4093, true),
+                    (u32::MAX - 4094, false),
+                ],
+            ),
+        ];
+
+        for (bits, nonces) in cases {
+            let mut window = ReplayWindow::new(bits);
+            for &(nonce, accepted) in nonces {
+                assert_eq!(window.accept(nonce), accepted, "{bits} bits, nonce {nonce}");
+            }
         }
     }
 

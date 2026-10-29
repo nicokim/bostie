@@ -460,9 +460,13 @@ impl<'c> Session<'c> {
             let media = Arc::clone(&self.conn.media);
             let ssrc = ready.ssrc;
             tokio::spawn(async move {
-                let received = udp::receive(&socket, ssrc, &answer_slot, |_| {
-                    bump(&media.counters.packets_received);
-                });
+                let received = udp::receive(
+                    &socket,
+                    ssrc,
+                    &answer_slot,
+                    |_| bump(&media.counters.packets_received),
+                    |_| {},
+                );
                 if let Err(error) = received.await {
                     debug!(%error, "the voice UDP receiver stopped");
                 }

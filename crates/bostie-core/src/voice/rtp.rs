@@ -5,16 +5,21 @@ pub const PAYLOAD_TYPE: u8 = 120;
 
 const VERSION: u8 = 2;
 const FIRST_BYTE: u8 = VERSION << 6;
-const PADDING: u8 = 0x20;
-const EXTENSION: u8 = 0x10;
+pub const PADDING: u8 = 0x20;
+pub const EXTENSION: u8 = 0x10;
+pub const MARKER: u8 = 0x80;
+pub const ONE_BYTE_PROFILE: u16 = 0xBEDE;
 const CSRC_COUNT: u8 = 0x0F;
-const MARKER: u8 = 0x80;
 const PAYLOAD_TYPE_BITS: u8 = 0x7F;
 const RTCP_PAYLOAD_TYPES: RangeInclusive<u8> = 72..=78;
 const RTCP_HEADER_LEN: usize = 8;
 const CSRC_LEN: usize = 4;
 const EXTENSION_PREAMBLE_LEN: usize = 4;
 const EXTENSION_WORD_LEN: usize = 4;
+const TWO_BYTE_PROFILE: u16 = 0x1000;
+const TWO_BYTE_PROFILE_BITS: u16 = 0xFFF0;
+const ONE_BYTE_STOP: u8 = 15;
+const ONE_BYTE_LENGTH_BITS: u8 = 0x0F;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum RtpError {
@@ -26,6 +31,8 @@ pub enum RtpError {
     Extension { words: u16, len: usize },
     #[error("a padding count of {count} overruns the {len}-byte payload")]
     Padding { count: u8, len: usize },
+    #[error("extension element {id} overruns the {left} bytes left in its list")]
+    Element { id: u8, left: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +57,40 @@ pub fn classify(packet: &[u8]) -> Kind {
     } else {
         Kind::Other
     }
+}
+
+pub fn extensions(profile: u16, body: &[u8]) -> Result<Vec<(u8, &[u8])>, RtpError> {
+    let one_byte = profile == ONE_BYTE_PROFILE;
+    if !one_byte && profile & TWO_BYTE_PROFILE_BITS != TWO_BYTE_PROFILE {
+        return Ok(Vec::new());
+    }
+    let mut elements = Vec::new();
+    let mut rest = body;
+    while let Some((&first, tail)) = rest.split_first() {
+        let id = if one_byte { first >> 4 } else { first };
+        if id == 0 {
+            rest = tail;
+            continue;
+        }
+        if one_byte && id == ONE_BYTE_STOP {
+            break;
+        }
+        let (len, tail) = if one_byte {
+            (usize::from(first & ONE_BYTE_LENGTH_BITS) + 1, tail)
+        } else {
+            let (&len, tail) = tail
+                .split_first()
+                .ok_or(RtpError::Element { id, left: 0 })?;
+            (usize::from(len), tail)
+        };
+        let (data, tail) = tail.split_at_checked(len).ok_or(RtpError::Element {
+            id,
+            left: tail.len(),
+        })?;
+        elements.push((id, data));
+        rest = tail;
+    }
+    Ok(elements)
 }
 
 pub fn write_header(out: &mut [u8; HEADER_LEN], sequence: u16, timestamp: u32, ssrc: u32) {
@@ -139,6 +180,12 @@ impl Header {
             0
         };
         HEADER_LEN + CSRC_LEN * usize::from(self.csrc_count) + preamble
+    }
+
+    pub fn extension_body<'a>(&self, body: &'a [u8]) -> &'a [u8] {
+        let words = self.extension.map_or(0, |extension| extension.words);
+        body.get(..EXTENSION_WORD_LEN * usize::from(words))
+            .unwrap_or_default()
     }
 
     pub fn payload<'a>(&self, body: &'a [u8]) -> Result<&'a [u8], RtpError> {
@@ -346,6 +393,42 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn extensions_parse_one_byte_and_two_byte_elements() {
+        let one_byte = [0x10, 0xAA, 0x00, 0x92, 1, 2, 3, 0x00, 0xF0, 0x30, 0x55];
+        let two_byte = [0x01, 0x00, 0x00, 0x0F, 0x02, 0xAB, 0xCD, 0x00, 0x00];
+
+        assert_eq!(
+            extensions(ONE_BYTE_PROFILE, &one_byte).unwrap(),
+            [(1, &[0xAA][..]), (9, &[1, 2, 3][..])]
+        );
+        for profile in [0x1000, 0x100F] {
+            assert_eq!(
+                extensions(profile, &two_byte).unwrap(),
+                [(1, &[][..]), (15, &[0xAB, 0xCD][..])]
+            );
+        }
+        for profile in [0xBEDF, 0x1010, 0] {
+            assert_eq!(extensions(profile, &one_byte).unwrap(), []);
+        }
+    }
+
+    #[test]
+    fn truncated_extensions_are_an_error() {
+        assert_eq!(
+            extensions(ONE_BYTE_PROFILE, &[0x10, 0xAA, 0x23, 1, 2]),
+            Err(RtpError::Element { id: 2, left: 2 })
+        );
+        assert_eq!(
+            extensions(0x1000, &[0x07, 0x05, 1, 2]),
+            Err(RtpError::Element { id: 7, left: 2 })
+        );
+        assert_eq!(
+            extensions(0x1000, &[0x00, 0x07]),
+            Err(RtpError::Element { id: 7, left: 0 })
+        );
+    }
+
+    #[test]
     fn every_truncated_header_is_an_error() {
         let extension = Extension {
             profile: 0xBEDE,
@@ -441,6 +524,9 @@ pub(crate) mod tests {
         #[test]
         fn random_bytes_never_panic(packet in proptest::collection::vec(any::<u8>(), 0..64)) {
             let _ = classify(&packet);
+            for profile in [ONE_BYTE_PROFILE, TWO_BYTE_PROFILE] {
+                let _ = extensions(profile, &packet);
+            }
             if let Ok(header) = Header::parse(&packet) {
                 let _ = header.payload(packet.get(header.size()..).unwrap_or_default());
             }

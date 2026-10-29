@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use parking_lot::{Condvar, Mutex, MutexGuard};
 
 use crate::voice::crypto::{Cipher, KEY_LEN, Mode};
-use crate::voice::rtp::{self, Header, Kind};
+use crate::voice::rtp::{self, HEADER_LEN, Header, Kind};
 use crate::voice::types::SILENCE_FRAME;
 use crate::voice::udp::DISCOVERY_LEN;
 
@@ -21,6 +21,54 @@ pub fn response(ssrc: u32, address: SocketAddr) -> [u8; DISCOVERY_LEN] {
     let text = address.ip().to_string();
     packet[8..8 + text.len()].copy_from_slice(text.as_bytes());
     packet[72..].copy_from_slice(&address.port().to_be_bytes());
+    packet
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Sealing {
+    pub extension: Option<Vec<u8>>,
+    pub padding: u8,
+    pub csrcs: u8,
+    pub marker: bool,
+}
+
+pub fn seal(
+    cipher: &Cipher,
+    nonce: u32,
+    ssrc: u32,
+    sequence: u16,
+    timestamp: u32,
+    payload: &[u8],
+    send: &Sealing,
+) -> Vec<u8> {
+    assert!(send.csrcs < 16, "an RTP header holds at most 15 CSRCs");
+    let mut fixed = [0; HEADER_LEN];
+    rtp::write_header(&mut fixed, sequence, timestamp, ssrc);
+    fixed[0] |= send.csrcs;
+    if send.padding > 0 {
+        fixed[0] |= rtp::PADDING;
+    }
+    if send.marker {
+        fixed[1] |= rtp::MARKER;
+    }
+    let mut header = fixed.to_vec();
+    header.extend((1..=u32::from(send.csrcs)).flat_map(u32::to_be_bytes));
+    let mut body = Vec::new();
+    if let Some(extension) = &send.extension {
+        let words = extension.len().div_ceil(4);
+        header[0] |= rtp::EXTENSION;
+        header.extend_from_slice(&rtp::ONE_BYTE_PROFILE.to_be_bytes());
+        header.extend_from_slice(&u16::try_from(words).unwrap().to_be_bytes());
+        body.extend_from_slice(extension);
+        body.resize(4 * words, 0);
+    }
+    body.extend_from_slice(payload);
+    if send.padding > 0 {
+        body.resize(body.len() + usize::from(send.padding) - 1, 0);
+        body.push(send.padding);
+    }
+    let mut packet = Vec::new();
+    cipher.seal(nonce, &header, &body, &mut packet).unwrap();
     packet
 }
 
@@ -38,6 +86,8 @@ struct State {
     keys: Vec<Cipher>,
     unanswered: usize,
     discoveries: usize,
+    client: Option<SocketAddr>,
+    nonce: u32,
     packets: Vec<Packet>,
     rejected: usize,
 }
@@ -51,6 +101,7 @@ struct Shared {
 
 pub struct Sfu {
     address: SocketAddr,
+    socket: UdpSocket,
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
 }
@@ -60,6 +111,7 @@ impl Sfu {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         socket.set_read_timeout(Some(POLL)).unwrap();
         let address = socket.local_addr().unwrap();
+        let sender = socket.try_clone().unwrap();
         let shared = Arc::new(Shared::default());
         let thread = thread::Builder::new()
             .name("test-sfu".to_owned())
@@ -70,6 +122,7 @@ impl Sfu {
             .unwrap();
         Self {
             address,
+            socket: sender,
             shared,
             thread: Some(thread),
         }
@@ -77,6 +130,23 @@ impl Sfu {
 
     pub fn address(&self) -> SocketAddr {
         self.address
+    }
+
+    pub fn send(&self, ssrc: u32, sequence: u16, timestamp: u32, payload: &[u8], send: Sealing) {
+        let packet = {
+            let mut state = self.shared.state.lock();
+            let nonce = state.nonce;
+            state.nonce = nonce.wrapping_add(1);
+            let cipher = state.keys.last().expect("send needs a registered key");
+            seal(cipher, nonce, ssrc, sequence, timestamp, payload, &send)
+        };
+        self.send_raw(&packet);
+    }
+
+    pub fn send_raw(&self, bytes: &[u8]) {
+        let client = self.shared.state.lock().client;
+        let client = client.expect("send needs a client that sent a discovery request");
+        self.socket.send_to(bytes, client).unwrap();
     }
 
     pub fn key(&self, mode: Mode, key: &[u8; KEY_LEN]) -> usize {
@@ -162,7 +232,7 @@ fn serve(socket: &UdpSocket, shared: &Shared) {
         let datagram = &buffer[..len];
         if len == DISCOVERY_LEN && datagram.starts_with(&REQUEST_HEAD) {
             let ssrc = u32::from_be_bytes(datagram[4..8].try_into().unwrap());
-            if answer(shared) {
+            if answer(shared, from) {
                 let _ = socket.send_to(&response(ssrc, from), from);
             }
         } else {
@@ -172,9 +242,10 @@ fn serve(socket: &UdpSocket, shared: &Shared) {
     }
 }
 
-fn answer(shared: &Shared) -> bool {
+fn answer(shared: &Shared, client: SocketAddr) -> bool {
     let mut state = shared.state.lock();
     state.discoveries += 1;
+    state.client = Some(client);
     if state.unanswered == 0 {
         return true;
     }
@@ -213,7 +284,8 @@ fn capture(shared: &Shared, datagram: &[u8], at: Instant) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::rtp::{HEADER_LEN, write_header};
+    use crate::voice::rtp::{Extension, PAYLOAD_TYPE, write_header};
+    use crate::voice::udp::discovery_request;
 
     const SSRC: u32 = 42;
     const KEY: [u8; KEY_LEN] = [7; KEY_LEN];
@@ -257,5 +329,72 @@ mod tests {
         assert_eq!(packet.payload, b"opus");
         assert!(packet.at >= sent);
         assert_eq!(sfu.rejected(), 0);
+    }
+
+    #[test]
+    fn sent_packets_reach_the_last_discovered_client_sealed_with_the_newest_key() {
+        let sfu = Sfu::start();
+        sfu.key(Mode::XChaCha20Poly1305RtpSize, &[1; KEY_LEN]);
+        sfu.key(Mode::Aes256GcmRtpSize, &KEY);
+        let mut buffer = [0; 2048];
+        let mut discover = || {
+            let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            socket.connect(sfu.address()).unwrap();
+            socket.set_read_timeout(Some(WAIT)).unwrap();
+            socket.send(&discovery_request(SSRC)).unwrap();
+            socket.recv(&mut buffer).unwrap();
+            socket
+        };
+        let _earlier = discover();
+        let client = discover();
+        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
+        let mut receive = || {
+            let len = client.recv(&mut buffer).unwrap();
+            buffer[..len].to_vec()
+        };
+
+        sfu.send(
+            SSRC,
+            9,
+            960,
+            b"opus",
+            Sealing {
+                extension: Some(vec![0x10, 0xAA]),
+                padding: 3,
+                csrcs: 2,
+                marker: true,
+            },
+        );
+        sfu.send(SSRC, 10, 1920, b"next", Sealing::default());
+        sfu.send_raw(b"rtcp");
+
+        let mut first = receive();
+        let opened = cipher.open(&mut first).unwrap();
+        assert_eq!(
+            opened.header,
+            Header {
+                padding: true,
+                marker: true,
+                payload_type: PAYLOAD_TYPE,
+                sequence: 9,
+                timestamp: 960,
+                ssrc: SSRC,
+                csrc_count: 2,
+                extension: Some(Extension {
+                    profile: rtp::ONE_BYTE_PROFILE,
+                    words: 1
+                }),
+            }
+        );
+        assert_eq!(opened.nonce, 0);
+        assert_eq!(opened.extension, [0x10, 0xAA, 0, 0]);
+        assert_eq!(opened.payload, b"opus");
+        let mut second = receive();
+        let opened = cipher.open(&mut second).unwrap();
+        assert_eq!(
+            (opened.header.sequence, opened.nonce, opened.payload),
+            (10, 1, &b"next"[..])
+        );
+        assert_eq!(receive(), b"rtcp");
     }
 }
