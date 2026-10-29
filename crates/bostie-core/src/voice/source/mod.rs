@@ -531,6 +531,23 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn an_m4a_plays_at_the_original_pitch_with_its_aac_priming_left_in() {
+        let mut harness = Harness::new();
+        let source = harness.file("tone.m4a");
+
+        let info = wait_for_info(&source);
+        let (chunks, error) = read_to_end(&source);
+        let samples = samples(&chunks);
+
+        let priming = Duration::from_nanos(1_024 * 1_000_000_000 / 44_100);
+        assert_eq!(info.kind, SourceKind::Pcm);
+        assert_eq!(info.duration, Some(Duration::from_secs(1) + priming));
+        assert_eq!(error, None);
+        let hz = pitch(&left(&samples)[4_800..43_200]);
+        assert!((hz - 1_000.0).abs() < 5.0, "{hz} Hz");
+    }
+
+    #[test]
     fn mono_sources_play_the_same_samples_on_both_channels() {
         let mut harness = Harness::new();
         for name in ["tone.flac", "tone-f32.wav", "tone.mp3"] {
@@ -615,7 +632,7 @@ pub(crate) mod tests {
     fn codecs_without_a_decoder_end_the_source_naming_the_codec() {
         let mut harness = Harness::new();
         for (name, expected) in [
-            ("tone-aac.mka", "no decoder for aac in matroska"),
+            ("tone-ac3.mka", "no decoder for ac3 in matroska"),
             ("tone-5.1.opus", "no decoder for opus with 6 channels"),
         ] {
             let source = harness.file(name);

@@ -6196,10 +6196,12 @@ Used by:
 
 - [symphonia-bundle-flac 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-bundle-mp3 0.6.1](https://github.com/pdeljanov/Symphonia)
+- [symphonia-codec-aac 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-codec-pcm 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-codec-vorbis 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-common 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-core 0.6.1](https://github.com/pdeljanov/Symphonia)
+- [symphonia-format-isomp4 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-format-mkv 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-format-ogg 0.6.1](https://github.com/pdeljanov/Symphonia)
 - [symphonia-format-riff 0.6.1](https://github.com/pdeljanov/Symphonia)

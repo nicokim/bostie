@@ -646,6 +646,7 @@ mod tests {
             "tone-s16.wav",
             "tone-f32.wav",
             "tone.mp3",
+            "tone.m4a",
             "tone-5.1.flac",
         ] {
             let reference = decode_rest(&mut open(name));
@@ -673,6 +674,7 @@ mod tests {
             "tone-s16.wav",
             "tone-f32.wav",
             "tone.mp3",
+            "tone.m4a",
             "tone-5.1.flac",
         ] {
             let total = frames(&decode_rest(&mut open(name)));
