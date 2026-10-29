@@ -1,19 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use bostie_core::CoreError;
 use bostie_core::voice::codec::FrameEncoder;
 use bostie_core::voice::pacer::ThreadLoad;
+use bostie_core::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
 use bostie_core::voice::sink::Sink;
 use bostie_core::voice::source::{Source, SourceRead};
 use bostie_core::voice::types::{
-    Application, DisconnectReason, EncoderSettings, PcmFormat, SampleFormat, SinkFormat,
-    SinkOptions, SourceSpec, StallPolicy,
+    Application, DisconnectReason, EncoderSettings, Overflow, PcmFormat, ReceiveFormat,
+    ReceiveStall, SampleFormat, SinkFormat, SinkOptions, SourceSpec, StallPolicy,
 };
 use bostie_core::voice::{Diagnostics, HistoryEntry};
+use bostie_core::{CoreError, UserId};
+use pyo3::IntoPyObjectExt;
 use pyo3::buffer::PyBuffer;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
@@ -108,6 +111,52 @@ impl NativeSource {
     fn seek(&self, position: f64) -> PyResult<()> {
         let position = seconds("position", position)?;
         self.0.seek(position).map_err(to_python_error)
+    }
+
+    fn close(&self) {
+        self.0.close();
+    }
+}
+
+#[pyclass(frozen, name = "Receiver", module = "bostie._native")]
+pub(crate) struct NativeReceiver(pub(crate) Arc<Receiver>);
+
+#[pymethods]
+impl NativeReceiver {
+    #[getter]
+    fn id(&self) -> u64 {
+        self.0.id().into()
+    }
+
+    fn read<'py>(&self, py: Python<'py>, limit: usize) -> PyResult<Option<Vec<Bound<'py, PyAny>>>> {
+        let now = Instant::now();
+        match self.0.read(limit).map_err(to_python_error)? {
+            ReceiveRead::Pending => Ok(Some(Vec::new())),
+            ReceiveRead::Items(items) => items
+                .into_iter()
+                .map(|item| received_item(py, now, item))
+                .collect::<PyResult<_>>()
+                .map(Some),
+            ReceiveRead::Ended(_) => Ok(None),
+        }
+    }
+
+    fn queued(&self) -> PyResult<f64> {
+        let queued = self.0.queued().map_err(to_python_error)?;
+        Ok(queued.as_secs_f64())
+    }
+
+    fn clear(&self) -> PyResult<()> {
+        self.0.clear().map_err(to_python_error)
+    }
+
+    fn stats(&self) -> PyResult<HashMap<&'static str, u64>> {
+        let stats = self.0.stats().map_err(to_python_error)?;
+        Ok(stats.into_iter().collect())
+    }
+
+    fn closed_reason(&self) -> Option<&'static str> {
+        self.0.ended().map(Ended::as_str)
     }
 
     fn close(&self) {
@@ -229,6 +278,42 @@ pub(crate) fn sink_options(
     })
 }
 
+pub(crate) fn receive_format(
+    kind: &str,
+    rate: u32,
+    channels: u8,
+    sample: &str,
+) -> PyResult<ReceiveFormat> {
+    Ok(match kind {
+        "pcm" => ReceiveFormat::Pcm(PcmFormat {
+            rate,
+            channels,
+            sample: sample_format(sample)?,
+        }),
+        "opus" => ReceiveFormat::Opus,
+        "packets" => ReceiveFormat::Packets,
+        other => return Err(unknown("kind", other)),
+    })
+}
+
+pub(crate) fn overflow(overflow: &str) -> PyResult<Overflow> {
+    match overflow {
+        "drop_oldest" => Ok(Overflow::DropOldest),
+        other => Err(unknown("overflow", other)),
+    }
+}
+
+pub(crate) fn receive_stall(stall: &str) -> PyResult<ReceiveStall> {
+    match stall {
+        "wait" => Ok(ReceiveStall::Wait),
+        other => Err(unknown("stall", other)),
+    }
+}
+
+pub(crate) fn users(ids: Vec<u64>) -> HashSet<UserId> {
+    ids.into_iter().map(UserId::from).collect()
+}
+
 pub(crate) fn file(path: &str) -> SourceSpec {
     SourceSpec::File(PathBuf::from(path))
 }
@@ -269,6 +354,7 @@ pub(crate) fn diagnostics(py: Python<'_>, diagnostics: Diagnostics) -> PyResult<
     dict.set_item("last_close_code", diagnostics.last_close_code)?;
     dict.set_item("history", history)?;
     dict.set_item("pacer", diagnostics.pacer.map(pacer))?;
+    dict.set_item("receivers", diagnostics.receivers)?;
     dict.set_item(
         "counters",
         diagnostics.counters.into_iter().collect::<HashMap<_, _>>(),
@@ -281,7 +367,7 @@ fn history_entry(
     entry: &HistoryEntry,
 ) -> (f64, &'static str, Option<&'static str>, Option<u16>, &str) {
     (
-        now.saturating_duration_since(entry.at).as_secs_f64(),
+        age(now, entry.at),
         entry.status.as_str(),
         entry.reason.map(DisconnectReason::as_str),
         entry.code,
@@ -294,9 +380,82 @@ fn pacer(load: ThreadLoad) -> HashMap<&'static str, u64> {
         ("lanes", u64::try_from(load.lanes).unwrap_or(u64::MAX)),
         ("work_ewma_us", micros(load.work_ewma)),
         ("work_max_us", micros(load.work_max)),
+        ("after_ewma_us", micros(load.after_ewma)),
+        ("after_p50_us", micros(load.after_p50)),
+        ("after_p99_us", micros(load.after_p99)),
+        ("after_max_us", micros(load.after_max)),
         ("late_ticks", load.late_ticks),
         ("lane_panics", load.lane_panics),
     ])
+}
+
+fn received_item(py: Python<'_>, now: Instant, item: Item) -> PyResult<Bound<'_, PyAny>> {
+    match item {
+        Item::Frame {
+            user,
+            ssrc,
+            timestamp,
+            offset,
+            samples,
+            at,
+            data,
+            lost,
+        } => (
+            intern!(py, "frame"),
+            user.map(u64::from),
+            ssrc,
+            timestamp,
+            offset,
+            samples,
+            age(now, at),
+            PyBytes::new(py, &data),
+            lost,
+        )
+            .into_bound_py_any(py),
+        Item::Packet {
+            user,
+            ssrc,
+            sequence,
+            timestamp,
+            at,
+            opus,
+            extensions,
+        } => (
+            intern!(py, "packet"),
+            u64::from(user),
+            ssrc,
+            sequence,
+            timestamp,
+            age(now, at),
+            PyBytes::new(py, &opus),
+            extensions
+                .iter()
+                .map(|(id, body)| (*id, PyBytes::new(py, body)))
+                .collect::<Vec<_>>(),
+        )
+            .into_bound_py_any(py),
+        Item::Speech {
+            user,
+            ssrc,
+            speaking,
+            offset,
+            at,
+            duration,
+        } => (
+            intern!(py, "speech"),
+            u64::from(user),
+            ssrc,
+            speaking,
+            offset,
+            age(now, at),
+            duration.as_secs_f64(),
+        )
+            .into_bound_py_any(py),
+    }
+}
+
+fn age(now: Instant, at: Instant) -> f64 {
+    now.saturating_duration_since(at).as_secs_f64()
 }
 
 fn micros(duration: Duration) -> u64 {

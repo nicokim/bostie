@@ -1,10 +1,12 @@
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, Coroutine
+import time
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
 
 from bostie import _native
 from bostie.cache import Cache
@@ -29,12 +31,25 @@ from bostie.voice.events import (
     MediaStalled,
     Moved,
     SpeakingUpdate,
+    SpeechStart,
+    SpeechStop,
     StateChange,
     UserJoin,
     UserLeave,
     VoiceEvent,
 )
-from bostie.voice.formats import PCM, Defaults, Encoder, Format, Latency, Opus
+from bostie.voice.formats import (
+    PCM,
+    Defaults,
+    Encoder,
+    Format,
+    Latency,
+    Opus,
+    Packets,
+    ReceiveFormat,
+)
+from bostie.voice.frames import Frame, Packet
+from bostie.voice.receiver import NativeReceiver, Receiver
 from bostie.voice.sink import NativeSink, Sink
 from bostie.voice.sources import NativeSource
 
@@ -121,6 +136,27 @@ class VoiceCore(Protocol):
     def voice_file(self, path: str) -> NativeSource: ...
     def voice_bytes(self, data: bytes, hint: str | None) -> NativeSource: ...
     def voice_url(self, url: str, headers: list[tuple[str, str]]) -> NativeSource: ...
+    def voice_receive(
+        self,
+        guild_id: int,
+        *,
+        kind: Literal["pcm", "opus", "packets"],
+        rate: int,
+        channels: int,
+        sample: Literal["s16le", "f32le"],
+        users: list[int] | None,
+        exclude: list[int],
+        include_self: bool,
+        buffer: float,
+        jitter: float,
+        markers: bool,
+        mix: bool,
+        overflow: Literal["drop_oldest"],
+        stall: Literal["wait"],
+    ) -> NativeReceiver: ...
+    def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
+    def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
+    def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
 
 
 class _HasCore(Protocol):
@@ -183,14 +219,54 @@ class SendStats:
     transitions_executed: int = 0
     recoveries: int = 0
     dave_panics: int = 0
+    rejected_proposals: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReceiveStats:
+    """Receive counters of a voice connection since it started."""
+
+    transport_failures: int = 0
+    replays: int = 0
+    own_echoes: int = 0
+    unmapped: int = 0
+    duplicates: int = 0
+    late_packets: int = 0
+    undecryptable: int = 0
+    invalid_payloads: int = 0
+    invalid_extensions: int = 0
+    decrypt_busy: int = 0
+    receive_deferred: int = 0
+    arrivals_dropped: int = 0
+    rx_panics: int = 0
+    rtcp_sender_reports: int = 0
+    receive_recoveries: int = 0
+    decrypt_panics: int = 0
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UserStats:
+    """One user's receive counters."""
+
+    packets: int = 0
+    lost: int = 0
+    duplicates: int = 0
+    decrypt_failures: int = 0
+    invalid_payloads: int = 0
 
 
 SEND_COUNTERS = frozenset(counter.name for counter in fields(SendStats))
+RECEIVE_COUNTERS = frozenset(counter.name for counter in fields(ReceiveStats))
+USER_COUNTERS = frozenset(counter.name for counter in fields(UserStats))
 
 
 @dataclass(frozen=True, slots=True)
 class VoiceStats:
+    """Send, receive and per-user counters; users: members and anyone heard in 30 s."""
+
     send: SendStats
+    receive: ReceiveStats = ReceiveStats()
+    users: Mapping[int, UserStats] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +329,7 @@ class VoiceManager:
         encoder: Encoder | None = None,
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
+        speech_hangover: float | None = None,
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
@@ -267,6 +344,7 @@ class VoiceManager:
             encoder=encoder,
             speaking_flags=speaking_flags,
             stage=stage,
+            speech_hangover=speech_hangover,
         )
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
@@ -380,7 +458,7 @@ class VoiceManager:
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:
-                    vc._apply(delivery)
+                    vc._apply(delivery, received)
 
     def _running_user(self, call: str) -> User:
         user = self._bot.user
@@ -455,13 +533,20 @@ class VoiceConnection:
         self._self_mute, self._self_deaf = self._requested
         self._mute = False
         self._suppress = False
+        self._deaf = False
         self._members: frozenset[int] = frozenset()
         self._encoder = settings.encoder
         self._speaking_flags = settings.speaking_flags
+        self._speech_hangover = settings.speech_hangover
+        self._speaking: dict[int, float] = {}
+        self._speaking_view = MappingProxyType(self._speaking)
+        self._speech_ssrcs: dict[int, int] = {}
+        self._ssrcs: Mapping[int, int] = MappingProxyType({})
         self._dave = Dave(0, None, None, self)
         self._stats = VoiceStats(SendStats())
         self._diagnostics: dict[str, Any] = {}
         self._sinks: set[Sink] = set()
+        self._receivers: set[Receiver[Any]] = set()
         self._watchers: list[tuple[Callable[[], bool], asyncio.Future[bool]]] = []
         self._warned = False
 
@@ -494,9 +579,26 @@ class VoiceConnection:
         return self._suppress
 
     @property
+    def deaf(self) -> bool:
+        """Whether a moderator deafened the bot (it then receives nothing)."""
+        return self._deaf
+
+    @property
     def members(self) -> frozenset[int]:
         """The other users in the call."""
         return self._members
+
+    @property
+    def speaking(self) -> Mapping[int, float]:
+        """Users talking now, mapped to the time.monotonic() they started."""
+        return self._speaking_view
+
+    @property
+    def ssrcs(self) -> Mapping[int, int]:
+        """Each SSRC in the call mapped to its user id."""
+        if self._state is not State.DISCONNECTED:
+            self._ssrcs = MappingProxyType(self._core().voice_ssrcs(self.guild_id))
+        return self._ssrcs
 
     @property
     def latency(self) -> Latency:
@@ -532,6 +634,17 @@ class VoiceConnection:
         self._core().voice_speaking(self.guild_id, int(flags))
         self._speaking_flags = SpeakingFlags(flags)
 
+    @property
+    def speech_hangover(self) -> float:
+        """Seconds without speech before a user counts as stopped."""
+        return self._speech_hangover
+
+    @speech_hangover.setter
+    def speech_hangover(self, seconds: float) -> None:
+        self._check_live()
+        self._core().voice_speech_hangover(self.guild_id, seconds)
+        self._speech_hangover = seconds
+
     def sink(
         self,
         format: Format = DEFAULT_PCM,
@@ -559,6 +672,156 @@ class VoiceConnection:
         self._sinks.add(sink)
         self.manager._handles[native.id] = sink
         return sink
+
+    @overload
+    def receive(
+        self,
+        format: Packets,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        markers: Literal[False] = False,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Packet]: ...
+    @overload
+    def receive(
+        self,
+        format: Packets,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        markers: Literal[True],
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
+    @overload
+    def receive(
+        self,
+        format: Packets,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        markers: bool,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
+    @overload
+    def receive(
+        self,
+        format: PCM | Opus = DEFAULT_PCM,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        jitter: float | None = None,
+        markers: Literal[False] = False,
+        mix: bool = False,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Frame]: ...
+    @overload
+    def receive(
+        self,
+        format: PCM | Opus = DEFAULT_PCM,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        jitter: float | None = None,
+        markers: Literal[True],
+        mix: bool = False,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
+    @overload
+    def receive(
+        self,
+        format: PCM | Opus = DEFAULT_PCM,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        jitter: float | None = None,
+        markers: bool,
+        mix: bool = False,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
+    def receive(
+        self,
+        format: ReceiveFormat = DEFAULT_PCM,
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        buffer: float | None = None,
+        jitter: float | None = None,
+        markers: bool = False,
+        mix: bool = False,
+        overflow: Literal["drop_oldest"] | None = None,
+        stall: Literal["wait"] | None = None,
+    ) -> Receiver[Any]:
+        """Open a bounded iterator over the audio this connection receives."""
+        self._check_live()
+        settings = self._settings
+        wanted = None if users is None else frozenset(users)
+        excluded = frozenset(exclude)
+        buffer = settings.receive_buffer if buffer is None else buffer
+        jitter = settings.jitter if jitter is None else jitter
+        overflow = settings.overflow if overflow is None else overflow
+        stall = settings.receive_stall if stall is None else stall
+        pcm = DEFAULT_PCM if isinstance(format, Opus | Packets) else format
+        native = self._core().voice_receive(
+            self.guild_id,
+            kind=(
+                "opus"
+                if isinstance(format, Opus)
+                else "packets"
+                if isinstance(format, Packets)
+                else "pcm"
+            ),
+            rate=pcm.rate,
+            channels=pcm.channels,
+            sample=pcm.sample,
+            users=None if wanted is None else sorted(wanted),
+            exclude=sorted(excluded),
+            include_self=include_self,
+            buffer=buffer,
+            jitter=jitter,
+            markers=markers,
+            mix=mix,
+            overflow=overflow,
+            stall=stall,
+        )
+        receiver: Receiver[Any] = Receiver(
+            self,
+            native,
+            format,
+            users=wanted,
+            exclude=excluded,
+            include_self=include_self,
+            buffer=buffer,
+            jitter=jitter,
+            markers=markers,
+            mix=mix,
+            overflow=overflow,
+            stall=stall,
+        )
+        self._receivers.add(receiver)
+        self.manager._handles[native.id] = receiver
+        if self._deaf or self._self_deaf:
+            self._warn_deafened(moderator=self._deaf)
+        return receiver
 
     async def play(
         self,
@@ -630,11 +893,19 @@ class VoiceConnection:
                 await self._until(lambda: self._state is State.DISCONNECTED)
 
     def stats(self) -> VoiceStats:
-        """Send counters, or the last ones read before the connection ended."""
+        """Send, receive and per-user counters, or the last read before the end."""
         if self._state is not State.DISCONNECTED:
-            raw = self._core().voice_stats(self.guild_id)
-            counters = {name: raw[name] for name in SEND_COUNTERS & raw.keys()}
-            self._stats = VoiceStats(SendStats(**counters))
+            core = self._core()
+            raw = core.voice_stats(self.guild_id)
+            users = core.voice_user_stats(self.guild_id)
+            self._stats = VoiceStats(
+                SendStats(**_pick(SEND_COUNTERS, raw)),
+                ReceiveStats(**_pick(RECEIVE_COUNTERS, raw)),
+                {
+                    user_id: UserStats(**_pick(USER_COUNTERS, counters))
+                    for user_id, counters in users.items()
+                },
+            )
         return self._stats
 
     def diagnostics(self) -> dict[str, Any]:
@@ -664,6 +935,7 @@ class VoiceConnection:
                 complexity=encoder.complexity,
                 speaking=int(settings.speaking_flags),
             )
+            self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
         except BaseException:
             del self.manager._connections[self.guild_id]
             raise
@@ -725,13 +997,15 @@ class VoiceConnection:
             elif self._state is State.DISCONNECTED:
                 future.set_result(False)
 
-    def _apply(self, delivery: VoiceDelivery) -> None:
+    def _apply(self, delivery: VoiceDelivery, received: float) -> None:
         match delivery:
             case ("voice_state", _, status, reason, code, detail):
                 self._set_state(status, reason, code, detail)
             case ("voice_moved", _, old, new, by_us):
                 self._channel_id = new
                 self._members = frozenset()
+                for receiver in list(self._receivers):
+                    receiver._wake()
                 self._emit(
                     Moved(
                         guild_id=self.guild_id,
@@ -752,6 +1026,8 @@ class VoiceConnection:
                     )
                 )
             case ("voice_self", _, self_mute, self_deaf, mute, suppress):
+                if self_deaf and not self._self_deaf and self._receivers:
+                    self._warn_deafened(moderator=False)
                 self._self_mute, self._self_deaf = self_mute, self_deaf
                 self._mute, self._suppress = mute, suppress
             case ("voice_speaking", _, user_id, ssrc, flags):
@@ -784,8 +1060,31 @@ class VoiceConnection:
                         duration=seconds,
                     )
                 )
-            case ("voice_speech" | "voice_deaf", *_):
-                pass
+            case ("voice_speech", _, user_id, ssrc, True, age, _):
+                at = received - age
+                self._speaking[user_id] = at
+                self._speech_ssrcs[user_id] = ssrc
+                self._emit(
+                    SpeechStart(
+                        guild_id=self.guild_id, user_id=user_id, ssrc=ssrc, at=at
+                    )
+                )
+            case ("voice_speech", _, user_id, ssrc, False, age, duration):
+                self._speaking.pop(user_id, None)
+                self._speech_ssrcs.pop(user_id, None)
+                self._emit(
+                    SpeechStop(
+                        guild_id=self.guild_id,
+                        user_id=user_id,
+                        ssrc=ssrc,
+                        at=received - age,
+                        duration=duration,
+                    )
+                )
+            case ("voice_deaf", _, deaf):
+                if deaf and not self._deaf and self._receivers:
+                    self._warn_deafened(moderator=True)
+                self._deaf = deaf
 
     def _set_state(
         self,
@@ -805,6 +1104,9 @@ class VoiceConnection:
                 del self.manager._connections[self.guild_id]
             for sink in list(self._sinks):
                 sink._release()
+            for receiver in list(self._receivers):
+                receiver._release()
+            self._stop_speech()
         if self._state is not old:
             self._emit(
                 StateChange(
@@ -890,9 +1192,42 @@ class VoiceConnection:
                 self.guild_id,
             )
 
+    def _warn_deafened(self, *, moderator: bool) -> None:
+        if moderator:
+            log.warning(
+                "a moderator deafened the bot in guild %d, so Discord sends it no "
+                "audio",
+                self.guild_id,
+            )
+        else:
+            log.warning(
+                "the bot is deafened in guild %d, so Discord sends it no audio; use "
+                "vc.edit(self_deaf=False)",
+                self.guild_id,
+            )
+
+    def _stop_speech(self) -> None:
+        now = time.monotonic()
+        speakers = list(self._speaking.items())
+        self._speaking.clear()
+        for user_id, started in speakers:
+            self._emit(
+                SpeechStop(
+                    guild_id=self.guild_id,
+                    user_id=user_id,
+                    ssrc=self._speech_ssrcs.pop(user_id),
+                    at=now,
+                    duration=now - started,
+                )
+            )
+
     def _forget(self, sink: Sink) -> None:
         self._sinks.discard(sink)
         self.manager._handles.pop(sink._handle, None)
+
+    def _forget_receiver(self, receiver: Receiver[Any]) -> None:
+        self._receivers.discard(receiver)
+        self.manager._handles.pop(receiver._handle, None)
 
     def _emit(self, event: VoiceEvent) -> None:
         self.manager._bot._emit(event)
@@ -940,6 +1275,7 @@ class ContextVoice:
         encoder: Encoder | None = None,
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
+        speech_hangover: float | None = None,
     ) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
         if self._guild_id is None:
@@ -970,7 +1306,12 @@ class ContextVoice:
             encoder=encoder,
             speaking_flags=speaking_flags,
             stage=stage,
+            speech_hangover=speech_hangover,
         )
+
+
+def _pick(names: frozenset[str], counters: Mapping[str, int]) -> dict[str, int]:
+    return {name: counters[name] for name in names & counters.keys()}
 
 
 def versions() -> dict[str, str]:

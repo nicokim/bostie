@@ -1,0 +1,223 @@
+import asyncio
+import contextlib
+import time
+from collections import deque
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, Protocol, Self, cast
+
+from bostie.enums import ClosedReason, State
+from bostie.errors import Empty, ReceiverClosed
+from bostie.voice.events import SpeechStart, SpeechStop
+from bostie.voice.formats import ReceiveFormat
+from bostie.voice.frames import Frame, Packet
+
+if TYPE_CHECKING:
+    from bostie._native import ClosedReasonName, ReceivedItem
+    from bostie.voice.connection import VoiceConnection
+
+READ_LIMIT = 256
+
+type Item = Frame | Packet | SpeechStart | SpeechStop
+
+
+class NativeReceiver(Protocol):
+    @property
+    def id(self) -> int: ...
+    def read(self, limit: int) -> "list[ReceivedItem] | None": ...
+    def queued(self) -> float: ...
+    def clear(self) -> None: ...
+    def stats(self) -> dict[str, int]: ...
+    def closed_reason(self) -> "ClosedReasonName | None": ...
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ReceiverStats:
+    """What this receiver delivered, dropped and saw lost."""
+
+    delivered: int
+    dropped: int
+    lost: int
+
+
+class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
+    """A bounded async iterator over received audio; one per subscriber."""
+
+    def __init__(
+        self,
+        connection: "VoiceConnection",
+        native: NativeReceiver,
+        format: ReceiveFormat,
+        *,
+        users: frozenset[int] | None,
+        exclude: frozenset[int],
+        include_self: bool,
+        buffer: float,
+        jitter: float,
+        markers: bool,
+        mix: bool,
+        overflow: Literal["drop_oldest"],
+        stall: Literal["wait"],
+    ) -> None:
+        self.format = format
+        self.users = users
+        self.exclude = exclude
+        self.include_self = include_self
+        self.buffer = buffer
+        self.jitter = jitter
+        self.markers = markers
+        self.mix = mix
+        self.overflow = overflow
+        self.stall = stall
+        self._connection = connection
+        self._native = native
+        self._handle = native.id
+        self._items: deque[Item] = deque()
+        self._woken: asyncio.Future[None] | None = None
+        self._stats = ReceiverStats(0, 0, 0)
+        self._closed_reason: ClosedReason | None = None
+
+    @property
+    def queued(self) -> float:
+        """Seconds the oldest queued item has waited: this is the consumer's lag."""
+        if self.closed:
+            return 0.0
+        if not self._items:
+            return self._native.queued()
+        oldest = self._items[0]
+        since = (
+            oldest.at
+            if isinstance(oldest, SpeechStart | SpeechStop)
+            else oldest.received_at
+        )
+        return time.monotonic() - since
+
+    @property
+    def closed(self) -> bool:
+        """Whether the receiver ended and nothing is left to read."""
+        return self._closed_reason is not None
+
+    @property
+    def closed_reason(self) -> ClosedReason | None:
+        """None while open, else why it ended."""
+        return self._closed_reason
+
+    def get_nowait(self) -> T:
+        """Return the next item, or raise voice.Empty."""
+        if not self._items and not self.closed:
+            self._read()
+        if self._items:
+            return cast(T, self._items.popleft())
+        if self.closed:
+            raise ReceiverClosed("the receiver ended and has nothing left to read")
+        raise Empty("nothing is queued in the receiver")
+
+    def clear(self) -> None:
+        """Drop everything queued and continue live."""
+        if not self.closed:
+            self._items.clear()
+            self._native.clear()
+
+    def close(self) -> None:
+        """Stop receiving and discard what is queued."""
+        if self.closed:
+            return
+        with contextlib.suppress(RuntimeError):
+            self._stats = self._read_stats()
+        self._native.close()
+        self._end(ClosedReason.CLOSED)
+
+    def stats(self) -> ReceiverStats:
+        """The latest counters, or the last ones read before the receiver ended."""
+        if not self.closed:
+            self._stats = self._read_stats()
+        return self._stats
+
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> T:
+        while not self._items:
+            if self.closed:
+                raise StopAsyncIteration
+            if not self._read() and not self.closed:
+                await self._wait_for_wake()
+        return cast(T, self._items.popleft())
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self.close()
+
+    def _read(self) -> bool:
+        now = time.monotonic()
+        batch = self._native.read(READ_LIMIT)
+        if batch is None or (
+            not batch and self._connection.state is State.DISCONNECTED
+        ):
+            self._drained()
+            return False
+        guild_id = self._connection.guild_id
+        for item in batch:
+            converted = _convert(item, now, guild_id)
+            if converted is not None:
+                self._items.append(converted)
+        return bool(batch)
+
+    def _drained(self) -> None:
+        reason = self._native.closed_reason()
+        with contextlib.suppress(RuntimeError):
+            self._stats = self._read_stats()
+        self._end(ClosedReason.DISCONNECTED if reason is None else ClosedReason(reason))
+
+    def _end(self, reason: ClosedReason) -> None:
+        self._closed_reason = reason
+        self._items.clear()
+        self._release()
+
+    def _release(self) -> None:
+        self._wake()
+        self._connection._forget_receiver(self)
+
+    async def _wait_for_wake(self) -> None:
+        if self._woken is None:
+            self._woken = asyncio.get_running_loop().create_future()
+        await asyncio.shield(self._woken)
+
+    def _wake(self) -> None:
+        woken, self._woken = self._woken, None
+        if woken is not None and not woken.done():
+            woken.set_result(None)
+
+    def _read_stats(self) -> ReceiverStats:
+        raw = self._native.stats()
+        return ReceiverStats(
+            delivered=raw.get("delivered", 0),
+            dropped=raw.get("dropped", 0),
+            lost=raw.get("lost", 0),
+        )
+
+
+def _convert(item: "ReceivedItem", now: float, guild_id: int) -> Item | None:
+    match item:
+        case ("frame", user, ssrc, timestamp, offset, samples, age, data, lost):
+            return Frame(user, ssrc, timestamp, offset, samples, now - age, data, lost)
+        case ("packet", user, ssrc, sequence, timestamp, age, opus, extensions):
+            return Packet(
+                user, ssrc, sequence, timestamp, now - age, opus, tuple(extensions)
+            )
+        case ("speech", user, ssrc, True, offset, age, _):
+            return SpeechStart(
+                guild_id=guild_id, user_id=user, ssrc=ssrc, at=now - age, offset=offset
+            )
+        case ("speech", user, ssrc, False, offset, age, duration):
+            return SpeechStop(
+                guild_id=guild_id,
+                user_id=user,
+                ssrc=ssrc,
+                at=now - age,
+                duration=duration,
+                offset=offset,
+            )
+    return None

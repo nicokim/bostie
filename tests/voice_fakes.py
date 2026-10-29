@@ -4,7 +4,7 @@ import threading
 from collections import deque
 from collections.abc import Buffer, Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import msgspec
 
@@ -18,6 +18,9 @@ from bostie.models import Channel, User, decode
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults
+
+if TYPE_CHECKING:
+    from bostie._native import ReceivedItem
 
 BOT_ID = 1000
 USER_ID = 2000
@@ -221,12 +224,74 @@ class FakeSource:
             raise RuntimeError(f"voice handle {self._id} is closed")
 
 
+class FakeReceiver:
+    def __init__(self, core: "FakeCore", id: int) -> None:
+        self._id = id
+        self.core = core
+        self.items: deque[ReceivedItem] = deque()
+        self.reads: list[int] = []
+        self.armed = False
+        self.ended: Literal["disconnected", "moved"] | None = None
+        self.lag = 0.0
+        self.clears = 0
+        self.counters: dict[str, int] = {}
+        self.closed = False
+
+    @property
+    def id(self) -> int:
+        return self._id
+
+    def read(self, limit: int) -> "list[ReceivedItem] | None":
+        self._check()
+        self.reads.append(limit)
+        if not self.items:
+            self.armed = self.ended is None
+            return None if self.ended is not None else []
+        return [self.items.popleft() for _ in range(min(limit, len(self.items)))]
+
+    def queued(self) -> float:
+        self._check()
+        return self.lag
+
+    def clear(self) -> None:
+        self._check()
+        self.items.clear()
+        self.clears += 1
+
+    def stats(self) -> dict[str, int]:
+        self._check()
+        return dict(self.counters)
+
+    def closed_reason(self) -> Literal["closed", "disconnected", "moved"] | None:
+        return "closed" if self.closed else self.ended
+
+    def close(self) -> None:
+        self.closed = True
+        self.items.clear()
+
+    def feed(self, *items: "ReceivedItem") -> None:
+        self.items.extend(items)
+        if self.armed:
+            self.armed = False
+            self.core.deliver(("voice_wake", self._id))
+
+    def end(self, reason: Literal["disconnected", "moved"]) -> None:
+        self.ended = reason
+
+    def _check(self) -> None:
+        if self.closed:
+            raise RuntimeError(f"voice handle {self._id} is closed")
+
+
 class FakeCore:
     def __init__(self) -> None:
         self.calls: list[Call] = []
         self.sent: list[Any] = []
         self.sinks: list[FakeSink] = []
         self.sources: list[FakeSource] = []
+        self.receivers: list[FakeReceiver] = []
+        self.ssrc_map: dict[int, int] = {}
+        self.user_counters: dict[int, dict[str, int]] = {}
         self.handle: Callable[[VoiceDelivery, float], None] | None = None
         self.auto_disconnect = True
         self.probe: tuple[Literal["pcm", "opus"], float | None, bool] | None = (
@@ -382,6 +447,23 @@ class FakeCore:
     def voice_url(self, url: str, headers: list[tuple[str, str]]) -> FakeSource:
         return self._source("voice_url", url, headers)
 
+    def voice_receive(self, guild_id: int, **options: Any) -> FakeReceiver:
+        self._record("voice_receive", guild_id, **options)
+        receiver = FakeReceiver(self, self._handle_id())
+        self.receivers.append(receiver)
+        return receiver
+
+    def voice_speech_hangover(self, guild_id: int, seconds: float) -> None:
+        self._record("voice_speech_hangover", guild_id, seconds)
+
+    def voice_ssrcs(self, guild_id: int) -> dict[int, int]:
+        self._record("voice_ssrcs", guild_id)
+        return dict(self.ssrc_map)
+
+    def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]:
+        self._record("voice_user_stats", guild_id)
+        return {user: dict(counters) for user, counters in self.user_counters.items()}
+
     def _source(self, name: str, *arguments: Any) -> FakeSource:
         self.calls.append((name, arguments, {}))
         source = FakeSource(self, self._handle_id(), arguments)
@@ -492,9 +574,9 @@ class FakeBot:
             ):
                 future.set_result(event)
 
-    def deliver(self, delivery: VoiceDelivery) -> None:
+    def deliver(self, delivery: VoiceDelivery, received: float = 0.0) -> None:
         self.core.track(delivery)
-        self.voice.handle(delivery, 0.0)
+        self.voice.handle(delivery, received)
 
     def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
         return [event for event in self.events if isinstance(event, kind)]

@@ -1,23 +1,51 @@
 import asyncio
 import logging
-from collections.abc import Coroutine, Iterable
+import math
+import os
+import string
+import struct
+import time
+import zlib
+from collections.abc import AsyncIterator, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Literal
+from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, BinaryIO, Literal
 
 from bostie.enums import State
-from bostie.errors import SinkClosed, SourceError, VoiceNotConnected
+from bostie.errors import (
+    Empty,
+    ReceiverClosed,
+    SinkClosed,
+    SourceError,
+    VoiceNotConnected,
+)
 from bostie.voice.encoder import OpusEncoder
-from bostie.voice.formats import PCM, Encoder, Format, Opus
+from bostie.voice.events import SpeechStart, SpeechStop
+from bostie.voice.formats import PCM, SAMPLE_RATE, Encoder, Format, Opus
+from bostie.voice.frames import Frame
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceConnection
+    from bostie.voice.receiver import Receiver, ReceiverStats
     from bostie.voice.sink import Marker, Sink
     from bostie.voice.sources import Source
 
 log = logging.getLogger("bostie.voice")
 
 BROADCAST_BITRATE = 64_000
+SILENCE = b"\xf8\xff\xfe"
+SILENCE_SAMPLES = 960
+PAGE_SAMPLES = SAMPLE_RATE
+MAX_SEGMENTS = 255
+MAX_PACKET = MAX_SEGMENTS * 255 - 1
+BEGINNING_OF_STREAM = 0x02
+END_OF_STREAM = 0x04
+OPUS_HEAD = struct.pack("<8sBBHIhB", b"OpusHead", 1, 2, 0, SAMPLE_RATE, 0, 0)
+OPUS_TAGS = struct.pack("<8sI6sI", b"OpusTags", 6, b"bostie", 0)
+REVERSED_BITS = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
+TEMPLATE_FIELDS = frozenset({"guild_id", "user_id"})
 
 
 class EndReason(StrEnum):
@@ -612,6 +640,339 @@ async def _write_all(sinks: list["Sink"], packet: bytes) -> list["Sink"]:
         if isinstance(result, BaseException) and not isinstance(result, SinkClosed):
             raise result
     return [sink for sink, result in zip(sinks, results, strict=True) if result is None]
+
+
+@dataclass(frozen=True, slots=True)
+class Utterance:
+    """One user's speech from start to end, in the receiver's PCM format."""
+
+    user_id: int
+    data: bytes
+    offset: int
+    duration: float
+    lost: float
+
+
+@dataclass(slots=True)
+class _Speech:
+    offset: int
+    end: int
+    data: bytearray = field(default_factory=bytearray)
+    lost: int = 0
+    stop: int | None = None
+    deadline: float = math.inf
+
+    def utterance(self, user_id: int) -> Utterance:
+        return Utterance(
+            user_id,
+            bytes(self.data),
+            self.offset,
+            (self.end - self.offset) / SAMPLE_RATE,
+            self.lost / SAMPLE_RATE,
+        )
+
+
+def utterances(
+    rx: "Receiver[Frame | SpeechStart | SpeechStop]",
+    *,
+    min_silence: float = 0.8,
+    max_length: float = 30.0,
+) -> AsyncIterator[Utterance]:
+    """Group a receiver's frames into utterances per user."""
+    format = rx.format
+    if not isinstance(format, PCM) or not rx.markers or rx.mix:
+        raise ValueError(
+            "utterances needs a PCM receiver opened with markers=True and no mix"
+        )
+    return _utterances(rx, format, min_silence, max_length)
+
+
+async def _utterances(
+    rx: "Receiver[Frame | SpeechStart | SpeechStop]",
+    format: PCM,
+    min_silence: float,
+    max_length: float,
+) -> AsyncIterator[Utterance]:
+    silence = round(min_silence * SAMPLE_RATE)
+    longest = round(max_length * SAMPLE_RATE)
+    width = format.channels * (2 if format.sample == "s16le" else 4)
+    speaking: dict[int, _Speech] = {}
+    while True:
+        deadline = min(
+            (speech.deadline for speech in speaking.values()), default=math.inf
+        )
+        item: Frame | SpeechStart | SpeechStop | None = None
+        try:
+            async with asyncio.timeout(
+                None if math.isinf(deadline) else deadline - time.monotonic()
+            ):
+                item = await anext(rx)
+        except TimeoutError:
+            pass
+        except StopAsyncIteration:
+            break
+        match item:
+            case None:
+                expired = [
+                    user
+                    for user, speech in speaking.items()
+                    if speech.deadline <= deadline
+                ]
+                for user in expired:
+                    yield speaking.pop(user).utterance(user)
+            case SpeechStart(user_id=user, offset=int(offset)):
+                speech = speaking.get(user)
+                if (
+                    speech is not None
+                    and speech.stop is not None
+                    and offset - speech.stop < silence
+                ):
+                    speech.stop, speech.deadline = None, math.inf
+                    continue
+                if speech is not None:
+                    yield speech.utterance(user)
+                speaking[user] = _Speech(offset, offset)
+            case SpeechStop(user_id=user, offset=int(offset), at=at):
+                if (speech := speaking.get(user)) is not None:
+                    speech.stop = offset
+                    speech.deadline = at + rx.jitter + min_silence
+            case Frame(user_id=int(user)):
+                speech = speaking.get(user)
+                if speech is not None and (
+                    item.offset - speech.end >= silence
+                    or item.offset + item.samples - speech.offset > longest
+                ):
+                    yield speaking.pop(user).utterance(user)
+                    speech = None
+                if speech is None:
+                    speech = speaking[user] = _Speech(item.offset, item.offset)
+                gap = max(item.offset - speech.end, 0) * format.rate // SAMPLE_RATE
+                speech.data += bytes(gap * width)
+                speech.data += item.data
+                speech.end = item.offset + item.samples
+                if item.lost:
+                    speech.lost += item.samples
+    for user, speech in speaking.items():
+        yield speech.utterance(user)
+
+
+class _OggStream:
+    def __init__(self, file: BinaryIO, serial: int) -> None:
+        self.file = file
+        self.serial = serial
+        self.sequence = 0
+        self.granule = 0
+        self.samples = 0
+        self.lacing = bytearray()
+        self.body = bytearray()
+        self.pages = bytearray()
+        for flags, packet in ((BEGINNING_OF_STREAM, OPUS_HEAD), (0, OPUS_TAGS)):
+            self.lacing += _lacing(packet)
+            self.body += packet
+            self.flush(flags)
+
+    def add(self, packet: bytes, samples: int, count: int = 1) -> None:
+        lacing = _lacing(packet)
+        while count > 0:
+            full = len(self.lacing) + len(lacing) > MAX_SEGMENTS
+            if full or self.samples >= PAGE_SAMPLES:
+                self.flush()
+            fit = min(
+                count,
+                (MAX_SEGMENTS - len(self.lacing)) // len(lacing),
+                math.ceil((PAGE_SAMPLES - self.samples) / samples),
+            )
+            self.lacing += lacing * fit
+            self.body += packet * fit
+            self.samples += samples * fit
+            self.granule += samples * fit
+            count -= fit
+
+    def flush(self, flags: int = 0) -> None:
+        header = struct.pack(
+            "<4sBBqIIIB",
+            b"OggS",
+            0,
+            flags,
+            self.granule,
+            self.serial,
+            self.sequence,
+            0,
+            len(self.lacing),
+        )
+        page = bytearray(header) + self.lacing + self.body
+        page[22:26] = (
+            (zlib.crc32(page.translate(REVERSED_BITS), 0xFFFFFFFF) ^ 0xFFFFFFFF)
+            .to_bytes(4, "big")
+            .translate(REVERSED_BITS)
+        )
+        self.pages += page
+        self.sequence += 1
+        self.samples = 0
+        self.lacing.clear()
+        self.body.clear()
+
+    def take(self) -> bytes:
+        pages = bytes(self.pages)
+        self.pages.clear()
+        return pages
+
+
+class Recorder:
+    """Record each user to an Ogg Opus file as the call goes."""
+
+    def __init__(
+        self,
+        vc: "VoiceConnection",
+        path: str | os.PathLike[str],
+        *,
+        users: Iterable[int] | None = None,
+        exclude: Iterable[int] = (),
+        include_self: bool = False,
+        align: bool = True,
+        buffer: float = 30.0,
+        jitter: float = 0.3,
+    ) -> None:
+        self._template = _template(path)
+        self._guild_id = vc.guild_id
+        self._align = align
+        self._files: dict[int, Path] = {}
+        self._streams: dict[int, _OggStream] = {}
+        self._error: Exception | None = None
+        self._stopping: asyncio.Future[None] = (
+            asyncio.get_running_loop().create_future()
+        )
+        self._rx = vc.receive(
+            Opus(),
+            users=users,
+            exclude=exclude,
+            include_self=include_self,
+            buffer=buffer,
+            jitter=jitter,
+        )
+        self._task = asyncio.create_task(self._record())
+
+    @property
+    def files(self) -> Mapping[int, Path]:
+        """The files written so far, by user id."""
+        return MappingProxyType(self._files)
+
+    def stats(self) -> "ReceiverStats":
+        """The receiver's counters; dropped means the disk fell behind for too long."""
+        return self._rx.stats()
+
+    async def stop(self) -> dict[int, Path]:
+        """Stop recording, finish every file and return them by user id."""
+        if not self._stopping.done():
+            self._stopping.set_result(None)
+        await asyncio.wait({self._task})
+        if self._error is not None:
+            raise self._error
+        return dict(self._files)
+
+    async def _record(self) -> None:
+        try:
+            await self._consume()
+        except Exception as error:
+            self._fail(error)
+        finally:
+            self._rx.close()
+            await self._finish()
+
+    async def _consume(self) -> None:
+        while True:
+            try:
+                frame = self._rx.get_nowait()
+            except ReceiverClosed:
+                return
+            except Empty:
+                if self._stopping.done():
+                    return
+                arrived = await self._next()
+                if arrived is None:
+                    continue
+                frame = arrived
+            await self._write(frame)
+
+    async def _next(self) -> Frame | None:
+        reading = asyncio.ensure_future(anext(self._rx))
+        either: set[asyncio.Future[Any]] = {reading, self._stopping}
+        try:
+            await asyncio.wait(either, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if reading.cancel():
+                await asyncio.wait({reading})
+        if reading.cancelled() or isinstance(reading.exception(), StopAsyncIteration):
+            return None
+        return reading.result()
+
+    async def _write(self, frame: Frame) -> None:
+        user = frame.user_id
+        if user is None or frame.lost or len(frame.data) > MAX_PACKET:
+            return
+        stream = self._streams.get(user)
+        if stream is None:
+            path = Path(self._template.format(guild_id=self._guild_id, user_id=user))
+            file = await asyncio.to_thread(_create, path)
+            stream = self._streams[user] = _OggStream(file, user & 0xFFFFFFFF)
+            self._files[user] = path
+        if self._align:
+            gap = round((frame.offset - stream.granule) / SILENCE_SAMPLES)
+            stream.add(SILENCE, SILENCE_SAMPLES, max(gap, 0))
+        stream.add(frame.data, frame.samples)
+        if stream.pages:
+            await asyncio.to_thread(_append, stream.file, stream.take())
+
+    async def _finish(self) -> None:
+        for stream in self._streams.values():
+            stream.flush(END_OF_STREAM)
+            try:
+                await asyncio.to_thread(_close, stream.file, stream.take())
+            except Exception as error:
+                self._fail(error)
+
+    def _fail(self, error: Exception) -> None:
+        if self._error is None:
+            self._error = error
+            log.error("recording to %s failed", self._template, exc_info=error)
+
+
+def _template(path: str | os.PathLike[str]) -> str:
+    template = os.fspath(path)
+    if not template.endswith((".ogg", ".opus")):
+        raise ValueError(f"path must end in .ogg or .opus, got {template!r}")
+    fields = {
+        name for _, name, _, _ in string.Formatter().parse(template) if name is not None
+    }
+    if "user_id" not in fields:
+        raise ValueError(
+            f"path must contain {{user_id}} to give each user a file, got {template!r}"
+        )
+    if not fields <= TEMPLATE_FIELDS:
+        raise ValueError(
+            f"path may use only {{guild_id}} and {{user_id}}, got {template!r}"
+        )
+    template.format(guild_id=0, user_id=0)
+    return template
+
+
+def _lacing(packet: bytes) -> bytes:
+    return bytes([255] * (len(packet) // 255) + [len(packet) % 255])
+
+
+def _create(path: Path) -> BinaryIO:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path.open("wb")
+
+
+def _append(file: BinaryIO, pages: bytes) -> None:
+    file.write(pages)
+    file.flush()
+
+
+def _close(file: BinaryIO, pages: bytes) -> None:
+    with file:
+        file.write(pages)
 
 
 def _spawn(

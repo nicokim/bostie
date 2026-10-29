@@ -93,6 +93,32 @@ def opus_sink(core: _native.Core) -> _native.Sink:
     )
 
 
+def receiver(
+    core: _native.Core,
+    *,
+    buffer: float = 2.0,
+    jitter: float = 0.1,
+    markers: bool = False,
+    mix: bool = False,
+) -> _native.Receiver:
+    return core.voice_receive(
+        GUILD,
+        kind="pcm",
+        rate=48_000,
+        channels=2,
+        sample="s16le",
+        users=None,
+        exclude=[],
+        include_self=False,
+        buffer=buffer,
+        jitter=jitter,
+        markers=markers,
+        mix=mix,
+        overflow="drop_oldest",
+        stall="wait",
+    )
+
+
 def encoder(
     *,
     rate: int = 48_000,
@@ -263,10 +289,37 @@ def test_a_connection_reports_latency_dave_stats_and_diagnostics(
     pacer = diagnostics["pacer"]
     assert isinstance(pacer, dict)
     assert pacer["lanes"] >= 1
-    assert {"work_ewma_us", "work_max_us", "late_ticks"} <= pacer.keys()
+    assert {
+        "work_ewma_us",
+        "work_max_us",
+        "after_ewma_us",
+        "after_p50_us",
+        "after_p99_us",
+        "after_max_us",
+        "late_ticks",
+    } <= pacer.keys()
     counters = diagnostics["counters"]
     assert isinstance(counters, dict)
     assert counters.keys() == stats.keys()
+
+
+def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
+    connected: _native.Core,
+) -> None:
+    rx = receiver(connected)
+
+    assert rx.read(256) == []
+    assert rx.queued() == 0
+    assert rx.closed_reason() is None
+    assert connected.voice_diagnostics(GUILD)["receivers"] == 1
+    rx.close()
+    rx.close()
+
+    assert rx.closed_reason() == "closed"
+    assert handle_deliveries(connected, rx.id) == [("voice_wake", rx.id)]
+    with pytest.raises(RuntimeError, match=f"voice handle {rx.id} is closed"):
+        rx.read(256)
+    assert rx.stats() == {"delivered": 0, "dropped": 0, "lost": 0}
 
 
 def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
@@ -285,6 +338,14 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
         connect(core, server_change_delay=-1.0)
     core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
     connect(core)
+    with pytest.raises(ValueError, match="speech hangover must be from"):
+        core.voice_speech_hangover(GUILD, 11.0)
+    with pytest.raises(ValueError, match="buffer must be from"):
+        receiver(core, buffer=0.0)
+    with pytest.raises(ValueError, match="jitter must be at most"):
+        receiver(core, jitter=2.0)
+    with pytest.raises(ValueError, match="markers=True needs per-user frames"):
+        receiver(core, markers=True, mix=True)
     with pytest.raises(RuntimeError, match="already has a voice connection"):
         connect(core)
     with pytest.raises(ValueError, match="no DAVE"):
@@ -385,6 +446,7 @@ def test_voice_handles_refuse_to_work_in_a_forked_child(
 ) -> None:
     sink = pcm_sink(connected)
     source = connected.voice_file(str(MEDIA / "tone.flac"))
+    rx = receiver(connected)
     read_end, write_end = os.pipe()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -394,13 +456,14 @@ def test_voice_handles_refuse_to_work_in_a_forked_child(
         for call in (
             lambda: sink.write(bytes(FRAME_BYTES)),
             source.read,
+            lambda: rx.read(256),
             lambda: connected.voice_stats(GUILD),
         ):
             try:
                 call()
             except RuntimeError as error:
                 refused.append("forked child" in str(error))
-        os.write(write_end, b"refused" if refused == [True] * 3 else b"worked")
+        os.write(write_end, b"refused" if refused == [True] * 4 else b"worked")
         os._exit(0)
 
     os.close(write_end)

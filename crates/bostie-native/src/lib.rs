@@ -5,7 +5,7 @@ use std::num::NonZeroU16;
 use std::time::Duration;
 
 use bostie_core::voice::Voice;
-use bostie_core::voice::types::{ConnectRequest, DisconnectReason, SourceSpec};
+use bostie_core::voice::types::{ConnectRequest, DisconnectReason, ReceiveOptions, SourceSpec};
 use bostie_core::{
     ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
     RestRequest, ShardId, Ticket, UserId, describe,
@@ -16,7 +16,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 
-use crate::voice::{NativeSink, NativeSource};
+use crate::voice::{NativeReceiver, NativeSink, NativeSource};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -296,6 +296,78 @@ impl NativeCore {
     fn voice_url(&self, url: String, headers: Vec<(String, String)>) -> PyResult<NativeSource> {
         self.open_source(SourceSpec::Url { url, headers })
     }
+
+    #[pyo3(signature = (
+        guild_id, *, kind, rate, channels, sample, users, exclude, include_self, buffer, jitter,
+        markers, mix, overflow, stall,
+    ))]
+    #[expect(clippy::too_many_arguments)]
+    fn voice_receive(
+        &self,
+        guild_id: u64,
+        kind: &str,
+        rate: u32,
+        channels: u8,
+        sample: &str,
+        users: Option<Vec<u64>>,
+        exclude: Vec<u64>,
+        include_self: bool,
+        buffer: f64,
+        jitter: f64,
+        markers: bool,
+        mix: bool,
+        overflow: &str,
+        stall: &str,
+    ) -> PyResult<NativeReceiver> {
+        let options = ReceiveOptions {
+            format: voice::receive_format(kind, rate, channels, sample)?,
+            users: users.map(voice::users),
+            exclude: voice::users(exclude),
+            include_self,
+            buffer: voice::seconds("buffer", buffer)?,
+            jitter: voice::seconds("jitter", jitter)?,
+            markers,
+            mix,
+            overflow: voice::overflow(overflow)?,
+            stall: voice::receive_stall(stall)?,
+        };
+        self.voice()?
+            .open_receiver(GuildId::from(guild_id), options)
+            .map(NativeReceiver)
+            .map_err(to_python_error)
+    }
+
+    fn voice_speech_hangover(&self, guild_id: u64, seconds: f64) -> PyResult<()> {
+        let hangover = voice::seconds("speech_hangover", seconds)?;
+        self.voice()?
+            .set_speech_hangover(GuildId::from(guild_id), hangover)
+            .map_err(to_python_error)
+    }
+
+    fn voice_ssrcs(&self, guild_id: u64) -> PyResult<HashMap<u32, u64>> {
+        let ssrcs = self
+            .voice()?
+            .ssrcs(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        Ok(ssrcs
+            .into_iter()
+            .map(|(ssrc, user)| (ssrc, u64::from(user)))
+            .collect())
+    }
+
+    fn voice_user_stats(
+        &self,
+        guild_id: u64,
+    ) -> PyResult<HashMap<u64, HashMap<&'static str, u64>>> {
+        let users = self
+            .voice()?
+            .user_stats(GuildId::from(guild_id))
+            .map_err(to_python_error)?;
+        Ok(users
+            .into_iter()
+            .map(|(user, counters)| (u64::from(user), counters.into_iter().collect()))
+            .collect())
+    }
 }
 
 impl NativeCore {
@@ -538,5 +610,5 @@ mod _native {
     #[pymodule_export]
     use super::NativeCore;
     #[pymodule_export]
-    use super::voice::{NativeOpusEncoder, NativeSink, NativeSource, versions};
+    use super::voice::{NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions};
 }
