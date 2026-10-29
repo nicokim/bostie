@@ -1,11 +1,16 @@
 import asyncio
 import contextlib
+import itertools
 import logging
 import math
 import os
 import struct
 import sys
-from collections.abc import AsyncIterator, Callable
+import tempfile
+import time
+from collections import Counter
+from collections.abc import AsyncIterator, Callable, Iterable
+from pathlib import Path
 
 from bostie import Bot, voice
 from bostie.events import VoiceServerUpdate
@@ -17,10 +22,16 @@ GATEWAY_TIMEOUT = 30
 VOICE_TIMEOUT = 15
 SAMPLE_EVERY = 0.05
 TONE_HZ = 440
+SILENCE = b"\xf8\xff\xfe"
+SOAK_MINUTES = 30
+LISTEN = voice.PCM(16_000, 1)
 
 results: list[bool] = []
 
 type Sample = tuple[int, int, int, int]
+type SpeechLog = list[
+    tuple[float, voice.SpeakingUpdate | voice.SpeechStart | voice.SpeechStop]
+]
 
 
 def report(step: str, passed: bool) -> None:
@@ -35,6 +46,10 @@ def skip(step: str, why: str) -> None:
 async def ask(question: str) -> bool:
     answer = await asyncio.to_thread(input, f"\n{question} [y/n] ")
     return answer.strip().lower().startswith("y")
+
+
+async def prompt(instruction: str) -> None:
+    await asyncio.to_thread(input, f"\n{instruction} Press Enter to start. ")
 
 
 def tone(seconds: float) -> bytes:
@@ -170,6 +185,270 @@ async def play(vc: voice.VoiceConnection, seconds: float) -> None:
         await out.write(tone(seconds))
 
 
+async def beeps(vc: voice.VoiceConnection, count: int) -> None:
+    pause = bytes(48_000 * 4 * 9 // 5)
+    async with vc.sink() as out:
+        await out.write((tone(0.2) + pause) * count)
+
+
+async def collect[T: voice.Frame | voice.Packet | voice.SpeechStart | voice.SpeechStop](
+    rx: voice.Receiver[T], seconds: float
+) -> list[T]:
+    items: list[T] = []
+    with contextlib.suppress(TimeoutError):
+        async with asyncio.timeout(seconds):
+            async for item in rx:
+                items.append(item)
+    return items
+
+
+def spoken(items: Iterable[object]) -> int:
+    return sum(isinstance(item, voice.Frame) and not item.lost for item in items)
+
+
+def print_op5_timing(
+    items: Iterable[voice.Frame | voice.Packet], speech: SpeechLog
+) -> None:
+    firsts: dict[int, float] = {}
+    for item in items:
+        if item.ssrc is not None:
+            firsts.setdefault(item.ssrc, item.received_at)
+    for ssrc, first in firsts.items():
+        ops = [
+            f"{at - first:+.3f} s"
+            for at, event in speech
+            if isinstance(event, voice.SpeakingUpdate) and event.ssrc == ssrc
+        ]
+        print(f"SSRC {ssrc}: op 5 at {', '.join(ops) or 'never'} from its first packet")
+
+
+async def receive_checks(
+    bot: Bot,
+    vc: voice.VoiceConnection,
+    human: int,
+    warnings: Warnings,
+    speech: SpeechLog,
+) -> None:
+    await prompt("Talk for 10 s, with a pause or two.")
+    async with (
+        vc.receive(LISTEN, markers=True) as rx,
+        vc.receive(voice.Packets()) as raw,
+    ):
+        items, packets = await asyncio.gather(collect(rx, 12), collect(raw, 12))
+    after = vc.stats().receive
+    frames = [i for i in items if isinstance(i, voice.Frame) and i.user_id == human]
+    marks = [i for i in items if isinstance(i, voice.SpeechStart | voice.SpeechStop)]
+    for mark in marks:
+        length = (
+            f", {mark.duration:.2f} s" if isinstance(mark, voice.SpeechStop) else ""
+        )
+        print(f"{type(mark).__name__} {mark.user_id} at offset {mark.offset}{length}")
+    print_op5_timing(packets, speech)
+    steps = Counter(
+        (b.timestamp - a.timestamp) % 2**32 // 48
+        for a, b in itertools.pairwise(p for p in packets if p.user_id == human)
+        if (b.sequence - a.sequence) % 2**16 == 1
+    )
+    print(
+        "packet durations, from the timestamp step per sequence step "
+        f"(ms: count, over 120 is a pause): {dict(sorted(steps.items()))}"
+    )
+    sizes = Counter(min(len(packet.opus), 16) for packet in packets)
+    print(f"Opus sizes (bytes, 16 = 16 or more: count): {dict(sorted(sizes.items()))}")
+    report(
+        "10 s of speech: frames under the speaker's id, SpeechStart and SpeechStop",
+        spoken(frames) > 0
+        and any(isinstance(m, voice.SpeechStart) and m.user_id == human for m in marks)
+        and any(isinstance(m, voice.SpeechStop) and m.user_id == human for m in marks),
+    )
+    extensions = Counter(
+        (number, len(body)) for packet in packets for number, body in packet.extensions
+    )
+    print(f"header extensions ((id, bytes): count): {dict(sorted(extensions.items()))}")
+    print(f"RTCP sender reports so far: {after.rtcp_sender_reports}")
+    print(
+        "padding, CSRC count, marker bit and nonce layout: not visible through the "
+        "library; a packet capture shows them, since they travel unencrypted"
+    )
+    report(
+        "a Packets() receiver: the speaker's packets arrive and no replay is refused",
+        any(packet.user_id == human for packet in packets) and after.replays == 0,
+    )
+
+    await prompt(
+        "Within 15 s: talk, mute yourself mid-sentence, wait 3 s, unmute, talk again."
+    )
+    start = len(speech)
+    async with vc.receive(voice.Packets(), users={human}) as raw:
+        packets = await collect(raw, 15)
+    runs = [
+        len(list(run))
+        for silent, run in itertools.groupby(packets, lambda p: p.opus == SILENCE)
+        if silent
+    ]
+    print(f"F8 FF FE runs (packets each): {runs}")
+    lags = [
+        at - event.at
+        for at, event in speech[start:]
+        if isinstance(event, voice.SpeechStop) and event.user_id == human
+    ]
+    print(f"SpeechStop after the last speech packet: {[round(lag, 3) for lag in lags]}")
+    report(
+        "muting ends speech within the hangover",
+        bool(lags) and max(lags) <= vc.speech_hangover + 0.1,
+    )
+
+    if not await ask("Can you turn your camera on in this channel?"):
+        skip("a camera turned on", "no camera")
+    else:
+        await prompt("Turn your camera on and talk for 10 s.")
+        async with vc.receive(LISTEN, users={human}) as rx:
+            frames = await collect(rx, 10)
+        print("Turn your camera off.")
+        report(
+            "a camera turned on: no invalid payloads and frames keep arriving",
+            vc.stats().receive.invalid_payloads == 0 and spoken(frames) > 0,
+        )
+
+    if not await ask("Can a second person join and leave while you talk?"):
+        skip("a second person joins and leaves", "nobody else")
+    else:
+        await prompt(
+            "Keep talking while the second person joins, stays 5 s and leaves."
+        )
+        async with vc.receive(LISTEN, users={human}) as rx:
+            listening = asyncio.create_task(collect(rx, 3 * HUMAN_TIMEOUT))
+            joined = await within(
+                HUMAN_TIMEOUT,
+                asyncio.ensure_future(
+                    bot.wait_for(voice.UserJoin, check=lambda e: e.user_id != human)
+                ),
+            )
+            left = None
+            if joined is not None:
+                left = await within(
+                    HUMAN_TIMEOUT,
+                    asyncio.ensure_future(
+                        bot.wait_for(
+                            voice.UserLeave, check=lambda e: e.user_id == joined.user_id
+                        )
+                    ),
+                )
+            await asyncio.sleep(2)
+            rx.close()
+            frames = await listening
+        stats = vc.stats()
+        for user_id, counters in stats.users.items():
+            print(f"user {user_id}: {counters.decrypt_failures} decrypt failures")
+        report(
+            "a second person joins and leaves: frames go on, no receive recovery",
+            left is not None
+            and spoken(frames) > 0
+            and stats.receive.receive_recoveries == 0,
+        )
+
+    me = bot.user.id if bot.user is not None else 0
+    folder = Path(tempfile.mkdtemp(prefix="bostie-recording-"))
+    await prompt("For 20 s, say 'now' each time you hear a beep.")
+    recorder = voice.Recorder(vc, folder / "{user_id}.ogg", include_self=True)
+    await beeps(vc, 10)
+    files = await recorder.stop()
+    for user_id, path in files.items():
+        print(f"recorded {user_id}: {path}")
+    lined_up = await ask(
+        "Open both files together in an audio editor. Does each 'now' follow its "
+        "beep the same way all through?"
+    )
+    report(
+        "Recorder(include_self=True): one file for the bot, one for you, lined up",
+        lined_up and {me, human} <= files.keys(),
+    )
+
+    await prompt("Talk for 10 s, until the bot says to stop.")
+    async with vc.receive(LISTEN, users={human}) as rx:
+        hearing = await collect(rx, 2)
+        warnings.messages.clear()
+        await vc.edit(self_deaf=True)
+        await asyncio.sleep(1)
+        rx.clear()
+        deafened = await collect(rx, 3)
+        warned = sum("deafened" in message for message in warnings.messages)
+        await vc.edit(self_deaf=False)
+        resumed = await collect(rx, 4)
+    print("Stop talking.")
+    print(
+        f"frames: {spoken(hearing)} before, {spoken(deafened)} deafened, "
+        f"{spoken(resumed)} after"
+    )
+    report(
+        "self-deafen with a receiver open: one warning, frames stop, then resume",
+        warned == 1
+        and spoken(hearing) > 0
+        and spoken(deafened) == 0
+        and spoken(resumed) > 0,
+    )
+
+    ssrcs = {ssrc for ssrc, user_id in vc.ssrcs.items() if user_id == human}
+    await prompt("Leave the voice channel, join it again and talk for 5 s.")
+    async with vc.receive(LISTEN, users={human}) as rx:
+        listening = asyncio.create_task(collect(rx, 3 * HUMAN_TIMEOUT))
+        gone = await within(
+            HUMAN_TIMEOUT,
+            asyncio.ensure_future(
+                bot.wait_for(voice.UserLeave, check=lambda e: e.user_id == human)
+            ),
+        )
+        back = None
+        if gone is not None:
+            back = await within(
+                HUMAN_TIMEOUT,
+                asyncio.ensure_future(
+                    bot.wait_for(voice.UserJoin, check=lambda e: e.user_id == human)
+                ),
+            )
+        rejoined = time.monotonic()
+        await asyncio.sleep(8)
+        rx.close()
+        frames = [
+            frame
+            for frame in await listening
+            if frame.received_at > rejoined and not frame.lost
+        ]
+    rejoined_ssrcs = sorted({f.ssrc for f in frames if f.ssrc is not None})
+    print(f"SSRC before: {sorted(ssrcs)}, after: {rejoined_ssrcs}")
+    print_op5_timing(frames, speech)
+    report(
+        "the speaker leaves and rejoins: frames continue under the same id",
+        back is not None and bool(frames),
+    )
+
+
+async def soak(bot: Bot, channel_id: int, human: int) -> None:
+    if not os.environ.get("BOSTIE_LIVE_SOAK"):
+        skip(f"{SOAK_MINUTES} minutes of receive only", "set BOSTIE_LIVE_SOAK=1")
+        return
+    vc = await bot.voice.connect(channel_id, timeout=VOICE_TIMEOUT)
+    before = vc.stats().send.keepalives_answered
+    print(
+        f"\nFor {SOAK_MINUTES} minutes the bot only listens. Talk now and then.",
+        flush=True,
+    )
+    async with vc.receive(LISTEN, users={human}) as rx:
+        for minute in range(1, SOAK_MINUTES + 1):
+            print(
+                f"minute {minute}: {spoken(await collect(rx, 60))} frames", flush=True
+            )
+        await prompt("Talk for 10 s.")
+        last = spoken(await collect(rx, 10))
+    after = vc.stats().send.keepalives_answered
+    report(
+        f"{SOAK_MINUTES} minutes of receive only: frames keep arriving, keepalives "
+        "are answered",
+        last > 0 and after > before,
+    )
+    await vc.disconnect()
+
+
 async def voice_check(
     token: str,
     guild_id: int,
@@ -179,6 +458,7 @@ async def voice_check(
 ) -> None:
     bot = Bot(sync_commands=False)
     timeline: list[voice.VoiceEvent] = []
+    speech: SpeechLog = []
     warnings = Warnings()
     logging.getLogger("bostie.voice").addHandler(warnings)
 
@@ -193,6 +473,12 @@ async def voice_check(
         | voice.MediaResumed,
     ) -> None:
         timeline.append(event)
+
+    @bot.listen
+    async def hear(
+        event: voice.SpeakingUpdate | voice.SpeechStart | voice.SpeechStop,
+    ) -> None:
+        speech.append((time.monotonic(), event))
 
     started = await connect(bot, token)
     async with sampled(bot, guild_id) as runs:
@@ -340,6 +626,8 @@ async def voice_check(
             send.keepalives_answered > 0 and vc.latency.udp is not None,
         )
 
+        await receive_checks(bot, vc, human, warnings, speech)
+
         if second_id is None:
             skip("move and move back", "set BOSTIE_LIVE_VOICE_2")
         else:
@@ -409,6 +697,7 @@ async def voice_check(
             and change.reason is voice.DisconnectReason.REQUESTED,
         )
         print(f"recoveries in this run: {sum(run[-1][0] for run in runs if run)}")
+        await soak(bot, channel_id, human)
 
     await bot.close()
     await started

@@ -6,7 +6,7 @@
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
-> **Status:** pre-alpha. Text bots work: slash commands, buttons and selects, gateway events, the cache and REST. Voice joins channels and plays audio. Receiving audio comes next.
+> **Status:** pre-alpha. Text bots work: slash commands, buttons and selects, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
 
 ## Install
 
@@ -159,6 +159,46 @@ async def say(ctx: Context, text: str) -> None:
 ```
 
 Here `speech(text)` stands for your engine's streaming call: an async iterator of 24 kHz mono 16-bit chunks. The Rust core resamples them to 48 kHz stereo.
+
+### Receiving audio
+
+```python
+import asyncio
+
+from bostie import AllowedMentions
+
+captioning: set[asyncio.Task[None]] = set()
+
+
+async def captions(vc: voice.VoiceConnection, channel_id: int) -> None:
+    async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
+        async for said in voice.utterances(rx):
+            text = await speech_to_text(said.data)
+            await bot.send_message(
+                channel_id,
+                f"<@{said.user_id}>: {text}",
+                allowed_mentions=AllowedMentions(parse=()),
+            )
+
+
+@bot.command
+async def caption(ctx: Context) -> None:
+    """Post what people in your voice channel say."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    if ctx.channel_id is not None:
+        task = asyncio.create_task(captions(vc, ctx.channel_id))
+        captioning.add(task)
+        task.add_done_callback(captioning.discard)
+    await ctx.respond("Captioning. Everyone in this call can see the bot.")
+```
+
+Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 16 kHz mono 16-bit audio.
+
+- `vc.receive(format)` opens a receiver, a bounded async iterator over the call's audio. Open one per consumer, as many as you like. It yields decoded PCM at 8 to 48 kHz, Opus packets, or the raw packets, per user or mixed into one stream, and `users=` or `exclude=` limit whom it hears. Audio nobody asked for is never decrypted or decoded.
+- `voice.utterances(rx)` groups frames into one utterance per stretch of speech. `voice.Recorder(vc, "recordings/{guild_id}/{user_id}.ogg")` records each person to an Ogg Opus file.
+- `voice.SpeechStart` and `voice.SpeechStop` fire for everyone in the call, and `vc.speaking` says who is talking now.
+- A receiver ends when the bot leaves or is moved to another channel, which ends `captions` above.
+- Tell people before you record or transcribe them. [docs/voice.md](docs/voice.md#receiving-audio) covers every option, and privacy and consent.
 
 ## Bot parameters
 

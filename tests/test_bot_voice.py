@@ -18,6 +18,7 @@ from bostie.gateway import GatewayClient
 from bostie.voice import DisconnectReason, EndReason, NotInVoice, SinkClosed, State
 
 type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
+type Heard = voice.Frame | voice.SpeechStart | voice.SpeechStop
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 GUILD_ID = int(payloads.voice_channel()["guild_id"])
@@ -191,6 +192,52 @@ def test_a_second_of_pcm_plays_as_fifty_opus_packets_and_five_silent_ones() -> N
     run(scenario)
 
 
+def test_receive_a_spoken_second_from_the_fake() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            encoder = voice.OpusEncoder()
+            spoken = encoder.encode(tone(1.0)) + encoder.flush()
+
+            async def listen() -> list[Heard]:
+                heard: list[Heard] = []
+                async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
+                    await fake.speaking(FRIEND_ID, 4321, 1)
+                    await fake.send_audio(FRIEND_ID, 4321, spoken)
+                    async for item in rx:
+                        heard.append(item)
+                        if isinstance(item, voice.SpeechStop):
+                            return heard
+                return heard
+
+            start, stop, heard = await asyncio.gather(
+                bot.wait_for(voice.SpeechStart),
+                bot.wait_for(voice.SpeechStop),
+                listen(),
+            )
+
+            frames = [item for item in heard if isinstance(item, voice.Frame)]
+            assert [type(item) for item in heard] == [
+                voice.SpeechStart,
+                *[voice.Frame] * FRAMES_PER_SECOND,
+                voice.SpeechStop,
+            ]
+            assert all(
+                (frame.user_id, frame.ssrc, len(frame.data), frame.lost)
+                == (FRIEND_ID, 4321, 640, False)
+                for frame in frames
+            )
+            assert all(
+                after.offset - before.offset == SAMPLES_PER_FRAME
+                for before, after in itertools.pairwise(frames)
+            )
+            assert (start.user_id, start.ssrc, start.offset) == (FRIEND_ID, 4321, None)
+            assert (stop.user_id, stop.ssrc, stop.offset) == (FRIEND_ID, 4321, None)
+            assert vc.speaking == {}
+
+    run(scenario)
+
+
 def test_a_move_by_a_moderator_keeps_the_connection_and_its_sinks() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         add_voice_channel(fake, OTHER_ID)
@@ -259,13 +306,13 @@ def test_voice_ops_and_the_bot_voice_flags_reach_python_field_by_field() -> None
                 seen.put_nowait(event)
 
             vc = await bot.voice.connect(VOICE_ID, self_mute=True)
-            joined = (vc.self_mute, vc.self_deaf, vc.mute, vc.suppress)
+            joined = (vc.self_mute, vc.self_deaf, vc.mute, vc.deaf, vc.suppress)
             await fake.clients_connect([FRIEND_ID, int(MEMBER_ID)])
             await fake.speaking(FRIEND_ID, 4321, 5)
             await fake.client_disconnect(int(MEMBER_ID))
             events = [await seen.get() for _ in range(4)]
             members = vc.members
-            fake.mute, fake.suppress = False, True
+            fake.mute, fake.deaf, fake.suppress = False, True, True
             await asyncio.gather(bot.wait_for(voice.Moved), fake.move_bot(OTHER_ID))
 
             assert events == [
@@ -280,11 +327,12 @@ def test_voice_ops_and_the_bot_voice_flags_reach_python_field_by_field() -> None
                 voice.UserLeave(guild_id=GUILD_ID, user_id=int(MEMBER_ID)),
             ]
             assert members == {FRIEND_ID}
-            assert joined == (True, False, True, False)
-            assert (vc.self_mute, vc.self_deaf, vc.mute, vc.suppress) == (
+            assert joined == (True, False, True, False, False)
+            assert (vc.self_mute, vc.self_deaf, vc.mute, vc.deaf, vc.suppress) == (
                 True,
                 False,
                 False,
+                True,
                 True,
             )
 

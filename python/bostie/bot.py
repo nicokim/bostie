@@ -499,7 +499,9 @@ class Bot(Router):
                 | "voice_client_left"
                 | "voice_stalled"
                 | "voice_wake"
-                | "voice_marker",
+                | "voice_marker"
+                | "voice_speech"
+                | "voice_deaf",
                 *_,
             ):
                 self.voice.handle(delivery, received)

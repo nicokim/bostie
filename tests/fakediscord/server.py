@@ -101,7 +101,8 @@ class FakeDiscord(VoiceGateway):
 
     ``voice=True`` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
     ``full=True`` leaves op 4 joins unanswered, as Discord does for a full channel.
-    ``mute`` and ``suppress`` go into every voice state the fake sends for the bot.
+    ``mute``, ``deaf`` and ``suppress`` go into every voice state the fake sends for
+    the bot.
     """
 
     api_url: str
@@ -154,6 +155,7 @@ class FakeDiscord(VoiceGateway):
         self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
         self.voice_order = voice_order
         self.mute = False
+        self.deaf = False
         self.suppress = False
         self.voice_states: dict[tuple[str, str], Json] = {}
         self._voice = voice
@@ -480,6 +482,7 @@ class FakeDiscord(VoiceGateway):
             self_mute=self_mute,
             self_deaf=self_deaf,
             mute=self.mute,
+            deaf=self.deaf,
             suppress=self.suppress,
         )
 

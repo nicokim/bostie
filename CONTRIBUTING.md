@@ -115,6 +115,8 @@ BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_VOICE=<empty voice ch
 
 Add `BOSTIE_LIVE_VOICE_2=<channel id>` to test moves, and `BOSTIE_LIVE_STAGE=<channel id>` for a stage channel where the bot may request to speak. Join the channel when asked, answer the y/n questions about what you hear, and follow the bot when it moves. The privacy code and verification code it prints should match the call's details in your client. The DAVE recovery step prints SKIP unless Discord starts a recovery during the run, which a bot can't trigger.
 
+The receive steps ask you to talk, to mute and unmute, and to leave and rejoin the channel. If you can, they also ask you to turn on your camera and to have a second person join and leave while you talk; answer n to skip those. Set `BOSTIE_LIVE_SOAK=1` to add a 30-minute run that only receives.
+
 ## Style
 
 We don't write comments in code. If a block seems to need one, rename it or split it until it doesn't. Public Python API may have a docstring when the name and signature aren't enough, and one line is usually right.
