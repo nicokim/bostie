@@ -35,6 +35,7 @@ pub struct ThreadLoad {
 
 pub struct PacerPool {
     mode: Mode,
+    epoch: Instant,
 }
 
 enum Mode {
@@ -68,6 +69,7 @@ impl PacerPool {
     pub fn new() -> Self {
         Self {
             mode: Mode::Threads(Mutex::new(Vec::new())),
+            epoch: Instant::now(),
         }
     }
 
@@ -79,6 +81,7 @@ impl PacerPool {
                 now: Instant::now(),
                 load: Load::default(),
             })),
+            epoch: Instant::now(),
         }
     }
 
@@ -105,7 +108,7 @@ impl PacerPool {
 
     pub fn assign(&self, lane: LaneFn) -> Result<usize, CoreError> {
         match &self.mode {
-            Mode::Threads(workers) => assign(&mut workers.lock(), lane),
+            Mode::Threads(workers) => assign(&mut workers.lock(), lane, self.epoch),
             #[cfg(test)]
             Mode::Manual(manual) => {
                 let mut manual = manual.lock();
@@ -139,7 +142,7 @@ impl Default for PacerPool {
     }
 }
 
-fn assign(workers: &mut Vec<Worker>, lane: LaneFn) -> Result<usize, CoreError> {
+fn assign(workers: &mut Vec<Worker>, lane: LaneFn, epoch: Instant) -> Result<usize, CoreError> {
     let index = workers
         .iter()
         .enumerate()
@@ -150,7 +153,7 @@ fn assign(workers: &mut Vec<Worker>, lane: LaneFn) -> Result<usize, CoreError> {
     let index = match index {
         Some(index) => index,
         None => {
-            workers.push(Worker::spawn(workers.len())?);
+            workers.push(Worker::spawn(workers.len(), epoch)?);
             workers.len() - 1
         }
     };
@@ -161,7 +164,7 @@ fn assign(workers: &mut Vec<Worker>, lane: LaneFn) -> Result<usize, CoreError> {
     };
     worker.load.lanes.fetch_add(1, Ordering::Relaxed);
     if let Err(mpsc::SendError(lane)) = worker.sender.send(lane) {
-        *worker = Worker::spawn(index)?;
+        *worker = Worker::spawn(index, epoch)?;
         worker.load.lanes.fetch_add(1, Ordering::Relaxed);
         worker.sender.send(lane).map_err(|_| {
             CoreError::Runtime(io::Error::other("the voice pacer thread ended at once"))
@@ -171,13 +174,14 @@ fn assign(workers: &mut Vec<Worker>, lane: LaneFn) -> Result<usize, CoreError> {
 }
 
 impl Worker {
-    fn spawn(index: usize) -> Result<Self, CoreError> {
+    fn spawn(index: usize, epoch: Instant) -> Result<Self, CoreError> {
         let (sender, receiver) = mpsc::channel();
         let load = Arc::new(Load::default());
         let thread_load = Arc::clone(&load);
+        let origin = epoch + phase(index);
         thread::Builder::new()
             .name(format!("bostie-voice-{index}"))
-            .spawn(move || pace(&receiver, &thread_load, &Wall))
+            .spawn(move || pace(&receiver, &thread_load, &Wall, origin))
             .map_err(CoreError::Runtime)?;
         Ok(Self { sender, load })
     }
@@ -224,7 +228,26 @@ impl Clock for Wall {
     }
 }
 
-fn pace(receiver: &Receiver<LaneFn>, load: &Load, clock: &impl Clock) {
+fn phase(index: usize) -> Duration {
+    let turn = u128::from(u32::try_from(index).unwrap_or(u32::MAX).reverse_bits());
+    Duration::from_nanos(u64::try_from((FRAME.as_nanos() * turn) >> u32::BITS).unwrap_or(0))
+}
+
+fn grid_floor(origin: Instant, at: Instant) -> Instant {
+    let frame = FRAME.as_nanos();
+    let ticks = at.saturating_duration_since(origin).as_nanos() / frame;
+    u64::try_from(ticks * frame)
+        .ok()
+        .and_then(|nanos| origin.checked_add(Duration::from_nanos(nanos)))
+        .unwrap_or(at)
+}
+
+fn grid_ceil(origin: Instant, at: Instant) -> Instant {
+    let floor = grid_floor(origin, at);
+    if floor < at { floor + FRAME } else { floor }
+}
+
+fn pace(receiver: &Receiver<LaneFn>, load: &Load, clock: &impl Clock, origin: Instant) {
     let mut lanes: Vec<LaneFn> = Vec::new();
     let mut next = clock.now();
     loop {
@@ -233,15 +256,17 @@ fn pace(receiver: &Receiver<LaneFn>, load: &Load, clock: &impl Clock) {
                 return;
             };
             lanes.push(lane);
-            next = clock.now();
+            next = grid_ceil(origin, clock.now());
         }
         lanes.extend(receiver.try_iter());
         clock.sleep_until(next);
         let now = clock.now();
         let late = now.saturating_duration_since(next);
         let skipped = if late > LATE_REANCHOR {
-            next = now;
-            u32::try_from(late.as_nanos() / FRAME.as_nanos()).unwrap_or(u32::MAX)
+            let anchor = grid_floor(origin, now);
+            let missed = anchor.saturating_duration_since(next).as_nanos() / FRAME.as_nanos();
+            next = anchor;
+            u32::try_from(missed).unwrap_or(u32::MAX)
         } else {
             0
         };
@@ -319,7 +344,8 @@ mod tests {
             sender.send(lane).unwrap();
         }
         let clock = clock.clone();
-        thread::spawn(move || pace(&receiver, &Load::default(), &clock));
+        let origin = clock.now();
+        thread::spawn(move || pace(&receiver, &Load::default(), &clock, origin));
         sender
     }
 
@@ -384,16 +410,18 @@ mod tests {
     }
 
     #[test]
-    fn a_long_tick_reanchors_once_with_the_missed_frames_and_no_burst() {
+    fn a_long_tick_reanchors_once_on_the_grid_with_the_missed_frames_and_no_burst() {
         let clock = Synthetic::new();
-        let (lane, ticks) = synthetic_recorder(&clock, 3, Duration::from_millis(100));
+        let (lane, ticks) = synthetic_recorder(&clock, 3, Duration::from_millis(110));
         let _pacer = pace_on(&clock, vec![lane]);
 
         let ticks = take(&ticks, 7);
 
         let skipped: Vec<u32> = ticks.iter().map(|(tick, _)| tick.skipped).collect();
         assert_eq!(skipped, [0, 0, 0, 4, 0, 0, 0]);
-        for pair in ticks[3..].windows(2) {
+        assert_eq!(ticks[3].1 - ticks[0].1, Duration::from_millis(150));
+        assert_eq!(ticks[4].1 - ticks[0].1, FRAME * 8);
+        for pair in ticks[4..].windows(2) {
             assert_eq!(pair[1].1 - pair[0].1, FRAME);
         }
     }
@@ -486,8 +514,9 @@ mod tests {
     }
 
     #[test]
-    fn a_new_lane_on_an_idle_thread_ticks_at_once() {
+    fn a_new_lane_on_an_idle_thread_waits_for_the_threads_next_tick() {
         let clock = Synthetic::new();
+        let origin = clock.now();
         let (ran, on_ran) = mpsc::channel();
         let leaving: LaneFn = Box::new(move |_| {
             ran.send(()).unwrap();
@@ -498,16 +527,25 @@ mod tests {
         clock.advance(Duration::from_millis(5));
         let (lane, ticks) = synthetic_recorder(&clock, usize::MAX, Duration::ZERO);
 
-        let assigned = clock.now();
         pacer.send(lane).unwrap();
         let (tick, _) = take(&ticks, 1)[0];
 
         assert_eq!(
             tick,
             Tick {
-                now: assigned,
+                now: origin + FRAME,
                 skipped: 0
             }
+        );
+    }
+
+    #[test]
+    fn threads_tick_at_offsets_spread_across_the_frame() {
+        let offsets: Vec<Duration> = (0..8).map(phase).collect();
+
+        assert_eq!(
+            offsets,
+            [0, 10_000, 5_000, 15_000, 2_500, 12_500, 7_500, 17_500].map(Duration::from_micros)
         );
     }
 
