@@ -61,6 +61,8 @@ type VoiceDelivery = (
     | _native.VoiceStalledDelivery
     | _native.VoiceWakeDelivery
     | _native.VoiceMarkerDelivery
+    | _native.VoiceSpeechDelivery
+    | _native.VoiceDeafDelivery
 )
 
 
@@ -782,6 +784,8 @@ class VoiceConnection:
                         duration=seconds,
                     )
                 )
+            case ("voice_speech" | "voice_deaf", *_):
+                pass
 
     def _set_state(
         self,

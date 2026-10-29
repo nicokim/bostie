@@ -81,6 +81,29 @@ class UserLeave(VoiceEvent, kw_only=True):
     user_id: int
 
 
+class SpeechStart(VoiceEvent, kw_only=True):
+    """A user started speaking."""
+
+    NAME = "voice.speech_start"
+
+    user_id: int
+    ssrc: int
+    at: float
+    offset: int | None = None
+
+
+class SpeechStop(VoiceEvent, kw_only=True):
+    """A user stopped speaking."""
+
+    NAME = "voice.speech_stop"
+
+    user_id: int
+    ssrc: int
+    at: float
+    duration: float
+    offset: int | None = None
+
+
 LOCAL_NAMES = frozenset(
     event.NAME
     for event in (
@@ -92,5 +115,7 @@ LOCAL_NAMES = frozenset(
         SpeakingUpdate,
         UserJoin,
         UserLeave,
+        SpeechStart,
+        SpeechStop,
     )
 )

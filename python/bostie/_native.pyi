@@ -1,7 +1,7 @@
 from collections.abc import Buffer
 from typing import Literal, final
 
-__all__ = ["Core", "OpusEncoder", "Sink", "Source", "versions"]
+__all__ = ["Core", "OpusEncoder", "Receiver", "Sink", "Source", "versions"]
 
 type FailureKind = Literal["transport", "invalid_token", "request_budget", "bug"]
 type VoiceStateName = Literal[
@@ -23,6 +23,10 @@ type DisconnectReasonName = Literal[
 type ApplicationName = Literal["audio", "voip", "lowdelay"]
 type SampleName = Literal["s16le", "f32le"]
 type StallName = Literal["hold", "drop"]
+type ReceiveKindName = Literal["pcm", "opus", "packets"]
+type OverflowName = Literal["drop_oldest"]
+type ReceiveStallName = Literal["wait"]
+type ClosedReasonName = Literal["closed", "disconnected", "moved"]
 
 type ResponseDelivery = tuple[Literal["response"], int, int, bytes]
 type FailureDelivery = tuple[Literal["failure"], int, FailureKind, str]
@@ -50,6 +54,10 @@ type VoiceStalledDelivery = tuple[
 ]
 type VoiceWakeDelivery = tuple[Literal["voice_wake"], int]
 type VoiceMarkerDelivery = tuple[Literal["voice_marker"], int, int, bool]
+type VoiceSpeechDelivery = tuple[
+    Literal["voice_speech"], int, int, int, bool, float, float
+]
+type VoiceDeafDelivery = tuple[Literal["voice_deaf"], int, bool]
 type Delivery = (
     ResponseDelivery
     | FailureDelivery
@@ -68,7 +76,18 @@ type Delivery = (
     | VoiceStalledDelivery
     | VoiceWakeDelivery
     | VoiceMarkerDelivery
+    | VoiceSpeechDelivery
+    | VoiceDeafDelivery
 )
+
+type FrameItem = tuple[
+    Literal["frame"], int | None, int | None, int | None, int, int, float, bytes, bool
+]
+type PacketItem = tuple[
+    Literal["packet"], int, int, int, int, float, bytes, list[tuple[int, bytes]]
+]
+type SpeechItem = tuple[Literal["speech"], int, int, bool, int | None, float, float]
+type ReceivedItem = FrameItem | PacketItem | SpeechItem
 
 @final
 class Core:
@@ -151,6 +170,27 @@ class Core:
     def voice_file(self, path: str) -> Source: ...
     def voice_bytes(self, data: bytes, hint: str | None) -> Source: ...
     def voice_url(self, url: str, headers: list[tuple[str, str]]) -> Source: ...
+    def voice_receive(
+        self,
+        guild_id: int,
+        *,
+        kind: ReceiveKindName,
+        rate: int,
+        channels: int,
+        sample: SampleName,
+        users: list[int] | None,
+        exclude: list[int],
+        include_self: bool,
+        buffer: float,
+        jitter: float,
+        markers: bool,
+        mix: bool,
+        overflow: OverflowName,
+        stall: ReceiveStallName,
+    ) -> Receiver: ...
+    def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
+    def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
+    def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
 
 @final
 class Sink:
@@ -174,6 +214,17 @@ class Source:
     def read(self) -> list[bytes] | None: ...
     def error(self) -> str | None: ...
     def seek(self, position: float) -> None: ...
+    def close(self) -> None: ...
+
+@final
+class Receiver:
+    @property
+    def id(self) -> int: ...
+    def read(self, limit: int) -> list[ReceivedItem] | None: ...
+    def queued(self) -> float: ...
+    def clear(self) -> None: ...
+    def stats(self) -> dict[str, int]: ...
+    def closed_reason(self) -> ClosedReasonName | None: ...
     def close(self) -> None: ...
 
 @final

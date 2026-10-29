@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
@@ -16,6 +17,9 @@ pub const FRAME: Duration = Duration::from_millis(20);
 pub const SILENCE_FRAME: [u8; 3] = [0xF8, 0xFF, 0xFE];
 pub const VOICE_GATEWAY_VERSION: u8 = 8;
 pub const MAX_DAVE_PROTOCOL_VERSION: u16 = 1;
+pub const DECODE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000];
+pub const MAX_JITTER: Duration = Duration::from_secs(1);
+pub const SPEECH_HANGOVERS: RangeInclusive<Duration> = FRAME..=Duration::from_secs(10);
 
 const BITRATES: RangeInclusive<u32> = 500..=512_000;
 const MAX_PACKET_LOSS: u8 = 100;
@@ -237,14 +241,7 @@ impl SinkOptions {
         if let SinkFormat::Pcm(format) = self.format {
             format.validate()?;
         }
-        if !BUFFERS.contains(&self.buffer) {
-            return Err(CoreError::InvalidRequest(format!(
-                "buffer must be from {:?} to {:?}, got {:?}",
-                BUFFERS.start(),
-                BUFFERS.end(),
-                self.buffer
-            )));
-        }
+        validate_buffer(self.buffer)?;
         if !(self.volume.is_finite() && self.volume >= 0.0) {
             return Err(CoreError::InvalidRequest(format!(
                 "volume must be a finite number of at least 0, got {}",
@@ -252,6 +249,137 @@ impl SinkOptions {
             )));
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiveFormat {
+    Pcm(PcmFormat),
+    Opus,
+    Packets,
+}
+
+impl ReceiveFormat {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pcm(_) => "pcm",
+            Self::Opus => "opus",
+            Self::Packets => "packets",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Overflow {
+    DropOldest,
+}
+
+impl Overflow {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DropOldest => "drop_oldest",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiveStall {
+    Wait,
+}
+
+impl ReceiveStall {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wait => "wait",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReceiveOptions {
+    pub format: ReceiveFormat,
+    pub users: Option<HashSet<UserId>>,
+    pub exclude: HashSet<UserId>,
+    pub include_self: bool,
+    pub buffer: Duration,
+    pub jitter: Duration,
+    pub markers: bool,
+    pub mix: bool,
+    pub overflow: Overflow,
+    pub stall: ReceiveStall,
+}
+
+impl ReceiveOptions {
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if let ReceiveFormat::Pcm(format) = self.format {
+            format.validate()?;
+            if !DECODE_RATES.contains(&format.rate) {
+                return Err(CoreError::InvalidRequest(format!(
+                    "receive decodes at 8, 12, 16, 24 or 48 kHz, got {}; \
+                     resample other rates yourself",
+                    format.rate
+                )));
+            }
+        }
+        validate_buffer(self.buffer)?;
+        if self.jitter > MAX_JITTER {
+            return Err(CoreError::InvalidRequest(format!(
+                "jitter must be at most {MAX_JITTER:?}, got {:?}",
+                self.jitter
+            )));
+        }
+        if self.mix && !matches!(self.format, ReceiveFormat::Pcm(_)) {
+            return Err(CoreError::InvalidRequest(
+                "mix=True needs a PCM format".to_owned(),
+            ));
+        }
+        if self.mix && self.markers {
+            return Err(CoreError::InvalidRequest(
+                "markers=True needs per-user frames; a mix has none".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReceiveTuning {
+    pub hold: Duration,
+    pub hold_packets: usize,
+    pub unmapped_ssrcs: usize,
+    pub arrivals: usize,
+    pub stream_idle: Duration,
+    pub max_conceal: Duration,
+    pub resync: Duration,
+    pub anchor_window: Duration,
+    pub replay_window: u32,
+    pub dave_retries: usize,
+    pub decrypt_tolerance: u32,
+    pub recovery_interval: Duration,
+    pub recoveries_per_user: u8,
+    pub dave_grace: Duration,
+    pub downgrade_expiry: u32,
+}
+
+impl Default for ReceiveTuning {
+    fn default() -> Self {
+        Self {
+            hold: Duration::from_secs(1),
+            hold_packets: 50,
+            unmapped_ssrcs: 16,
+            arrivals: 2_048,
+            stream_idle: Duration::from_secs(30),
+            max_conceal: Duration::from_millis(100),
+            resync: Duration::from_secs(1),
+            anchor_window: Duration::from_secs(10),
+            replay_window: 4_096,
+            dave_retries: 200,
+            decrypt_tolerance: 36,
+            recovery_interval: Duration::from_secs(30),
+            recoveries_per_user: 2,
+            dave_grace: Duration::from_secs(10),
+            downgrade_expiry: 24,
+        }
     }
 }
 
@@ -338,6 +466,17 @@ pub enum DaveOp {
     },
 }
 
+fn validate_buffer(buffer: Duration) -> Result<(), CoreError> {
+    if BUFFERS.contains(&buffer) {
+        return Ok(());
+    }
+    Err(CoreError::InvalidRequest(format!(
+        "buffer must be from {:?} to {:?}, got {buffer:?}",
+        BUFFERS.start(),
+        BUFFERS.end(),
+    )))
+}
+
 const fn gcd(mut a: u32, mut b: u32) -> u32 {
     while b != 0 {
         (a, b) = (b, a % b);
@@ -389,6 +528,21 @@ mod tests {
             buffer,
             volume,
             stall: StallPolicy::Hold,
+        }
+    }
+
+    fn receive(format: ReceiveFormat) -> ReceiveOptions {
+        ReceiveOptions {
+            format,
+            users: None,
+            exclude: HashSet::new(),
+            include_self: false,
+            buffer: Duration::from_secs(2),
+            jitter: Duration::from_millis(100),
+            markers: false,
+            mix: false,
+            overflow: Overflow::DropOldest,
+            stall: ReceiveStall::Wait,
         }
     }
 
@@ -470,6 +624,19 @@ mod tests {
             [SinkFormat::Pcm(pcm(48_000, 2)), SinkFormat::Opus].map(SinkFormat::as_str),
             ["pcm", "opus"]
         );
+        assert_eq!(
+            [
+                ReceiveFormat::Pcm(pcm(16_000, 1)),
+                ReceiveFormat::Opus,
+                ReceiveFormat::Packets
+            ]
+            .map(ReceiveFormat::as_str),
+            ["pcm", "opus", "packets"]
+        );
+        assert_eq!(
+            (Overflow::DropOldest.as_str(), ReceiveStall::Wait.as_str()),
+            ("drop_oldest", "wait")
+        );
     }
 
     #[test]
@@ -548,6 +715,82 @@ mod tests {
             (sink(SinkFormat::Pcm(pcm(8_001, 2)), FRAME, 1.0), "gcd"),
         ] {
             assert!(rejection(options.validate()).contains(field), "{options:?}");
+        }
+    }
+
+    #[test]
+    fn receive_options_are_checked_against_their_bounds_and_the_decode_rates() {
+        let stereo = ReceiveFormat::Pcm(pcm(48_000, 2));
+
+        let accepted = DECODE_RATES
+            .map(|rate| receive(ReceiveFormat::Pcm(pcm(rate, 1))))
+            .into_iter()
+            .chain([
+                ReceiveOptions {
+                    users: Some(HashSet::new()),
+                    jitter: MAX_JITTER,
+                    ..receive(ReceiveFormat::Packets)
+                },
+                ReceiveOptions {
+                    jitter: Duration::ZERO,
+                    mix: true,
+                    ..receive(stereo)
+                },
+                ReceiveOptions {
+                    markers: true,
+                    ..receive(ReceiveFormat::Opus)
+                },
+            ]);
+        for options in accepted {
+            assert!(options.validate().is_ok(), "{options:?}");
+        }
+        for (options, fragment) in [
+            (
+                receive(ReceiveFormat::Pcm(pcm(44_100, 2))),
+                "receive decodes at 8, 12, 16, 24 or 48 kHz, got 44100",
+            ),
+            (receive(ReceiveFormat::Pcm(pcm(16_000, 3))), "channels"),
+            (
+                ReceiveOptions {
+                    mix: true,
+                    ..receive(ReceiveFormat::Opus)
+                },
+                "mix=True needs a PCM format",
+            ),
+            (
+                ReceiveOptions {
+                    mix: true,
+                    ..receive(ReceiveFormat::Packets)
+                },
+                "mix=True needs a PCM format",
+            ),
+            (
+                ReceiveOptions {
+                    mix: true,
+                    markers: true,
+                    ..receive(stereo)
+                },
+                "markers=True needs per-user frames",
+            ),
+            (
+                ReceiveOptions {
+                    jitter: MAX_JITTER + Duration::from_nanos(1),
+                    ..receive(stereo)
+                },
+                "jitter",
+            ),
+            (
+                ReceiveOptions {
+                    buffer: Duration::from_secs(60) + Duration::from_nanos(1),
+                    ..receive(stereo)
+                },
+                "buffer",
+            ),
+        ] {
+            assert!(
+                rejection(options.validate()).contains(fragment),
+                "{options:?}"
+            );
         }
     }
 }

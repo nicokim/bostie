@@ -13,6 +13,10 @@ MAX_BITRATE = 512_000
 MAX_COMPLEXITY = 10
 MIN_BUFFER = 0.02
 MAX_BUFFER = 60.0
+MIN_SPEECH_HANGOVER = 0.02
+MAX_SPEECH_HANGOVER = 10.0
+MAX_JITTER = 1.0
+DECODE_RATES = frozenset({8_000, 12_000, 16_000, 24_000, 48_000})
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +50,14 @@ class Opus:
 
 
 type Format = PCM | Opus
+
+
+@dataclass(frozen=True, slots=True)
+class Packets:
+    """Decrypted packets in arrival order, before the jitter buffer."""
+
+
+type ReceiveFormat = PCM | Opus | Packets
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -92,6 +104,11 @@ class Defaults:
     stage: Literal["listen", "request", "speak"] = "listen"
     sink_buffer: float = 0.2
     stall: Literal["hold", "drop"] = "hold"
+    speech_hangover: float = 0.2
+    receive_buffer: float = 2.0
+    jitter: float = 0.1
+    overflow: Literal["drop_oldest"] = "drop_oldest"
+    receive_stall: Literal["wait"] = "wait"
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.timeout) and self.timeout > 0):
@@ -118,6 +135,26 @@ class Defaults:
             )
         if self.stall not in ("hold", "drop"):
             raise ValueError(f"stall must be 'hold' or 'drop', got {self.stall!r}")
+        if not MIN_SPEECH_HANGOVER <= self.speech_hangover <= MAX_SPEECH_HANGOVER:
+            raise ValueError(
+                f"speech_hangover must be from {MIN_SPEECH_HANGOVER} to "
+                f"{MAX_SPEECH_HANGOVER} seconds, got {self.speech_hangover}"
+            )
+        if not MIN_BUFFER <= self.receive_buffer <= MAX_BUFFER:
+            raise ValueError(
+                f"receive_buffer must be from {MIN_BUFFER} to {MAX_BUFFER} seconds, "
+                f"got {self.receive_buffer}"
+            )
+        if not 0.0 <= self.jitter <= MAX_JITTER:
+            raise ValueError(
+                f"jitter must be from 0 to {MAX_JITTER} seconds, got {self.jitter}"
+            )
+        if self.overflow != "drop_oldest":
+            raise ValueError(f"overflow must be 'drop_oldest', got {self.overflow!r}")
+        if self.receive_stall != "wait":
+            raise ValueError(
+                f"receive_stall must be 'wait', got {self.receive_stall!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)

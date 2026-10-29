@@ -171,6 +171,14 @@ class BufferFull(VoiceError):
     """The sink has no room for this write."""
 
 
+class Empty(VoiceError):
+    """Nothing is queued in the receiver."""
+
+
+class ReceiverClosed(VoiceError):
+    """The receiver ended and has nothing left to read."""
+
+
 class SourceError(VoiceError):
     """A source failed to open, decode or seek."""
 

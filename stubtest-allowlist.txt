@@ -1,1 +1,4 @@
-bostie\._native\.(\w*Delivery|\w*Name|FailureKind)
+bostie\._native\.(\w*Delivery|\w*Name|\w*Item|FailureKind)
+bostie\._native\.__all__
+bostie\._native\.Receiver
+bostie\._native\.Core\.voice_(receive|speech_hangover|ssrcs|user_stats)

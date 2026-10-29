@@ -3,13 +3,13 @@ import math
 from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 import pytest
 
 import bostie
 from bostie import voice
-from bostie.enums import Direction, DisconnectReason, SpeakingFlags, State
+from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlags, State
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 
 VALID = nullcontext()
@@ -81,6 +81,8 @@ def test_encoder_checks_its_bounds(
     [
         ({"sink_buffer": 0.02}, VALID),
         ({"sink_buffer": 60.0}, VALID),
+        ({"speech_hangover": 0.02, "receive_buffer": 0.02, "jitter": 0.0}, VALID),
+        ({"speech_hangover": 10.0, "receive_buffer": 60.0, "jitter": 1.0}, VALID),
         ({"timeout": 0.0}, invalid("timeout")),
         ({"timeout": math.inf}, invalid("timeout")),
         ({"timeout": math.nan}, invalid("timeout")),
@@ -93,6 +95,17 @@ def test_encoder_checks_its_bounds(
         ({"speaking_flags": SpeakingFlags(0)}, invalid("speaking_flags")),
         ({"stage": "shout"}, invalid("stage")),
         ({"stall": "wait"}, invalid("stall")),
+        ({"speech_hangover": 0.019}, invalid("speech_hangover")),
+        ({"speech_hangover": 10.1}, invalid("speech_hangover")),
+        ({"speech_hangover": math.nan}, invalid("speech_hangover")),
+        ({"receive_buffer": 0.019}, invalid("receive_buffer")),
+        ({"receive_buffer": 60.1}, invalid("receive_buffer")),
+        ({"receive_buffer": math.nan}, invalid("receive_buffer")),
+        ({"jitter": -0.01}, invalid("jitter")),
+        ({"jitter": 1.01}, invalid("jitter")),
+        ({"jitter": math.nan}, invalid("jitter")),
+        ({"overflow": "drop_newest"}, invalid("overflow")),
+        ({"receive_stall": "hold"}, invalid("receive_stall")),
     ],
 )
 def test_defaults_check_their_bounds(
@@ -113,6 +126,9 @@ def test_formats_default_to_the_documented_values() -> None:
     assert (defaults.timeout, defaults.sink_buffer) == (10.0, 0.2)
     assert defaults.server_change_delay == 0.0
     assert (defaults.stage, defaults.stall) == ("listen", "hold")
+    assert (defaults.speech_hangover, defaults.receive_buffer) == (0.2, 2.0)
+    assert defaults.jitter == 0.1
+    assert (defaults.overflow, defaults.receive_stall) == ("drop_oldest", "wait")
     assert not defaults.self_deaf
     assert not defaults.self_mute
 
@@ -123,12 +139,21 @@ def test_formats_default_to_the_documented_values() -> None:
         (State, "VoiceStateName"),
         (DisconnectReason, "DisconnectReasonName"),
         (Direction, "VoiceStalledDelivery"),
+        (ClosedReason, "ClosedReasonName"),
     ],
 )
 def test_enum_values_match_the_native_names(enum: type[StrEnum], alias: str) -> None:
     native = [name for name in stub_literals(alias) if name != "voice_stalled"]
 
     assert [member.value for member in enum] == native
+
+
+@pytest.mark.parametrize(
+    ("field", "alias"),
+    [("overflow", "OverflowName"), ("receive_stall", "ReceiveStallName")],
+)
+def test_receive_defaults_take_the_native_names(field: str, alias: str) -> None:
+    assert list(get_args(get_type_hints(voice.Defaults)[field])) == stub_literals(alias)
 
 
 def test_voice_events_need_no_intent_and_have_local_names() -> None:

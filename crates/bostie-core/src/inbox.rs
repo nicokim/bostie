@@ -1,6 +1,6 @@
 use std::mem;
 use std::pin::pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use parking_lot::Mutex;
@@ -101,6 +101,18 @@ pub enum Delivery {
         handle: Handle,
         marker: u64,
         played: bool,
+    },
+    VoiceSpeech {
+        guild: GuildId,
+        user: UserId,
+        ssrc: u32,
+        speaking: bool,
+        at: Instant,
+        duration: Duration,
+    },
+    VoiceDeaf {
+        guild: GuildId,
+        deaf: bool,
     },
 }
 

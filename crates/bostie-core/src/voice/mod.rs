@@ -7,11 +7,15 @@ pub mod dave;
 pub mod media;
 pub mod mixer;
 pub mod pacer;
+pub mod playout;
 pub mod proto;
+pub mod receive;
+pub mod receiver;
 pub mod rtp;
 pub mod session;
 pub mod sink;
 pub mod source;
+pub mod speech;
 pub mod tap;
 #[cfg(test)]
 pub mod testkit;

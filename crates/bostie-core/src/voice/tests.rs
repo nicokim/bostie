@@ -26,8 +26,8 @@ use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, He
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
-    Application, DaveOp, FRAME, FRAME_SAMPLES, PcmFormat, ProposalsOp, SampleFormat, SinkFormat,
-    StallPolicy,
+    Application, DaveOp, FRAME, FRAME_SAMPLES, PcmFormat, ProposalsOp, ReceiveTuning, SampleFormat,
+    SinkFormat, StallPolicy,
 };
 use crate::voice::ws::Timeouts;
 
@@ -64,6 +64,7 @@ fn tuning() -> Tuning {
                 limit: 2,
                 window: Duration::from_secs(1),
             },
+            receive: ReceiveTuning::default(),
         },
         source_prefetch: Duration::from_millis(100),
         http_buffer: 4 * 1024,

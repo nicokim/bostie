@@ -19,7 +19,7 @@ use super::media::{Media, bump};
 use super::proto;
 use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
-use super::types::{ConnectRequest, DisconnectReason, VoiceStatus};
+use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
 use super::ws::Timeouts;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
@@ -41,6 +41,7 @@ pub(crate) struct ConnectionTuning {
     pub(crate) stall_after: Duration,
     pub(crate) ws: Timeouts,
     pub(crate) dave: Recovery,
+    pub(crate) receive: ReceiveTuning,
 }
 
 impl Default for ConnectionTuning {
@@ -56,6 +57,7 @@ impl Default for ConnectionTuning {
             stall_after: Duration::from_secs(2),
             ws: Timeouts::default(),
             dave: Recovery::default(),
+            receive: ReceiveTuning::default(),
         }
     }
 }
