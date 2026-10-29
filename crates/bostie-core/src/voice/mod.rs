@@ -46,18 +46,22 @@ use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inpu
 pub use self::dave::DaveInfo;
 use self::media::Media;
 use self::pacer::{PacerPool, ThreadLoad};
+use self::receive::Reception;
+use self::receiver::Receiver;
 use self::sink::Sink;
 use self::source::Source;
 use self::source::http::Http;
 use self::tap::GatewayTap;
 use self::types::{
-    ConnectRequest, DisconnectReason, EncoderSettings, SinkOptions, SourceSpec, VoiceStatus,
+    ConnectRequest, DisconnectReason, EncoderSettings, ReceiveOptions, SPEECH_HANGOVERS,
+    SinkOptions, SourceSpec, VoiceStatus,
 };
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
 
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
+pub type Counters = Vec<(&'static str, u64)>;
 
 const COMMAND_QUEUE: usize = 32;
 
@@ -103,6 +107,7 @@ struct ConnectionHandle {
     stop: watch::Sender<bool>,
     info: Arc<Info>,
     media: Arc<Media>,
+    pacer_thread: usize,
     supervisor: JoinHandle<()>,
 }
 
@@ -120,6 +125,7 @@ pub struct Diagnostics {
     pub last_close_code: Option<u16>,
     pub history: Vec<HistoryEntry>,
     pub pacer: Option<ThreadLoad>,
+    pub receivers: usize,
     pub counters: Vec<(&'static str, u64)>,
 }
 
@@ -186,18 +192,27 @@ impl Voice {
         {
             return Err(CoreError::VoiceRunning(guild));
         }
+        let tuning = self.shared.tuning.connection;
         let media = Arc::new(Media::new(
             guild,
             request.user,
             request.channel,
             Arc::clone(&self.shared.inbox),
-            self.shared.tuning.connection.stall_after,
+            tuning.stall_after,
+            tuning.receive,
         ));
+        let info = Arc::new(Info::new(guild, request.shard, request.channel));
         let mut lane = media.lane(request.encoder)?;
-        let pacer_thread = self
-            .shared
-            .pacer
-            .assign(Box::new(move |tick| lane.tick(tick)))?;
+        let mut reception = Reception::new(
+            Arc::clone(&media),
+            Arc::clone(&info),
+            request.user,
+            tuning.receive,
+        );
+        let pacer_thread = self.shared.pacer.assign_pair(
+            Box::new(move |tick| lane.tick(tick)),
+            Box::new(move |tick, deadline| reception.tick(tick, deadline)),
+        )?;
         let gateway = self.shared.tap.register(guild, request.shard, request.user);
         let joined = (self.shared.send)(
             request.shard,
@@ -213,12 +228,6 @@ impl Voice {
             self.shared.tap.unregister(guild);
             return Err(error);
         }
-        let info = Arc::new(Info::new(
-            guild,
-            request.shard,
-            request.channel,
-            pacer_thread,
-        ));
         let (commands, command_receiver) = mpsc::channel(COMMAND_QUEUE);
         let (stop, stopped) = watch::channel(false);
         let connection = Connection::new(
@@ -246,6 +255,7 @@ impl Voice {
                 stop,
                 info,
                 media,
+                pacer_thread,
                 supervisor,
             },
         );
@@ -326,8 +336,12 @@ impl Voice {
     }
 
     pub fn diagnostics(&self, guild: GuildId) -> Result<Diagnostics, CoreError> {
-        let (info, media) = self.with_connection(guild, |handle| {
-            (Arc::clone(&handle.info), Arc::clone(&handle.media))
+        let (info, media, pacer_thread) = self.with_connection(guild, |handle| {
+            (
+                Arc::clone(&handle.info),
+                Arc::clone(&handle.media),
+                handle.pacer_thread,
+            )
         })?;
         let view = info.view();
         let members = info.members.lock().iter().copied().collect();
@@ -344,7 +358,8 @@ impl Voice {
             members,
             last_close_code: view.last_close,
             history: view.history.into(),
-            pacer: self.shared.pacer.threads().get(info.pacer_thread).copied(),
+            pacer: self.shared.pacer.threads().get(pacer_thread).copied(),
+            receivers: media.open_receivers.load(Ordering::Relaxed),
             counters: stats(&media),
         })
     }
@@ -362,6 +377,54 @@ impl Voice {
         }
         sinks.push(Arc::clone(&sink));
         Ok(sink)
+    }
+
+    pub fn open_receiver(
+        &self,
+        guild: GuildId,
+        options: ReceiveOptions,
+    ) -> Result<Arc<Receiver>, CoreError> {
+        let media = self.media(guild)?;
+        let receiver = Arc::new(Receiver::new(
+            self.next_handle(),
+            options,
+            Arc::clone(&self.shared.inbox),
+        )?);
+        if media.add_receiver(&receiver) {
+            Ok(receiver)
+        } else {
+            Err(CoreError::UnknownVoice(guild))
+        }
+    }
+
+    pub fn set_speech_hangover(&self, guild: GuildId, hangover: Duration) -> Result<(), CoreError> {
+        if !SPEECH_HANGOVERS.contains(&hangover) {
+            return Err(CoreError::InvalidRequest(format!(
+                "speech hangover must be from {:?} to {:?}, got {hangover:?}",
+                SPEECH_HANGOVERS.start(),
+                SPEECH_HANGOVERS.end(),
+            )));
+        }
+        self.media(guild)?.set_speech_hangover(hangover);
+        Ok(())
+    }
+
+    pub fn ssrcs(&self, guild: GuildId) -> Result<Vec<(u32, UserId)>, CoreError> {
+        let info = self.with_connection(guild, |handle| Arc::clone(&handle.info))?;
+        let ssrcs = info.ssrcs.lock();
+        Ok(ssrcs
+            .iter()
+            .map(|(&ssrc, &(user, _))| (ssrc, user))
+            .collect())
+    }
+
+    pub fn user_stats(&self, guild: GuildId) -> Result<Vec<(UserId, Counters)>, CoreError> {
+        let media = self.media(guild)?;
+        let users = media.users.lock();
+        Ok(users
+            .iter()
+            .map(|(&user, counters)| (user, counters.snapshot()))
+            .collect())
     }
 
     pub fn open_source(&self, spec: SourceSpec) -> Result<Arc<Source>, CoreError> {
@@ -452,6 +515,11 @@ fn stats(media: &Media) -> Vec<(&'static str, u64)> {
         ("recoveries", dave.recoveries),
         ("dave_panics", dave.dave_panics),
         ("rejected_proposals", dave.rejected_proposals),
+    ]);
+    stats.extend(media.receive.snapshot());
+    stats.extend([
+        ("receive_recoveries", dave.receive_recoveries),
+        ("decrypt_panics", dave.decrypt_panics),
     ]);
     stats
 }

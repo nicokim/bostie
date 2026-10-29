@@ -19,6 +19,7 @@ use super::crypto::{Cipher, Mode};
 use super::dave::{Dave, Outbound, SendMode};
 use super::media::{Transport, bump};
 use super::proto::{self, Inbound, ProtoError, SessionDescription};
+use super::receive::Intake;
 use super::types::{DaveOp, DisconnectReason};
 use super::udp::{self, Answer, DiscoveryError};
 use super::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
@@ -296,6 +297,7 @@ impl<'c> Session<'c> {
                 () = until(speak) => self.speak().await,
                 () = self.conn.media.lost.notified() => Err(SessionEnd::MediaLost),
                 () = self.conn.media.exhausted.notified() => Err(SessionEnd::NonceExhausted),
+                () = self.conn.media.recover.notified() => self.receive_recovery().await,
                 () = until(deadline) => Err(SessionEnd::TimedOut),
             };
             if let Err(end) = step {
@@ -392,7 +394,12 @@ impl<'c> Session<'c> {
                 Ok(())
             }
             Inbound::Speaking { user, ssrc, flags } => {
-                self.conn.info.ssrcs.lock().insert(ssrc, user);
+                {
+                    let mut ssrcs = self.conn.info.ssrcs.lock();
+                    if ssrcs.get(&ssrc).is_none_or(|&(owner, _)| owner != user) {
+                        ssrcs.insert(ssrc, (user, std::time::Instant::now()));
+                    }
+                }
                 self.conn.push(Delivery::VoiceSpeaking {
                     guild: self.conn.guild,
                     user,
@@ -458,14 +465,19 @@ impl<'c> Session<'c> {
         let receiver = {
             let socket = Arc::clone(&socket);
             let media = Arc::clone(&self.conn.media);
+            let mut intake = Intake::new(
+                Arc::clone(&media),
+                Arc::clone(&sender),
+                self.conn.tuning.receive.replay_window,
+            );
             let ssrc = ready.ssrc;
             tokio::spawn(async move {
                 let received = udp::receive(
                     &socket,
                     ssrc,
                     &answer_slot,
-                    |_| bump(&media.counters.packets_received),
-                    |_| {},
+                    |packet| intake.rtp(packet),
+                    |packet| media.rtcp(packet),
                 );
                 if let Err(error) = received.await {
                     debug!(%error, "the voice UDP receiver stopped");
@@ -543,9 +555,11 @@ impl<'c> Session<'c> {
             .await?;
         let (user, channel) = (self.conn.user, self.conn.dave_channel());
         let protocol_version = description.dave_protocol_version;
-        let recovery = self.conn.tuning.dave;
+        let (recovery, receive) = (self.conn.tuning.dave, self.conn.tuning.receive);
         let start = move || {
-            let mut dave = Dave::new(user, channel).with_recovery(recovery);
+            let mut dave = Dave::new(user, channel)
+                .with_recovery(recovery)
+                .with_receive(receive);
             let mut out = Vec::new();
             dave.start(protocol_version, &mut out).map(|()| (dave, out))
         };
@@ -616,7 +630,7 @@ impl<'c> Session<'c> {
                     .info
                     .ssrcs
                     .lock()
-                    .retain(|_, owner| *owner != user);
+                    .retain(|_, (owner, _)| *owner != user);
                 self.conn.media.others.store(others, Ordering::Relaxed);
                 self.conn
                     .media
@@ -654,6 +668,24 @@ impl<'c> Session<'c> {
             Err(error) => return Err(SessionEnd::DaveFailed(error.to_string())),
         }
         Ok(())
+    }
+
+    async fn receive_recovery(&mut self) -> Result<(), SessionEnd> {
+        let media = Arc::clone(&self.conn.media);
+        let handled = spawn_blocking(move || {
+            media.with_dave(|dave| {
+                let mut out = Vec::new();
+                let result = dave.receive_recovery(std::time::Instant::now(), &mut out);
+                (result, out)
+            })
+        })
+        .await;
+        let (result, out) = handled
+            .map_err(|error| SessionEnd::DaveFailed(format!("a DAVE call failed: {error}")))?;
+        self.send_outbound(out).await?;
+        result
+            .map(|_| ())
+            .map_err(|error| SessionEnd::DaveFailed(error.to_string()))
     }
 
     async fn send_outbound(&mut self, out: Vec<Outbound>) -> Result<(), SessionEnd> {

@@ -1,8 +1,10 @@
+use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 use tracing::debug;
@@ -14,22 +16,27 @@ use crate::voice::crypto::Cipher;
 use crate::voice::dave::{Dave, DaveCounters, DaveInfo, EncryptFailure, SendMode};
 use crate::voice::mixer::{Mixed, Mixer};
 use crate::voice::pacer::Tick;
+use crate::voice::receiver::{Ended, Receiver};
 use crate::voice::rtp::{self, HEADER_LEN};
 use crate::voice::sink::Sink;
-use crate::voice::types::{Direction, EncoderSettings, FRAME_SAMPLES, SILENCE_FRAME};
+use crate::voice::types::{
+    Direction, EncoderSettings, FRAME_SAMPLES, ReceiveFormat, ReceiveTuning, SILENCE_FRAME,
+};
 
 pub const SILENCE_TAIL: u8 = 5;
 
 const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
+const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
+const SENDER_REPORT: u8 = 200;
 
-macro_rules! send_counters {
-    ($($name:ident),+ $(,)?) => {
+macro_rules! counters {
+    ($counters:ident { $($name:ident),+ $(,)? }) => {
         #[derive(Debug, Default)]
-        pub struct SendCounters {
+        pub struct $counters {
             $(pub $name: AtomicU64,)+
         }
 
-        impl SendCounters {
+        impl $counters {
             pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
                 vec![$((stringify!($name), self.$name.load(Ordering::Relaxed)),)+]
             }
@@ -37,7 +44,7 @@ macro_rules! send_counters {
     };
 }
 
-send_counters!(
+counters!(SendCounters {
     packets_sent,
     bytes_sent,
     passthrough_packets,
@@ -58,7 +65,57 @@ send_counters!(
     packets_received,
     resumes,
     rejoins,
-);
+});
+
+counters!(ReceiveCounters {
+    transport_failures,
+    replays,
+    own_echoes,
+    unmapped,
+    duplicates,
+    late_packets,
+    undecryptable,
+    invalid_payloads,
+    invalid_extensions,
+    decrypt_busy,
+    receive_deferred,
+    arrivals_dropped,
+    rx_panics,
+    rtcp_sender_reports,
+});
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UserCounters {
+    pub packets: u64,
+    pub lost: u64,
+    pub duplicates: u64,
+    pub decrypt_failures: u64,
+    pub invalid_payloads: u64,
+}
+
+impl UserCounters {
+    pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
+        vec![
+            ("packets", self.packets),
+            ("lost", self.lost),
+            ("duplicates", self.duplicates),
+            ("decrypt_failures", self.decrypt_failures),
+            ("invalid_payloads", self.invalid_payloads),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Arrival {
+    pub ssrc: u32,
+    pub sequence: u16,
+    pub timestamp: u32,
+    pub at: Instant,
+    pub payload: Option<Bytes>,
+    pub silence: bool,
+    pub extension: Option<(u16, Bytes)>,
+    pub own: bool,
+}
 
 pub fn bump(counter: &AtomicU64) {
     counter.fetch_add(1, Ordering::Relaxed);
@@ -76,12 +133,24 @@ pub struct Transport {
 pub struct DaveView {
     pub info: DaveInfo,
     pub counters: DaveCounters,
+    pub session_built: bool,
+}
+
+impl DaveView {
+    fn of(dave: &Dave) -> Self {
+        Self {
+            info: dave.info(),
+            counters: dave.counters(),
+            session_built: dave.generation() > 0,
+        }
+    }
 }
 
 pub struct Media {
     guild: GuildId,
     inbox: Arc<Inbox>,
     stall_after: Duration,
+    arrival_limit: usize,
     pub transport: Mutex<Option<Arc<Transport>>>,
     pub gate: AtomicU8,
     pub dave: Mutex<Dave>,
@@ -93,6 +162,15 @@ pub struct Media {
     pub closed: AtomicBool,
     pub lost: Notify,
     pub exhausted: Notify,
+    pub recover: Notify,
+    pub arrivals: Mutex<VecDeque<Arrival>>,
+    pub receivers: Mutex<Vec<Arc<Receiver>>>,
+    pub open_receivers: AtomicUsize,
+    pub packet_receivers: AtomicUsize,
+    pub self_receivers: AtomicUsize,
+    pub speech_hangover: AtomicU64,
+    pub receive: ReceiveCounters,
+    pub users: Mutex<HashMap<UserId, UserCounters>>,
     #[cfg(test)]
     pub faults: Faults,
 }
@@ -104,16 +182,15 @@ impl Media {
         channel: ChannelId,
         inbox: Arc<Inbox>,
         stall_after: Duration,
+        receive: ReceiveTuning,
     ) -> Self {
-        let dave = Dave::new(user, channel);
-        let view = DaveView {
-            info: dave.info(),
-            counters: dave.counters(),
-        };
+        let dave = Dave::new(user, channel).with_receive(receive);
+        let view = DaveView::of(&dave);
         Self {
             guild,
             inbox,
             stall_after,
+            arrival_limit: receive.arrivals,
             transport: Mutex::new(None),
             gate: AtomicU8::new(SendMode::Hold as u8),
             dave: Mutex::new(dave),
@@ -125,8 +202,96 @@ impl Media {
             closed: AtomicBool::new(false),
             lost: Notify::new(),
             exhausted: Notify::new(),
+            recover: Notify::new(),
+            arrivals: Mutex::new(VecDeque::new()),
+            receivers: Mutex::new(Vec::new()),
+            open_receivers: AtomicUsize::new(0),
+            packet_receivers: AtomicUsize::new(0),
+            self_receivers: AtomicUsize::new(0),
+            speech_hangover: AtomicU64::new(nanos(DEFAULT_SPEECH_HANGOVER)),
+            receive: ReceiveCounters::default(),
+            users: Mutex::new(HashMap::new()),
             #[cfg(test)]
             faults: Faults::default(),
+        }
+    }
+
+    pub fn guild(&self) -> GuildId {
+        self.guild
+    }
+
+    pub fn stall_after(&self) -> Duration {
+        self.stall_after
+    }
+
+    pub fn push(&self, delivery: Delivery) {
+        self.inbox.push(delivery);
+    }
+
+    pub fn arrive(&self, arrival: Arrival) {
+        let mut arrivals = self.arrivals.lock();
+        if arrivals.len() >= self.arrival_limit && arrivals.pop_front().is_some() {
+            bump(&self.receive.arrivals_dropped);
+        }
+        arrivals.push_back(arrival);
+    }
+
+    pub fn rtcp(&self, packet: &[u8]) {
+        if packet.get(1) == Some(&SENDER_REPORT) {
+            bump(&self.receive.rtcp_sender_reports);
+        }
+    }
+
+    pub fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
+        let mut receivers = self.receivers.lock();
+        if self.closed.load(Ordering::Acquire) {
+            return false;
+        }
+        self.count_receiver(receiver, |count| {
+            count.fetch_add(1, Ordering::Relaxed);
+        });
+        receivers.push(Arc::clone(receiver));
+        true
+    }
+
+    pub fn drop_ended_receivers(&self, open: &mut Vec<Arc<Receiver>>) {
+        let mut receivers = self.receivers.lock();
+        receivers.retain(|receiver| {
+            let ended = receiver.is_closed();
+            if ended {
+                self.count_receiver(receiver, |count| {
+                    count.fetch_sub(1, Ordering::Relaxed);
+                });
+            }
+            !ended
+        });
+        open.clear();
+        open.extend(receivers.iter().cloned());
+    }
+
+    pub fn end_receivers(&self, why: Ended) {
+        for receiver in self.receivers.lock().iter() {
+            receiver.end(why);
+        }
+    }
+
+    pub fn speech_hangover(&self) -> Duration {
+        Duration::from_nanos(self.speech_hangover.load(Ordering::Relaxed))
+    }
+
+    pub fn set_speech_hangover(&self, hangover: Duration) {
+        self.speech_hangover
+            .store(nanos(hangover), Ordering::Relaxed);
+    }
+
+    fn count_receiver(&self, receiver: &Receiver, change: impl Fn(&AtomicUsize)) {
+        let options = receiver.options();
+        change(&self.open_receivers);
+        if options.format == ReceiveFormat::Packets {
+            change(&self.packet_receivers);
+        }
+        if options.include_self {
+            change(&self.self_receivers);
         }
     }
 
@@ -169,37 +334,44 @@ impl Media {
         for sink in sinks {
             sink.close();
         }
+        self.end_receivers(Ended::Disconnected);
     }
 
     pub fn gate(&self) -> SendMode {
         SendMode::from_byte(self.gate.load(Ordering::Acquire))
     }
 
-    fn refresh(&self, dave: &Dave) {
+    pub fn refresh(&self, dave: &Dave) {
         let mode = if self.transport.lock().is_some() {
             dave.send_mode()
         } else {
             SendMode::Hold
         };
         self.gate.store(mode as u8, Ordering::Release);
-        *self.dave_view.lock() = DaveView {
-            info: dave.info(),
-            counters: dave.counters(),
-        };
+        *self.dave_view.lock() = DaveView::of(dave);
     }
 
-    fn protocol_version(&self) -> u16 {
+    pub fn protocol_version(&self) -> u16 {
         self.dave_view.lock().info.protocol_version
     }
 
-    fn stalled(&self, stalled: bool, duration: Duration) {
+    pub fn receive_state(&self) -> (u16, bool) {
+        let view = self.dave_view.lock();
+        (view.info.protocol_version, view.session_built)
+    }
+
+    pub fn stalled(&self, direction: Direction, stalled: bool, duration: Duration) {
         self.inbox.push(Delivery::VoiceStalled {
             guild: self.guild,
-            direction: Direction::Send,
+            direction,
             stalled,
             duration,
         });
     }
+}
+
+fn nanos(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -317,10 +489,14 @@ impl Lane {
             }
             None => return,
         };
+        let stamp = self.rtp.map(|rtp| (rtp.sequence, rtp.timestamp));
         let sent = self
             .rtp
             .as_mut()
             .is_some_and(|rtp| send(&self.media, transport, rtp, &mut self.packet, payload));
+        if sent {
+            tee(&self.media, transport, stamp, payload);
+        }
         counters
             .encode_errors
             .store(self.mixer.encode_errors(), Ordering::Relaxed);
@@ -379,27 +555,28 @@ impl Lane {
             Err,
         );
         drop(dave);
-        counters
-            .encode_errors
-            .store(self.mixer.encode_errors(), Ordering::Relaxed);
-        match encrypted {
-            Ok(()) => {}
-            Err(EncryptFailure::NotReady) => {
-                bump(&counters.dave_not_ready);
-                return;
+        if let Err(failure) = encrypted {
+            counters
+                .encode_errors
+                .store(self.mixer.encode_errors(), Ordering::Relaxed);
+            match failure {
+                EncryptFailure::NotReady => bump(&counters.dave_not_ready),
+                EncryptFailure::Failed => bump(&counters.encrypt_failures),
             }
-            Err(EncryptFailure::Failed) => {
-                bump(&counters.encrypt_failures);
-                return;
-            }
+            return;
         }
+        let stamp = self.rtp.map(|rtp| (rtp.sequence, rtp.timestamp));
         let sent = self
             .rtp
             .as_mut()
             .is_some_and(|rtp| send(&media, transport, rtp, &mut self.packet, &self.dave_out));
         if sent {
             bump(&counters.dave_frames);
+            tee(&media, transport, stamp, payload);
         }
+        counters
+            .encode_errors
+            .store(self.mixer.encode_errors(), Ordering::Relaxed);
         self.after_send(sent, now);
     }
 
@@ -412,7 +589,7 @@ impl Lane {
             && mem::take(&mut self.stall.reported)
         {
             self.media
-                .stalled(false, now.saturating_duration_since(since));
+                .stalled(Direction::Send, false, now.saturating_duration_since(since));
         }
     }
 
@@ -433,7 +610,7 @@ impl Lane {
         let duration = now.saturating_duration_since(since);
         if !self.stall.reported && duration >= self.media.stall_after {
             self.stall.reported = true;
-            self.media.stalled(true, duration);
+            self.media.stalled(Direction::Send, true, duration);
         }
     }
 }
@@ -443,6 +620,25 @@ impl Drop for Lane {
         self.media.closed.store(true, Ordering::Release);
         self.media.lost.notify_one();
     }
+}
+
+fn tee(media: &Media, transport: &Transport, stamp: Option<(u16, u32)>, payload: &[u8]) {
+    let Some((sequence, timestamp)) = stamp else {
+        return;
+    };
+    if media.self_receivers.load(Ordering::Relaxed) == 0 {
+        return;
+    }
+    media.arrive(Arrival {
+        ssrc: transport.ssrc,
+        sequence,
+        timestamp,
+        at: Instant::now(),
+        payload: Some(Bytes::copy_from_slice(payload)),
+        silence: payload == SILENCE_FRAME,
+        extension: None,
+        own: true,
+    });
 }
 
 fn count_mixed(counters: &SendCounters, mixed: &Mixed<'_>) {
@@ -606,6 +802,7 @@ mod tests {
                 ChannelId::from(CHANNEL),
                 Arc::clone(&inbox),
                 STALL,
+                ReceiveTuning::default(),
             ));
             let lane = media.lane(settings()).unwrap();
             Self {
@@ -1161,6 +1358,127 @@ mod tests {
 
         assert_eq!(rig.media.sinks.lock().len(), 1);
         assert_eq!(rig.lane.sinks.len(), 1);
+    }
+
+    #[test]
+    fn include_self_tees_exactly_the_packets_sent() {
+        let mut rig = Rig::new();
+        let teed = |rig: &Rig| -> Vec<(u32, u16, u32, Vec<u8>, bool)> {
+            rig.media
+                .arrivals
+                .lock()
+                .drain(..)
+                .map(|arrival| {
+                    let payload = arrival.payload.unwrap().to_vec();
+                    (
+                        arrival.ssrc,
+                        arrival.sequence,
+                        arrival.timestamp,
+                        payload,
+                        arrival.own,
+                    )
+                })
+                .collect()
+        };
+        rig.media.self_receivers.store(1, Ordering::Relaxed);
+        rig.media
+            .faults
+            .nonce_start
+            .store(u32::MAX - 3, Ordering::Relaxed);
+        let sink = rig.pcm_sink(StallPolicy::Hold);
+        sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
+        rig.tick(2);
+        let held = teed(&rig);
+        rig.connect(&KEY);
+        rig.media.with_dave(|dave| {
+            let mut out = Vec::new();
+            dave.start(1, &mut out).unwrap();
+        });
+        rig.tick(2);
+        let alone = teed(&rig);
+        rig.plain();
+        sink.write(&tone(FRAME_SAMPLES * 3)).unwrap();
+        rig.tick(5);
+
+        let sent: Vec<(u32, u16, u32, Vec<u8>, bool)> = rig
+            .packets(3)
+            .into_iter()
+            .map(|packet| {
+                let header = packet.header;
+                (
+                    header.ssrc,
+                    header.sequence,
+                    header.timestamp,
+                    packet.payload,
+                    true,
+                )
+            })
+            .collect();
+        assert!(held.is_empty());
+        assert!(alone.is_empty());
+        assert_eq!(teed(&rig), sent);
+        rig.sent(3);
+
+        let mut rig = Rig::new();
+        rig.connect(&KEY);
+        let mut call = encrypting(&mut rig);
+        rig.media.self_receivers.store(1, Ordering::Relaxed);
+        let sink = rig.sink(SinkFormat::Opus, StallPolicy::Hold);
+        let opus = opus_packets(2);
+        for packet in &opus {
+            sink.write(packet).unwrap();
+        }
+        rig.tick(2);
+
+        let sent = rig.packets(2);
+        let teed = teed(&rig);
+        for ((packet, tee), opus) in sent.iter().zip(&teed).zip(&opus) {
+            assert_eq!(decrypt(&mut call, &packet.payload), opus.to_vec());
+            assert_eq!(tee.3, opus.to_vec());
+            assert_eq!(
+                (tee.1, tee.2),
+                (packet.header.sequence, packet.header.timestamp)
+            );
+        }
+        assert_eq!(teed.len(), 2);
+    }
+
+    #[test]
+    fn the_arrival_queue_drops_the_oldest_beyond_its_bound() {
+        let (bell, _receiver) = bell::pair().unwrap();
+        let media = Media::new(
+            GuildId::from(GUILD),
+            UserId::from(BOT),
+            ChannelId::from(CHANNEL),
+            Arc::new(Inbox::new(bell)),
+            STALL,
+            ReceiveTuning {
+                arrivals: 2,
+                ..ReceiveTuning::default()
+            },
+        );
+
+        for sequence in 0..3 {
+            media.arrive(Arrival {
+                ssrc: SSRC,
+                sequence,
+                timestamp: 0,
+                at: Instant::now(),
+                payload: None,
+                silence: false,
+                extension: None,
+                own: false,
+            });
+        }
+
+        let kept: Vec<u16> = media
+            .arrivals
+            .lock()
+            .iter()
+            .map(|arrival| arrival.sequence)
+            .collect();
+        assert_eq!(kept, [1, 2]);
+        assert_eq!(media.receive.arrivals_dropped.load(Ordering::Relaxed), 1);
     }
 
     #[test]

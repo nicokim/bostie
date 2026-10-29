@@ -17,6 +17,7 @@ use super::crypto::Mode;
 use super::dave::Recovery;
 use super::media::{Media, bump};
 use super::proto;
+use super::receiver::Ended;
 use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
@@ -155,8 +156,7 @@ pub struct InfoView {
 pub struct Info {
     pub guild: GuildId,
     pub shard: ShardId,
-    pub pacer_thread: usize,
-    pub ssrcs: Mutex<HashMap<u32, UserId>>,
+    pub ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
     pub members: Mutex<HashSet<UserId>>,
     latency_ws: AtomicU64,
     latency_udp: AtomicU64,
@@ -164,11 +164,10 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn new(guild: GuildId, shard: ShardId, channel: ChannelId, pacer_thread: usize) -> Self {
+    pub fn new(guild: GuildId, shard: ShardId, channel: ChannelId) -> Self {
         Self {
             guild,
             shard,
-            pacer_thread,
             ssrcs: Mutex::new(HashMap::new()),
             members: Mutex::new(HashSet::new()),
             latency_ws: AtomicU64::new(UNKNOWN_LATENCY),
@@ -312,6 +311,7 @@ pub(super) struct Connection {
     target: ChannelId,
     requested: Option<ChannelId>,
     reported: Option<[bool; 4]>,
+    deaf: bool,
     status: VoiceStatus,
     step: Step,
     timeout: Duration,
@@ -368,6 +368,7 @@ impl Connection {
             target: request.channel,
             requested: Some(request.channel),
             reported: None,
+            deaf: false,
             status: VoiceStatus::Connecting,
             step: Step::VoiceEvents,
             timeout: request.timeout,
@@ -488,11 +489,18 @@ impl Connection {
                         suppress: state.suppress,
                     });
                 }
+                if mem::replace(&mut self.deaf, state.deaf) != state.deaf {
+                    self.push(Delivery::VoiceDeaf {
+                        guild: self.guild,
+                        deaf: state.deaf,
+                    });
+                }
                 match state.channel {
                     None => return Some(GatewayEvent::Removed),
                     Some(channel) if channel != self.target => {
                         let from = mem::replace(&mut self.target, channel);
                         self.info.update(|view| view.channel = channel);
+                        self.media.end_receivers(Ended::Moved);
                         self.push(Delivery::VoiceMoved {
                             guild: self.guild,
                             from,
@@ -886,7 +894,7 @@ mod tests {
 
     #[test]
     fn latency_is_unknown_until_measured() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2), 0);
+        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2));
         assert_eq!(info.latency(), (None, None));
 
         info.set_latency_ws(Duration::from_millis(12));
@@ -903,7 +911,7 @@ mod tests {
 
     #[test]
     fn the_history_keeps_the_last_twenty_changes() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2), 0);
+        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2));
         for index in 0..25 {
             info.record(VoiceStatus::Reconnecting, None, Some(index), "step");
         }

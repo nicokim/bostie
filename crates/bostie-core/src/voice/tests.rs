@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::mem;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -20,14 +21,16 @@ use crate::voice::crypto::Mode;
 use crate::voice::dave::Recovery;
 use crate::voice::dave::{Fault, MlsCall, Outbound, SendMode};
 use crate::voice::proto::op;
+use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
 use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
 use crate::voice::testkit::mls::{Call, Signal};
-use crate::voice::testkit::sfu::{Packet, Sfu};
+use crate::voice::testkit::sfu::{Packet, Sealing, Sfu};
 use crate::voice::types::{
-    Application, DaveOp, FRAME, FRAME_SAMPLES, PcmFormat, ProposalsOp, ReceiveTuning, SampleFormat,
-    SinkFormat, StallPolicy,
+    Application, DaveOp, Direction, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp,
+    ReceiveFormat, ReceiveOptions, ReceiveStall, ReceiveTuning, SampleFormat, SinkFormat,
+    StallPolicy,
 };
 use crate::voice::ws::Timeouts;
 
@@ -64,7 +67,10 @@ fn tuning() -> Tuning {
                 limit: 2,
                 window: Duration::from_secs(1),
             },
-            receive: ReceiveTuning::default(),
+            receive: ReceiveTuning {
+                hold: WAIT,
+                ..ReceiveTuning::default()
+            },
         },
         source_prefetch: Duration::from_millis(100),
         http_buffer: 4 * 1024,
@@ -452,7 +458,7 @@ impl Harness {
     fn offer_state(&self, guild: GuildId, channel: Option<u64>, extra: &str) {
         let channel = channel.map_or_else(|| "null".to_owned(), |id| format!(r#""{id}""#));
         let data = format!(
-            r#"{{"guild_id":"{guild}","user_id":"{}","channel_id":{channel},"session_id":"{}","deaf":false{extra}}}"#,
+            r#"{{"guild_id":"{guild}","user_id":"{}","channel_id":{channel},"session_id":"{}"{extra}}}"#,
             bot(),
             Config::default().session_id,
         );
@@ -1533,12 +1539,13 @@ async fn the_last_leave_arriving_after_a_new_connect_is_not_a_removal() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn disconnect_closes_with_1000_leaves_and_closes_the_sinks() {
+async fn disconnect_closes_with_1000_leaves_and_closes_the_sinks_and_receivers() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 3)).unwrap();
     let (marker, _) = sink.mark().unwrap();
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
 
     harness.voice.disconnect(guild()).unwrap();
     let (reason, code, _) = harness.ended().await;
@@ -1558,6 +1565,10 @@ async fn disconnect_closes_with_1000_leaves_and_closes_the_sinks() {
     assert_eq!(harness.leaves(), 1);
     assert!(sink.is_closed());
     assert!(!played);
+    assert_eq!(
+        receiver.read(256).unwrap(),
+        ReceiveRead::Ended(Ended::Disconnected)
+    );
     assert!(harness.voice.disconnect(guild()).is_ok());
     assert!(matches!(
         harness.voice.stats(guild()),
@@ -1998,7 +2009,7 @@ async fn a_server_without_an_endpoint_closes_the_socket_and_stops_keepalives() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn each_change_of_mute_or_suppress_is_reported_once_with_all_four_flags() {
+async fn each_change_of_the_mute_suppress_and_deaf_flags_is_reported_once() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let flags = |delivery: &Delivery| match delivery {
@@ -2017,16 +2028,29 @@ async fn each_change_of_mute_or_suppress_is_reported_once_with_all_four_flags() 
     assert_eq!(harness.wait_for(flags).await, [false, false, true, false]);
     harness.offer_state(guild(), Some(CHANNEL), r#","mute":true,"suppress":true"#);
     assert_eq!(harness.wait_for(flags).await, [false, false, true, true]);
-    harness.offer_state(guild(), Some(CHANNEL), r#","mute":true,"suppress":true"#);
+    let deafened = r#","mute":true,"suppress":true,"deaf":true"#;
+    harness.offer_state(guild(), Some(CHANNEL), deafened);
+    let deaf = harness
+        .wait_for(|delivery| match delivery {
+            Delivery::VoiceDeaf { deaf, .. } => Some(*deaf),
+            _ => None,
+        })
+        .await;
+    harness.offer_state(guild(), Some(CHANNEL), deafened);
     harness.server.gateway.send(
         op::SPEAKING,
         json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
     );
     harness.speaking_from(90).await;
 
+    assert!(deaf);
     assert_eq!(
         harness.count(|delivery| matches!(delivery, Delivery::VoiceSelf { .. })),
         3
+    );
+    assert_eq!(
+        harness.count(|delivery| matches!(delivery, Delivery::VoiceDeaf { .. })),
+        1
     );
 }
 
@@ -2399,14 +2423,8 @@ async fn clients_joining_and_leaving_update_members_ssrcs_and_speaking() {
             _ => None,
         })
         .await;
-    let ssrcs = |harness: &Harness| {
-        harness.voice.shared.connections.lock()[&guild()]
-            .info
-            .ssrcs
-            .lock()
-            .clone()
-    };
-    assert_eq!(ssrcs(&harness).get(&55), Some(&user(LATE_PEER)));
+    let ssrcs = |harness: &Harness| harness.voice.ssrcs(guild()).unwrap();
+    assert_eq!(ssrcs(&harness), [(55, user(LATE_PEER))]);
     harness
         .pump(&mut call, |harness, _| {
             harness.server.count(op::SPEAKING) > speaking
@@ -2696,4 +2714,385 @@ async fn sinks_and_sources_never_share_an_id() {
     let last = harness.sink(pcm(), StallPolicy::Hold).id();
 
     assert!(first != source && source != last && first != last);
+}
+
+fn receiving(format: ReceiveFormat) -> ReceiveOptions {
+    ReceiveOptions {
+        format,
+        users: None,
+        exclude: HashSet::new(),
+        include_self: false,
+        buffer: Duration::from_secs(10),
+        jitter: Duration::ZERO,
+        markers: false,
+        mix: false,
+        overflow: Overflow::DropOldest,
+        stall: ReceiveStall::Wait,
+    }
+}
+
+fn frames(items: &[Item]) -> Vec<(Option<UserId>, Bytes)> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Frame { user, data, .. } => Some((*user, data.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn spoken(peer: u64, packets: &[Bytes]) -> Vec<(Option<UserId>, Bytes)> {
+    packets
+        .iter()
+        .map(|packet| (Some(user(peer)), packet.clone()))
+        .collect()
+}
+
+impl Harness {
+    fn receiver(&self, options: ReceiveOptions) -> Arc<Receiver> {
+        self.voice.open_receiver(guild(), options).unwrap()
+    }
+
+    async fn speaking(&mut self, peer: u64, ssrc: u32) {
+        self.server.gateway.send(
+            op::SPEAKING,
+            json!({"user_id": peer.to_string(), "ssrc": ssrc, "speaking": 1}),
+        );
+        self.speaking_from(ssrc).await;
+    }
+
+    fn say(&self, ssrc: u32, sequence: u16, payload: &[u8]) {
+        self.server.sfu.send(
+            ssrc,
+            sequence,
+            u32::from(sequence) * 960,
+            payload,
+            Sealing::default(),
+        );
+    }
+
+    fn talk(&self, call: &mut Call, peer: u64, ssrc: u32, sequence: u16, opus: &[u8]) {
+        let frame = call.speak(user(peer), opus);
+        self.say(ssrc, sequence, &frame);
+    }
+
+    async fn hear(&mut self, receiver: &Receiver, count: usize) -> Vec<Item> {
+        let deadline = Instant::now() + WAIT;
+        let mut items = Vec::new();
+        while frames(&items).len() < count {
+            assert!(
+                Instant::now() < deadline,
+                "only {} of {count} frames arrived: {items:?}",
+                frames(&items).len()
+            );
+            self.tick(1);
+            if let ReceiveRead::Items(batch) = receiver.read(256).unwrap() {
+                items.extend(batch);
+            }
+            sleep(Duration::from_millis(2)).await;
+        }
+        items
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_peer_heard_before_its_op_5_is_received_under_its_user_id() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let packets = opus(10);
+
+    for (sequence, packet) in (0..).zip(&packets) {
+        harness.say(70, sequence, packet);
+    }
+    harness
+        .settle(|harness| harness.counter("packets_received") == 10)
+        .await;
+    harness.tick(2);
+    harness.speaking(EARLY_PEER, 70).await;
+    let heard = harness.hear(&receiver, 10).await;
+
+    assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
+    assert_eq!(harness.counter("unmapped"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn audio_after_an_ssrc_changes_hands_stays_with_the_new_owner_when_op_5_repeats() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let packets = opus(1);
+    harness.speaking(EARLY_PEER, 70).await;
+    harness.tick(1);
+
+    harness.speaking(LATE_PEER, 70).await;
+    harness.say(70, 0, &packets[0]);
+    harness
+        .settle(|harness| harness.counter("packets_received") == 1)
+        .await;
+    harness.speaking(LATE_PEER, 70).await;
+    let heard = harness.hear(&receiver, 1).await;
+
+    assert_eq!(frames(&heard), spoken(LATE_PEER, &packets));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dave_audio_from_a_peer_decrypts_across_a_member_joining() {
+    let mut harness = Harness::dave().await;
+    let mut call = harness.talking_with(&[LATE_PEER]).await;
+    harness.speaking(LATE_PEER, 55).await;
+    let receiver = harness.receiver(ReceiveOptions {
+        users: Some(HashSet::from([user(LATE_PEER)])),
+        ..receiving(ReceiveFormat::Opus)
+    });
+    let packets = opus(10);
+
+    for (sequence, packet) in (0..5).zip(&packets) {
+        harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
+    }
+    let before = harness.hear(&receiver, 5).await;
+    let executed = harness.counter("transitions_executed");
+    call.join(user(THIRD_PEER));
+    harness.rejoined(&mut call, 3, executed).await;
+    for (sequence, packet) in (5..).zip(&packets[5..]) {
+        harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
+    }
+    let after = harness.hear(&receiver, 5).await;
+
+    assert_eq!(
+        frames(&[before, after].concat()),
+        spoken(LATE_PEER, &packets)
+    );
+    assert_eq!(harness.counter("undecryptable"), 0);
+    assert_eq!(harness.counter("receive_recoveries"), 0);
+    assert_eq!(receiver.stats().unwrap()[2], ("lost", 0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_user_who_rejoins_with_a_new_ssrc_keeps_their_stream() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let packets = opus(6);
+    harness.speaking(LATE_PEER, 55).await;
+    for (sequence, packet) in (0..3).zip(&packets) {
+        harness.say(55, sequence, packet);
+    }
+    let first = harness.hear(&receiver, 3).await;
+
+    harness.server.gateway.send(
+        op::CLIENT_DISCONNECT,
+        json!({"user_id": LATE_PEER.to_string()}),
+    );
+    harness
+        .wait_for(|delivery| matches!(delivery, Delivery::VoiceClientLeft { .. }).then_some(()))
+        .await;
+    harness.server.gateway.send(
+        op::CLIENTS_CONNECT,
+        json!({"user_ids": [LATE_PEER.to_string()]}),
+    );
+    harness.speaking(LATE_PEER, 56).await;
+    for (sequence, packet) in (40_000..).zip(&packets[3..]) {
+        harness.say(56, sequence, packet);
+    }
+    let second = harness.hear(&receiver, 3).await;
+
+    assert_eq!(
+        frames(&[first, second].concat()),
+        spoken(LATE_PEER, &packets)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn receiving_continues_across_a_resume_and_a_server_change() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let packets = opus(6);
+    harness.speaking(EARLY_PEER, 70).await;
+    harness.say(70, 0, &packets[0]);
+    harness.say(70, 1, &packets[1]);
+    let mut heard = harness.hear(&receiver, 2).await;
+
+    harness.server.gateway.drop_connection();
+    harness.until(VoiceStatus::Resuming).await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.say(70, 2, &packets[2]);
+    harness.say(70, 3, &packets[3]);
+    heard.extend(harness.hear(&receiver, 2).await);
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Reconnecting).await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.speaking(EARLY_PEER, 70).await;
+    harness.say(70, 4, &packets[4]);
+    harness.say(70, 5, &packets[5]);
+    heard.extend(harness.hear(&receiver, 2).await);
+
+    assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
+    assert_eq!(harness.counter("resumes"), 1);
+    assert_eq!(receiver.ended(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn include_self_hears_the_bots_own_audio() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let receiver = harness.receiver(ReceiveOptions {
+        users: Some(HashSet::new()),
+        include_self: true,
+        ..receiving(ReceiveFormat::Opus)
+    });
+    let sink = harness.opus_sink();
+
+    let sent = harness.play(&sink, 3);
+    let heard = harness.hear(&receiver, 3).await;
+
+    let open = harness.voice.diagnostics(guild()).unwrap().receivers;
+    receiver.close();
+    harness.tick(1);
+
+    assert_eq!(frames(&heard)[..3], spoken(u64::from(bot()), &sent));
+    assert_eq!(open, 1);
+    assert_eq!(harness.voice.diagnostics(guild()).unwrap().receivers, 0);
+    assert!(harness.voice.user_stats(guild()).unwrap().is_empty());
+    assert_eq!(
+        harness.count(|delivery| matches!(delivery, Delivery::VoiceSpeech { .. })),
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_peer_that_never_decrypts_triggers_a_recovery_and_a_receive_stall() {
+    let mut tuning = tuning();
+    tuning.connection.receive = ReceiveTuning {
+        decrypt_tolerance: 3,
+        dave_grace: Duration::ZERO,
+        ..ReceiveTuning::default()
+    };
+    let mut harness = Harness::build(
+        |config| config.dave_protocol_version = 1,
+        PacerPool::manual(),
+        tuning,
+    )
+    .await;
+    let _call = harness.talking_with(&[LATE_PEER]).await;
+    harness.speaking(LATE_PEER, 55).await;
+    let _receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let stalled = |delivery: &Delivery| {
+        matches!(
+            delivery,
+            Delivery::VoiceStalled {
+                direction: Direction::Receive,
+                stalled: true,
+                ..
+            }
+        )
+    };
+
+    let mut recovered_and_stalled = false;
+    for sequence in 0..100 {
+        harness.say(55, sequence, &[0x78, 0x01, 0x02, 0x03, 0x04, 0xFA, 0xFA]);
+        harness.tick(1);
+        harness.server.collect().await;
+        if harness.server.count(op::DAVE_MLS_INVALID_COMMIT_WELCOME) > 0
+            && harness.count(stalled) > 0
+        {
+            recovered_and_stalled = true;
+            break;
+        }
+        sleep(Duration::from_millis(5)).await;
+    }
+
+    assert!(recovered_and_stalled, "no recovery and stall");
+    assert_eq!(harness.counter("receive_recoveries"), 1);
+    assert!(
+        harness
+            .statuses()
+            .iter()
+            .all(|(status, ..)| *status != VoiceStatus::Disconnected)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_slow_receiver_drops_its_oldest_frames_and_sending_keeps_its_pace() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    harness.speaking(EARLY_PEER, 70).await;
+    let receiver = harness.receiver(ReceiveOptions {
+        buffer: FRAME,
+        ..receiving(ReceiveFormat::Opus)
+    });
+    let sink = harness.sink(pcm(), StallPolicy::Hold);
+    sink.write(&tone(FRAME_SAMPLES * 40)).unwrap();
+    let packets = opus(30);
+
+    for (sequence, packet) in (0..).zip(&packets) {
+        harness.say(70, sequence, packet);
+        sleep(Duration::from_millis(2)).await;
+        harness.tick(1);
+    }
+
+    let dropped = receiver.stats().unwrap()[1].1;
+    assert!(dropped > 0, "{dropped}");
+    assert_eq!(harness.server.sfu.wait_packets(30, WAIT).len(), 30);
+    assert_eq!(harness.counter("packets_sent"), 30);
+    assert_eq!(harness.counter("held_ticks"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_move_to_another_channel_ends_the_receivers() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    harness.speaking(EARLY_PEER, 70).await;
+    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let packets = opus(2);
+    harness.say(70, 0, &packets[0]);
+    harness.say(70, 1, &packets[1]);
+    let delivered = || receiver.stats().unwrap()[0].1;
+    while delivered() < 2 {
+        harness.tick(1);
+        sleep(Duration::from_millis(2)).await;
+    }
+
+    harness.state(Some(OTHER_CHANNEL));
+    harness.wait_for(moved).await;
+    harness.until(VoiceStatus::Reconnecting).await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Ready).await;
+    let sink = harness.sink(pcm(), StallPolicy::Hold);
+    sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
+    harness.tick(2);
+
+    let ReceiveRead::Items(items) = receiver.read(256).unwrap() else {
+        panic!("the queued frames were lost");
+    };
+    assert_eq!(frames(&items), spoken(EARLY_PEER, &packets));
+    assert_eq!(
+        receiver.read(256).unwrap(),
+        ReceiveRead::Ended(Ended::Moved)
+    );
+    assert_eq!(harness.server.sfu.wait_packets(2, WAIT).len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_speech_hangover_is_checked_against_its_bounds() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    let hangover = |duration| harness.voice.set_speech_hangover(guild(), duration);
+
+    for refused in [
+        FRAME - Duration::from_nanos(1),
+        Duration::from_secs(10) + FRAME,
+    ] {
+        assert!(
+            matches!(hangover(refused), Err(CoreError::InvalidRequest(_))),
+            "{refused:?}"
+        );
+    }
+    hangover(Duration::from_millis(350)).unwrap();
+
+    assert_eq!(
+        harness.media().speech_hangover(),
+        Duration::from_millis(350)
+    );
 }

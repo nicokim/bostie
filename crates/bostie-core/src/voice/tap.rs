@@ -21,6 +21,7 @@ static STATE_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| {
         "self_mute",
         "self_deaf",
         "mute",
+        "deaf",
         "suppress",
     ])
 });
@@ -51,6 +52,7 @@ pub struct StateUpdate {
     pub self_mute: bool,
     pub self_deaf: bool,
     pub mute: bool,
+    pub deaf: bool,
     pub suppress: bool,
 }
 
@@ -61,6 +63,7 @@ impl fmt::Debug for StateUpdate {
             .field("self_mute", &self.self_mute)
             .field("self_deaf", &self.self_deaf)
             .field("mute", &self.mute)
+            .field("deaf", &self.deaf)
             .field("suppress", &self.suppress)
             .finish_non_exhaustive()
     }
@@ -153,7 +156,7 @@ impl GatewayTap {
         let mut fields = fields.into_iter();
         let mut next = || fields.next().flatten();
         let (guild, user, channel, session_id) = (next(), next(), next(), next());
-        let (self_mute, self_deaf, mute, suppress) = (next(), next(), next(), next());
+        let (self_mute, self_deaf, mute, deaf, suppress) = (next(), next(), next(), next(), next());
         let (Some(guild), Some(user), Some(session_id)) = (
             guild.as_ref().and_then(snowflake).map(GuildId::from),
             user.as_ref().and_then(snowflake).map(UserId::from),
@@ -174,6 +177,7 @@ impl GatewayTap {
             self_mute: flag(self_mute.as_ref()),
             self_deaf: flag(self_deaf.as_ref()),
             mute: flag(mute.as_ref()),
+            deaf: flag(deaf.as_ref()),
             suppress: flag(suppress.as_ref()),
         };
         let guilds = self.guilds.read();
@@ -246,7 +250,7 @@ mod tests {
     fn state(guild: u64, user: u64, channel: Option<u64>, extra: &str) -> Vec<u8> {
         let channel = channel.map_or_else(|| "null".to_owned(), |id| format!(r#""{id}""#));
         format!(
-            r#"{{"guild_id":"{guild}","user_id":"{user}","channel_id":{channel},"session_id":"session","deaf":false,"self_video":false{extra}}}"#
+            r#"{{"guild_id":"{guild}","user_id":"{user}","channel_id":{channel},"session_id":"session","self_video":false{extra}}}"#
         )
         .into_bytes()
     }
@@ -301,7 +305,7 @@ mod tests {
                 GUILD,
                 USER,
                 Some(CHANNEL),
-                r#","self_mute":true,"self_deaf":false,"mute":true,"suppress":true"#,
+                r#","self_mute":true,"self_deaf":false,"mute":true,"deaf":true,"suppress":true"#,
             ),
         );
 
@@ -315,6 +319,7 @@ mod tests {
                 self_mute: true,
                 self_deaf: false,
                 mute: true,
+                deaf: true,
                 suppress: true,
             })
         );
@@ -328,7 +333,9 @@ mod tests {
 
         let state = receiver.borrow().state.clone().unwrap();
         assert_eq!(state.channel, None);
-        assert!(!(state.self_mute || state.self_deaf || state.mute || state.suppress));
+        assert!(
+            !(state.self_mute || state.self_deaf || state.mute || state.deaf || state.suppress)
+        );
     }
 
     #[test]
@@ -462,6 +469,7 @@ mod tests {
             self_mute: false,
             self_deaf: false,
             mute: false,
+            deaf: false,
             suppress: false,
         };
 
