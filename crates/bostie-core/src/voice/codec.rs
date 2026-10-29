@@ -1,15 +1,17 @@
+use std::ops::Range;
 use std::os::raw::c_int;
 
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use opus::{Bitrate, Channels};
 
 use crate::error::CoreError;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
-    Application, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, PcmFormat, SAMPLE_RATE,
+    Application, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, PcmFormat, SAMPLE_RATE, SampleFormat,
 };
 
 pub const MAX_PACKET: usize = 1_275;
+const MAX_DECODE: u32 = 5_760;
 
 pub fn packet_samples(packet: &[u8]) -> Option<u32> {
     if !fits_libopus(packet) {
@@ -27,6 +29,10 @@ pub fn is_stereo_20ms(packet: &[u8]) -> bool {
             opus::packet::get_nb_samples(packet, SAMPLE_RATE),
             Ok(FRAME_SAMPLES)
         )
+}
+
+pub fn received_samples(packet: &[u8]) -> Option<u32> {
+    packet_samples(packet).filter(|_| packet.iter().any(|&byte| byte != 0))
 }
 
 fn fits_libopus(packet: &[u8]) -> bool {
@@ -103,6 +109,99 @@ fn rejected(error: opus::Error) -> CoreError {
     CoreError::InvalidRequest(format!("libopus rejected the encoder settings: {error}"))
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("opus could not decode a packet: {0}")]
+pub struct DecodeError(#[from] opus::Error);
+
+pub struct Decoder {
+    inner: opus::Decoder,
+    rate: u32,
+    channels: u8,
+}
+
+impl Decoder {
+    pub fn new(rate: u32, channels: u8) -> Result<Self, CoreError> {
+        let layout = match channels {
+            1 => Channels::Mono,
+            2 => Channels::Stereo,
+            _ => {
+                return Err(CoreError::InvalidRequest(format!(
+                    "channels must be 1 or 2, got {channels}"
+                )));
+            }
+        };
+        let inner = opus::Decoder::new(rate, layout).map_err(|error| {
+            CoreError::InvalidRequest(format!("libopus cannot decode at {rate} Hz: {error}"))
+        })?;
+        Ok(Self {
+            inner,
+            rate,
+            channels,
+        })
+    }
+
+    pub fn decode(&mut self, packet: &[u8], scratch: &mut Vec<f32>) -> Result<usize, DecodeError> {
+        let output = self.output(scratch, MAX_DECODE);
+        Ok(self.inner.decode_float(packet, output, false)?)
+    }
+
+    pub fn conceal(
+        &mut self,
+        next: Option<&[u8]>,
+        samples48: u32,
+        scratch: &mut Vec<f32>,
+    ) -> Result<usize, DecodeError> {
+        let output = self.output(scratch, samples48.min(MAX_DECODE));
+        Ok(self
+            .inner
+            .decode_float(next.unwrap_or_default(), output, next.is_some())?)
+    }
+
+    pub fn reset(&mut self) {
+        if let Err(error) = self.inner.reset_state() {
+            tracing::debug!(%error, "opus could not reset the decoder");
+        }
+    }
+
+    fn output<'a>(&self, scratch: &'a mut Vec<f32>, samples48: u32) -> &'a mut [f32] {
+        let len = at_rate(samples48 as usize, self.rate) * usize::from(self.channels);
+        if scratch.len() < len {
+            scratch.resize(len, 0.0);
+        }
+        scratch.get_mut(..len).unwrap_or_default()
+    }
+}
+
+pub fn split(samples: usize, rate: u32, channels: u8) -> impl Iterator<Item = Range<usize>> {
+    let channels = usize::from(channels);
+    let frame = (at_rate(FRAME_SAMPLES, rate) * channels).max(1);
+    let total = samples.saturating_mul(channels);
+    (0..total)
+        .step_by(frame)
+        .map(move |start| start..start.saturating_add(frame).min(total))
+}
+
+pub fn write_samples(pcm: &[f32], sample: SampleFormat, out: &mut BytesMut) {
+    match sample {
+        SampleFormat::S16Le => {
+            out.reserve(pcm.len() * 2);
+            for &value in pcm {
+                out.put_i16_le((value.clamp(-1.0, 1.0) * 32_767.0).round() as i16);
+            }
+        }
+        SampleFormat::F32Le => {
+            out.reserve(pcm.len() * 4);
+            for &value in pcm {
+                out.put_f32_le(value);
+            }
+        }
+    }
+}
+
+fn at_rate(samples48: usize, rate: u32) -> usize {
+    samples48 * rate as usize / SAMPLE_RATE as usize
+}
+
 pub struct FrameEncoder {
     converter: Converter,
     encoder: Encoder,
@@ -149,7 +248,6 @@ pub(crate) mod tests {
     use std::f32::consts::TAU;
 
     use super::*;
-    use crate::voice::types::SampleFormat;
 
     pub(crate) fn settings() -> EncoderSettings {
         EncoderSettings {
@@ -310,5 +408,144 @@ pub(crate) mod tests {
         };
 
         assert!(FrameEncoder::new(format, settings()).is_err());
+    }
+
+    fn speech(frames: usize) -> Vec<Vec<u8>> {
+        let mut encoder =
+            opus::Encoder::new(SAMPLE_RATE, Channels::Mono, opus::Application::Voip).unwrap();
+        encoder.set_bitrate(Bitrate::Bits(24_000)).unwrap();
+        encoder.set_inband_fec(true).unwrap();
+        encoder.set_packet_loss_perc(30).unwrap();
+        (0..frames)
+            .map(|frame| {
+                let pitch = 120.0 + 15.0 * frame as f32;
+                let input: Vec<f32> = (0..FRAME_SAMPLES)
+                    .map(|index| {
+                        let time = (frame * FRAME_SAMPLES + index) as f32 / SAMPLE_RATE as f32;
+                        (1..6)
+                            .map(|harmonic| (TAU * pitch * harmonic as f32 * time).sin() * 0.1)
+                            .sum()
+                    })
+                    .collect();
+                encoder.encode_vec_float(&input, 4_000).unwrap()
+            })
+            .collect()
+    }
+
+    fn decoder_after(history: &[Vec<u8>]) -> Decoder {
+        let mut decoder = Decoder::new(16_000, 1).unwrap();
+        let mut scratch = Vec::new();
+        for packet in history {
+            decoder.decode(packet, &mut scratch).unwrap();
+        }
+        decoder
+    }
+
+    fn output(samples: Result<usize, DecodeError>, scratch: &[f32]) -> Vec<f32> {
+        scratch[..samples.unwrap()].to_vec()
+    }
+
+    #[test]
+    fn a_lost_frame_uses_fec_from_the_next_packet_else_plc_of_the_previous_duration() {
+        let packets = speech(12);
+        let lost = 8;
+        let mut scratch = Vec::new();
+        let mut reference = decoder_after(&packets[..lost]);
+        let mut with_fec = decoder_after(&packets[..lost]);
+        let mut without = decoder_after(&packets[..lost]);
+
+        let samples = reference.decode(&packets[lost], &mut scratch);
+        let expected = output(samples, &scratch);
+        let samples = with_fec.conceal(Some(&packets[lost + 1]), 960, &mut scratch);
+        let fec = output(samples, &scratch);
+        let samples = without.conceal(None, 960, &mut scratch);
+        let plc = output(samples, &scratch);
+        let samples = without.conceal(None, 2_880, &mut scratch);
+        let longer = output(samples, &scratch);
+
+        let error = |output: &[f32]| -> f32 {
+            output
+                .iter()
+                .zip(&expected)
+                .map(|(sample, expected)| (sample - expected).powi(2))
+                .sum()
+        };
+        assert_eq!((fec.len(), plc.len(), longer.len()), (320, 320, 960));
+        assert!(
+            error(&fec) < error(&plc) / 2.0,
+            "{} {}",
+            error(&fec),
+            error(&plc)
+        );
+    }
+
+    fn frames(samples: usize, rate: u32, channels: u8) -> Vec<(usize, usize)> {
+        split(samples, rate, channels)
+            .map(|range| (range.start, range.end))
+            .collect()
+    }
+
+    #[test]
+    fn the_decoder_outputs_the_requested_rate_and_channels() {
+        let mut decoder = Decoder::new(16_000, 1).unwrap();
+        let mut scratch = Vec::new();
+
+        for (duration, ranges) in [
+            (480, vec![(0, 160)]),
+            (960, vec![(0, 320)]),
+            (2_880, vec![(0, 320), (320, 640), (640, 960)]),
+        ] {
+            let samples = decoder
+                .decode(&packet(Channels::Stereo, duration), &mut scratch)
+                .unwrap();
+            assert_eq!(frames(samples, 16_000, 1), ranges);
+        }
+        let longest = decoder
+            .decode(&packet(Channels::Stereo, 5_760), &mut scratch)
+            .unwrap();
+        assert_eq!(longest, 1_920);
+
+        let mut stereo = Decoder::new(24_000, 2).unwrap();
+        let samples = stereo
+            .decode(&packet(Channels::Mono, 960), &mut scratch)
+            .unwrap();
+        assert_eq!(frames(samples, 24_000, 2), [(0, 960)]);
+    }
+
+    #[test]
+    fn invalid_and_all_zero_payloads_are_refused() {
+        let zeros = [0; 10];
+        let mut decoder = Decoder::new(48_000, 2).unwrap();
+        let mut scratch = Vec::new();
+
+        assert!(packet_samples(&zeros).is_some());
+        assert_eq!(received_samples(&zeros), None);
+        assert_eq!(received_samples(&[0x03]), None);
+        assert_eq!(received_samples(&packet(Channels::Stereo, 960)), Some(960));
+        assert!(decoder.decode(&[0x03], &mut scratch).is_err());
+        assert_eq!(
+            decoder
+                .decode(&packet(Channels::Stereo, 960), &mut scratch)
+                .unwrap(),
+            960
+        );
+    }
+
+    #[test]
+    fn samples_are_written_as_rounded_clamped_s16le_or_as_f32le() {
+        let pcm = [1.5, -1.5, 0.5, -0.25];
+        let mut s16 = BytesMut::new();
+        let mut f32le = BytesMut::new();
+
+        write_samples(&pcm, SampleFormat::S16Le, &mut s16);
+        write_samples(&pcm, SampleFormat::F32Le, &mut f32le);
+
+        let expected: Vec<u8> = [32_767_i16, -32_767, 16_384, -8_192]
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+        assert_eq!(s16.as_ref(), expected);
+        let floats: Vec<u8> = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
+        assert_eq!(f32le.as_ref(), floats);
     }
 }

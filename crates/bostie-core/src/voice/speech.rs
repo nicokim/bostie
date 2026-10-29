@@ -1,1 +1,103 @@
+#![deny(clippy::arithmetic_side_effects)]
 
+use crate::voice::types::SILENCE_FRAME;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Start { ssrc: u32, at: i64 },
+    Stop { ssrc: u32, at: i64, duration: i64 },
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Activity {
+    since: Option<(u32, i64)>,
+    end: i64,
+}
+
+impl Activity {
+    pub fn is_speaking(&self) -> bool {
+        self.since.is_some()
+    }
+
+    pub fn packet(&mut self, ssrc: u32, at: i64, samples: u32, speech: bool) -> Option<Edge> {
+        if !speech {
+            return None;
+        }
+        let end = at.saturating_add(i64::from(samples));
+        if self.since.is_some() {
+            self.end = self.end.max(end);
+            return None;
+        }
+        self.since = Some((ssrc, at));
+        self.end = end;
+        Some(Edge::Start { ssrc, at })
+    }
+
+    pub fn expire(&mut self, now: i64, hangover: i64) -> Option<Edge> {
+        let (ssrc, start) = self.since?;
+        if now.saturating_sub(self.end) < hangover {
+            return None;
+        }
+        self.since = None;
+        Some(Edge::Stop {
+            ssrc,
+            at: self.end,
+            duration: self.end.saturating_sub(start),
+        })
+    }
+}
+
+pub fn is_speech(payload: &[u8], silence: bool) -> bool {
+    !silence && payload != SILENCE_FRAME
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SSRC: u32 = 0x8000_0001;
+    const FRAME: i64 = 960;
+
+    #[test]
+    fn speech_starts_on_a_speech_packet_and_stops_after_the_hangover() {
+        let voice = [0x78, 0x01, 0x02];
+        assert!(is_speech(&voice, false));
+        assert!(!is_speech(&voice, true));
+        assert!(!is_speech(&SILENCE_FRAME, false));
+
+        for hangover in [10 * FRAME, 25 * FRAME] {
+            let mut activity = Activity::default();
+
+            let edges = [
+                activity.packet(SSRC, 0, 960, is_speech(&voice, false)),
+                activity.packet(SSRC, FRAME, 960, is_speech(&voice, false)),
+                activity.packet(SSRC, 2 * FRAME, 960, is_speech(&SILENCE_FRAME, false)),
+                activity.packet(SSRC, 3 * FRAME, 960, is_speech(&voice, true)),
+                activity.expire(2 * FRAME + hangover - 1, hangover),
+            ];
+            assert!(activity.is_speaking());
+            let stop = activity.expire(2 * FRAME + hangover, hangover);
+
+            assert_eq!(
+                edges,
+                [
+                    Some(Edge::Start { ssrc: SSRC, at: 0 }),
+                    None,
+                    None,
+                    None,
+                    None
+                ]
+            );
+            assert_eq!(
+                stop,
+                Some(Edge::Stop {
+                    ssrc: SSRC,
+                    at: 2 * FRAME,
+                    duration: 2 * FRAME
+                })
+            );
+            assert!(!activity.is_speaking());
+            assert_eq!(activity.expire(10 * hangover, hangover), None);
+        }
+    }
+}
