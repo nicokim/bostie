@@ -14,8 +14,8 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
 
 use crate::ids::{ChannelId, UserId};
-use crate::voice::dave::{Dave, DaveError, Executed, Outbound};
-use crate::voice::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp};
+use crate::voice::dave::{Dave, DaveError, Executed, Outbound, SendMode};
+use crate::voice::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, ReceiveTuning};
 
 const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256;
 const SENDER_IDENTITY: [u8; 4] = [0x00, 0x01, 0x01, 0x00];
@@ -673,6 +673,7 @@ pub struct Call {
     pub executed: Vec<(UserId, Executed)>,
     pub failures: Vec<(UserId, DaveError)>,
     pub remote: Vec<Message>,
+    pub receive: ReceiveTuning,
     channel: ChannelId,
     clients: HashMap<UserId, Dave>,
     remote_users: HashSet<UserId>,
@@ -688,6 +689,7 @@ impl Call {
             executed: Vec::new(),
             failures: Vec::new(),
             remote: Vec::new(),
+            receive: ReceiveTuning::default(),
             channel,
             clients: HashMap::new(),
             remote_users: HashSet::new(),
@@ -758,6 +760,16 @@ impl Call {
         self.clients.get_mut(&user).unwrap()
     }
 
+    pub fn speak(&mut self, peer: UserId, opus: &[u8]) -> Vec<u8> {
+        let dave = self.dave_mut(peer);
+        if dave.send_mode() == SendMode::Plain {
+            return opus.to_vec();
+        }
+        let mut frame = Vec::new();
+        dave.encrypt(opus, &mut frame).unwrap();
+        frame
+    }
+
     pub fn sent_by(&self, user: UserId) -> Vec<Outbound> {
         self.sent
             .iter()
@@ -776,7 +788,7 @@ impl Call {
 
     fn add(&mut self, user: UserId, messages: Vec<Message>) {
         self.enqueue(messages);
-        let mut dave = Dave::new(user, self.channel);
+        let mut dave = Dave::new(user, self.channel).with_receive(self.receive);
         let mut out = Vec::new();
         if let Err(error) = dave.start(self.fake.protocol_version(), &mut out) {
             self.failures.push((user, error));
@@ -820,7 +832,6 @@ impl Call {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::dave::SendMode;
 
     const CHANNEL: u64 = 900;
 

@@ -15,11 +15,13 @@ use davey::{Codec, DaveSession, MediaType, ProposalsOperationType};
 use tracing::{debug, error, warn};
 
 use crate::ids::{ChannelId, UserId};
-use crate::voice::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, SILENCE_FRAME};
+use crate::voice::types::{
+    DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, ReceiveTuning, SILENCE_FRAME,
+};
 
 pub const DAVEY_VERSION: &str = "0.2.0-beta.1";
 
-const PASSTHROUGH_EXPIRY_SECS: u32 = 10;
+const MARKER: [u8; 2] = [0xFA, 0xFA];
 const VERIFICATION_CODE_DIGITS: u32 = 45;
 const VERIFICATION_CODE_GROUP: u32 = 5;
 
@@ -60,6 +62,8 @@ pub struct DaveCounters {
     pub recoveries: u64,
     pub dave_panics: u64,
     pub rejected_proposals: u64,
+    pub receive_recoveries: u64,
+    pub decrypt_panics: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +164,9 @@ pub struct Dave {
     recovering: bool,
     recovery: Recovery,
     recoveries: VecDeque<Instant>,
+    tuning: ReceiveTuning,
+    settled: Option<Instant>,
+    generation: u64,
     counters: DaveCounters,
     #[cfg(test)]
     fault: Option<(MlsCall, Fault)>,
@@ -180,6 +187,9 @@ impl Dave {
             recovering: false,
             recovery: Recovery::default(),
             recoveries: VecDeque::new(),
+            tuning: ReceiveTuning::default(),
+            settled: None,
+            generation: 0,
             counters: DaveCounters::default(),
             #[cfg(test)]
             fault: None,
@@ -188,6 +198,11 @@ impl Dave {
 
     pub(crate) fn with_recovery(mut self, recovery: Recovery) -> Self {
         self.recovery = recovery;
+        self
+    }
+
+    pub fn with_receive(mut self, tuning: ReceiveTuning) -> Self {
+        self.tuning = tuning;
         self
     }
 
@@ -232,6 +247,7 @@ impl Dave {
                     && let Some(session) = &mut self.session
                 {
                     session.set_passthrough_mode(true, None);
+                    session.set_passthrough_mode(false, Some(self.tuning.downgrade_expiry));
                 }
                 self.prepare(transition_id, protocol_version, now, out)
             }
@@ -284,6 +300,28 @@ impl Dave {
             .map_err(|error| encrypt_failure(&error))
     }
 
+    pub fn receive(
+        &mut self,
+        user: UserId,
+        frame: &[u8],
+        out: &mut Vec<u8>,
+    ) -> Result<(), DecryptFailure> {
+        out.clear();
+        let plain = frame == SILENCE_FRAME
+            || (self.protocol_version == 0 && (self.session.is_none() || !has_marker(frame)));
+        if plain {
+            out.extend_from_slice(frame);
+            return Ok(());
+        }
+        out.resize(frame.len(), 0);
+        let decrypted = self.decrypt(user, frame, out).and_then(|len| match len {
+            0 => Err(DecryptFailure::Failed),
+            len => Ok(len),
+        });
+        out.truncate(decrypted.unwrap_or(0));
+        decrypted.map(|_| ())
+    }
+
     pub fn decrypt(
         &mut self,
         user: UserId,
@@ -293,9 +331,54 @@ impl Dave {
         let Some(session) = &mut self.session else {
             return Err(DecryptFailure::NoDecryptor);
         };
-        session
-            .decrypt_into(u64::from(user), MediaType::AUDIO, frame, out)
-            .map_err(|error| decrypt_failure(&error))
+        let user = u64::from(user);
+        match panic::catch_unwind(AssertUnwindSafe(|| {
+            session.decrypt_into(user, MediaType::AUDIO, frame, out)
+        })) {
+            Ok(result) => result.map_err(|error| decrypt_failure(&error)),
+            Err(payload) => {
+                self.counters.decrypt_panics += 1;
+                let panics = self.counters.decrypt_panics;
+                if panics.is_power_of_two() {
+                    error!(
+                        panics,
+                        panic = panic_message(payload.as_ref()),
+                        "a DAVE decrypt panicked"
+                    );
+                }
+                Err(DecryptFailure::Failed)
+            }
+        }
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn settling(&self, now: Instant) -> bool {
+        self.recovering
+            || !self.pending.is_empty()
+            || self
+                .settled
+                .is_none_or(|at| now.saturating_duration_since(at) < self.tuning.dave_grace)
+    }
+
+    pub fn receive_recovery(
+        &mut self,
+        now: Instant,
+        out: &mut Vec<Outbound>,
+    ) -> Result<bool, DaveError> {
+        if self.protocol_version == 0 || self.settling(now) {
+            return Ok(false);
+        }
+        self.counters.receive_recoveries += 1;
+        let transition_id = self.last_transition;
+        warn!(
+            transition_id,
+            "resetting the DAVE session after repeated decrypt failures"
+        );
+        self.reset_session(transition_id, out)?;
+        Ok(true)
     }
 
     pub fn info(&self) -> DaveInfo {
@@ -352,9 +435,10 @@ impl Dave {
             session.prepare_transition(transition_id, protocol_version)
         }) {
             Ok(()) if transition_id == 0 => {
-                return Ok(Some(self.executed(transition_id, protocol_version)));
+                return Ok(Some(self.executed(transition_id, protocol_version, now)));
             }
             Ok(()) => {
+                self.generation = self.generation.wrapping_add(1);
                 self.pending.insert(transition_id, protocol_version);
             }
             Err(Failure::NoSession) if transition_id == 0 => return Ok(None),
@@ -384,7 +468,7 @@ impl Dave {
                     .pending
                     .remove(&transition_id)
                     .unwrap_or(self.version.get());
-                Ok(Some(self.executed(transition_id, protocol_version)))
+                Ok(Some(self.executed(transition_id, protocol_version, now)))
             }
             Ok(false) | Err(Failure::NoSession) => {
                 debug!(transition_id, "no prepared DAVE transition to execute");
@@ -398,15 +482,18 @@ impl Dave {
         }
     }
 
-    fn executed(&mut self, transition_id: u16, protocol_version: u16) -> Executed {
+    fn executed(&mut self, transition_id: u16, protocol_version: u16, now: Instant) -> Executed {
         let previous = mem::replace(&mut self.protocol_version, protocol_version);
-        if previous == 0
-            && protocol_version > 0
-            && let Some(session) = &mut self.session
-        {
-            session.set_passthrough_mode(false, Some(PASSTHROUGH_EXPIRY_SECS));
+        if let Some(session) = &mut self.session {
+            if protocol_version == 0 {
+                session.set_passthrough_mode(true, None);
+            } else if previous == 0 {
+                session.set_passthrough_mode(false, Some(self.tuning.upgrade_passthrough));
+            }
         }
         self.recovering = false;
+        self.settled = Some(now);
+        self.generation = self.generation.wrapping_add(1);
         self.counters.transitions_executed += 1;
         debug!(transition_id, protocol_version, "DAVE transition executed");
         Executed {
@@ -434,6 +521,11 @@ impl Dave {
             };
             self.version = version;
             self.rebuild(out)?;
+            if self.protocol_version == 0
+                && let Some(session) = &mut self.session
+            {
+                session.set_passthrough_mode(true, None);
+            }
             return Ok(None);
         }
         warn!(
@@ -568,6 +660,7 @@ impl Dave {
         }) {
             Ok(()) => {
                 self.counters.welcomes += 1;
+                self.settled = Some(now);
                 self.prepare(transition_id, self.version.get(), now, out)
             }
             Err(Failure::NoSession) => Ok(None),
@@ -601,6 +694,14 @@ impl Dave {
             });
         }
         warn!(transition_id, "resetting the DAVE session");
+        self.reset_session(transition_id, out)
+    }
+
+    fn reset_session(
+        &mut self,
+        transition_id: u16,
+        out: &mut Vec<Outbound>,
+    ) -> Result<(), DaveError> {
         self.recovering = true;
         out.push(Outbound::InvalidCommitWelcome(transition_id));
         self.rebuild(out)
@@ -608,6 +709,8 @@ impl Dave {
 
     fn rebuild(&mut self, out: &mut Vec<Outbound>) -> Result<(), DaveError> {
         self.pending.clear();
+        self.settled = None;
+        self.generation = self.generation.wrapping_add(1);
         let (version, user, channel) =
             (self.version, u64::from(self.user), u64::from(self.channel));
         match self.attempt(MlsCall::Reinit, |session| {
@@ -691,17 +794,24 @@ impl Dave {
 
     fn panicked(&mut self, call: MlsCall, payload: &(dyn Any + Send)) {
         self.counters.dave_panics += 1;
-        let message = payload
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-            .unwrap_or("unknown panic");
         error!(
             ?call,
-            panic = message,
+            panic = panic_message(payload),
             "a DAVE call panicked, its session is dropped"
         );
     }
+}
+
+pub fn has_marker(frame: &[u8]) -> bool {
+    frame.ends_with(&MARKER)
+}
+
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic")
 }
 
 #[cfg(test)]
@@ -807,6 +917,11 @@ mod tests {
     const OPUS: &[u8] = &[
         0xFC, 0xFF, 0xFE, 0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE,
     ];
+    const OPUS_ENDING_IN_MARKER: &[u8] = &[
+        0xFC, 0xFF, 0xFE, 0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0x00, 0xFA, 0xFA,
+    ];
+
+    type Heard<'a> = (u64, &'a [u8], Result<&'a [u8], DecryptFailure>);
 
     fn user(id: u64) -> UserId {
         UserId::from(id)
@@ -822,7 +937,12 @@ mod tests {
     }
 
     fn group(ids: &[u64]) -> Call {
+        group_with(ids, ReceiveTuning::default())
+    }
+
+    fn group_with(ids: &[u64], receive: ReceiveTuning) -> Call {
         let mut call = call(1);
+        call.receive = receive;
         for &id in ids {
             call.join(user(id));
             call.run();
@@ -848,18 +968,21 @@ mod tests {
     }
 
     fn hear(call: &mut Call, speaker: u64, listener: u64) -> Vec<u8> {
-        let mut encrypted = Vec::new();
-        call.dave_mut(user(speaker))
-            .encrypt(OPUS, &mut encrypted)
+        let frame = call.speak(user(speaker), OPUS);
+        assert_ne!(frame.as_slice(), OPUS);
+        let mut heard = Vec::new();
+        call.dave_mut(user(listener))
+            .receive(user(speaker), &frame, &mut heard)
             .unwrap();
-        assert_ne!(encrypted.as_slice(), OPUS);
-        let mut frame = vec![0; encrypted.len()];
-        let len = call
-            .dave_mut(user(listener))
-            .decrypt(user(speaker), &encrypted, &mut frame)
-            .unwrap();
-        frame.truncate(len);
-        frame
+        heard
+    }
+
+    fn check(dave: &mut Dave, cases: &[Heard<'_>]) {
+        for &(from, frame, expected) in cases {
+            let mut out = vec![0xEE; 2];
+            let heard = dave.receive(user(from), frame, &mut out).map(|()| out);
+            assert_eq!(heard, expected.map(<[u8]>::to_vec), "{from} {frame:02X?}");
+        }
     }
 
     fn started(protocol_version: u16) -> (Dave, Vec<Outbound>) {
@@ -1103,12 +1226,6 @@ mod tests {
         assert_eq!(executed[0].transition_id, ready[0]);
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
         assert_eq!(call.dave(user(BOT)).info().privacy_code, None);
-        let mut frame = [0; 64];
-        let len = call
-            .dave_mut(user(BOT))
-            .decrypt(user(A), OPUS, &mut frame)
-            .unwrap();
-        assert_eq!(&frame[..len], OPUS);
     }
 
     #[test]
@@ -1128,26 +1245,12 @@ mod tests {
         assert_eq!(ready_ids(&call.sent_by(user(BOT))).len(), 1);
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
         assert_eq!(call.dave(user(BOT)).info().privacy_code, None);
-        let mut frame = [0; 64];
-        let len = call
-            .dave_mut(user(BOT))
-            .decrypt(user(A), OPUS, &mut frame)
-            .unwrap();
-        assert_eq!(&frame[..len], OPUS);
 
         release(&mut call);
         assert_eq!(call.executed_by(user(BOT))[0].protocol_version, 1);
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
         assert!(call.dave(user(BOT)).info().privacy_code.is_some());
         assert_eq!(hear(&mut call, BOT, A), OPUS);
-
-        call.fake.hold_transitions = false;
-        call.join(user(C));
-        call.run();
-        assert_eq!(
-            call.dave_mut(user(BOT)).decrypt(user(C), OPUS, &mut frame),
-            Err(DecryptFailure::Unencrypted)
-        );
     }
 
     #[test]
@@ -1514,19 +1617,180 @@ mod tests {
     }
 
     #[test]
-    fn decrypting_reports_unknown_users_and_unencrypted_frames() {
-        let mut call = group(&[BOT, A]);
-        let mut frame = [0; 64];
+    fn received_frames_follow_the_protocol_version_and_the_marker() {
+        let (mut stage, _) = started(0);
+        check(
+            &mut stage,
+            &[
+                (A, OPUS, Ok(OPUS)),
+                (A, OPUS_ENDING_IN_MARKER, Ok(OPUS_ENDING_IN_MARKER)),
+                (A, &SILENCE_FRAME, Ok(&SILENCE_FRAME)),
+            ],
+        );
 
-        assert_eq!(
-            call.dave_mut(user(BOT))
-                .decrypt(user(STRANGER), OPUS, &mut frame),
-            Err(DecryptFailure::NoDecryptor)
+        let receive = ReceiveTuning {
+            downgrade_expiry: 0,
+            ..ReceiveTuning::default()
+        };
+        let mut call = group_with(&[BOT, A], receive);
+        let encrypted = call.speak(user(A), OPUS);
+        let empty = call.speak(user(A), &[]);
+        check(
+            call.dave_mut(user(BOT)),
+            &[
+                (A, &SILENCE_FRAME, Ok(&SILENCE_FRAME)),
+                (A, &encrypted, Ok(OPUS)),
+                (A, &empty, Err(DecryptFailure::Failed)),
+                (A, OPUS, Err(DecryptFailure::Unencrypted)),
+                (STRANGER, &encrypted, Err(DecryptFailure::NoDecryptor)),
+            ],
         );
-        assert_eq!(
-            call.dave_mut(user(BOT)).decrypt(user(A), OPUS, &mut frame),
-            Err(DecryptFailure::Unencrypted)
+
+        call.fake.hold_transitions = true;
+        let downgrade = call.fake.downgrade();
+        call.enqueue(downgrade);
+        call.run();
+        let in_flight = call.speak(user(A), OPUS);
+        check(
+            call.dave_mut(user(BOT)),
+            &[(A, OPUS_ENDING_IN_MARKER, Err(DecryptFailure::Unencrypted))],
         );
+
+        let generation = call.dave(user(BOT)).generation();
+        release(&mut call);
+        assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
+        assert_ne!(call.dave(user(BOT)).generation(), generation);
+        check(
+            call.dave_mut(user(BOT)),
+            &[
+                (A, &in_flight, Ok(OPUS)),
+                (A, OPUS_ENDING_IN_MARKER, Ok(OPUS_ENDING_IN_MARKER)),
+                (STRANGER, OPUS, Ok(OPUS)),
+            ],
+        );
+    }
+
+    #[test]
+    fn passthrough_survives_a_downgrade_and_an_upgrade() {
+        for (unexecuted_downgrade, upgrade_passthrough, accepted) in
+            [(false, 10, true), (true, 10, true), (false, 0, false)]
+        {
+            let receive = ReceiveTuning {
+                upgrade_passthrough,
+                downgrade_expiry: 0,
+                ..ReceiveTuning::default()
+            };
+            let mut call = group_with(&[BOT, A], receive);
+            let downgrade = call.fake.downgrade();
+            call.enqueue(downgrade);
+            call.run();
+            assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
+            call.fake.hold_transitions = true;
+            if unexecuted_downgrade {
+                let downgrade = call.fake.downgrade();
+                call.enqueue(downgrade);
+                call.run();
+            }
+            let upgrade = call.fake.upgrade();
+            call.enqueue(upgrade);
+            call.run();
+            check(
+                call.dave_mut(user(BOT)),
+                &[(A, OPUS_ENDING_IN_MARKER, Ok(OPUS_ENDING_IN_MARKER))],
+            );
+
+            release(&mut call);
+            assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+            let expected = if accepted {
+                Ok(OPUS)
+            } else {
+                Err(DecryptFailure::Unencrypted)
+            };
+            check(call.dave_mut(user(BOT)), &[(A, OPUS, expected)]);
+            assert!(call.failures.is_empty());
+        }
+    }
+
+    #[test]
+    fn receive_recovery_waits_until_the_group_is_established_and_never_ends_the_connection() {
+        let grace = ReceiveTuning::default().dave_grace;
+        let mut out = Vec::new();
+        let (mut fresh, _) = started(1);
+        assert!(
+            !fresh
+                .receive_recovery(Instant::now() + grace, &mut out)
+                .unwrap()
+        );
+
+        let mut downgraded = group(&[BOT, A]);
+        let downgrade = downgraded.fake.downgrade();
+        downgraded.enqueue(downgrade);
+        downgraded.run();
+        let later = downgraded.now + grace;
+        assert!(
+            !downgraded
+                .dave_mut(user(BOT))
+                .receive_recovery(later, &mut out)
+                .unwrap()
+        );
+        assert!(out.is_empty());
+
+        let mut joining = group(&[BOT, A]);
+        joining.now += grace;
+        joining.fake.hold_transitions = true;
+        joining.join(user(C));
+        joining.run();
+        let later = joining.now + grace;
+        assert!(
+            !joining
+                .dave_mut(user(BOT))
+                .receive_recovery(later, &mut out)
+                .unwrap()
+        );
+        assert!(out.is_empty());
+        release(&mut joining);
+        assert!(
+            joining
+                .dave_mut(user(BOT))
+                .receive_recovery(later, &mut out)
+                .unwrap()
+        );
+        out.clear();
+
+        let mut call = group(&[BOT, A]);
+        for round in 0..6 {
+            let settling = call.now;
+            assert!(
+                !call
+                    .dave_mut(user(BOT))
+                    .receive_recovery(settling, &mut out)
+                    .unwrap(),
+                "{round}"
+            );
+            call.now += grace;
+            let settled = call.now;
+            assert!(
+                call.dave_mut(user(BOT))
+                    .receive_recovery(settled, &mut out)
+                    .unwrap(),
+                "{round}"
+            );
+            assert!(matches!(
+                out.as_slice(),
+                [Outbound::InvalidCommitWelcome(_), Outbound::KeyPackage(_)]
+            ));
+            for message in out.drain(..) {
+                call.receive(user(BOT), message);
+            }
+            call.run();
+        }
+
+        let counters = call.dave(user(BOT)).counters();
+        assert_eq!(counters.receive_recoveries, 6);
+        assert_eq!(counters.recoveries, 0);
+        assert!(call.failures.is_empty());
+        assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+        assert_eq!(hear(&mut call, A, BOT), OPUS);
     }
 
     #[test]
@@ -1741,6 +2005,21 @@ mod tests {
             let _ = dave.handle(welcome, now, &mut out);
             let _ = dave.handle(DaveOp::ExternalSender(bytes), now, &mut out);
             prop_assert_eq!(dave.counters().dave_panics, 0);
+        }
+
+        #[test]
+        fn malformed_dave_frames_never_panic_the_decryptor(
+            body in vec(any::<u8>(), 0..64),
+            supplemental in vec(any::<u8>(), 0..24),
+        ) {
+            let mut call = group(&[BOT, A]);
+            let size = u8::try_from(supplemental.len() + 3).unwrap();
+            let frame = [body, supplemental, vec![size], MARKER.to_vec()].concat();
+            let mut out = Vec::new();
+
+            let heard = call.dave_mut(user(BOT)).receive(user(A), &frame, &mut out);
+            prop_assert!(heard.is_err() && out.is_empty());
+            prop_assert_eq!(call.dave(user(BOT)).counters().decrypt_panics, 0);
         }
     }
 }

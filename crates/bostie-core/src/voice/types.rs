@@ -359,6 +359,7 @@ pub struct ReceiveTuning {
     pub recoveries_per_user: u8,
     pub dave_grace: Duration,
     pub downgrade_expiry: u32,
+    pub upgrade_passthrough: u32,
 }
 
 impl Default for ReceiveTuning {
@@ -379,6 +380,7 @@ impl Default for ReceiveTuning {
             recoveries_per_user: 2,
             dave_grace: Duration::from_secs(10),
             downgrade_expiry: 24,
+            upgrade_passthrough: 10,
         }
     }
 }
