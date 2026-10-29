@@ -540,12 +540,16 @@ impl<'c> Session<'c> {
         let (user, channel) = (self.conn.user, self.conn.dave_channel());
         let protocol_version = description.dave_protocol_version;
         let recovery = self.conn.tuning.dave;
-        let started = spawn_blocking(move || {
+        let start = move || {
             let mut dave = Dave::new(user, channel).with_recovery(recovery);
             let mut out = Vec::new();
             dave.start(protocol_version, &mut out).map(|()| (dave, out))
-        })
-        .await;
+        };
+        let started = if protocol_version == 0 {
+            Ok(start())
+        } else {
+            spawn_blocking(start).await
+        };
         let (dave, out) = match started {
             Ok(Ok(started)) => started,
             Ok(Err(error)) => return Err(SessionEnd::DaveFailed(error.to_string())),
