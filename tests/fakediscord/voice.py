@@ -4,7 +4,7 @@ import itertools
 import secrets
 import struct
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +23,9 @@ DISCOVERY = struct.Struct(">HHI64sH")
 DISCOVERY_REQUEST = b"\x00\x01\x00\x46"
 RTP_HEADER = struct.Struct(">2xHII")
 RTP_FIRST_BYTES = b"\x80\x78"
+RTP_EXTENDED_FIRST_BYTES = b"\x90\x78"
+RTP_ONE_BYTE_PROFILE = 0xBEDE
+SAMPLES_PER_PACKET = 960
 RTP_PAYLOAD_TYPE = 120
 NONCE_SIZE = 4
 TAG_SIZE = 16
@@ -71,7 +74,8 @@ class VoiceSocket:
 class VoiceSession:
     """A voice session from its Identify on.
 
-    ``sent`` keeps every sequenced frame, so a resume can replay what was missed.
+    ``sent`` keeps every sequenced frame, so a resume can replay what was missed;
+    ``address`` is the bot's UDP address from discovery.
     """
 
     identify: Json
@@ -80,6 +84,8 @@ class VoiceSession:
     mode: str | None = None
     socket: VoiceSocket | None = None
     sent: list[Frame] = field(default_factory=list)
+    address: Address | None = None
+    nonces: Iterator[int] = field(default_factory=itertools.count)
 
 
 class _Datagrams(asyncio.DatagramProtocol):
@@ -131,6 +137,41 @@ class VoiceGateway:
         await self.voice_op(
             5, {"user_id": str(user_id), "ssrc": ssrc, "speaking": flags}
         )
+
+    async def send_audio(
+        self,
+        user_id: int,
+        ssrc: int,
+        packets: Iterable[bytes],
+        *,
+        sequence: int = 0,
+        timestamp: int = 0,
+        extension: bytes | None = None,
+    ) -> None:
+        """Send ``user_id``'s Opus ``packets`` on ``ssrc`` to the bot, all at once."""
+        session = self.voice_sessions[-1] if self.voice_sessions else None
+        address = None if session is None else session.address
+        if session is None or address is None or session.mode != AES_GCM:
+            raise RuntimeError("no AES-GCM voice session with a discovered address")
+        if extension is None:
+            first, preamble, body = RTP_FIRST_BYTES, b"", b""
+        else:
+            body = extension + bytes(-len(extension) % 4)
+            preamble = struct.pack(">HH", RTP_ONE_BYTE_PROFILE, len(body) // 4)
+            first = RTP_EXTENDED_FIRST_BYTES
+        aead = AESGCM(session.secret_key)
+        for index, payload in enumerate(packets):
+            fields = (
+                (sequence + index) % 2**16,
+                (timestamp + index * SAMPLES_PER_PACKET) % 2**32,
+                ssrc,
+            )
+            header = first + struct.pack(">HII", *fields) + preamble
+            nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE)
+            sealed = aead.encrypt(
+                nonce + bytes(12 - NONCE_SIZE), body + payload, header
+            )
+            self._send_datagram(header + sealed + nonce, address)
 
     async def next_voice_identify(self) -> Json:
         """Wait for the next voice Identify and return its ``d``."""
@@ -312,9 +353,10 @@ class VoiceGateway:
     def _on_datagram(self, data: bytes, addr: Address) -> None:
         if len(data) == DISCOVERY.size and data.startswith(DISCOVERY_REQUEST):
             ssrc = DISCOVERY.unpack(data)[2]
+            if (session := self._sessions_by_ssrc.get(ssrc)) is not None:
+                session.address = addr
             answer = DISCOVERY.pack(2, 70, ssrc, addr[0].encode(), addr[1])
-            if self._udp is not None:
-                self._udp.sendto(answer, addr)
+            self._send_datagram(answer, addr)
         elif (
             len(data) >= RTP_HEADER.size
             and data[0] >> 6 == 2
@@ -326,6 +368,10 @@ class VoiceGateway:
             else:
                 self.packets.append(packet)
                 self._packet_arrived.set()
+
+    def _send_datagram(self, data: bytes, addr: Address) -> None:
+        if self._udp is not None:
+            self._udp.sendto(data, addr)
 
     def _open(self, data: bytes) -> Packet | None:
         sequence, timestamp, ssrc = RTP_HEADER.unpack_from(data)

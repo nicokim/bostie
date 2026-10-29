@@ -15,7 +15,7 @@ import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fakediscord import FakeDiscord, Order, payloads
 from fakediscord.payloads import Json
-from fakediscord.voice import AES_GCM, MODES
+from fakediscord.voice import AES_GCM, DISCOVERY, MODES
 
 type Scenario = Callable[
     [FakeDiscord, aiohttp.ClientSession], Coroutine[Any, Any, None]
@@ -324,6 +324,59 @@ def test_rtp_packets_open_with_the_session_key_and_bad_ones_are_kept_aside() -> 
         ]
         assert packets[0].arrived <= packets[1].arrived
         assert fake.rejected_packets == rejected
+
+    run(scenario)
+
+
+def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> None:
+    async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
+        async with gateway(fake, session) as ws:
+            state, server = await join(ws)
+        async with session.ws_connect(voice_url(fake)) as voice:
+            ssrc = (await identified(voice, state, server))["d"]["ssrc"]
+            await voice.send_json(select_protocol())
+            key = bytes((await receive(voice))["d"]["secret_key"])
+            loop = asyncio.get_running_loop()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                udp.setblocking(False)
+                udp.connect(("127.0.0.1", fake.udp_port))
+                udp.send(DISCOVERY.pack(1, 70, ssrc, b"", 0))
+                await loop.sock_recv(udp, DISCOVERY.size)
+                await fake.send_audio(
+                    4,
+                    4321,
+                    [b"first", b"second"],
+                    sequence=65535,
+                    timestamp=2**32 - 960,
+                    extension=b"\x10\x7f",
+                )
+                await fake.send_audio(4, 4321, [b"plain"])
+                datagrams = [await loop.sock_recv(udp, 2048) for _ in range(3)]
+
+        opened = [
+            (
+                datagram[:size],
+                int.from_bytes(datagram[-4:]),
+                AESGCM(key).decrypt(
+                    datagram[-4:] + bytes(8), datagram[size:-4], datagram[:size]
+                ),
+            )
+            for datagram, size in zip(datagrams, [16, 16, 12], strict=True)
+        ]
+        preamble = b"\xbe\xde\x00\x01"
+        assert opened == [
+            (
+                b"\x90\x78" + struct.pack(">HII", 65535, 2**32 - 960, 4321) + preamble,
+                0,
+                b"\x10\x7f\x00\x00first",
+            ),
+            (
+                b"\x90\x78" + struct.pack(">HII", 0, 0, 4321) + preamble,
+                1,
+                b"\x10\x7f\x00\x00second",
+            ),
+            (b"\x80\x78" + struct.pack(">HII", 0, 0, 4321), 2, b"plain"),
+        ]
 
     run(scenario)
 
