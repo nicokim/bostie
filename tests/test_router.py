@@ -31,7 +31,10 @@ async def on_message(event: MessageCreate) -> None:
     pass
 
 
-async def on_change(event: MessageCreate | MessageUpdate) -> None:
+type Change = MessageCreate | MessageUpdate
+
+
+async def on_change(event: Change) -> None:
     pass
 
 

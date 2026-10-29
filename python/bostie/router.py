@@ -8,6 +8,7 @@ from typing import (
     Any,
     ClassVar,
     Protocol,
+    TypeAliasType,
     Union,
     get_args,
     get_origin,
@@ -286,6 +287,8 @@ def _annotated_events(listener: Callable[..., object]) -> tuple[Any, ...]:
             f"{listener!r}: annotate the event parameter or pass the event classes "
             "to listen()"
         )
+    if isinstance(hint, TypeAliasType):
+        hint = hint.__value__
     return get_args(hint) if get_origin(hint) in (Union, UnionType) else (hint,)
 
 
