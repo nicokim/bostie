@@ -167,7 +167,7 @@ class VoiceGateway:
                 ssrc,
             )
             header = first + struct.pack(">HII", *fields) + preamble
-            nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE)
+            nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE, "little")
             sealed = aead.encrypt(
                 nonce + bytes(12 - NONCE_SIZE), body + payload, header
             )

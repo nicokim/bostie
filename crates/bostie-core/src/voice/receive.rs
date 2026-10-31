@@ -91,7 +91,8 @@ impl Intake {
             .windows
             .entry(header.ssrc)
             .or_insert_with(|| ReplayWindow::new(replay_window));
-        if !window.accept(opened.nonce) {
+        let counter = u32::from_le_bytes(opened.nonce.to_be_bytes());
+        if !window.accept(counter) {
             bump(&media.receive.replays);
             return;
         }
@@ -3002,6 +3003,31 @@ mod tests {
             rig.media.counters.packets_received.load(Ordering::Relaxed),
             8
         );
+    }
+
+    #[test]
+    fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
+        let mut rig = Rig::new(tuning());
+        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
+        let mut intake = Intake::new(Arc::clone(&rig.media), Arc::clone(&rig.socket), 64);
+        let _packets = rig.open(options(ReceiveFormat::Packets));
+
+        for (nonce, sequence) in [(2, 1), (256, 2)] {
+            let sealing = Sealing::default();
+            let mut packet = sfu::seal(
+                &cipher,
+                nonce,
+                ALICE_SSRC,
+                sequence,
+                0,
+                &SILENCE_FRAME,
+                &sealing,
+            );
+            intake.rtp(&mut packet);
+        }
+
+        assert_eq!(rig.media.arrivals.lock().len(), 2);
+        assert_eq!(rig.counter("replays"), 0);
     }
 
     #[test]

@@ -356,7 +356,7 @@ def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> No
         opened = [
             (
                 datagram[:size],
-                int.from_bytes(datagram[-4:]),
+                int.from_bytes(datagram[-4:], "little"),
                 AESGCM(key).decrypt(
                     datagram[-4:] + bytes(8), datagram[size:-4], datagram[:size]
                 ),

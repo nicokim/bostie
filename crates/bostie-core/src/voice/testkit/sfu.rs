@@ -68,7 +68,10 @@ pub fn seal(
         body.push(send.padding);
     }
     let mut packet = Vec::new();
-    cipher.seal(nonce, &header, &body, &mut packet).unwrap();
+    let little_endian = u32::from_be_bytes(nonce.to_le_bytes());
+    cipher
+        .seal(little_endian, &header, &body, &mut packet)
+        .unwrap();
     packet
 }
 
@@ -284,6 +287,7 @@ fn capture(shared: &Shared, datagram: &[u8], at: Instant) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::voice::crypto::NONCE_LEN;
     use crate::voice::rtp::{Extension, PAYLOAD_TYPE, write_header};
     use crate::voice::udp::discovery_request;
 
@@ -390,11 +394,9 @@ mod tests {
         assert_eq!(opened.extension, [0x10, 0xAA, 0, 0]);
         assert_eq!(opened.payload, b"opus");
         let mut second = receive();
+        assert_eq!(second[second.len() - NONCE_LEN..], [1, 0, 0, 0]);
         let opened = cipher.open(&mut second).unwrap();
-        assert_eq!(
-            (opened.header.sequence, opened.nonce, opened.payload),
-            (10, 1, &b"next"[..])
-        );
+        assert_eq!((opened.header.sequence, opened.payload), (10, &b"next"[..]));
         assert_eq!(receive(), b"rtcp");
     }
 }
