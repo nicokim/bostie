@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::os::raw::c_int;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use opus::{Bitrate, Channels};
 
 use crate::error::CoreError;
@@ -14,10 +14,9 @@ pub const MAX_PACKET: usize = 1_275;
 const MAX_DECODE: u32 = 5_760;
 
 pub fn packet_samples(packet: &[u8]) -> Option<u32> {
-    if !fits_libopus(packet) {
+    if !fits_libopus(packet) || !is_well_framed(packet) {
         return None;
     }
-    opus::packet::parse(packet).ok()?;
     let samples = opus::packet::get_nb_samples(packet, SAMPLE_RATE).ok()?;
     u32::try_from(samples).ok().filter(|&samples| samples > 0)
 }
@@ -37,6 +36,59 @@ pub fn received_samples(packet: &[u8]) -> Option<u32> {
 
 fn fits_libopus(packet: &[u8]) -> bool {
     c_int::try_from(packet.len()).is_ok()
+}
+
+fn is_well_framed(packet: &[u8]) -> bool {
+    let Some((&toc, body)) = packet.split_first() else {
+        return false;
+    };
+    let last = match toc & 0x03 {
+        0 => Some(body.len()),
+        1 => (body.len() % 2 == 0).then_some(body.len() / 2),
+        2 => frame_length(body)
+            .and_then(|(length, used)| body.len().checked_sub(used)?.checked_sub(length)),
+        _ => last_of_many(body),
+    };
+    last.is_some_and(|last| last <= MAX_PACKET)
+}
+
+fn last_of_many(body: &[u8]) -> Option<usize> {
+    let (&header, mut rest) = body.split_first()?;
+    let count = usize::from(header & 0x3F);
+    if count == 0 {
+        return None;
+    }
+    let mut len = rest.len();
+    if header & 0x40 != 0 {
+        loop {
+            let (&padding, tail) = rest.split_first().filter(|_| len > 0)?;
+            rest = tail;
+            len = len.checked_sub(1 + usize::from(padding.min(254)))?;
+            if padding < 255 {
+                break;
+            }
+        }
+    }
+    if header & 0x80 == 0 {
+        let last = len / count;
+        return (last * count == len).then_some(last);
+    }
+    let mut lengths = rest.get(..len)?;
+    let mut last = len;
+    for _ in 1..count {
+        let (length, used) = frame_length(lengths)?;
+        lengths = lengths.get(used..).filter(|tail| tail.len() >= length)?;
+        last = last.checked_sub(used + length)?;
+    }
+    Some(last)
+}
+
+fn frame_length(bytes: &[u8]) -> Option<(usize, usize)> {
+    match *bytes {
+        [first, ..] if first < 252 => Some((usize::from(first), 1)),
+        [first, second, ..] => Some((usize::from(second) * 4 + usize::from(first), 2)),
+        _ => None,
+    }
 }
 
 pub struct Encoder {
@@ -183,19 +235,26 @@ pub fn split(samples: usize, rate: u32, channels: u8) -> impl Iterator<Item = Ra
 
 pub fn write_samples(pcm: &[f32], sample: SampleFormat, out: &mut BytesMut) {
     match sample {
-        SampleFormat::S16Le => {
-            out.reserve(pcm.len() * 2);
-            for &value in pcm {
-                out.put_i16_le((value.clamp(-1.0, 1.0) * 32_767.0).round() as i16);
-            }
-        }
-        SampleFormat::F32Le => {
-            out.reserve(pcm.len() * 4);
-            for &value in pcm {
-                out.put_f32_le(value);
-            }
-        }
+        SampleFormat::S16Le => write_each(pcm, out, |value| to_s16(value).to_le_bytes()),
+        SampleFormat::F32Le => write_each(pcm, out, f32::to_le_bytes),
     }
+}
+
+fn write_each<const N: usize>(pcm: &[f32], out: &mut BytesMut, convert: impl Fn(f32) -> [u8; N]) {
+    let start = out.len();
+    out.resize(start + pcm.len() * N, 0);
+    let (samples, _) = out
+        .get_mut(start..)
+        .unwrap_or_default()
+        .as_chunks_mut::<N>();
+    for (bytes, &value) in samples.iter_mut().zip(pcm) {
+        *bytes = convert(value);
+    }
+}
+
+fn to_s16(value: f32) -> i16 {
+    let scaled = value.clamp(-1.0, 1.0) * 32_767.0;
+    (scaled + 0.5_f32.copysign(scaled)) as i16
 }
 
 fn at_rate(samples48: usize, rate: u32) -> usize {
@@ -246,6 +305,9 @@ impl FrameEncoder {
 #[cfg(test)]
 pub(crate) mod tests {
     use std::f32::consts::TAU;
+
+    use proptest::collection::vec;
+    use proptest::prelude::*;
 
     use super::*;
 
@@ -533,19 +595,43 @@ pub(crate) mod tests {
 
     #[test]
     fn samples_are_written_as_rounded_clamped_s16le_or_as_f32le() {
-        let pcm = [1.5, -1.5, 0.5, -0.25];
+        let edges = [1.5, -1.5, 0.5, -0.25, 1.0, -1.0, f32::NAN];
+        let ties = (-32_768..32_768).map(|step| (step as f32 + 0.5) / 32_767.0);
+        let pcm: Vec<f32> = edges
+            .into_iter()
+            .chain(ties.flat_map(|tie| [tie.next_down(), tie, tie.next_up()]))
+            .collect();
         let mut s16 = BytesMut::new();
         let mut f32le = BytesMut::new();
 
         write_samples(&pcm, SampleFormat::S16Le, &mut s16);
         write_samples(&pcm, SampleFormat::F32Le, &mut f32le);
 
-        let expected: Vec<u8> = [32_767_i16, -32_767, 16_384, -8_192]
+        let known: Vec<u8> = [32_767_i16, -32_767, 16_384, -8_192, 32_767, -32_767, 0]
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
-        assert_eq!(s16.as_ref(), expected);
+        assert_eq!(s16[..known.len()], known);
+        let rounded: Vec<u8> = pcm
+            .iter()
+            .flat_map(|sample| ((sample.clamp(-1.0, 1.0) * 32_767.0).round() as i16).to_le_bytes())
+            .collect();
+        assert_eq!(s16.as_ref(), rounded);
         let floats: Vec<u8> = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
         assert_eq!(f32le.as_ref(), floats);
+    }
+
+    proptest! {
+        #[test]
+        fn packets_are_framed_as_libopus_parses_them(
+            packet in prop_oneof![vec(any::<u8>(), 0..8), vec(any::<u8>(), 0..1_400)],
+        ) {
+            let parsed = opus::packet::parse(&packet)
+                .ok()
+                .and_then(|_| opus::packet::get_nb_samples(&packet, SAMPLE_RATE).ok())
+                .and_then(|samples| u32::try_from(samples).ok())
+                .filter(|&samples| samples > 0);
+            prop_assert_eq!(packet_samples(&packet), parsed);
+        }
     }
 }
