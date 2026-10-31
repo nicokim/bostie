@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
 use opus::{Channels, SoftClip};
+use parking_lot::MutexGuard;
 use tracing::{debug, warn};
 
 use crate::ids::{Handle, UserId};
@@ -17,7 +18,7 @@ use crate::inbox::Delivery;
 use crate::voice::codec::{self, Decoder};
 use crate::voice::connection::Info;
 use crate::voice::crypto::ReplayWindow;
-use crate::voice::dave::{self, DecryptFailure};
+use crate::voice::dave::{self, Dave, DecryptFailure};
 use crate::voice::media::{Arrival, Media, Transport, UserCounters, bump};
 use crate::voice::pacer::Tick;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, to_samples};
@@ -420,7 +421,7 @@ impl State {
         self.heard = false;
         self.map(now);
         self.peak.observe(self.batch.len());
-        self.receive(now, now48, hangover);
+        self.receive(now, now48, hangover, deadline);
         if self.speech_activity {
             self.expire_speech(now48, hangover);
         } else {
@@ -585,7 +586,7 @@ impl State {
         queue.push_back(arrival);
     }
 
-    fn receive(&mut self, now: Instant, now48: i64, hangover: i64) {
+    fn receive(&mut self, now: Instant, now48: i64, hangover: i64, deadline: Instant) {
         let (protocol_version, session_built) = self.media.receive_state();
         let all_plain = protocol_version == 0 && !session_built;
         let mut batch = mem::take(&mut self.batch);
@@ -596,7 +597,7 @@ impl State {
         }
         self.batch = batch;
         let cut = if work.iter().any(|item| item.plain.is_none()) || !self.held.is_empty() {
-            self.decrypt(&mut work, now)
+            self.decrypt(&mut work, now, deadline)
         } else {
             work.len()
         };
@@ -720,22 +721,50 @@ impl State {
             .or_insert_with(|| Feed::new(next, user, own, now48))
     }
 
-    fn decrypt(&mut self, work: &mut [Work], now: Instant) -> usize {
+    fn decrypt(&mut self, work: &mut [Work], now: Instant, deadline: Instant) -> usize {
         let media = Arc::clone(&self.media);
         let Some(mut dave) = media.dave.try_lock() else {
             bump(&media.receive.decrypt_busy);
             return 0;
         };
+        let mut retries = self.tuning.dave_retries;
+        let mut cut = 0;
+        loop {
+            let spent;
+            (cut, spent) = self.slice(&mut dave, work, cut, &mut retries, now);
+            if !spent || Instant::now() >= deadline {
+                drop(dave);
+                break;
+            }
+            MutexGuard::unlock_fair(dave);
+            match media.dave.try_lock() {
+                Some(next) => dave = next,
+                None => break,
+            }
+        }
+        self.users_changed = true;
+        self.request_recovery(now);
+        cut
+    }
+
+    fn slice(
+        &mut self,
+        dave: &mut Dave,
+        work: &mut [Work],
+        from: usize,
+        retries: &mut usize,
+        now: Instant,
+    ) -> (usize, bool) {
         let started = Instant::now();
         let before = dave.counters();
         let generation = dave.generation();
-        let protocol_version = media.protocol_version();
+        let protocol_version = self.media.protocol_version();
         let counting = protocol_version > 0 && !dave.settling(now);
         let budget = self.tuning.dave_budget;
-        let mut retries = self.tuning.dave_retries;
         let mut spent = false;
         {
             let Self {
+                media,
                 held,
                 held_users,
                 plain,
@@ -745,10 +774,10 @@ impl State {
                 ..
             } = self;
             held.retain_mut(|held| {
-                if spent || retries == 0 || held.tried == generation {
+                if spent || *retries == 0 || held.tried == generation {
                     return true;
                 }
-                retries = retries.saturating_sub(1);
+                *retries = retries.saturating_sub(1);
                 let payload = held.arrival.payload.as_deref().unwrap_or_default();
                 let decrypted = dave.receive(held.user, payload, plain);
                 spent = started.elapsed() >= budget;
@@ -778,7 +807,7 @@ impl State {
             });
         }
         let mut cut = work.len();
-        for (index, item) in work.iter_mut().enumerate() {
+        for (index, item) in work.iter_mut().enumerate().skip(from) {
             if item.plain.is_some() {
                 continue;
             }
@@ -803,20 +832,17 @@ impl State {
                         counting,
                     );
                     if failure == DecryptFailure::Unencrypted || protocol_version == 0 {
-                        bump(&media.receive.undecryptable);
+                        bump(&self.media.receive.undecryptable);
                     } else {
                         self.hold(item, generation);
                     }
                 }
             }
         }
-        self.users_changed = true;
         if dave.counters() != before {
-            media.refresh(&dave);
+            self.media.refresh(dave);
         }
-        drop(dave);
-        self.request_recovery(now);
-        cut
+        (cut, spent)
     }
 
     fn hold(&mut self, item: &Work, tried: u64) {
@@ -2555,7 +2581,8 @@ mod tests {
     }
 
     #[test]
-    fn dave_frames_behind_a_busy_lock_or_over_the_tick_budget_wait_in_their_users_order() {
+    fn dave_frames_wait_in_their_users_order_behind_a_busy_lock_or_past_the_deadline_and_decrypt_in_slices_before_it()
+     {
         let plain_ending_in_the_marker = Bytes::from_static(&[0xFC, 0x01, 0x02, 0xFA, 0xFA]);
         let mut without_dave = Rig::new(tuning());
         without_dave.map(ALICE_SSRC, ALICE);
@@ -2575,7 +2602,7 @@ mod tests {
         rig.map(ALICE_SSRC, ALICE);
         rig.map(BOB_SSRC, BOB);
         let receiver = rig.open(options(ReceiveFormat::Packets));
-        let frames: Vec<Vec<u8>> = opus(3, 0.3)
+        let frames: Vec<Vec<u8>> = opus(5, 0.3)
             .iter()
             .map(|packet| call.speak(user(ALICE), packet))
             .collect();
@@ -2604,9 +2631,14 @@ mod tests {
         let mut ticks = vec![order(read(&receiver))];
         rig.send(ALICE_SSRC, 3, &frames[2]);
         for _ in 0..3 {
-            rig.step();
+            rig.now += FRAME;
+            rig.run(0, Instant::now());
             ticks.push(order(read(&receiver)));
         }
+        rig.send(ALICE_SSRC, 4, &frames[3]);
+        rig.send(ALICE_SSRC, 5, &frames[4]);
+        rig.step();
+        ticks.push(order(read(&receiver)));
 
         assert_eq!(while_busy, [plain_ending_in_the_marker]);
         assert_eq!(started, [(ALICE, true, Duration::ZERO)]);
@@ -2616,7 +2648,8 @@ mod tests {
                 vec![(BOB, 0)],
                 vec![(ALICE, 0)],
                 vec![(ALICE, 1), (ALICE, 2)],
-                vec![(ALICE, 3)]
+                vec![(ALICE, 3)],
+                vec![(ALICE, 4), (ALICE, 5)]
             ]
         );
         assert_eq!(
