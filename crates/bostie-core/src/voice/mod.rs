@@ -45,7 +45,7 @@ pub use self::connection::HistoryEntry;
 use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
-use self::pacer::{PacerPool, ThreadLoad};
+use self::pacer::{PacerPool, Seat, ThreadLoad};
 use self::receive::Reception;
 use self::receiver::Receiver;
 use self::sink::Sink;
@@ -107,7 +107,7 @@ struct ConnectionHandle {
     stop: watch::Sender<bool>,
     info: Arc<Info>,
     media: Arc<Media>,
-    pacer_thread: usize,
+    pacer_thread: Seat,
     supervisor: JoinHandle<()>,
 }
 
@@ -340,7 +340,7 @@ impl Voice {
             (
                 Arc::clone(&handle.info),
                 Arc::clone(&handle.media),
-                handle.pacer_thread,
+                handle.pacer_thread.thread(),
             )
         })?;
         let view = info.view();
