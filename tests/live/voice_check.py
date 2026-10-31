@@ -103,10 +103,6 @@ def first_index(
     )
 
 
-def dave_transition(event: voice.VoiceEvent) -> bool:
-    return isinstance(event, voice.DaveTransition)
-
-
 def ready(event: voice.VoiceEvent) -> bool:
     return isinstance(event, voice.StateChange) and event.new is State.READY
 
@@ -514,19 +510,23 @@ async def voice_check(
     async with sampled(bot, guild_id) as runs:
         vc = await bot.voice.connect(channel_id, timeout=VOICE_TIMEOUT)
         report(
-            "connect to the empty channel: READY with DAVE protocol 1",
+            "connect to the voice channel: READY with DAVE protocol 1",
             vc.state is State.READY and vc.dave.protocol_version == 1,
         )
-        early = first_index(timeline, 0, lambda e: isinstance(e, voice.UserJoin))
-        print(f"op 11 before READY while alone: {'yes' if early is not None else 'no'}")
-        before = vc.stats().send
-        await play(vc, 1.0)
-        after = vc.stats().send
-        report(
-            "a 1 s write drains while alone and sends nothing",
-            after.alone_ticks > before.alone_ticks
-            and after.packets_sent == before.packets_sent,
-        )
+        if first_index(timeline, 0, lambda e: isinstance(e, voice.UserJoin)) is None:
+            before = vc.stats().send
+            await play(vc, 1.0)
+            after = vc.stats().send
+            report(
+                "a 1 s write drains while alone and sends nothing",
+                after.alone_ticks > before.alone_ticks
+                and after.packets_sent == before.packets_sent,
+            )
+        else:
+            skip(
+                "a 1 s write drains while alone and sends nothing",
+                "someone was already in the channel",
+            )
         report(
             "no stall reported while alone",
             not any(isinstance(e, voice.MediaStalled) for e in timeline),
@@ -536,7 +536,6 @@ async def voice_check(
             f"\nJoin the voice channel {channel_id} within {HUMAN_TIMEOUT} s.",
             flush=True,
         )
-        mark = len(timeline)
         joined = await within(
             HUMAN_TIMEOUT, asyncio.ensure_future(bot.wait_for(voice.UserJoin))
         )
@@ -545,14 +544,12 @@ async def voice_check(
             await bot.close()
             await started
             return
-        if first_index(timeline, mark, dave_transition) is None:
-            await within(
-                VOICE_TIMEOUT, asyncio.ensure_future(bot.wait_for(voice.DaveTransition))
-            )
+        transitioned = await within(
+            VOICE_TIMEOUT, asyncio.ensure_future(bot.wait_for(voice.DaveTransition))
+        )
         report(
             "a human joins: UserJoin, then DaveTransition",
-            first_index(timeline, mark, dave_transition) is not None
-            and vc.dave.privacy_code is not None,
+            transitioned is not None and vc.dave.privacy_code is not None,
         )
         human = joined.user_id
         print(f"privacy code: {vc.dave.privacy_code}")
