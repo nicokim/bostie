@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::io;
+use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -588,6 +589,7 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
     let mut lanes: Vec<(Seat, LaneFn)> = Vec::new();
     let mut afters: Vec<After> = Vec::new();
     let mut strain = Strain::default();
+    let mut shed = false;
     let mut next = clock.now();
     loop {
         if lanes.is_empty() && afters.is_empty() {
@@ -620,13 +622,14 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
         load.record_work(sent.saturating_duration_since(now));
         load.lanes
             .fetch_sub(before - lanes.len(), Ordering::Relaxed);
+        if mem::take(&mut shed) {
+            home.rebalance(&mut lanes, &mut afters, sent, next + FRAME);
+        }
         if !afters.is_empty() {
             let deadline = next + FRAME - AFTER_MARGIN;
             let done = run_afters(&mut afters, tick, deadline, load, clock, sent);
             load.record_after(done.saturating_duration_since(sent));
-            if strain.sustained(load.receive(), done, &home.placement.tuning) {
-                home.rebalance(&mut lanes, &mut afters, done, next + FRAME);
-            }
+            shed = strain.sustained(load.receive(), done, &home.placement.tuning);
         }
         next += FRAME;
     }
@@ -1196,13 +1199,15 @@ mod tests {
     }
 
     #[test]
-    fn a_heavy_thread_moves_a_connection_with_its_receive_work_and_its_state_to_another_thread() {
+    fn a_heavy_thread_moves_a_connection_with_its_receive_work_and_its_state_even_when_that_work_ends_past_the_new_threads_tick()
+     {
         let pool = PacerPool::tuned(PacerTuning {
             rebalance_above: Duration::from_millis(3),
             rebalance_after: FRAME * 5,
         });
         let (sender, calls) = mpsc::channel();
         let thread_name = || thread::current().name().unwrap_or_default().to_owned();
+        let receive_work = phase(1) / 2 + Duration::from_millis(1);
         let seats: Vec<Seat> = (0..2)
             .map(|connection| {
                 let (lane_calls, after_calls) = (sender.clone(), sender.clone());
@@ -1214,7 +1219,7 @@ mod tests {
                         .is_ok()
                 });
                 let after: AfterFn = Box::new(move |_, _| {
-                    thread::sleep(Duration::from_millis(2));
+                    thread::sleep(receive_work);
                     after_calls.send((connection, None, thread_name())).is_ok()
                 });
                 pool.assign_pair(lane, after).unwrap()
