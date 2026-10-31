@@ -12,7 +12,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Callable, Iterable
 from pathlib import Path
 
-from bostie import Bot, voice
+from bostie import Bot, errors, voice
 from bostie.events import VoiceServerUpdate
 from bostie.voice import State
 
@@ -180,6 +180,17 @@ async def switch_region(
     await asyncio.sleep(1)
 
 
+async def server_deafen(bot: Bot, guild_id: int, user_id: int, deaf: bool) -> None:
+    await bot.http.request(
+        "PATCH",
+        "/guilds/{guild_id}/members/{user_id}",
+        guild_id=guild_id,
+        user_id=user_id,
+        json={"deaf": deaf},
+        reason="bostie voice check",
+    )
+
+
 async def play(vc: voice.VoiceConnection, seconds: float) -> None:
     async with vc.sink() as out:
         await out.write(tone(seconds))
@@ -302,12 +313,15 @@ async def receive_checks(
         skip("a camera turned on", "no camera")
     else:
         await prompt("Turn your camera on and talk for 10 s.")
+        before = vc.stats().receive.invalid_payloads
         async with vc.receive(LISTEN, users={human}) as rx:
             frames = await collect(rx, 10)
+        invalid = vc.stats().receive.invalid_payloads - before
         print("Turn your camera off.")
+        print(f"invalid payloads: {invalid}, frames: {spoken(frames)}")
         report(
             "a camera turned on: no invalid payloads and frames keep arriving",
-            vc.stats().receive.invalid_payloads == 0 and spoken(frames) > 0,
+            invalid == 0 and spoken(frames) > 0,
         )
 
     if not await ask("Can a second person join and leave while you talk?"):
@@ -316,6 +330,7 @@ async def receive_checks(
         await prompt(
             "Keep talking while the second person joins, stays 5 s and leaves."
         )
+        replays = vc.stats().receive.replays
         async with vc.receive(LISTEN, users={human}) as rx:
             listening = asyncio.create_task(collect(rx, 3 * HUMAN_TIMEOUT))
             joined = await within(
@@ -340,10 +355,13 @@ async def receive_checks(
         stats = vc.stats()
         for user_id, counters in stats.users.items():
             print(f"user {user_id}: {counters.decrypt_failures} decrypt failures")
+        print(f"replays refused: {stats.receive.replays - replays}")
         report(
-            "a second person joins and leaves: frames go on, no receive recovery",
+            "a second person joins and leaves: frames go on, no replay is refused, "
+            "no receive recovery",
             left is not None
             and spoken(frames) > 0
+            and stats.receive.replays == replays
             and stats.receive.receive_recoveries == 0,
         )
 
@@ -364,29 +382,41 @@ async def receive_checks(
         lined_up and {me, human} <= files.keys(),
     )
 
-    await prompt("Talk for 10 s, until the bot says to stop.")
+    await prompt("Talk for 20 s, until the bot says to stop.")
     async with vc.receive(LISTEN, users={human}) as rx:
-        hearing = await collect(rx, 2)
         warnings.messages.clear()
         await vc.edit(self_deaf=True)
-        await asyncio.sleep(1)
-        rx.clear()
-        deafened = await collect(rx, 3)
-        warned = sum("deafened" in message for message in warnings.messages)
+        self_deafened = await collect(rx, 3)
         await vc.edit(self_deaf=False)
-        resumed = await collect(rx, 4)
+        self_warned = len(warnings.messages)
+        hearing = await collect(rx, 2)
+        deafened: list[voice.Frame] | None = None
+        try:
+            await server_deafen(bot, vc.guild_id, me, True)
+        except errors.Forbidden:
+            pass
+        else:
+            await asyncio.sleep(1)
+            rx.clear()
+            deafened = await collect(rx, 3)
+            await server_deafen(bot, vc.guild_id, me, False)
+            resumed = await collect(rx, 4)
+            warned = sum("deafened" in message for message in warnings.messages)
     print("Stop talking.")
-    print(
-        f"frames: {spoken(hearing)} before, {spoken(deafened)} deafened, "
-        f"{spoken(resumed)} after"
-    )
+    print(f"frames: {spoken(self_deafened)} self-deafened, {spoken(hearing)} after")
     report(
-        "self-deafen with a receiver open: one warning, frames stop, then resume",
-        warned == 1
-        and spoken(hearing) > 0
-        and spoken(deafened) == 0
-        and spoken(resumed) > 0,
+        "self-deafen with a receiver open: no warning, frames keep arriving",
+        self_warned == 0 and spoken(self_deafened) > 0 and spoken(hearing) > 0,
     )
+    if deafened is None:
+        skip("a moderator deafen with a receiver open", "the bot may not deafen")
+    else:
+        print(f"frames: {spoken(deafened)} deafened, {spoken(resumed)} after")
+        report(
+            "a moderator deafen with a receiver open: one warning, frames stop, "
+            "then resume",
+            warned == 1 and spoken(deafened) == 0 and spoken(resumed) > 0,
+        )
 
     ssrcs = {ssrc for ssrc, user_id in vc.ssrcs.items() if user_id == human}
     await prompt("Leave the voice channel, join it again and talk for 5 s.")

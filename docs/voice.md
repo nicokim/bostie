@@ -197,7 +197,7 @@ async def stop(ctx: Context) -> None:
 
 After `DISCONNECTED` and `MOVED`, the audio already queued is still yours to read, and then `async for` ends. `rx.get_nowait()` returns the next item without waiting. It raises `voice.Empty` when nothing is queued, and `voice.ReceiverClosed` once the receiver has ended and everything was read.
 
-A deafened bot hears nothing: Discord stops sending it audio. bostie logs a warning when you open a receiver while the bot is deafened, or when it is deafened while a receiver is open. `vc.edit(self_deaf=False)` undeafens it. `vc.deaf` tells you whether a moderator deafened it.
+A bot that a moderator deafened hears nothing: Discord stops sending it audio until it is undeafened. `vc.deaf` tells you whether that is the case, and bostie logs a warning when you open a receiver then, or when a moderator deafens the bot while a receiver is open. The bot's own deafen (`self_deaf=True`) only shows the icon in the client: Discord keeps sending it audio.
 
 ### Privacy and consent
 

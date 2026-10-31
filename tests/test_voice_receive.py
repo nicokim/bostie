@@ -26,11 +26,7 @@ from bostie.voice.connection import ContextVoice, VoiceDelivery
 if TYPE_CHECKING:
     from bostie._native import FrameItem
 
-SELF_DEAFENED = (
-    f"the bot is deafened in guild {GUILD_ID}, so Discord sends it no audio; use "
-    "vc.edit(self_deaf=False)"
-)
-SERVER_DEAFENED = (
+DEAFENED = (
     f"a moderator deafened the bot in guild {GUILD_ID}, so Discord sends it no audio"
 )
 
@@ -286,17 +282,13 @@ def test_queued_counts_from_queueing_and_clear_and_close_drop_the_items() -> Non
 @pytest.mark.parametrize(
     ("steps", "warnings"),
     [
-        (["self_deafen", "receive"], [SELF_DEAFENED]),
-        (["receive", "self_deafen", "self_deafen"], [SELF_DEAFENED]),
-        (["receive", "server_deafen", "server_deafen"], [SERVER_DEAFENED]),
-        (
-            ["self_deafen", "receive", "server_deafen"],
-            [SELF_DEAFENED, SERVER_DEAFENED],
-        ),
+        (["server_deafen", "receive"], [DEAFENED]),
+        (["receive", "server_deafen", "server_deafen"], [DEAFENED]),
+        (["self_deafen", "receive", "self_deafen"], []),
         (["receive", "close", "server_deafen"], []),
     ],
 )
-def test_receiving_while_deafened_warns_once_per_receive_or_deafening(
+def test_a_moderator_deafen_warns_once_per_receive_or_deafening_a_self_deafen_never(
     caplog: pytest.LogCaptureFixture, steps: list[str], warnings: list[str]
 ) -> None:
     async def scenario(bot: FakeBot) -> None:

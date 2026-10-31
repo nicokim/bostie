@@ -834,8 +834,8 @@ class VoiceConnection:
         )
         self._receivers.add(receiver)
         self.manager._handles[native.id] = receiver
-        if self._deaf or self._self_deaf:
-            self._warn_deafened(moderator=self._deaf)
+        if self._deaf:
+            self._warn_deafened()
         return receiver
 
     async def play(
@@ -1042,8 +1042,6 @@ class VoiceConnection:
                     )
                 )
             case ("voice_self", _, self_mute, self_deaf, mute, suppress):
-                if self_deaf and not self._self_deaf and self._receivers:
-                    self._warn_deafened(moderator=False)
                 self._self_mute, self._self_deaf = self_mute, self_deaf
                 self._mute, self._suppress = mute, suppress
             case ("voice_speaking", _, user_id, ssrc, flags):
@@ -1099,7 +1097,7 @@ class VoiceConnection:
                 )
             case ("voice_deaf", _, deaf):
                 if deaf and not self._deaf and self._receivers:
-                    self._warn_deafened(moderator=True)
+                    self._warn_deafened()
                 self._deaf = deaf
 
     def _set_state(
@@ -1208,19 +1206,11 @@ class VoiceConnection:
                 self.guild_id,
             )
 
-    def _warn_deafened(self, *, moderator: bool) -> None:
-        if moderator:
-            log.warning(
-                "a moderator deafened the bot in guild %d, so Discord sends it no "
-                "audio",
-                self.guild_id,
-            )
-        else:
-            log.warning(
-                "the bot is deafened in guild %d, so Discord sends it no audio; use "
-                "vc.edit(self_deaf=False)",
-                self.guild_id,
-            )
+    def _warn_deafened(self) -> None:
+        log.warning(
+            "a moderator deafened the bot in guild %d, so Discord sends it no audio",
+            self.guild_id,
+        )
 
     def _stop_speech(self) -> None:
         now = time.monotonic()
