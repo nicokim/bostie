@@ -164,7 +164,7 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
         (None, disconnected("removed"), voice.ClosedReason.DISCONNECTED),
     ],
 )
-def test_iteration_reads_in_batches_and_ends_after_the_queued_items(
+def test_iteration_yields_after_full_batches_and_ends_after_the_queued_items(
     ended: Literal["disconnected", "moved"] | None,
     ending: VoiceDelivery,
     reason: voice.ClosedReason,
@@ -172,27 +172,36 @@ def test_iteration_reads_in_batches_and_ends_after_the_queued_items(
     async def scenario(bot: FakeBot) -> None:
         rx, native = await open_receiver(bot)
         offsets: list[int] = []
+        seen: list[int] = []
 
         async def consume() -> None:
             async for item in rx:
                 offsets.append(item.offset)
 
+        async def watch() -> None:
+            while True:
+                seen.append(len(offsets))
+                await asyncio.sleep(0)
+
         consumer = asyncio.ensure_future(consume())
+        watcher = asyncio.ensure_future(watch())
         await settle()
-        native.feed(*(frame(960 * index) for index in range(300)))
+        native.feed(*(frame(960 * index) for index in range(600)))
         await settle()
-        native.items.extend(frame(960 * index) for index in range(300, 303))
-        native.counters = {"delivered": 303, "dropped": 1, "lost": 2}
+        native.items.extend(frame(960 * index) for index in range(600, 603))
+        native.counters = {"delivered": 603, "dropped": 1, "lost": 2}
         if ended is not None:
             native.end(ended)
         bot.deliver(ending)
         await consumer
-        assert offsets == [960 * index for index in range(303)]
-        assert native.reads == [256] * 6
+        watcher.cancel()
+        assert offsets == [960 * index for index in range(603)]
+        assert 256 in seen
+        assert native.reads == [256] * 7
         assert (rx.closed, rx.closed_reason, rx.stats()) == (
             True,
             reason,
-            voice.ReceiverStats(303, 1, 2),
+            voice.ReceiverStats(603, 1, 2),
         )
 
     run(scenario)

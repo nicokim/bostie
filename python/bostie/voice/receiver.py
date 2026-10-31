@@ -140,7 +140,10 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         while not self._items:
             if self.closed:
                 raise StopAsyncIteration
-            if not self._read() and not self.closed:
+            read = self._read()
+            if read == READ_LIMIT:
+                await asyncio.sleep(0)
+            elif not read and not self.closed:
                 await self._wait_for_wake()
         return cast(T, self._items.popleft())
 
@@ -150,20 +153,20 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
     async def __aexit__(self, *exc: object) -> None:
         self.close()
 
-    def _read(self) -> bool:
+    def _read(self) -> int:
         now = time.monotonic()
         batch = self._native.read(READ_LIMIT)
         if batch is None or (
             not batch and self._connection.state is State.DISCONNECTED
         ):
             self._drained()
-            return False
+            return 0
         guild_id = self._connection.guild_id
         for item in batch:
             converted = _convert(item, now, guild_id)
             if converted is not None:
                 self._items.append(converted)
-        return bool(batch)
+        return len(batch)
 
     def _drained(self) -> None:
         reason = self._native.closed_reason()
