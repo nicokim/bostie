@@ -134,7 +134,7 @@ impl NativeReceiver {
             ReceiveRead::Pending => Ok(Some(Vec::new())),
             ReceiveRead::Items(items) => items
                 .into_iter()
-                .map(|item| received_item(py, now, item))
+                .map(|(queued, item)| received_item(py, now, queued, item))
                 .collect::<PyResult<_>>()
                 .map(Some),
             ReceiveRead::Ended(_) => Ok(None),
@@ -389,7 +389,13 @@ fn pacer(load: ThreadLoad) -> HashMap<&'static str, u64> {
     ])
 }
 
-fn received_item(py: Python<'_>, now: Instant, item: Item) -> PyResult<Bound<'_, PyAny>> {
+fn received_item(
+    py: Python<'_>,
+    now: Instant,
+    queued: Instant,
+    item: Item,
+) -> PyResult<Bound<'_, PyAny>> {
+    let queued = age(now, queued);
     match item {
         Item::Frame {
             user,
@@ -410,6 +416,7 @@ fn received_item(py: Python<'_>, now: Instant, item: Item) -> PyResult<Bound<'_,
             age(now, at),
             PyBytes::new(py, &data),
             lost,
+            queued,
         )
             .into_bound_py_any(py),
         Item::Packet {
@@ -432,6 +439,7 @@ fn received_item(py: Python<'_>, now: Instant, item: Item) -> PyResult<Bound<'_,
                 .iter()
                 .map(|(id, body)| (*id, PyBytes::new(py, body)))
                 .collect::<Vec<_>>(),
+            queued,
         )
             .into_bound_py_any(py),
         Item::Speech {
@@ -449,6 +457,7 @@ fn received_item(py: Python<'_>, now: Instant, item: Item) -> PyResult<Bound<'_,
             offset,
             age(now, at),
             duration.as_secs_f64(),
+            queued,
         )
             .into_bound_py_any(py),
     }

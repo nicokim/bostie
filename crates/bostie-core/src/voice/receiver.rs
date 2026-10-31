@@ -10,6 +10,7 @@ use parking_lot::Mutex;
 use crate::error::CoreError;
 use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
+use crate::voice::receive::Peak;
 use crate::voice::types::ReceiveOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +64,7 @@ impl Ended {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceiveRead {
     Pending,
-    Items(Vec<Item>),
+    Items(Vec<(Instant, Item)>),
     Ended(Ended),
 }
 
@@ -80,6 +81,7 @@ pub struct Receiver {
 struct Queue {
     stale_markers: Vec<(Instant, Item)>,
     items: VecDeque<(Instant, Item)>,
+    peak: Peak,
     wake_armed: bool,
     ended: Option<Ended>,
     stats: ReceiverStats,
@@ -196,6 +198,7 @@ impl Receiver {
         }
         let added = queue.items.len() > before;
         queue.overflow(now, self.options.buffer);
+        queue.shrink();
         if added {
             self.wake(&mut queue);
         }
@@ -259,12 +262,20 @@ impl Queue {
         }
     }
 
-    fn take(&mut self, limit: usize) -> Vec<Item> {
+    fn shrink(&mut self) {
+        self.peak.observe(self.items.len());
+        if let Some(target) = self.peak.excess(self.items.capacity()) {
+            self.items.shrink_to(target);
+        }
+        self.peak.advance();
+    }
+
+    fn take(&mut self, limit: usize) -> Vec<(Instant, Item)> {
         let stale = limit.min(self.stale_markers.len());
         let fresh = limit.saturating_sub(stale).min(self.items.len());
         let mut taken = Vec::with_capacity(stale + fresh);
-        taken.extend(self.stale_markers.drain(..stale).map(|(_, item)| item));
-        taken.extend(self.items.drain(..fresh).map(|(_, item)| item));
+        taken.extend(self.stale_markers.drain(..stale));
+        taken.extend(self.items.drain(..fresh));
         taken
     }
 
@@ -380,13 +391,19 @@ mod tests {
         receiver.clear().unwrap();
 
         assert_eq!((unwaited, woken, while_more_remain), (0, 1, 0));
-        assert_eq!(first, ReceiveRead::Items(vec![frame(ALICE, 0, now)]));
+        assert_eq!(
+            first,
+            ReceiveRead::Items(vec![(early, frame(ALICE, 0, now))])
+        );
         assert_eq!(waits, [ReceiveRead::Pending, ReceiveRead::Pending]);
         assert_eq!(
             partial,
-            ReceiveRead::Items(vec![frame(ALICE, 960, now), frame(ALICE, 1_920, now)])
+            ReceiveRead::Items(vec![
+                (early, frame(ALICE, 960, now)),
+                (early, frame(ALICE, 1_920, now))
+            ])
         );
-        assert_eq!(rest, ReceiveRead::Items(vec![gap]));
+        assert_eq!(rest, ReceiveRead::Items(vec![(early, gap)]));
         assert!(oldest >= Duration::from_secs(10), "{oldest:?}");
         assert!(
             (Duration::from_secs(1)..Duration::from_secs(10)).contains(&next_oldest),
@@ -427,10 +444,10 @@ mod tests {
         assert_eq!(
             receiver.read(256).unwrap(),
             ReceiveRead::Items(vec![
-                speech(ALICE, false, start),
-                frame(BOB, 0, start),
-                frame(BOB, 960, start),
-                speech(BOB, false, start),
+                (at(60), speech(ALICE, false, start)),
+                (at(120), frame(BOB, 0, start)),
+                (at(180), frame(BOB, 960, start)),
+                (at(200), speech(BOB, false, start)),
             ])
         );
         assert_eq!(
@@ -477,7 +494,7 @@ mod tests {
             assert_eq!(ended.ended(), Some(why));
             assert_eq!(
                 ended.read(256).unwrap(),
-                ReceiveRead::Items(vec![frame(ALICE, 0, now)])
+                ReceiveRead::Items(vec![(now, frame(ALICE, 0, now))])
             );
             assert_eq!(ended.read(256).unwrap(), ReceiveRead::Ended(why));
             assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Ended(why));

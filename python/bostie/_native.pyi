@@ -81,12 +81,23 @@ type Delivery = (
 )
 
 type FrameItem = tuple[
-    Literal["frame"], int | None, int | None, int | None, int, int, float, bytes, bool
+    Literal["frame"],
+    int | None,
+    int | None,
+    int | None,
+    int,
+    int,
+    float,
+    bytes,
+    bool,
+    float,
 ]
 type PacketItem = tuple[
-    Literal["packet"], int, int, int, int, float, bytes, list[tuple[int, bytes]]
+    Literal["packet"], int, int, int, int, float, bytes, list[tuple[int, bytes]], float
 ]
-type SpeechItem = tuple[Literal["speech"], int, int, bool, int | None, float, float]
+type SpeechItem = tuple[
+    Literal["speech"], int, int, bool, int | None, float, float, float
+]
 type ReceivedItem = FrameItem | PacketItem | SpeechItem
 
 @final
@@ -189,6 +200,7 @@ class Core:
         stall: ReceiveStallName,
     ) -> Receiver: ...
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
+    def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
     def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
 

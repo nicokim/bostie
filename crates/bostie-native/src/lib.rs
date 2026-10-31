@@ -344,6 +344,12 @@ impl NativeCore {
             .map_err(to_python_error)
     }
 
+    fn voice_speech_activity(&self, guild_id: u64, enabled: bool) -> PyResult<()> {
+        self.voice()?
+            .set_speech_activity(GuildId::from(guild_id), enabled)
+            .map_err(to_python_error)
+    }
+
     fn voice_ssrcs(&self, guild_id: u64) -> PyResult<HashMap<u32, u64>> {
         let ssrcs = self
             .voice()?

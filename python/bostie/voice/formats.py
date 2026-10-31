@@ -105,6 +105,7 @@ class Defaults:
     sink_buffer: float = 0.2
     stall: Literal["hold", "drop"] = "hold"
     speech_hangover: float = 0.2
+    speech_activity: bool = True
     receive_buffer: float = 2.0
     jitter: float = 0.1
     overflow: Literal["drop_oldest"] = "drop_oldest"

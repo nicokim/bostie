@@ -456,6 +456,9 @@ class FakeCore:
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None:
         self._record("voice_speech_hangover", guild_id, seconds)
 
+    def voice_speech_activity(self, guild_id: int, enabled: bool) -> None:
+        self._record("voice_speech_activity", guild_id, enabled)
+
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]:
         self._record("voice_ssrcs", guild_id)
         return dict(self.ssrc_map)

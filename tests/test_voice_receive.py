@@ -35,8 +35,8 @@ SERVER_DEAFENED = (
 )
 
 
-def frame(offset: int, age: float = 0.0) -> "FrameItem":
-    return ("frame", USER_ID, 77, offset, offset, 960, age, b"\x01\x00", False)
+def frame(offset: int, age: float = 0.0, queued: float = 0.0) -> "FrameItem":
+    return ("frame", USER_ID, 77, offset, offset, 960, age, b"\x01\x00", False, queued)
 
 
 async def open_receiver(
@@ -118,11 +118,11 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
         rx = vc.receive(markers=True)
         bot.core.receivers[-1].items.extend(
             [
-                ("speech", USER_ID, 77, True, 0, 0.5, 0.0),
-                ("frame", USER_ID, 77, 1000, 0, 960, 0.25, b"pcm", False),
-                ("frame", None, None, None, 960, 960, 0.125, b"", True),
-                ("packet", USER_ID, 77, 9, 1960, 0.0625, b"opus", [(1, b"\x85")]),
-                ("speech", USER_ID, 77, False, 1920, 0.03125, 0.25),
+                ("speech", USER_ID, 77, True, 0, 0.5, 0.0, 0.0),
+                ("frame", USER_ID, 77, 1000, 0, 960, 0.25, b"pcm", False, 0.0),
+                ("frame", None, None, None, 960, 960, 0.125, b"", True, 0.0),
+                ("packet", USER_ID, 77, 9, 1960, 0.0625, b"opus", [(1, b"\x85")], 0.0),
+                ("speech", USER_ID, 77, False, 1920, 0.03125, 0.25, 0.0),
             ]
         )
         before = time.monotonic()
@@ -259,14 +259,16 @@ def test_get_nowait_raises_empty_then_receiver_closed_once_drained() -> None:
     run(scenario)
 
 
-def test_queued_counts_the_items_already_read_and_clear_and_close_drop_them() -> None:
+def test_queued_counts_from_queueing_and_clear_and_close_drop_the_items() -> None:
     async def scenario(bot: FakeBot) -> None:
         rx, native = await open_receiver(bot)
         native.lag = 5.0
         assert rx.queued == 5.0
-        native.items.extend([frame(0, age=1.0), frame(960, age=0.5)])
+        native.items.extend(
+            [frame(0, age=9.0, queued=2.0), frame(960, age=9.0, queued=1.0)]
+        )
         rx.get_nowait()
-        assert 0.5 <= rx.queued < 5.0
+        assert 1.0 <= rx.queued < 2.0
         rx.clear()
         native.lag = 0.0
         assert (rx.queued, native.clears) == (0.0, 1)
@@ -397,16 +399,19 @@ def test_stats_sort_counters_into_send_receive_and_users() -> None:
     run(scenario)
 
 
-def test_speech_hangover_reaches_the_core_at_connect_and_on_assignment() -> None:
+def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         vc.speech_hangover = 0.75
+        vc.speech_activity = True
         bot.rest.answers["GET", f"/guilds/{OTHER_GUILD_ID}/voice-states/{USER_ID}"] = (
             200,
             {"channel_id": str(NO_BITRATE)},
         )
         ctx = ContextVoice(bot.voice, OTHER_GUILD_ID, USER_ID)
-        joining = asyncio.ensure_future(ctx.connect(speech_hangover=0.5))
+        joining = asyncio.ensure_future(
+            ctx.connect(speech_hangover=0.5, speech_activity=True)
+        )
         await settle()
         bot.deliver(ready(OTHER_GUILD_ID))
         await joining
@@ -415,9 +420,14 @@ def test_speech_hangover_reaches_the_core_at_connect_and_on_assignment() -> None
             (GUILD_ID, 0.75),
             (OTHER_GUILD_ID, 0.5),
         ]
-        assert vc.speech_hangover == 0.75
+        assert [call[1] for call in bot.calls("voice_speech_activity")] == [
+            (GUILD_ID, False),
+            (GUILD_ID, True),
+            (OTHER_GUILD_ID, True),
+        ]
+        assert (vc.speech_hangover, vc.speech_activity) == (0.75, True)
 
-    run(scenario, defaults=voice.Defaults(speech_hangover=0.3))
+    run(scenario, defaults=voice.Defaults(speech_hangover=0.3, speech_activity=False))
 
 
 def test_after_the_end_receive_raises_and_ssrcs_keep_the_last_value() -> None:

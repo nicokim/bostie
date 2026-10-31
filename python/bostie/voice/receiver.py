@@ -72,7 +72,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         self._connection = connection
         self._native = native
         self._handle = native.id
-        self._items: deque[Item] = deque()
+        self._items: deque[tuple[float, Item]] = deque()
         self._woken: asyncio.Future[None] | None = None
         self._stats = ReceiverStats(0, 0, 0)
         self._closed_reason: ClosedReason | None = None
@@ -84,13 +84,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
             return 0.0
         if not self._items:
             return self._native.queued()
-        oldest = self._items[0]
-        since = (
-            oldest.at
-            if isinstance(oldest, SpeechStart | SpeechStop)
-            else oldest.received_at
-        )
-        return time.monotonic() - since
+        return time.monotonic() - self._items[0][0]
 
     @property
     def closed(self) -> bool:
@@ -107,7 +101,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         if not self._items and not self.closed:
             self._read()
         if self._items:
-            return cast(T, self._items.popleft())
+            return cast(T, self._items.popleft()[1])
         if self.closed:
             raise ReceiverClosed("the receiver ended and has nothing left to read")
         raise Empty("nothing is queued in the receiver")
@@ -145,7 +139,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
                 await asyncio.sleep(0)
             elif not read and not self.closed:
                 await self._wait_for_wake()
-        return cast(T, self._items.popleft())
+        return cast(T, self._items.popleft()[1])
 
     async def __aenter__(self) -> Self:
         return self
@@ -202,20 +196,24 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         )
 
 
-def _convert(item: "ReceivedItem", now: float, guild_id: int) -> Item | None:
+def _convert(
+    item: "ReceivedItem", now: float, guild_id: int
+) -> tuple[float, Item] | None:
     match item:
-        case ("frame", user, ssrc, timestamp, offset, samples, age, data, lost):
-            return Frame(user, ssrc, timestamp, offset, samples, now - age, data, lost)
-        case ("packet", user, ssrc, sequence, timestamp, age, opus, extensions):
-            return Packet(
+        case ("frame", user, ssrc, timestamp, offset, samples, age, data, lost, queued):
+            return now - queued, Frame(
+                user, ssrc, timestamp, offset, samples, now - age, data, lost
+            )
+        case ("packet", user, ssrc, sequence, timestamp, age, opus, extensions, queued):
+            return now - queued, Packet(
                 user, ssrc, sequence, timestamp, now - age, opus, tuple(extensions)
             )
-        case ("speech", user, ssrc, True, offset, age, _):
-            return SpeechStart(
+        case ("speech", user, ssrc, True, offset, age, _, queued):
+            return now - queued, SpeechStart(
                 guild_id=guild_id, user_id=user, ssrc=ssrc, at=now - age, offset=offset
             )
-        case ("speech", user, ssrc, False, offset, age, duration):
-            return SpeechStop(
+        case ("speech", user, ssrc, False, offset, age, duration, queued):
+            return now - queued, SpeechStop(
                 guild_id=guild_id,
                 user_id=user,
                 ssrc=ssrc,

@@ -2787,7 +2787,7 @@ impl Harness {
             );
             self.tick(1);
             if let ReceiveRead::Items(batch) = receiver.read(256).unwrap() {
-                items.extend(batch);
+                items.extend(batch.into_iter().map(|(_, item)| item));
             }
             sleep(Duration::from_millis(2)).await;
         }
@@ -3066,6 +3066,7 @@ async fn a_move_to_another_channel_ends_the_receivers() {
     let ReceiveRead::Items(items) = receiver.read(256).unwrap() else {
         panic!("the queued frames were lost");
     };
+    let items: Vec<Item> = items.into_iter().map(|(_, item)| item).collect();
     assert_eq!(frames(&items), spoken(EARLY_PEER, &packets));
     assert_eq!(
         receiver.read(256).unwrap(),

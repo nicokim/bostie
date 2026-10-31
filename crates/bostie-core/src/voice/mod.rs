@@ -409,6 +409,11 @@ impl Voice {
         Ok(())
     }
 
+    pub fn set_speech_activity(&self, guild: GuildId, enabled: bool) -> Result<(), CoreError> {
+        self.media(guild)?.set_speech_activity(enabled);
+        Ok(())
+    }
+
     pub fn ssrcs(&self, guild: GuildId) -> Result<Vec<(u32, UserId)>, CoreError> {
         let info = self.with_connection(guild, |handle| Arc::clone(&handle.info))?;
         let ssrcs = info.ssrcs.lock();

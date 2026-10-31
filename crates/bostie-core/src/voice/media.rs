@@ -169,6 +169,7 @@ pub struct Media {
     pub packet_receivers: AtomicUsize,
     pub self_receivers: AtomicUsize,
     pub speech_hangover: AtomicU64,
+    pub speech_activity: AtomicBool,
     pub receive: ReceiveCounters,
     pub users: Mutex<HashMap<UserId, UserCounters>>,
     #[cfg(test)]
@@ -209,6 +210,7 @@ impl Media {
             packet_receivers: AtomicUsize::new(0),
             self_receivers: AtomicUsize::new(0),
             speech_hangover: AtomicU64::new(nanos(DEFAULT_SPEECH_HANGOVER)),
+            speech_activity: AtomicBool::new(true),
             receive: ReceiveCounters::default(),
             users: Mutex::new(HashMap::new()),
             #[cfg(test)]
@@ -282,6 +284,14 @@ impl Media {
     pub fn set_speech_hangover(&self, hangover: Duration) {
         self.speech_hangover
             .store(nanos(hangover), Ordering::Relaxed);
+    }
+
+    pub fn speech_activity(&self) -> bool {
+        self.speech_activity.load(Ordering::Relaxed)
+    }
+
+    pub fn set_speech_activity(&self, enabled: bool) {
+        self.speech_activity.store(enabled, Ordering::Relaxed);
     }
 
     fn count_receiver(&self, receiver: &Receiver, change: impl Fn(&AtomicUsize)) {

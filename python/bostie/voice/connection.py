@@ -155,6 +155,7 @@ class VoiceCore(Protocol):
         stall: Literal["wait"],
     ) -> NativeReceiver: ...
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
+    def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
     def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
 
@@ -330,6 +331,7 @@ class VoiceManager:
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
         speech_hangover: float | None = None,
+        speech_activity: bool | None = None,
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
@@ -345,6 +347,7 @@ class VoiceManager:
             speaking_flags=speaking_flags,
             stage=stage,
             speech_hangover=speech_hangover,
+            speech_activity=speech_activity,
         )
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
@@ -538,6 +541,7 @@ class VoiceConnection:
         self._encoder = settings.encoder
         self._speaking_flags = settings.speaking_flags
         self._speech_hangover = settings.speech_hangover
+        self._speech_activity = settings.speech_activity
         self._speaking: dict[int, float] = {}
         self._speaking_view = MappingProxyType(self._speaking)
         self._speech_ssrcs: dict[int, int] = {}
@@ -644,6 +648,17 @@ class VoiceConnection:
         self._check_live()
         self._core().voice_speech_hangover(self.guild_id, seconds)
         self._speech_hangover = seconds
+
+    @property
+    def speech_activity(self) -> bool:
+        """Whether speech events fire; off with no receiver, receive stats stop."""
+        return self._speech_activity
+
+    @speech_activity.setter
+    def speech_activity(self, enabled: bool) -> None:
+        self._check_live()
+        self._core().voice_speech_activity(self.guild_id, enabled)
+        self._speech_activity = enabled
 
     def sink(
         self,
@@ -936,6 +951,7 @@ class VoiceConnection:
                 speaking=int(settings.speaking_flags),
             )
             self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
+            self._core().voice_speech_activity(self.guild_id, settings.speech_activity)
         except BaseException:
             del self.manager._connections[self.guild_id]
             raise
@@ -1276,6 +1292,7 @@ class ContextVoice:
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
         speech_hangover: float | None = None,
+        speech_activity: bool | None = None,
     ) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
         if self._guild_id is None:
@@ -1307,6 +1324,7 @@ class ContextVoice:
             speaking_flags=speaking_flags,
             stage=stage,
             speech_hangover=speech_hangover,
+            speech_activity=speech_activity,
         )
 
 
