@@ -30,8 +30,8 @@ use crate::voice::types::{
 };
 
 const FRAME_48K: u32 = FRAME_SAMPLES as u32;
-const PEAK_TICKS: u32 = 50;
-const MIN_ARRIVAL_CAPACITY: usize = 256;
+const PEAK_TICKS: u32 = 24;
+const PAYLOAD_CHUNK: usize = 8 * 1024;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 const MIX_SLACK: Duration = Duration::from_millis(100);
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
@@ -169,8 +169,11 @@ struct Peak {
 }
 
 impl Peak {
-    fn observe(&mut self, batch: usize) {
-        self.current = self.current.max(batch);
+    fn observe(&mut self, used: usize) {
+        self.current = self.current.max(used);
+    }
+
+    fn advance(&mut self) {
         self.ticks = self.ticks.saturating_add(1);
         if self.ticks >= PEAK_TICKS {
             self.previous = mem::take(&mut self.current);
@@ -178,8 +181,9 @@ impl Peak {
         }
     }
 
-    fn largest(&self) -> usize {
-        self.current.max(self.previous)
+    fn excess(&self, capacity: usize) -> Option<usize> {
+        let largest = self.current.max(self.previous);
+        (capacity > largest.saturating_mul(4)).then(|| largest.saturating_mul(2))
     }
 }
 
@@ -250,6 +254,15 @@ pub struct Reception {
     user: UserId,
     tuning: ReceiveTuning,
     epoch: Instant,
+    state: Option<Box<State>>,
+}
+
+struct State {
+    media: Arc<Media>,
+    info: Arc<Info>,
+    user: UserId,
+    tuning: ReceiveTuning,
+    epoch: Instant,
     receivers: Vec<Arc<Receiver>>,
     subscribers: HashMap<Handle, Subscriber>,
     handles: Vec<Handle>,
@@ -274,6 +287,7 @@ pub struct Reception {
     heard: bool,
     scratch: Vec<f32>,
     plain: Vec<u8>,
+    payloads: BytesMut,
     users: HashMap<UserId, UserCounters>,
     heard_at: HashMap<UserId, i64>,
     forget_at: Option<i64>,
@@ -293,6 +307,48 @@ impl Reception {
             user,
             tuning,
             epoch: Instant::now(),
+            state: None,
+        }
+    }
+
+    pub fn tick(&mut self, tick: Tick, deadline: Instant) -> bool {
+        self.run(Instant::now(), tick.skipped, deadline)
+    }
+
+    fn run(&mut self, now: Instant, skipped: u32, deadline: Instant) -> bool {
+        if self.state.is_none()
+            && self.media.open_receivers.load(Ordering::Relaxed) == 0
+            && self.media.arrivals.lock().is_empty()
+        {
+            return !self.media.closed.load(Ordering::Acquire);
+        }
+        let state = self.state.get_or_insert_with(|| {
+            Box::new(State::new(
+                Arc::clone(&self.media),
+                Arc::clone(&self.info),
+                self.user,
+                self.tuning,
+                self.epoch,
+            ))
+        });
+        state.run(now, skipped, deadline)
+    }
+}
+
+impl State {
+    fn new(
+        media: Arc<Media>,
+        info: Arc<Info>,
+        user: UserId,
+        tuning: ReceiveTuning,
+        epoch: Instant,
+    ) -> Self {
+        Self {
+            media,
+            info,
+            user,
+            tuning,
+            epoch,
             receivers: Vec::new(),
             subscribers: HashMap::new(),
             handles: Vec::new(),
@@ -317,6 +373,7 @@ impl Reception {
             heard: false,
             scratch: Vec::new(),
             plain: Vec::new(),
+            payloads: BytesMut::new(),
             users: HashMap::new(),
             heard_at: HashMap::new(),
             forget_at: None,
@@ -329,24 +386,18 @@ impl Reception {
         }
     }
 
-    pub fn tick(&mut self, tick: Tick, deadline: Instant) -> bool {
-        self.run(Instant::now(), tick.skipped, deadline)
-    }
-
     fn run(&mut self, now: Instant, skipped: u32, deadline: Instant) -> bool {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }
         self.subscribe();
         let now48 = samples_since(self.epoch, now);
-        {
-            let mut arrivals = self.media.arrivals.lock();
-            if arrivals.is_empty() && self.is_idle(now48) {
-                return true;
-            }
-            mem::swap(&mut *arrivals, &mut self.arrivals);
-        }
+        mem::swap(&mut *self.media.arrivals.lock(), &mut self.arrivals);
         self.peak.observe(self.arrivals.len());
+        if self.arrivals.is_empty() && self.is_idle(now48) {
+            self.shrink_buffers();
+            return true;
+        }
         let hangover = to_samples(self.media.speech_hangover());
         let transport = self.media.transport.lock().clone();
         if let Some(transport) = &transport {
@@ -355,6 +406,7 @@ impl Reception {
         self.arrived = false;
         self.heard = false;
         self.map(now);
+        self.peak.observe(self.batch.len());
         self.receive(now, now48, hangover);
         self.expire_speech(now48, hangover);
         self.release(now, now48, skipped, deadline, hangover, transport.is_some());
@@ -362,7 +414,7 @@ impl Reception {
         self.prune(now, now48);
         self.publish_users();
         self.warn_undecryptable(now);
-        self.shrink_arrivals();
+        self.shrink_buffers();
         true
     }
 
@@ -392,6 +444,7 @@ impl Reception {
             self.streams.clear();
             self.held.clear();
             self.held_users.clear();
+            self.payloads = BytesMut::new();
         }
     }
 
@@ -424,7 +477,10 @@ impl Reception {
         {
             let ssrcs = self.info.ssrcs.lock();
             for (&ssrc, &(user, since)) in ssrcs.iter() {
-                let spans = self.owners.entry(ssrc).or_default();
+                let spans = self
+                    .owners
+                    .entry(ssrc)
+                    .or_insert_with(|| Vec::with_capacity(1));
                 match spans.last_mut() {
                     Some(last) if last.until.is_none() && last.user == user => {}
                     Some(last) => {
@@ -523,6 +579,7 @@ impl Reception {
             self.decrypt(&mut work, now);
         }
         let mut retried = mem::take(&mut self.retried);
+        self.peak.observe(retried.len());
         for item in retried.drain(..).chain(work.drain(..)) {
             self.accept(item, hangover);
         }
@@ -560,7 +617,7 @@ impl Reception {
             self.heard_at.insert(user, now48);
         }
         let wanted = self.wanted(user, own);
-        let Some(payload) = arrival.payload.clone().filter(|_| wanted) else {
+        let Some(payload) = arrival.payload.as_ref().filter(|_| wanted) else {
             if !own {
                 let at48 = samples_since(self.epoch, arrival.at);
                 let payload = arrival.payload.as_deref().unwrap_or_default();
@@ -602,8 +659,8 @@ impl Reception {
         let refused = payload.is_empty()
             || (!own
                 && protocol_version > 0
-                && !dave::has_marker(&payload)
-                && codec::packet_samples(&payload).is_none());
+                && !dave::has_marker(payload)
+                && codec::packet_samples(payload).is_none());
         if refused {
             self.invalid(user);
             return;
@@ -611,8 +668,8 @@ impl Reception {
         let plain = (own
             || all_plain
             || payload.as_ref() == SILENCE_FRAME
-            || (protocol_version == 0 && !dave::has_marker(&payload)))
-        .then_some(payload);
+            || (protocol_version == 0 && !dave::has_marker(payload)))
+        .then(|| share(&mut self.payloads, payload));
         work.push(Work {
             user,
             arrival,
@@ -648,6 +705,7 @@ impl Reception {
                 held,
                 held_users,
                 plain,
+                payloads,
                 retried,
                 streaks,
                 users,
@@ -667,7 +725,7 @@ impl Reception {
                             user: held.user,
                             arrival: held.arrival.clone(),
                             check: held.check,
-                            plain: Some(Bytes::copy_from_slice(plain)),
+                            plain: Some(share(payloads, plain)),
                             fresh: false,
                         });
                         unhold(held_users, held.user);
@@ -693,7 +751,7 @@ impl Reception {
             match dave.receive(item.user, payload, &mut self.plain) {
                 Ok(()) => {
                     self.streaks.remove(&item.user);
-                    item.plain = Some(Bytes::copy_from_slice(&self.plain));
+                    item.plain = Some(share(&mut self.payloads, &self.plain));
                 }
                 Err(failure) => {
                     failed(
@@ -1160,11 +1218,24 @@ impl Reception {
         }
     }
 
-    fn shrink_arrivals(&mut self) {
-        let peak = self.peak.largest();
-        if self.arrivals.capacity() > peak.saturating_mul(4).max(MIN_ARRIVAL_CAPACITY) {
-            self.arrivals.shrink_to(peak.saturating_mul(2));
+    fn shrink_buffers(&mut self) {
+        self.peak.observe(self.held.len());
+        if let Some(target) = self.peak.excess(self.arrivals.capacity()) {
+            self.arrivals.shrink_to(target);
         }
+        if let Some(target) = self.peak.excess(self.batch.capacity()) {
+            self.batch.shrink_to(target);
+        }
+        if let Some(target) = self.peak.excess(self.work.capacity()) {
+            self.work.shrink_to(target);
+        }
+        if let Some(target) = self.peak.excess(self.retried.capacity()) {
+            self.retried.shrink_to(target);
+        }
+        if let Some(target) = self.peak.excess(self.held.capacity()) {
+            self.held.shrink_to(target);
+        }
+        self.peak.advance();
     }
 }
 
@@ -1708,6 +1779,14 @@ impl Fifo {
         }
         Some(self.lost.pop_front().unwrap_or(false))
     }
+}
+
+fn share(payloads: &mut BytesMut, payload: &[u8]) -> Bytes {
+    if payloads.capacity() < payload.len() {
+        *payloads = BytesMut::with_capacity(PAYLOAD_CHUNK.max(payload.len()));
+    }
+    payloads.extend_from_slice(payload);
+    payloads.split().freeze()
 }
 
 fn decoder(track: &mut Track, format: PcmFormat) -> &mut Option<Decoder> {

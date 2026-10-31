@@ -164,7 +164,9 @@ pub struct Dave {
     recovering: bool,
     recovery: Recovery,
     recoveries: VecDeque<Instant>,
-    tuning: ReceiveTuning,
+    dave_grace: Duration,
+    downgrade_expiry: u32,
+    upgrade_passthrough: u32,
     settled: Option<Instant>,
     generation: u64,
     counters: DaveCounters,
@@ -174,6 +176,7 @@ pub struct Dave {
 
 impl Dave {
     pub fn new(user: UserId, channel: ChannelId) -> Self {
+        let tuning = ReceiveTuning::default();
         Self {
             user,
             channel,
@@ -187,7 +190,9 @@ impl Dave {
             recovering: false,
             recovery: Recovery::default(),
             recoveries: VecDeque::new(),
-            tuning: ReceiveTuning::default(),
+            dave_grace: tuning.dave_grace,
+            downgrade_expiry: tuning.downgrade_expiry,
+            upgrade_passthrough: tuning.upgrade_passthrough,
             settled: None,
             generation: 0,
             counters: DaveCounters::default(),
@@ -201,9 +206,13 @@ impl Dave {
         self
     }
 
-    pub fn with_receive(mut self, tuning: ReceiveTuning) -> Self {
-        self.tuning = tuning;
-        self
+    pub fn with_receive(self, tuning: ReceiveTuning) -> Self {
+        Self {
+            dave_grace: tuning.dave_grace,
+            downgrade_expiry: tuning.downgrade_expiry,
+            upgrade_passthrough: tuning.upgrade_passthrough,
+            ..self
+        }
     }
 
     pub fn start(
@@ -247,7 +256,7 @@ impl Dave {
                     && let Some(session) = &mut self.session
                 {
                     session.set_passthrough_mode(true, None);
-                    session.set_passthrough_mode(false, Some(self.tuning.downgrade_expiry));
+                    session.set_passthrough_mode(false, Some(self.downgrade_expiry));
                 }
                 self.prepare(transition_id, protocol_version, now, out)
             }
@@ -360,7 +369,7 @@ impl Dave {
             || !self.pending.is_empty()
             || self
                 .settled
-                .is_none_or(|at| now.saturating_duration_since(at) < self.tuning.dave_grace)
+                .is_none_or(|at| now.saturating_duration_since(at) < self.dave_grace)
     }
 
     pub fn receive_recovery(
@@ -488,7 +497,7 @@ impl Dave {
             if protocol_version == 0 {
                 session.set_passthrough_mode(true, None);
             } else if previous == 0 {
-                session.set_passthrough_mode(false, Some(self.tuning.upgrade_passthrough));
+                session.set_passthrough_mode(false, Some(self.upgrade_passthrough));
             }
         }
         self.recovering = false;

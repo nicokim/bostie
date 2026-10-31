@@ -11,6 +11,7 @@ use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
 use crate::voice::types::{Direction, DisconnectReason, VoiceStatus};
 
 const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
+const MIN_CAPACITY: usize = 16;
 
 #[derive(Debug)]
 pub enum Delivery {
@@ -182,7 +183,8 @@ impl Inbox {
             let mut state = self.state.lock();
             state.rung = false;
             state.dispatch_bytes = 0;
-            mem::take(&mut state.deliveries)
+            let capacity = state.deliveries.len().saturating_mul(2).max(MIN_CAPACITY);
+            mem::replace(&mut state.deliveries, Vec::with_capacity(capacity))
         };
         self.room.notify_waiters();
         deliveries

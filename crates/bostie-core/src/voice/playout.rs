@@ -41,7 +41,7 @@ pub enum Check {
 #[derive(Debug)]
 pub struct Stream {
     user: UserId,
-    ring: [Option<Slot>; RING],
+    ring: Box<[Option<Slot>; RING]>,
     highest: Option<u16>,
     probation: Option<u16>,
     anchor: Option<Anchor>,
@@ -54,7 +54,7 @@ impl Stream {
     pub fn new(user: UserId) -> Self {
         Self {
             user,
-            ring: [const { None }; RING],
+            ring: Box::new([const { None }; RING]),
             highest: None,
             probation: None,
             anchor: None,
