@@ -866,7 +866,7 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
             .collect();
         let lengths: Vec<usize> = data(&items).iter().map(Bytes::len).collect();
         assert_eq!(played, expected, "{format:?} {jitter:?}");
-        assert_eq!(receiver.stats().unwrap()[2], ("lost", lost), "{format:?}");
+        assert_eq!(receiver.stats().unwrap().lost, lost, "{format:?}");
         if format == pcm16k {
             assert!(lengths.iter().all(|&length| length == 640));
             let mut fresh = Decoder::new(16_000, 1).unwrap();
@@ -1287,7 +1287,7 @@ fn a_mix_keeps_one_clock_through_skipped_ticks_silence_and_a_reconnect() {
         rig.send(ALICE_SSRC, sequence, packet);
     }
     rig.step();
-    let dropped = receiver.stats().unwrap()[1];
+    let dropped = receiver.stats().unwrap().dropped;
     let flooded = read(&receiver);
     rig.media.install(None);
     rig.step();
@@ -1313,7 +1313,7 @@ fn a_mix_keeps_one_clock_through_skipped_ticks_silence_and_a_reconnect() {
         .map(|index| offsets[0] + index * 960)
         .collect();
     assert_eq!(offsets, contiguous);
-    assert_eq!(dropped, ("dropped", 5));
+    assert_eq!(dropped, 5);
     assert!(reconnecting.is_empty());
     let resumed = heard(&returned);
     assert_eq!(resumed.len(), 1);

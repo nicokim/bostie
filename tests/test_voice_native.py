@@ -243,8 +243,7 @@ def test_a_closed_sink_refuses_writes_but_keeps_its_stats(
         sink.write(bytes(FRAME_BYTES))
     with pytest.raises(RuntimeError, match="closed"):
         sink.mark()
-    stats = sink.stats()
-    assert {"sent_samples", "consumed_samples", "underruns"} <= stats.keys()
+    assert sink.stats() == (0, 0, 0, 0, 0, 0)
     assert not sink.passthrough()
 
 
@@ -273,7 +272,7 @@ def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
     assert handle_deliveries(connected, rx.id) == [("voice_wake", rx.id)]
     with pytest.raises(RuntimeError, match=f"voice handle {rx.id} is closed"):
         rx.read(256)
-    assert rx.stats() == {"delivered": 0, "dropped": 0, "lost": 0}
+    assert rx.stats() == (0, 0, 0)
 
 
 def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:

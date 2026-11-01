@@ -293,12 +293,7 @@ mod tests {
     }
 
     fn consumed(sink: &Sink) -> u64 {
-        sink.stats()
-            .unwrap()
-            .into_iter()
-            .find(|(key, _)| *key == "consumed_samples")
-            .unwrap()
-            .1
+        sink.stats().unwrap().consumed
     }
 
     fn mixed(mixer: &mut Mixer, sinks: &[Arc<Sink>]) -> Option<Vec<u8>> {

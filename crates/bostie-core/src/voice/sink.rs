@@ -44,7 +44,6 @@ struct Queue {
     opus: VecDeque<(Bytes, u32)>,
     queued: u64,
     written: u64,
-    consumed: u64,
     owed: u64,
     markers: VecDeque<Marker>,
     next_marker: u64,
@@ -58,13 +57,14 @@ struct Queue {
     stats: SinkStats,
 }
 
-#[derive(Default)]
-struct SinkStats {
-    sent: u64,
-    underruns: u64,
-    held_ticks: u64,
-    dropped: u64,
-    passthrough_packets: u64,
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SinkStats {
+    pub sent: u64,
+    pub consumed: u64,
+    pub underruns: u64,
+    pub held_ticks: u64,
+    pub dropped: u64,
+    pub passthrough_packets: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -183,7 +183,7 @@ impl Sink {
                 None => return Ok(()),
             },
         };
-        let frames = end.saturating_sub(queue.consumed);
+        let frames = end.saturating_sub(queue.stats.consumed);
         let taken = queue.take(frames);
         self.consume(&mut queue, taken, Fate::Cleared);
         self.wake(&mut queue);
@@ -217,17 +217,9 @@ impl Sink {
         Ok(self.queue.lock().passthrough)
     }
 
-    pub fn stats(&self) -> Result<Vec<(&'static str, u64)>, CoreError> {
+    pub fn stats(&self) -> Result<SinkStats, CoreError> {
         self.owner.check()?;
-        let queue = self.queue.lock();
-        Ok(vec![
-            ("sent_samples", queue.stats.sent),
-            ("consumed_samples", queue.consumed),
-            ("underruns", queue.stats.underruns),
-            ("held_ticks", queue.stats.held_ticks),
-            ("dropped_samples", queue.stats.dropped),
-            ("passthrough_packets", queue.stats.passthrough_packets),
-        ])
+        Ok(self.queue.lock().stats)
     }
 
     pub fn is_closed(&self) -> bool {
@@ -317,7 +309,7 @@ impl Sink {
         let id = queue.next_marker;
         queue.next_marker += 1;
         let position = queue.written;
-        if position <= queue.consumed {
+        if position <= queue.stats.consumed {
             let played = !mem::take(&mut queue.tainted);
             self.resolve(id, played);
         } else {
@@ -334,8 +326,8 @@ impl Sink {
             Fate::Cleared => {}
         }
         let dropped = fate != Fate::Pulled && frames > 0;
-        let end = queue.consumed + frames;
-        let mut cursor = queue.consumed;
+        let end = queue.stats.consumed + frames;
+        let mut cursor = queue.stats.consumed;
         while let Some(marker) = queue.markers.front().copied()
             && marker.position <= end
         {
@@ -346,7 +338,7 @@ impl Sink {
             self.resolve(marker.id, played);
         }
         queue.tainted |= dropped && end > cursor;
-        queue.consumed = end;
+        queue.stats.consumed = end;
         if queue.queued <= self.low_water {
             self.wake(queue);
         }
@@ -481,15 +473,6 @@ pub(crate) mod tests {
     fn pull(sink: &Sink) -> Option<f32> {
         let mut frame = vec![0.0; FRAME_LEN];
         sink.pull_pcm(&mut frame).then(|| frame[0])
-    }
-
-    pub(crate) fn stat(sink: &Sink, name: &str) -> u64 {
-        sink.stats()
-            .unwrap()
-            .into_iter()
-            .find(|(key, _)| *key == name)
-            .unwrap()
-            .1
     }
 
     #[test]
@@ -638,7 +621,7 @@ pub(crate) mod tests {
 
         assert_eq!(wakes, 1);
         assert_eq!(sink.queued().unwrap(), Duration::ZERO);
-        assert_eq!(position, stat(&sink, "consumed_samples"));
+        assert_eq!(position, sink.stats().unwrap().consumed);
     }
 
     #[test]
@@ -681,11 +664,11 @@ pub(crate) mod tests {
         }
 
         assert_eq!(holding.queued().unwrap(), Duration::from_millis(100));
-        assert_eq!(stat(&holding, "held_ticks"), 3);
-        assert_eq!(stat(&holding, "dropped_samples"), 0);
+        assert_eq!(holding.stats().unwrap().held_ticks, 3);
+        assert_eq!(holding.stats().unwrap().dropped, 0);
         assert_eq!(dropping.queued().unwrap(), Duration::from_millis(40));
-        assert_eq!(stat(&dropping, "held_ticks"), 3);
-        assert_eq!(stat(&dropping, "dropped_samples"), 2_880);
+        assert_eq!(dropping.stats().unwrap().held_ticks, 3);
+        assert_eq!(dropping.stats().unwrap().dropped, 2_880);
     }
 
     #[test]
@@ -711,7 +694,7 @@ pub(crate) mod tests {
         let mut fixture = Fixture::new();
         let sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
         assert!(pull(&sink).is_none());
-        let before_playing = stat(&sink, "underruns");
+        let before_playing = sink.stats().unwrap().underruns;
 
         for _ in 0..2 {
             sink.write(&frames_of(0.1, 960)).unwrap();
@@ -721,7 +704,7 @@ pub(crate) mod tests {
         }
 
         assert_eq!(before_playing, 0);
-        assert_eq!(stat(&sink, "underruns"), 2);
+        assert_eq!(sink.stats().unwrap().underruns, 2);
     }
 
     #[test]
@@ -733,13 +716,13 @@ pub(crate) mod tests {
 
         pull(&sink).unwrap();
         assert!(pull(&sink).is_none());
-        let after_the_flush = stat(&sink, "underruns");
+        let after_the_flush = sink.stats().unwrap().underruns;
         sink.write(&frames_of(0.1, 960)).unwrap();
         pull(&sink).unwrap();
         assert!(pull(&sink).is_none());
 
         assert_eq!(after_the_flush, 0);
-        assert_eq!(stat(&sink, "underruns"), 1);
+        assert_eq!(sink.stats().unwrap().underruns, 1);
     }
 
     #[test]
@@ -752,9 +735,9 @@ pub(crate) mod tests {
         sink.hold();
         sink.clear(None).unwrap();
 
-        assert_eq!(stat(&sink, "sent_samples"), 960);
-        assert_eq!(stat(&sink, "dropped_samples"), 960);
-        assert_eq!(stat(&sink, "consumed_samples"), 4_800);
+        assert_eq!(sink.stats().unwrap().sent, 960);
+        assert_eq!(sink.stats().unwrap().dropped, 960);
+        assert_eq!(sink.stats().unwrap().consumed, 4_800);
     }
 
     #[test]
@@ -824,7 +807,7 @@ pub(crate) mod tests {
 
         assert!(passing);
         assert!(!sink.passthrough().unwrap());
-        assert_eq!(stat(&sink, "passthrough_packets"), 2);
+        assert_eq!(sink.stats().unwrap().passthrough_packets, 2);
     }
 
     #[test]

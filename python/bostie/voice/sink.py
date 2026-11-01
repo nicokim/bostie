@@ -24,7 +24,7 @@ class NativeSink(Protocol):
     def set_volume(self, volume: float) -> None: ...
     def queued(self) -> float: ...
     def passthrough(self) -> bool: ...
-    def stats(self) -> dict[str, int]: ...
+    def stats(self) -> tuple[int, int, int, int, int, int]: ...
     def close(self) -> None: ...
 
 
@@ -212,14 +212,16 @@ class Sink:
         self._connection._forget(self)
 
     def _read_stats(self) -> SinkStats:
-        raw = self._native.stats()
+        sent, consumed, underruns, held_ticks, dropped, passthrough = (
+            self._native.stats()
+        )
         return SinkStats(
-            sent=raw.get("sent_samples", 0) / SAMPLE_RATE,
-            position=raw.get("consumed_samples", 0) / SAMPLE_RATE,
-            underruns=raw.get("underruns", 0),
-            held_ticks=raw.get("held_ticks", 0),
-            dropped=raw.get("dropped_samples", 0) / SAMPLE_RATE,
-            passthrough_packets=raw.get("passthrough_packets", 0),
+            sent / SAMPLE_RATE,
+            consumed / SAMPLE_RATE,
+            underruns,
+            held_ticks,
+            dropped / SAMPLE_RATE,
+            passthrough,
         )
 
 

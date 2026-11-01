@@ -208,7 +208,7 @@ def test_iteration_ends_after_the_queued_items_with_the_reason(
     async def scenario(bot: FakeBot) -> None:
         rx, native = await open_receiver(bot)
         native.items.extend(frame(960 * index) for index in range(3))
-        native.counters = {"delivered": 3, "dropped": 1, "lost": 2}
+        native.counters = (3, 1, 2)
         if ended is not None:
             native.end(ended)
         bot.deliver(ending)
@@ -229,7 +229,7 @@ def test_leaving_the_block_closes_and_ends_a_waiting_iteration_without_a_read() 
         with pytest.raises(LookupError):
             async with vc.receive() as rx:
                 native = bot.core.receivers[-1]
-                native.counters = {"delivered": 3, "dropped": 1, "lost": 2}
+                native.counters = (3, 1, 2)
                 waiting = asyncio.ensure_future(anext(rx, None))
                 await settle()
                 raise LookupError

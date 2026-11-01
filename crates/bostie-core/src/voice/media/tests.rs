@@ -8,7 +8,6 @@ use crate::bell;
 use crate::ids::Handle;
 use crate::voice::codec::{FrameEncoder, packet_samples};
 use crate::voice::crypto::Mode;
-use crate::voice::sink::tests::stat;
 use crate::voice::testkit::mls::Call;
 use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
@@ -247,7 +246,7 @@ fn a_held_gate_keeps_hold_sinks_and_drains_drop_sinks() {
 
     assert_eq!(queued_frames(&hold), 9_600);
     assert_eq!(queued_frames(&drop_sink), 6 * 960);
-    assert_eq!(stat(&hold, "held_ticks"), 4);
+    assert_eq!(hold.stats().unwrap().held_ticks, 4);
     rig.connect(&KEY);
     rig.plain();
     rig.tick(1);
@@ -347,7 +346,7 @@ fn an_encrypting_lane_sends_dave_frames_and_an_encoded_silence_tail() {
         assert_ne!(silence.as_slice(), SILENCE_FRAME);
         assert_eq!(packet_samples(silence), Some(960));
     }
-    assert_eq!(stat(&sink, "passthrough_packets"), 2);
+    assert_eq!(sink.stats().unwrap().passthrough_packets, 2);
 }
 
 #[test]
@@ -469,7 +468,7 @@ fn a_busy_dave_lock_holds_the_tick_and_keeps_the_audio() {
     rig.tick(2);
     drop(guard);
 
-    assert_eq!(stat(&sink, "held_ticks"), 2);
+    assert_eq!(sink.stats().unwrap().held_ticks, 2);
     assert_eq!(queued_frames(&sink), 2_880);
     rig.packets(0);
     rig.tick(1);
@@ -494,7 +493,7 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
 
     rig.tick(2);
 
-    assert_eq!(stat(&sink, "held_ticks"), 2);
+    assert_eq!(sink.stats().unwrap().held_ticks, 2);
     assert_eq!(queued_frames(&sink), 1_920);
     rig.packets(0);
 }

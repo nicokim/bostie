@@ -22,7 +22,6 @@ use crate::voice::crypto::Mode;
 use crate::voice::dave::{Outbound, RECOVERY_LIMIT, SendMode};
 use crate::voice::proto::op;
 use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
-use crate::voice::sink::tests::stat;
 use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
@@ -948,7 +947,7 @@ async fn a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending() {
     assert_eq!(ready["transition_id"].as_u64(), Some(6));
     assert_eq!(harness.server.count(op::IDENTIFY), 1);
     assert_eq!(harness.server.sfu.wait_packets(8, WAIT).len(), 8);
-    assert_eq!(stat(&sink, "held_ticks"), 0);
+    assert_eq!(sink.stats().unwrap().held_ticks, 0);
     assert_eq!(harness.server.count(op::RESUME), 1);
 }
 
@@ -1316,7 +1315,7 @@ async fn an_endpointless_server_holds_media_until_the_next_one() {
     assert_eq!((code, detail.as_str()), (4000, "server_unavailable"));
     assert_eq!(server.sfu.wait_packets(3, WAIT).len(), 3);
     assert_eq!(harness.server.sfu.packets().len(), 2);
-    assert_eq!(stat(&sink, "held_ticks"), 2);
+    assert_eq!(sink.stats().unwrap().held_ticks, 2);
     assert_eq!(queued_frames(&sink), 15 * 960);
 }
 
@@ -2401,7 +2400,7 @@ async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
     let dave = harness.voice.dave(guild()).unwrap();
     drop(busy);
 
-    assert_eq!(stat(&own, "held_ticks"), 5);
+    assert_eq!(own.stats().unwrap().held_ticks, 5);
     assert_eq!(dave.protocol_version, 1);
     assert_eq!(queued_frames(&own), 5 * 960);
     assert_eq!(second.sfu.wait_packets(5, WAIT).len(), 5);
@@ -2704,7 +2703,7 @@ async fn dave_audio_from_a_peer_decrypts_across_a_member_joining() {
         spoken(LATE_PEER, &packets)
     );
     assert!(invalid_commit_welcomes(&harness.server).is_empty());
-    assert_eq!(receiver.stats().unwrap()[2], ("lost", 0));
+    assert_eq!(receiver.stats().unwrap().lost, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2859,7 +2858,7 @@ async fn a_full_receiver_never_slows_sending() {
     }
 
     assert_eq!(harness.server.sfu.wait_packets(30, WAIT).len(), 30);
-    assert_eq!(stat(&sink, "held_ticks"), 0);
+    assert_eq!(sink.stats().unwrap().held_ticks, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2871,7 +2870,7 @@ async fn a_move_to_another_channel_ends_the_receivers() {
     let packets = opus(2);
     harness.say(70, 0, &packets[0]);
     harness.say(70, 1, &packets[1]);
-    let delivered = || receiver.stats().unwrap()[0].1;
+    let delivered = || receiver.stats().unwrap().delivered;
     let deadline = Instant::now() + WAIT;
     while delivered() < 2 {
         assert!(Instant::now() < deadline, "the frames never arrived");

@@ -88,11 +88,11 @@ struct Queue {
     stats: ReceiverStats,
 }
 
-#[derive(Default)]
-struct ReceiverStats {
-    delivered: u64,
-    dropped: u64,
-    lost: u64,
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ReceiverStats {
+    pub delivered: u64,
+    pub dropped: u64,
+    pub lost: u64,
 }
 
 impl Receiver {
@@ -152,14 +152,9 @@ impl Receiver {
         Ok(())
     }
 
-    pub fn stats(&self) -> Result<Vec<(&'static str, u64)>, CoreError> {
+    pub fn stats(&self) -> Result<ReceiverStats, CoreError> {
         self.owner.check()?;
-        let queue = self.queue.lock();
-        Ok(vec![
-            ("delivered", queue.stats.delivered),
-            ("dropped", queue.stats.dropped),
-            ("lost", queue.stats.lost),
-        ])
+        Ok(self.queue.lock().stats)
     }
 
     pub fn ended(&self) -> Option<Ended> {
@@ -420,7 +415,11 @@ mod tests {
         assert_eq!(receiver.read(256).unwrap(), ReceiveRead::Pending);
         assert_eq!(
             receiver.stats().unwrap(),
-            [("delivered", 6), ("dropped", 0), ("lost", 4)]
+            ReceiverStats {
+                delivered: 6,
+                dropped: 0,
+                lost: 4
+            }
         );
     }
 
@@ -459,7 +458,11 @@ mod tests {
         );
         assert_eq!(
             receiver.stats().unwrap(),
-            [("delivered", 5), ("dropped", 5), ("lost", 0)]
+            ReceiverStats {
+                delivered: 5,
+                dropped: 5,
+                lost: 0
+            }
         );
     }
 
@@ -497,7 +500,11 @@ mod tests {
         );
         assert_eq!(
             receiver.stats().unwrap(),
-            [("delivered", 4), ("dropped", 1), ("lost", 0)]
+            ReceiverStats {
+                delivered: 4,
+                dropped: 1,
+                lost: 0
+            }
         );
     }
 
@@ -597,7 +604,7 @@ mod tests {
                 })
                 .collect();
             let spoken = heard.iter().filter(|item| matches!(item, Item::Speech { .. })).count();
-            let dropped = receiver.stats().unwrap()[1].1;
+            let dropped = receiver.stats().unwrap().dropped;
             prop_assert!(offsets.windows(2).all(|pair| pair[0] < pair[1]), "{offsets:?}");
             prop_assert_eq!(offsets.len() as u64 + dropped, pushed);
             if drop_newest {

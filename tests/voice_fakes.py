@@ -93,7 +93,7 @@ class FakeSink:
         self.clears: list[int | None] = []
         self.closed = False
         self.failure: Exception | None = None
-        self.counters: dict[str, int] = {}
+        self.counters = (0, 0, 0, 0, 0)
 
     @property
     def id(self) -> int:
@@ -145,9 +145,11 @@ class FakeSink:
         self._check()
         return False
 
-    def stats(self) -> dict[str, int]:
+    def stats(self) -> tuple[int, int, int, int, int, int]:
         self._check()
-        return {**self.counters, "consumed_samples": round(self.consumed * SAMPLE_RATE)}
+        sent, underruns, held_ticks, dropped, passthrough = self.counters
+        consumed = round(self.consumed * SAMPLE_RATE)
+        return sent, consumed, underruns, held_ticks, dropped, passthrough
 
     def close(self) -> None:
         if not self.closed:
@@ -232,7 +234,7 @@ class FakeReceiver:
         self.ended: Literal["disconnected", "moved"] | None = None
         self.lag = 0.0
         self.clears = 0
-        self.counters: dict[str, int] = {}
+        self.counters = (0, 0, 0)
         self.closed = False
 
     @property
@@ -256,9 +258,9 @@ class FakeReceiver:
         self.items.clear()
         self.clears += 1
 
-    def stats(self) -> dict[str, int]:
+    def stats(self) -> tuple[int, int, int]:
         self._check()
-        return dict(self.counters)
+        return self.counters
 
     def closed_reason(self) -> Literal["closed", "disconnected", "moved"] | None:
         return "closed" if self.closed else self.ended

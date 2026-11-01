@@ -325,14 +325,7 @@ def test_stats_are_in_seconds_and_keep_their_last_value_after_close() -> None:
         sink, native = await open_sink(bot, buffer=1.0)
         await sink.write(bytes(SECOND // 2))
         native.pull(0.5)
-        native.counters = {
-            "sent_samples": 24_000,
-            "underruns": 2,
-            "held_ticks": 3,
-            "dropped_samples": 4800,
-            "passthrough_packets": 7,
-            "added_later": 9,
-        }
+        native.counters = (24_000, 2, 3, 4800, 7)
         expected = voice.SinkStats(0.5, 0.5, 2, 3, 0.1, 7)
         assert sink.stats() == expected
         sink.close()

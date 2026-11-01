@@ -7,7 +7,8 @@ use bostie_core::voice::types::{
     SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
-    Ended, FrameEncoder, Item, ReceiveRead, Receiver, Sink, Source, SourceRead,
+    Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, Sink, SinkStats, Source,
+    SourceRead,
 };
 use bostie_core::{CoreError, UserId};
 use pyo3::IntoPyObjectExt;
@@ -59,9 +60,23 @@ impl NativeSink {
         Ok(self.0.passthrough()?)
     }
 
-    fn stats(&self) -> Result<HashMap<&'static str, u64>> {
-        let stats = self.0.stats()?;
-        Ok(stats.into_iter().collect())
+    fn stats(&self) -> Result<(u64, u64, u64, u64, u64, u64)> {
+        let SinkStats {
+            sent,
+            consumed,
+            underruns,
+            held_ticks,
+            dropped,
+            passthrough_packets,
+        } = self.0.stats()?;
+        Ok((
+            sent,
+            consumed,
+            underruns,
+            held_ticks,
+            dropped,
+            passthrough_packets,
+        ))
     }
 
     fn close(&self) {
@@ -147,9 +162,13 @@ impl NativeReceiver {
         Ok(self.0.clear()?)
     }
 
-    fn stats(&self) -> Result<HashMap<&'static str, u64>> {
-        let stats = self.0.stats()?;
-        Ok(stats.into_iter().collect())
+    fn stats(&self) -> Result<(u64, u64, u64)> {
+        let ReceiverStats {
+            delivered,
+            dropped,
+            lost,
+        } = self.0.stats()?;
+        Ok((delivered, dropped, lost))
     }
 
     fn closed_reason(&self) -> Option<&'static str> {
