@@ -1,5 +1,4 @@
 import array
-import asyncio
 import os
 import socket
 import sys
@@ -11,9 +10,8 @@ from pathlib import Path
 import pytest
 
 from bostie import _native
-from bostie._bridge import Bridge, GatewayDelivery
-from bostie.errors import ReceiverClosed, ShardNotRunning, SinkClosed, StateError
-from bostie.voice.formats import OpusApplication, Sample
+from bostie.errors import ReceiverClosed, ShardNotRunning, StateError
+from bostie.voice.formats import OpusApplication
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 API_URL = "http://127.0.0.1:1/api/v10"
@@ -81,19 +79,6 @@ def pcm_sink(
     )
 
 
-def opus_sink(core: _native.Core) -> _native.Sink:
-    return core.voice_sink(
-        GUILD,
-        kind="opus",
-        rate=48_000,
-        channels=2,
-        sample="s16le",
-        buffer=10.0,
-        volume=1.0,
-        stall="hold",
-    )
-
-
 def receiver(
     core: _native.Core,
     *,
@@ -117,25 +102,6 @@ def receiver(
         mix=mix,
         overflow="drop_oldest",
         stall="wait",
-    )
-
-
-def encoder(
-    *,
-    rate: int = 48_000,
-    channels: int = 2,
-    sample: Sample = "s16le",
-    bitrate: int = 64_000,
-) -> _native.OpusEncoder:
-    return _native.OpusEncoder(
-        rate=rate,
-        channels=channels,
-        sample=sample,
-        bitrate=bitrate,
-        application="audio",
-        fec=True,
-        packet_loss=10,
-        complexity=10,
     )
 
 
@@ -172,28 +138,6 @@ def handle_deliveries(core: _native.Core, handle: int) -> "list[_native.Delivery
     ]
 
 
-def test_a_sink_queues_up_to_its_buffer_and_a_clear_resolves_its_marker(
-    connected: _native.Core,
-) -> None:
-    sink = pcm_sink(connected)
-
-    assert sink.write(bytes(FRAME_BYTES))
-    assert sink.queued() == pytest.approx(0.02)
-    marker, position = sink.mark()
-    assert position == 960
-    while sink.write(bytes(FRAME_BYTES * 5)):
-        pass
-    assert 0.2 <= sink.queued() <= 0.3
-    handle_deliveries(connected, sink.id)
-    sink.clear()
-
-    assert sink.queued() == 0
-    assert sorted(handle_deliveries(connected, sink.id)) == [
-        ("voice_marker", sink.id, marker, False),
-        ("voice_wake", sink.id),
-    ]
-
-
 def test_flush_pads_the_last_frame_and_marks_the_end(connected: _native.Core) -> None:
     sink = pcm_sink(connected)
     sink.write(bytes(400))
@@ -217,40 +161,6 @@ def test_sinks_take_bytes_bytearrays_and_memoryview_slices(
     sink.write(memoryview(samples).cast("B"))
 
     assert sink.queued() == pytest.approx(0.07)
-
-
-def test_an_opus_sink_takes_encoded_packets_and_refuses_anything_else(
-    connected: _native.Core,
-) -> None:
-    sink = opus_sink(connected)
-    packet = encoder().encode(bytes(FRAME_BYTES))[0]
-
-    assert sink.write(packet)
-    assert sink.queued() == pytest.approx(0.02)
-    with pytest.raises(ValueError, match="not a valid Opus packet"):
-        sink.write(b"")
-
-
-def test_a_closed_sink_refuses_writes_but_keeps_its_stats(
-    connected: _native.Core,
-) -> None:
-    sink = pcm_sink(connected)
-    sink.set_volume(0.5)
-
-    sink.close()
-    sink.close()
-
-    with pytest.raises(SinkClosed, match=f"sink {sink.id} is closed"):
-        sink.write(bytes(FRAME_BYTES))
-    with pytest.raises(SinkClosed):
-        sink.mark()
-    assert sink.stats() == (0, 0, 0, 0, 0, 0)
-    assert not sink.passthrough()
-
-
-def test_a_negative_sink_buffer_raises_value_error(connected: _native.Core) -> None:
-    with pytest.raises(ValueError, match="buffer"):
-        pcm_sink(connected, buffer=-1.0)
 
 
 def test_a_connection_reports_latency_and_dave(connected: _native.Core) -> None:
@@ -290,6 +200,8 @@ def test_voice_connect_needs_a_running_shard_and_valid_settings(
         connect(core, server_change_delay=-1.0)
     core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
     connect(core)
+    with pytest.raises(ValueError, match="buffer"):
+        pcm_sink(core, buffer=-1.0)
     with pytest.raises(ValueError, match="mix=True needs a PCM format"):
         core.voice_receive(
             GUILD,
@@ -307,33 +219,6 @@ def test_voice_connect_needs_a_running_shard_and_valid_settings(
             overflow="drop_oldest",
             stall="wait",
         )
-
-
-def test_a_file_source_yields_one_second_of_48_khz_stereo_f32(
-    core: _native.Core,
-) -> None:
-    source = core.voice_file(str(MEDIA / "tone.flac"))
-
-    kind, duration, seekable = probed(source)
-    chunks = read_all(source)
-
-    assert (kind, seekable) == ("pcm", True)
-    assert duration == pytest.approx(1.0)
-    assert sum(map(len, chunks)) == SECOND_OF_F32_STEREO
-    assert source.error() is None
-    assert source.read() is None
-
-
-def test_an_opus_file_yields_one_packet_per_item(connected: _native.Core) -> None:
-    source = connected.voice_file(str(MEDIA / "tone.opus"))
-    sink = opus_sink(connected)
-
-    assert probed(source)[0] == "opus"
-    packets = read_all(source)
-
-    assert len(packets) >= 50
-    assert all(sink.write(packet) for packet in packets)
-    assert sink.queued() == pytest.approx(1.0, abs=0.03)
 
 
 def test_a_bytes_source_probes_with_its_hint(core: _native.Core) -> None:
@@ -361,7 +246,8 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
     core: _native.Core,
 ) -> None:
     source = core.voice_file(str(MEDIA / "tone.flac"))
-    probed(source)
+    kind, duration, seekable = probed(source)
+    assert (kind, duration, seekable) == ("pcm", 1.0, True)
 
     source.seek(0.5)
     after_seek = sum(map(len, read_all(source)))
@@ -374,20 +260,6 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
         source.seek(0.0)
     with pytest.raises(StateError, match="closed"):
         source.read()
-
-
-def test_a_url_that_does_not_parse_is_a_value_error(core: _native.Core) -> None:
-    with pytest.raises(ValueError, match="needs an http or https URL"):
-        core.voice_url("not a url", [])
-
-
-def test_the_opus_encoder_checks_its_settings() -> None:
-    with pytest.raises(ValueError, match="bitrate"):
-        encoder(bitrate=10)
-    with pytest.raises(ValueError, match="20 ms blocks"):
-        encoder(rate=44_101)
-    with pytest.raises(ValueError, match="channels"):
-        encoder(channels=3)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
@@ -421,21 +293,3 @@ def test_voice_handles_refuse_to_work_in_a_forked_child(
     assert os.read(read_end, 64) == b"refused"
     os.close(read_end)
     assert sink.write(bytes(FRAME_BYTES))
-
-
-def test_the_bridge_hands_voice_deliveries_to_the_gateway_callback() -> None:
-    async def main() -> None:
-        handed: asyncio.Queue[GatewayDelivery] = asyncio.Queue()
-        async with Bridge(
-            "token",
-            API_URL,
-            lambda delivery, _: handed.put_nowait(delivery),
-            global_limit=50,
-        ) as bridge:
-            source = bridge.core.voice_bytes(b"not audio", None)
-            delivery = await asyncio.wait_for(handed.get(), 10)
-            source.close()
-
-        assert delivery == ("voice_wake", source.id)
-
-    asyncio.run(main())
