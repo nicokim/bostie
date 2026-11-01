@@ -111,7 +111,7 @@ def test_an_event_that_is_one_entity_shares_its_payload_with_it(
     assert value.raw_json is event.raw_json
 
 
-def test_guild_create_decodes_the_header_and_children_once(
+def test_guild_create_decodes_its_payload_in_one_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     decoded: list[object] = []
@@ -127,9 +127,14 @@ def test_guild_create_decodes_the_header_and_children_once(
     monkeypatch.setattr(events, "decoder", counting_decoder)
     monkeypatch.setattr(events, "decode", counting_decode)
 
-    event = decode(GuildCreate, "GUILD_CREATE")
+    decode(GuildCreate, "GUILD_CREATE")
 
     assert len(decoded) == 1
+
+
+def test_guild_create_splits_the_guild_from_its_children() -> None:
+    event = decode(GuildCreate, "GUILD_CREATE")
+
     assert type(event.guild) is Guild
     assert event.guild.name == "bostie test"
     assert event.guild.member_count == 4
