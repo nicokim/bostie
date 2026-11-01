@@ -129,6 +129,10 @@ class InteractionResponded(CommandError):
     """The interaction is not in a state that allows this response."""
 
 
+class InteractionNotAnswered(CommandError):
+    """The interaction needs an answer or a defer before this call."""
+
+
 class InteractionExpired(CommandError):
     """The interaction can no longer be answered.
 

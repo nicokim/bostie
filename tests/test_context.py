@@ -19,8 +19,10 @@ from bostie.context import (
 )
 from bostie.enums import MessageFlags
 from bostie.errors import (
+    CommandError,
     HTTPException,
     InteractionExpired,
+    InteractionNotAnswered,
     InteractionResponded,
     NotFound,
 )
@@ -140,7 +142,8 @@ CALLBACK_7 = ("POST", CALLBACK_ROUTE, 7)
 EDIT = ("PATCH", ORIGINAL_ROUTE, None)
 FOLLOWUP = ("POST", FOLLOWUP_ROUTE, None)
 DELETE = ("DELETE", ORIGINAL_ROUTE, None)
-REFUSED = None
+REFUSED = InteractionResponded
+UNANSWERED = InteractionNotAnswered
 NOTHING = ()
 
 TABLE = [
@@ -148,9 +151,9 @@ TABLE = [
     (PENDING, "defer", CALLBACK_5, DEFERRED),
     (PENDING, "defer_update", CALLBACK_6, DEFERRED_UPDATE),
     (PENDING, "update", CALLBACK_7, RESPONDED),
-    (PENDING, "edit", REFUSED, PENDING),
-    (PENDING, "followup", REFUSED, PENDING),
-    (PENDING, "delete", REFUSED, PENDING),
+    (PENDING, "edit", UNANSWERED, PENDING),
+    (PENDING, "followup", UNANSWERED, PENDING),
+    (PENDING, "delete", UNANSWERED, PENDING),
     (DEFERRED, "respond", EDIT, RESPONDED),
     (DEFERRED, "defer", NOTHING, DEFERRED),
     (DEFERRED, "defer_update", NOTHING, DEFERRED),
@@ -183,7 +186,7 @@ TABLE = [
 def test_response_state_machine(
     state: ResponseState,
     call: str,
-    sent: tuple[str, str, int | None] | tuple[()] | None,
+    sent: tuple[str, str, int | None] | tuple[()] | type[CommandError],
     after: ResponseState,
 ) -> None:
     async def scenario(http: RecordingHTTP) -> None:
@@ -191,13 +194,13 @@ def test_response_state_machine(
         await ENTER[state](ctx)
         http.requests.clear()
 
-        if sent is REFUSED:
-            with pytest.raises(InteractionResponded):
+        if isinstance(sent, type):
+            with pytest.raises(sent):
                 await CALLS[call](ctx)
+            assert http.calls == []
         else:
             await CALLS[call](ctx)
-
-        assert http.calls == ([sent] if sent else [])
+            assert http.calls == ([sent] if sent else [])
         assert ctx.state is after
 
     run(scenario)

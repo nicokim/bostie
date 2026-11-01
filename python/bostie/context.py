@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 import msgspec
 
 from bostie.enums import MessageFlags, OptionType
-from bostie.errors import HTTPException, InteractionExpired, InteractionResponded
+from bostie.errors import (
+    HTTPException,
+    InteractionExpired,
+    InteractionNotAnswered,
+    InteractionResponded,
+)
 from bostie.file import File
 from bostie.models import (
     AllowedMentions,
@@ -336,7 +341,7 @@ class Context(_InteractionContext):
 
     def _ensure_answered(self, action: str) -> None:
         if self.state is ResponseState.PENDING:
-            raise InteractionResponded(
+            raise InteractionNotAnswered(
                 f"cannot {action} an interaction that was not answered yet"
             )
 
