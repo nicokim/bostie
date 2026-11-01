@@ -31,9 +31,17 @@ uv run mypy
 uv run pyright
 uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
 uv run pytest
+uv run typos
+uv run deptry python
+uv run actionlint
+uv run zizmor --offline .github
+! git grep -nE '^\s*#|\s#\s' -- '*.py' '*.pyi' ':!crates/bostie-core/src/voice/testdata/vectors.py'
+! git grep -nE '^\s*(//|/\*)|\s//\s' -- 'crates/*.rs'
 ```
 
-`cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. mypy runs in strict mode on the tests as well as the library, and pyright checks the library in its standard mode. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails. If you change `.github/workflows`, also run `uvx --from actionlint-py actionlint`. When you add or bump a Rust dependency, regenerate the notices with `cargo about generate --locked -m crates/bostie-native/Cargo.toml -o THIRD-PARTY-NOTICES.md about.hbs`, using the cargo-about version CI pins (`cargo install cargo-about --locked --features cli --version 0.9.3`).
+`cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. ruff runs every rule but the few `pyproject.toml` turns off, mypy runs in strict mode on the tests as well as the library, and pyright checks the library in strict mode. The two `git grep` lines fail on any comment in code, `# noqa` and `# type: ignore` included: fix what the checker found, or, where a rule is wrong for a whole file, add a per-file ignore with its reason in `pyproject.toml`. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails.
+
+Another workflow checks the dependencies on every pull request and each week: `cargo deny check advisories bans sources`, `cargo shear` and `uv audit --locked --preview-features audit-command`. Install the tools at the versions it pins with `cargo install --locked cargo-deny@0.20.2 cargo-shear@1.14.0`. When you add or bump a Rust dependency, regenerate the notices with `cargo about generate --locked -m crates/bostie-native/Cargo.toml -o THIRD-PARTY-NOTICES.md about.hbs`, using the cargo-about version CI pins (`cargo install cargo-about --locked --features cli --version 0.9.3`).
 
 CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
