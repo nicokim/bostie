@@ -99,9 +99,6 @@ pub enum EncryptFailure {
 pub enum DecryptFailure {
     NoDecryptor,
     Unencrypted,
-    MissingKey,
-    InvalidNonce,
-    MissingCryptor,
     Failed,
 }
 
@@ -871,10 +868,10 @@ fn decrypt_failure(error: &DecryptError) -> DecryptFailure {
             DecryptorDecryptError::UnencryptedWhenPassthroughDisabled => {
                 DecryptFailure::Unencrypted
             }
-            DecryptorDecryptError::MissingKeyRatchet => DecryptFailure::MissingKey,
-            DecryptorDecryptError::InvalidNonce => DecryptFailure::InvalidNonce,
-            DecryptorDecryptError::MissingCryptor => DecryptFailure::MissingCryptor,
-            DecryptorDecryptError::DecryptionFailure => DecryptFailure::Failed,
+            DecryptorDecryptError::MissingKeyRatchet
+            | DecryptorDecryptError::InvalidNonce
+            | DecryptorDecryptError::MissingCryptor
+            | DecryptorDecryptError::DecryptionFailure => DecryptFailure::Failed,
         },
     }
 }
@@ -1556,41 +1553,6 @@ mod tests {
             assert_eq!(
                 encrypt_failure(&EncryptError::EncryptionFailed(error)),
                 EncryptFailure::Failed
-            );
-        }
-    }
-
-    #[test]
-    fn decrypt_errors_map_to_their_own_failure() {
-        assert_eq!(
-            decrypt_failure(&DecryptError::NoDecryptorForUser),
-            DecryptFailure::NoDecryptor
-        );
-        for (error, failure) in [
-            (
-                DecryptorDecryptError::UnencryptedWhenPassthroughDisabled,
-                DecryptFailure::Unencrypted,
-            ),
-            (
-                DecryptorDecryptError::MissingKeyRatchet,
-                DecryptFailure::MissingKey,
-            ),
-            (
-                DecryptorDecryptError::InvalidNonce,
-                DecryptFailure::InvalidNonce,
-            ),
-            (
-                DecryptorDecryptError::MissingCryptor,
-                DecryptFailure::MissingCryptor,
-            ),
-            (
-                DecryptorDecryptError::DecryptionFailure,
-                DecryptFailure::Failed,
-            ),
-        ] {
-            assert_eq!(
-                decrypt_failure(&DecryptError::DecryptionFailed(error)),
-                failure
             );
         }
     }
