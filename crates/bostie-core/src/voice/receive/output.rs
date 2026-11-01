@@ -779,7 +779,7 @@ fn decoder(track: &mut Track, format: PcmFormat) -> &mut Option<Decoder> {
     &mut track.decoder
 }
 
-fn wants(options: &ReceiveOptions, user: UserId, own: bool) -> bool {
+pub(super) fn wants(options: &ReceiveOptions, user: UserId, own: bool) -> bool {
     if own {
         return options.include_self;
     }

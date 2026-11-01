@@ -6,6 +6,7 @@ use futures_util::FutureExt;
 use proptest::prelude::*;
 
 use super::intake::SPARE_WINDOWS;
+use super::output::wants;
 use super::*;
 use crate::ids::{ChannelId, Handle, ShardId};
 use crate::voice::codec::{Decoder, FrameEncoder};
@@ -504,6 +505,36 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
         ]
     );
     assert_eq!(rig.undecryptable(), 1);
+}
+
+#[test]
+fn the_user_filters_decide_whose_audio_a_receiver_gets() {
+    let cases = [
+        (ALICE, None, vec![], false, true),
+        (ALICE, None, vec![ALICE], false, false),
+        (ALICE, Some(vec![ALICE]), vec![], false, true),
+        (ALICE, Some(vec![ALICE]), vec![ALICE], false, false),
+        (ALICE, Some(vec![BOB]), vec![], true, false),
+        (ALICE, Some(vec![]), vec![], false, false),
+        (BOT, Some(vec![BOB]), vec![BOT], true, true),
+        (BOT, None, vec![], false, false),
+    ];
+
+    for (speaker, users, exclude, include_self, heard) in cases {
+        let options = ReceiveOptions {
+            users: users
+                .as_ref()
+                .map(|ids| ids.iter().copied().map(user).collect()),
+            exclude: exclude.iter().copied().map(user).collect(),
+            include_self,
+            ..options(ReceiveFormat::Opus)
+        };
+        assert_eq!(
+            wants(&options, user(speaker), speaker == BOT),
+            heard,
+            "{speaker} {users:?} {exclude:?} {include_self}"
+        );
+    }
 }
 
 #[test]
