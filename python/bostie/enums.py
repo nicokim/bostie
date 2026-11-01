@@ -569,7 +569,6 @@ class TargetUsersJobStatus(DiscordIntEnum):
 
 
 class StagePrivacyLevel(DiscordIntEnum):
-    PUBLIC = 1
     GUILD_ONLY = 2
 
 

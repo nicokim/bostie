@@ -177,12 +177,11 @@ class VoiceChannelInfo(Model, kw_only=True):
 
 
 class StageInstance(Model, kw_only=True):
-    """A live stage; `discoverable_disabled` is deprecated."""
+    """A live stage."""
 
     id: int
     guild_id: int
     channel_id: int
     topic: str
     privacy_level: StagePrivacyLevel
-    discoverable_disabled: bool
     guild_scheduled_event_id: int | None
