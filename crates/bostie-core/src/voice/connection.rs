@@ -11,7 +11,6 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::debug;
 
-use super::Shared;
 use super::close::{self, CloseAction};
 use super::media::{Media, bump};
 use super::proto;
@@ -20,6 +19,7 @@ use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
 use super::ws::Timeouts;
+use super::{Shared, nanos};
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
 
@@ -156,18 +156,14 @@ impl Info {
     }
 
     pub fn set_latency_ws(&self, latency: Duration) {
-        self.latency_ws.store(nanos(latency), Ordering::Relaxed);
+        self.latency_ws
+            .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
     }
 
     pub fn set_latency_udp(&self, latency: Duration) {
-        self.latency_udp.store(nanos(latency), Ordering::Relaxed);
+        self.latency_udp
+            .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
     }
-}
-
-fn nanos(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos())
-        .unwrap_or(UNKNOWN_LATENCY - 1)
-        .min(UNKNOWN_LATENCY - 1)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
