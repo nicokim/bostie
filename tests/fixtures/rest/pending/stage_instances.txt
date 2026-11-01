@@ -1,4 +1,0 @@
-POST /stage-instances stage_instances.create reason
-DELETE /stage-instances/{channel_id} stage_instances.delete reason
-PATCH /stage-instances/{channel_id} stage_instances.edit reason
-GET /stage-instances/{channel_id} stage_instances.fetch

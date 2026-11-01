@@ -66,6 +66,7 @@ REST_MODELS: dict[str, type[Model]] = {
     "voice_region": VoiceRegion,
     "welcome_screen": WelcomeScreen,
     "poll_message": Message,
+    "forum_channel": Channel,
 }
 ENUM_KEYS = {
     "type",
@@ -92,6 +93,9 @@ ENUM_KEYS = {
     "channel_type",
     "mode",
     "layout_type",
+    "video_quality_mode",
+    "default_sort_order",
+    "default_forum_layout",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

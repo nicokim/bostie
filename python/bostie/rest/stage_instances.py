@@ -1,5 +1,65 @@
-from bostie.rest.base import Group
+from functools import partial
+from typing import Required, TypedDict, Unpack
+
+from bostie.enums import StagePrivacyLevel
+from bostie.models import StageInstance, decode
+from bostie.rest.base import Group, wire
+
+
+class StageInstanceCreate(TypedDict, total=False):
+    channel_id: Required[int]
+    topic: Required[str]
+    privacy_level: StagePrivacyLevel
+    send_start_notification: bool
+    guild_scheduled_event_id: int
+
+
+class StageInstanceEdit(TypedDict, total=False):
+    topic: str
+    privacy_level: StagePrivacyLevel
 
 
 class StageInstances(Group):
-    pass
+    async def create(
+        self, *, reason: str | None = None, **options: Unpack[StageInstanceCreate]
+    ) -> StageInstance:
+        return await self._http._decoded(
+            partial(decode, StageInstance),
+            "POST",
+            "/stage-instances",
+            json=wire(options, StageInstanceCreate),
+            reason=reason,
+        )
+
+    async def delete(self, channel_id: int, /, *, reason: str | None = None) -> None:
+        await self._http._request(
+            "DELETE",
+            "/stage-instances/{channel_id}",
+            reason=reason,
+            channel_id=channel_id,
+        )
+
+    async def edit(
+        self,
+        channel_id: int,
+        /,
+        *,
+        reason: str | None = None,
+        **options: Unpack[StageInstanceEdit],
+    ) -> StageInstance:
+        return await self._http._decoded(
+            partial(decode, StageInstance),
+            "PATCH",
+            "/stage-instances/{channel_id}",
+            json=wire(options, StageInstanceEdit),
+            reason=reason,
+            channel_id=channel_id,
+        )
+
+    async def fetch(self, channel_id: int, /) -> StageInstance:
+        return await self._http._decoded(
+            partial(decode, StageInstance),
+            "GET",
+            "/stage-instances/{channel_id}",
+            channel_id=channel_id,
+        )

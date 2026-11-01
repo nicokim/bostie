@@ -65,6 +65,22 @@ class ChannelType(DiscordIntEnum):
     GUILD_MEDIA = 16
 
 
+class VideoQualityMode(DiscordIntEnum):
+    AUTO = 1
+    FULL = 2
+
+
+class SortOrderType(DiscordIntEnum):
+    LATEST_ACTIVITY = 0
+    CREATION_DATE = 1
+
+
+class ForumLayoutType(DiscordIntEnum):
+    NOT_SET = 0
+    LIST_VIEW = 1
+    GALLERY_VIEW = 2
+
+
 class MessageType(DiscordIntEnum):
     DEFAULT = 0
     RECIPIENT_ADD = 1

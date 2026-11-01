@@ -1,0 +1,38 @@
+{
+  "id": "1335175210468531073",
+  "type": 15,
+  "guild_id": "1335172792320131073",
+  "name": "bug-reports",
+  "position": 4,
+  "parent_id": "1335173043978371073",
+  "topic": "One post per bug",
+  "nsfw": false,
+  "rate_limit_per_user": 0,
+  "last_message_id": "1564609102135331073",
+  "default_auto_archive_duration": 4320,
+  "default_thread_rate_limit_per_user": 30,
+  "permission_overwrites": [],
+  "flags": 16,
+  "available_tags": [
+    {
+      "id": "1335175399178651073",
+      "name": "voice",
+      "moderated": false,
+      "emoji_id": null,
+      "emoji_name": "🔊"
+    },
+    {
+      "id": "1335175399178651074",
+      "name": "confirmed",
+      "moderated": true,
+      "emoji_id": "1345334752051331073",
+      "emoji_name": null
+    }
+  ],
+  "default_reaction_emoji": {
+    "emoji_id": null,
+    "emoji_name": "👍"
+  },
+  "default_sort_order": 1,
+  "default_forum_layout": 1
+}
