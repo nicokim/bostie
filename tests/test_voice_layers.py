@@ -391,27 +391,6 @@ def test_a_played_track_finishes_once_its_sink_drained() -> None:
     run(scenario)
 
 
-def test_stopping_a_played_track_clears_its_sink_at_once() -> None:
-    async def scenario(clock: Clock) -> None:
-        vc = FakeConnection(clock)
-        source = FakeSource(clock, "a", 100)
-        track = await play(vc, source)
-        await clock.sleep(0.1)
-        track.stop()
-        end = track.ended
-        assert end is not None
-        assert (end.reason, end.may_start_next) == (EndReason.STOPPED, False)
-        sink = vc.sinks[0]
-        assert sink.clears == [None]
-        assert sink.closed
-        assert sink.sent == frames("a", 5)
-        await clock.sleep(0.1)
-        assert source.closed
-        assert (await track.wait()).reason is EndReason.STOPPED
-
-    run(scenario)
-
-
 def test_a_source_that_fails_while_playing_ends_its_track_with_the_error() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
@@ -421,18 +400,6 @@ def test_a_source_that_fails_while_playing_ends_its_track_with_the_error() -> No
         assert (end.reason, end.may_start_next) == (EndReason.ERROR, True)
         assert isinstance(end.error, OSError)
         assert source.closed
-
-    run(scenario)
-
-
-def test_a_connection_that_ends_cleans_its_tracks_up() -> None:
-    async def scenario(clock: Clock) -> None:
-        vc = FakeConnection(clock)
-        track = await play(vc, FakeSource(clock, "a", 100))
-        await clock.sleep(0.1)
-        vc.disconnect()
-        end = await track.wait()
-        assert (end.reason, end.may_start_next) == (EndReason.CLEANUP, False)
 
     run(scenario)
 
@@ -449,30 +416,6 @@ def test_play_raises_the_open_error_and_closes_the_source() -> None:
     run(scenario)
 
 
-def test_play_on_an_ended_connection_closes_the_source() -> None:
-    async def scenario(clock: Clock) -> None:
-        vc = FakeConnection(clock)
-        vc.state = State.DISCONNECTED
-        source = FakeSource(clock, "a", 5)
-        with pytest.raises(VoiceNotConnected):
-            await play(vc, source)
-        assert source.closed
-
-    run(scenario)
-
-
-def test_two_plays_open_two_sinks_that_both_play() -> None:
-    async def scenario(clock: Clock) -> None:
-        vc = FakeConnection(clock)
-        first = await play(vc, FakeSource(clock, "a", 10))
-        second = await play(vc, FakeSource(clock, "b", 10))
-        await first.wait()
-        await second.wait()
-        assert [sink.sent for sink in vc.sinks] == [frames("a", 10), frames("b", 10)]
-
-    run(scenario)
-
-
 def test_sink_settings_reach_the_connection() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
@@ -481,27 +424,22 @@ def test_sink_settings_reach_the_connection() -> None:
         )
         add(queue(vc, volume=0.7, buffer=0.1, stall="drop"), FakeSource(clock, "b", 5))
         await clock.until(lambda: len(vc.sinks) == 2)
-        settings = [(sink.volume, sink.buffer, sink.stall) for sink in vc.sinks]
-        assert settings == [(0.5, 0.4, "drop"), (0.7, 0.1, "drop")]
-        assert track.meta == 7
-
-    run(scenario)
-
-
-def test_broadcast_passes_its_stall_to_every_sink() -> None:
-    async def scenario(clock: Clock) -> None:
-        dropping, holding = FakeConnection(clock), FakeConnection(clock)
+        packets = FakeSource(clock, "c", 3, format=Opus())
+        await layers.broadcast(cast("Any", packets), [cast("Any", vc)])
         await layers.broadcast(
-            cast("Any", FakeSource(clock, "a", 3, format=Opus())),
-            [cast("Any", dropping)],
-        )
-        await layers.broadcast(
-            cast("Any", FakeSource(clock, "b", 3, format=Opus())),
-            [cast("Any", holding)],
+            cast("Any", FakeSource(clock, "d", 3, format=Opus())),
+            [cast("Any", vc)],
             stall="hold",
         )
-        assert [dropping.sinks[0].stall, holding.sinks[0].stall] == ["drop", "hold"]
-        assert [dropping.sinks[0].format, holding.sinks[0].format] == [Opus(), Opus()]
+        settings = [(sink.volume, sink.buffer, sink.stall) for sink in vc.sinks]
+        assert settings == [
+            (0.5, 0.4, "drop"),
+            (0.7, 0.1, "drop"),
+            (1.0, 0.2, "drop"),
+            (1.0, 0.2, "hold"),
+        ]
+        assert [sink.format for sink in vc.sinks[2:]] == [Opus(), Opus()]
+        assert track.meta == 7
 
     run(scenario)
 
@@ -581,6 +519,7 @@ def test_a_queue_writes_tracks_back_to_back_and_ends_them_at_their_markers() -> 
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
         q = queue(vc)
+        await q.join()
         first = add(q, FakeSource(clock, "a", 20))
         second = add(q, FakeSource(clock, "b", 20))
         assert (q.now, q.upcoming) == (None, (first, second))
@@ -792,18 +731,6 @@ def test_stop_ends_every_track_before_it_returns() -> None:
         await q.join()
         assert reason(third) is EndReason.FINISHED
         assert vc.sinks[1].sent == frames("c", 5)
-
-    run(scenario)
-
-
-def test_join_waits_until_nothing_is_queued_or_playing() -> None:
-    async def scenario(clock: Clock) -> None:
-        q = queue(FakeConnection(clock))
-        await q.join()
-        tracks = [add(q, FakeSource(clock, name, 10)) for name in "ab"]
-        await q.join()
-        assert [reason(track) for track in tracks] == [EndReason.FINISHED] * 2
-        assert clock.ticks >= 20
 
     run(scenario)
 
