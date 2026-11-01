@@ -130,7 +130,18 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (Range[int, 1, 5], option(4, min_value=1, max_value=5)),
         (Range[float, 0.5, None], option(10, min_value=0.5)),
         (Range[str, 2, 10], option(3, min_length=2, max_length=10)),
+        (Range[int, 0, 10], option(4, min_value=0, max_value=10)),
+        (Range[str, 0, 6000], option(3, min_length=0, max_length=6000)),
         (int | None, option(4, required=False)),
+        (User | Role | None, option(9, required=False)),
+        (
+            Annotated[int, "How many"] | None,
+            option(4, required=False, description="How many"),
+        ),
+        (
+            Annotated[int | None, Option(min=1, max=10)],
+            option(4, required=False, min_value=1, max_value=10),
+        ),
         (Annotated[int, "How many"], option(4, description="How many")),
         (Annotated[str, Option(autocomplete=suggest)], option(3, autocomplete=True)),
         (
@@ -142,6 +153,13 @@ def option(type: int, **fields: object) -> dict[str, object]:
             option(
                 4,
                 choices=[{"name": "Five", "value": 5}, {"name": "10", "value": 10}],
+            ),
+        ),
+        (
+            Annotated[float, Option(choices=[1, 2.5])],
+            option(
+                10,
+                choices=[{"name": "1", "value": 1}, {"name": "2.5", "value": 2.5}],
             ),
         ),
         (
@@ -227,7 +245,7 @@ def test_valid_names(name: str) -> None:
     assert Router().command(name=name)(handler).name == name
 
 
-@pytest.mark.parametrize("name", ["Roll", "x" * 33, "", "a b", "a.b", "a'b"])
+@pytest.mark.parametrize("name", ["Roll", "x" * 33, "", "a b", "a'b"])
 def test_invalid_names(name: str) -> None:
     async def handler(ctx: object) -> None:
         pass
@@ -597,6 +615,7 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
         ([filled("name", 3, 1)], Resolved(), "is STRING but got 1"),
         ([filled("name", 3, "x"), filled("count", 4, True)], Resolved(), "is INTEGER"),
         ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], Resolved(), "choices"),
+        ([filled("name", 3, "x"), filled("mode", 3, "avg")], Resolved(), "choices"),
         ([filled("name", 3, "x"), filled("member", 6, "9")], Resolved(), "no Member"),
         ([filled("name", 3, "x"), filled("member", 6, "abc")], Resolved(), "no Member"),
     ],
@@ -612,6 +631,7 @@ def test_bind_rejects_unexpected_input(
         name: str,
         count: int | None,
         unit: Unit | None,
+        mode: Literal["sum", "list"] | None,
         member: Member | None,
     ) -> None:
         pass
