@@ -419,39 +419,53 @@ mod tests {
         let socket = Arc::new(socket);
         let (mut answers, ..) = spawn_receiver(Arc::clone(&socket));
 
-        let address = discover(&socket, &mut answers, SSRC, INTERVAL)
-            .await
-            .unwrap();
+        let address = discover(&socket, &mut answers, SSRC, WAIT).await.unwrap();
 
         assert_eq!(address, SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port));
         assert_eq!(sfu.discoveries(), 1);
     }
 
-    #[tokio::test]
-    async fn discovery_retries_until_its_last_attempt_is_answered() {
-        let sfu = Sfu::start();
-        sfu.ignore_discoveries(DISCOVERY_ATTEMPTS - 1);
-        let (socket, _sender) = bind(sfu.address()).unwrap();
-        let socket = Arc::new(socket);
-        let (mut answers, ..) = spawn_receiver(Arc::clone(&socket));
+    fn requests_received(server: &std::net::UdpSocket, expected: usize) {
+        let mut buffer = [0; MAX_DATAGRAM];
+        server.set_read_timeout(Some(WAIT)).unwrap();
+        for _ in 0..expected {
+            let len = server.recv(&mut buffer).unwrap();
+            assert_eq!(buffer[..len], discovery_request(SSRC));
+        }
+        server.set_nonblocking(true).unwrap();
+        let more = server.recv(&mut buffer).unwrap_err();
+        assert_eq!(more.kind(), io::ErrorKind::WouldBlock);
+    }
 
-        let address = discover(&socket, &mut answers, SSRC, INTERVAL)
+    #[tokio::test(start_paused = true)]
+    async fn discovery_retries_until_its_last_attempt_is_answered() {
+        let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (socket, _sender) = bind(server.local_addr().unwrap()).unwrap();
+        let (answers, mut receiver) = watch::channel(None);
+        tokio::spawn(async move {
+            tokio::time::sleep(INTERVAL * 2 + INTERVAL / 2).await;
+            answers.send_replace(Some(Answer {
+                address: external(),
+                at: Instant::now(),
+            }));
+        });
+
+        let address = discover(&socket, &mut receiver, SSRC, INTERVAL)
             .await
             .unwrap();
 
-        assert_eq!(address.port(), socket.local_addr().unwrap().port());
-        assert_eq!(sfu.discoveries(), DISCOVERY_ATTEMPTS);
+        assert_eq!(address, external());
+        requests_received(&server, DISCOVERY_ATTEMPTS);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn discovery_without_any_answer_names_the_server() {
-        let sfu = Sfu::start();
-        sfu.ignore_discoveries(DISCOVERY_ATTEMPTS);
-        let (socket, _sender) = bind(sfu.address()).unwrap();
-        let socket = Arc::new(socket);
-        let (mut answers, ..) = spawn_receiver(Arc::clone(&socket));
+        let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (socket, _sender) = bind(server.local_addr().unwrap()).unwrap();
+        let (_answers, mut receiver) = watch::channel(None);
+        let started = tokio::time::Instant::now();
 
-        let error = discover(&socket, &mut answers, SSRC, INTERVAL)
+        let error = discover(&socket, &mut receiver, SSRC, INTERVAL)
             .await
             .unwrap_err();
 
@@ -459,9 +473,10 @@ mod tests {
             error.to_string(),
             format!(
                 "ip discovery: no answer from {}; outbound UDP may be blocked",
-                sfu.address()
+                server.local_addr().unwrap()
             )
         );
-        assert_eq!(sfu.discoveries(), DISCOVERY_ATTEMPTS);
+        assert_eq!(started.elapsed(), INTERVAL * 3);
+        requests_received(&server, DISCOVERY_ATTEMPTS);
     }
 }
