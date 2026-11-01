@@ -23,6 +23,7 @@ from bostie import (
     NotFound,
     Option,
     UnexpectedResponse,
+    WebhookMessage,
 )
 from bostie.context import ResponseState
 
@@ -211,8 +212,10 @@ def test_message_calls_return_the_message_discord_created() -> None:
         async def handler(ctx: Context) -> None:
             answer = await ctx.respond("hi")
             followup = await ctx.followup("more")
+            edited = await ctx.edit("edited")
             await ctx.delete()
 
+            assert {type(answer), type(followup), type(edited)} == {WebhookMessage}
             assert (answer.content, followup.content) == ("hi", "more")
             assert answer.raw is not None and followup.raw is not None
             assert answer.raw["id"] != followup.raw["id"]

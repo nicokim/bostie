@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Unpack
@@ -34,9 +34,11 @@ from bostie.models import (
     Message,
     MessageParts,
     PartialChannel,
+    PartialMessage,
     User,
     WebhookMessage,
     build_message,
+    decode,
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
@@ -175,9 +177,10 @@ class _InteractionContext[
         return response
 
 
-class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
-    _InteractionContext[I], ABC
-):
+class _ReplyingContext[
+    I: CommandInteraction | ComponentInteraction,
+    M: Message | WebhookMessage,
+](_InteractionContext[I], ABC):
     _original_ephemeral = False
     _warned_ephemeral = False
     _auto_defer_task: "asyncio.Task[None] | None" = None
@@ -222,7 +225,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[MessageParts],
-    ) -> Message | WebhookMessage:
+    ) -> WebhookMessage:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
         body, files = self._message_body(content, MESSAGE_PARTS, **parts)
         async with self._lock:
@@ -231,13 +234,13 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
                 case ResponseState.PENDING:
                     response = await self._respond_with_callback(body, files, ephemeral)
                     self.state = ResponseState.RESPONDED
-                    return _callback_message(response, self.guild_id)
+                    return self._answer(_from_callback(_webhook_message), response)
                 case ResponseState.DEFERRED:
                     response = await self._edit_original(body, files, ephemeral)
                 case _:
                     response = await self._send_followup(body, files, ephemeral)
             self.state = ResponseState.RESPONDED
-            return _message(response, self.guild_id)
+            return self._answer(_webhook_message, response)
 
     async def defer(self, *, ephemeral: bool | None = None) -> None:
         """Show "thinking…" and answer later with `respond`."""
@@ -254,7 +257,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[EditParts],
-    ) -> Message | WebhookMessage:
+    ) -> M:
         """Edit the original answer.
 
         With `files` or `attachments`, only the listed `attachments` stay.
@@ -265,7 +268,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
             self._ensure_answered("edit")
             response = await self._edit_original(body, files, ephemeral)
             self._finish_deferred()
-            return _message(response, self.guild_id)
+            return self._answer(self._decode_original, response)
 
     async def followup(
         self,
@@ -273,7 +276,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[MessageParts],
-    ) -> Message | WebhookMessage:
+    ) -> WebhookMessage:
         """Send another message; right after `defer()` it fills the deferred answer."""
         body, files = self._message_body(content, MESSAGE_PARTS, **parts)
         async with self._lock:
@@ -284,7 +287,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
             else:
                 response = await self._send_followup(body, files, ephemeral)
             self._finish_deferred()
-            return _message(response, self.guild_id)
+            return self._answer(_webhook_message, response)
 
     async def delete(self) -> None:
         """Delete the original answer."""
@@ -375,12 +378,20 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         parts.setdefault("allowed_mentions", self._allowed_mentions)
         return build_message(content, **parts)
 
+    def _answer[A: PartialMessage](
+        self, decode: Callable[[bytes], A], body: bytes
+    ) -> A:
+        return in_guild(decode_answer(decode, body, took_effect=True), self.guild_id)
+
+    @abstractmethod
+    def _decode_original(self, body: bytes) -> M: ...
+
     @property
     @abstractmethod
     def _label(self) -> str: ...
 
 
-class Context(_ReplyingContext[CommandInteraction]):
+class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
     """The context of a slash command: who ran it, where, and how to answer."""
 
     @property
@@ -388,12 +399,17 @@ class Context(_ReplyingContext[CommandInteraction]):
         """The invoked command with its subcommands, such as `"role color set"`."""
         return _command_name(self.interaction.data)
 
+    def _decode_original(self, body: bytes) -> WebhookMessage:
+        return _webhook_message(body)
+
     @property
     def _label(self) -> str:
         return f"/{self.command_name}"
 
 
-class ComponentContext(_ReplyingContext[ComponentInteraction]):
+class ComponentContext(
+    _ReplyingContext[ComponentInteraction, Message | WebhookMessage]
+):
     """The context of a button or select menu use."""
 
     @property
@@ -432,7 +448,7 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
                 case ResponseState.PENDING:
                     response = await self._update_with_callback(body, files, ephemeral)
                     self.state = ResponseState.RESPONDED
-                    return _callback_message(response, self.guild_id)
+                    return self._answer(_from_callback(decode_message), response)
                 case ResponseState.DEFERRED_UPDATE:
                     response = await self._edit_original(body, files, ephemeral)
                 case _:
@@ -440,7 +456,7 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
                         "update() needs an unanswered interaction or defer_update()"
                     )
             self.state = ResponseState.RESPONDED
-            return _message(response, self.guild_id)
+            return self._answer(decode_message, response)
 
     async def _defer_automatically(self) -> None:
         await self._defer_update()
@@ -460,6 +476,9 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
     def _component_message_is_ephemeral(self) -> bool:
         message = decoder(_MessageFlagsOnly).decode(self.interaction._message)
         return MessageFlags.EPHEMERAL in message.flags
+
+    def _decode_original(self, body: bytes) -> Message | WebhookMessage:
+        return decode_message(body)
 
     @property
     def _label(self) -> str:
@@ -513,15 +532,13 @@ def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:
     return {**body, "flags": body.get("flags", 0) | MessageFlags.EPHEMERAL}
 
 
-def _message(body: bytes, guild_id: int | None) -> Message | WebhookMessage:
-    return in_guild(decode_answer(decode_message, body, took_effect=True), guild_id)
+def _webhook_message(body: bytes) -> WebhookMessage:
+    return decode(WebhookMessage, body)
 
 
-def _callback_message(body: bytes, guild_id: int | None) -> Message | WebhookMessage:
-    message = decode_answer(_resource_message, body, took_effect=True)
-    return in_guild(message, guild_id)
+def _from_callback[A](decode: Callable[[bytes], A]) -> Callable[[bytes], A]:
+    def from_resource(body: bytes) -> A:
+        resource = decoder(_CallbackResponse).decode(body).resource
+        return decode(bytes(resource.message))
 
-
-def _resource_message(body: bytes) -> Message | WebhookMessage:
-    resource = decoder(_CallbackResponse).decode(body).resource
-    return decode_message(bytes(resource.message))
+    return from_resource
