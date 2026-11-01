@@ -42,11 +42,19 @@ class Group:
         return in_guild(message, None if channel is None else channel.guild_id)
 
 
-def each[T](decode: Callable[[bytes], T]) -> Callable[[bytes], tuple[T, ...]]:
-    """A decoder of JSON arrays that hands each element to `decode` as its own JSON."""
+def each[T](
+    decode: Callable[[bytes], T], key: str | None = None
+) -> Callable[[bytes], tuple[T, ...]]:
+    """A decoder of a JSON array, or of the one under `key`, element by element."""
 
     def decode_each(data: bytes) -> tuple[T, ...]:
-        raws = decoder(tuple[msgspec.Raw, ...]).decode(data)
+        array: bytes | msgspec.Raw = data
+        if key is not None:
+            wrapper = decoder(dict[str, msgspec.Raw]).decode(data)
+            if key not in wrapper:
+                raise msgspec.ValidationError(f"Object missing required field `{key}`")
+            array = wrapper[key]
+        raws = decoder(tuple[msgspec.Raw, ...]).decode(array)
         return tuple(decode(bytes(raw)) for raw in raws)
 
     return decode_each

@@ -182,7 +182,7 @@ def test_a_rejected_token_raises_invalid_token() -> None:
     run(scenario, token="wrong-token")
 
 
-def test_files_go_out_as_multipart_with_payload_json_and_escaped_names() -> None:
+def test_files_go_out_as_multipart_with_payload_json_names_and_types() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         payload = {"content": "logs", "attachments": [{"id": 0, "filename": "a.txt"}]}
 
@@ -202,9 +202,7 @@ def test_files_go_out_as_multipart_with_payload_json_and_escaped_names() -> None
             Part(
                 "payload_json", None, "application/json", msgspec.json.encode(payload)
             ),
-            Part(
-                "files[0]", "a%22b%0D%0A.txt", "application/octet-stream", b"all good"
-            ),
+            Part("files[0]", "a%22b%0D%0A.txt", "text/plain", b"all good"),
             Part("files[1]", "raw.bin", "application/octet-stream", b"\x00\r\n--"),
         ]
 

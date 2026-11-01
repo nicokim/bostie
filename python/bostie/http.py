@@ -1,3 +1,4 @@
+import mimetypes
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
@@ -58,19 +59,23 @@ class HTTPClient:
         *,
         json: Any = None,
         files: Sequence[File] = (),
+        form: Mapping[str, object] | None = None,
         query: Query | None = None,
         reason: str | None = None,
         **params: object,
     ) -> Any:
         """Send a request to a route like ``/channels/{channel_id}``; return its JSON.
 
-        An empty body returns None; an error status raises the matching bostie error.
+        `form` adds named form fields, and files under their own names, to the
+        multipart body. An empty body returns None; an error status raises the
+        matching bostie error.
         """
         body = await self._request(
             method,
             route,
             json=json,
             files=files,
+            form=form,
             query=query,
             reason=reason,
             **params,
@@ -96,14 +101,19 @@ class HTTPClient:
         *,
         json: Any = None,
         files: Sequence[File] = (),
+        form: Mapping[str, object] | None = None,
         query: Query | None = None,
         reason: str | None = None,
         **params: object,
     ) -> bytes:
         content_type = None
         body = None
-        if files:
-            content_type, body = _multipart(json, files)
+        parts: dict[str, object] = {
+            f"files[{index}]": file for index, file in enumerate(files)
+        }
+        parts.update(form or {})
+        if parts:
+            content_type, body = _multipart(json, parts)
         elif json is not None:
             body = encoder.encode(json)
         status, data = await self._bridge.request(
@@ -151,25 +161,27 @@ def _query_text(value: object) -> str:
     return str(value)
 
 
-def _multipart(payload: Any, files: Sequence[File]) -> tuple[str, bytes]:
+def _multipart(payload: Any, parts: Mapping[str, object]) -> tuple[str, bytes]:
     boundary = secrets.token_hex(16)
     chunks: list[bytes] = []
 
-    def add(disposition: str, content_type: str, data: bytes) -> None:
-        head = (
-            f"--{boundary}\r\nContent-Disposition: form-data; {disposition}\r\n"
-            f"Content-Type: {content_type}\r\n\r\n"
-        )
-        chunks.extend((head.encode(), data, b"\r\n"))
+    def add(disposition: str, content_type: str | None, data: bytes) -> None:
+        head = f"--{boundary}\r\nContent-Disposition: form-data; {disposition}\r\n"
+        if content_type is not None:
+            head += f"Content-Type: {content_type}\r\n"
+        chunks.extend((f"{head}\r\n".encode(), data, b"\r\n"))
 
     if payload is not None:
         add('name="payload_json"', "application/json", encoder.encode(payload))
-    for index, file in enumerate(files):
-        filename = (
-            file.name.replace('"', "%22").replace("\r", "%0D").replace("\n", "%0A")
-        )
-        disposition = f'name="files[{index}]"; filename="{filename}"'
-        add(disposition, "application/octet-stream", file.data)
+    for name, value in parts.items():
+        if isinstance(value, File):
+            filename = (
+                value.name.replace('"', "%22").replace("\r", "%0D").replace("\n", "%0A")
+            )
+            kind = mimetypes.guess_type(value.name)[0] or "application/octet-stream"
+            add(f'name="{name}"; filename="{filename}"', kind, value.data)
+        else:
+            add(f'name="{name}"', None, str(value).encode())
     chunks.append(f"--{boundary}--\r\n".encode())
     return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
 

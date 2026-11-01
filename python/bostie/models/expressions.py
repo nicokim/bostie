@@ -28,6 +28,18 @@ class Sticker(Model, kw_only=True):
     sort_value: int | None = None
 
 
+class StickerPack(Model, kw_only=True):
+    """A pack of standard stickers."""
+
+    id: int
+    stickers: tuple[Sticker, ...]
+    name: str
+    sku_id: int
+    cover_sticker_id: int | None = None
+    description: str
+    banner_asset_id: int | None = None
+
+
 class SoundboardSound(Model, kw_only=True):
     sound_id: int
     name: str

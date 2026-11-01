@@ -48,7 +48,7 @@ from bostie.models.components import (
     UserSelect,
     decode_components,
 )
-from bostie.models.expressions import Emoji, SoundboardSound, Sticker
+from bostie.models.expressions import Emoji, SoundboardSound, Sticker, StickerPack
 from bostie.models.guild import (
     Ban,
     BulkBan,
@@ -262,6 +262,7 @@ __all__ = [
     "StageInstance",
     "Sticker",
     "StickerItem",
+    "StickerPack",
     "StringSelect",
     "SubmittedChannelSelect",
     "SubmittedCheckbox",
