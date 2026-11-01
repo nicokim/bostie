@@ -130,6 +130,19 @@ def test_a_guild_carries_its_settings_roles_and_expressions() -> None:
     assert guild.stickers[0].name == "lyre wave"
 
 
+def test_a_role_tag_sent_as_null_is_true_and_a_missing_one_false() -> None:
+    tags = {"integration_id": "5", "premium_subscriber": None}
+
+    booster = decode(Role, msgspec.json.encode(ROLE | {"tags": tags})).tags
+
+    assert booster is not None
+    assert (booster.integration_id, booster.bot_id) == (5, None)
+    assert booster.premium_subscriber
+    assert not booster.available_for_purchase
+    assert not booster.guild_connections
+    assert decode(Role, msgspec.json.encode(ROLE)).tags is None
+
+
 def test_rich_message() -> None:
     message = decode(Message, payload("events/MESSAGE_CREATE.rich.json"))
 

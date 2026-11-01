@@ -31,6 +31,37 @@ class RoleColors(Builder, kw_only=True):
     tertiary_color: int | None
 
 
+class RoleTags(Model, kw_only=True):
+    """What a role belongs to: a bot, an integration, boosts or a subscription."""
+
+    bot_id: int | None = None
+    integration_id: int | None = None
+    _premium_subscriber: msgspec.UnsetType | None = msgspec.field(
+        default=msgspec.UNSET, name="premium_subscriber"
+    )
+    subscription_listing_id: int | None = None
+    _available_for_purchase: msgspec.UnsetType | None = msgspec.field(
+        default=msgspec.UNSET, name="available_for_purchase"
+    )
+    _guild_connections: msgspec.UnsetType | None = msgspec.field(
+        default=msgspec.UNSET, name="guild_connections"
+    )
+
+    @property
+    def premium_subscriber(self) -> bool:
+        """Whether this is the guild's booster role."""
+        return self._premium_subscriber is None
+
+    @property
+    def available_for_purchase(self) -> bool:
+        return self._available_for_purchase is None
+
+    @property
+    def guild_connections(self) -> bool:
+        """Whether this is a linked role."""
+        return self._guild_connections is None
+
+
 class Role(Model, kw_only=True):
     """A guild role."""
 
@@ -44,6 +75,7 @@ class Role(Model, kw_only=True):
     _permissions: str = msgspec.field(name="permissions")
     managed: bool
     mentionable: bool
+    tags: RoleTags | None = None
     flags: RoleFlags
 
     @property
