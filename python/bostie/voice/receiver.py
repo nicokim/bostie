@@ -105,7 +105,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         if not self._items and not self.closed:
             self._read()
         if self._items:
-            return cast(T, self._items.popleft()[1])
+            return cast("T", self._items.popleft()[1])
         if self.closed:
             raise ReceiverClosed("the receiver ended and has nothing left to read")
         raise Empty("nothing is queued in the receiver")
@@ -152,7 +152,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
                 await asyncio.sleep(0)
             elif not read and not self.closed:
                 await self._woken.wait()
-        return cast(T, self._items.popleft()[1])
+        return cast("T", self._items.popleft()[1])
 
     async def __aenter__(self) -> Self:
         return self

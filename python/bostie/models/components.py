@@ -20,7 +20,7 @@ class _Component(Builder, kw_only=True, tag_field="type"):
 
     @property
     def type(self) -> ComponentType:
-        return ComponentType(cast(int, type(self).__struct_config__.tag))
+        return ComponentType(cast("int", type(self).__struct_config__.tag))
 
 
 class ActionRow(_Component, kw_only=True, tag=ComponentType.ACTION_ROW.value):

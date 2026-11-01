@@ -48,7 +48,31 @@ cache-keys = [
 src = ["python"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "SLF001", "TID251", "TID253", "PLC0415"]
+select = ["ALL"]
+ignore = [
+    "ANN",     # mypy strict already requires every annotation
+    "COM812",  # conflicts with ruff format
+    "CPY",     # the licence lives in LICENSE-MIT and LICENSE-APACHE
+    "D1",      # a docstring only where the name and signature are not enough
+    "D401",    # factory docstrings are noun phrases ("A button that ...")
+    "EM",      # assigning every message to a variable first adds a line per raise
+    "FBT003",  # FBT001 already makes our flags keyword-only; the rest are stdlib calls like setblocking(False)
+    "INP001",  # tests/ is a pytest rootdir, not a package
+    "ISC001",  # conflicts with ruff format
+    "N818",    # exception names follow the Discord library convention (HTTPException, Forbidden)
+    "PLR0913", # every knob is a keyword argument by design; PLR0917 still caps positionals
+    "S105",    # "token" is a Discord domain word, not a secret
+    "TRY003",  # messages are built at the raise site
+]
+
+[tool.ruff.lint.flake8-builtins]
+ignorelist = ["format", "id", "type"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
 
 [tool.ruff.lint.flake8-tidy-imports]
 banned-module-level-imports = [
@@ -65,6 +89,12 @@ banned-module-level-imports = [
 [tool.ruff.lint.per-file-ignores]
 "!python/bostie/voice/layers.py" = ["SLF001", "TID251", "TID253", "PLC0415"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
+"python/bostie/{_bridge,bot}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
+"python/bostie/voice/layers.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
+"crates/**/vectors.py" = ["T201"]  # the script prints the vectors
+"tests/**" = ["ARG", "FBT", "PLR0917", "PLR2004", "S101", "S106", "S107", "S603"]
+"tests/{test_context,test_mutations}.py" = ["BLE001"]  # they hand back whatever the code under test raises
+"tests/{test_voice_layers,test_voice_receive}.py" = ["PERF401"]  # a concurrent check watches the list grow item by item
 
 [tool.mypy]
 strict = true

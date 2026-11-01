@@ -162,7 +162,8 @@ def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:
 
     assert bot.commands == {"ping": ping}
     assert bot.listeners == {}
-    assert plugin.parent is None and clashing_route.parent is None
+    assert plugin.parent is None
+    assert clashing_route.parent is None
     del plugin.commands["ping"]
     bot.include(plugin)
     assert bot.commands == {"ping": ping, "echo": echo}

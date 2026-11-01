@@ -376,7 +376,8 @@ def test_a_messages_author_member_joins_its_member_and_author() -> None:
     message = decode(Message, payload("events/MESSAGE_CREATE.json"))
     member = message.author_member
 
-    assert member is not None and message.member is not None
+    assert member is not None
+    assert message.member is not None
     assert (member.user, member.flags) == (message.author, message.member.flags)
     assert msgspec.structs.replace(message, member=None).author_member is None
 

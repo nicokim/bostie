@@ -387,7 +387,7 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
 
 
 def test_a_url_that_does_not_parse_is_a_value_error(core: _native.Core) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="needs an http or https URL"):
         core.voice_url("not a url", [])
 
 

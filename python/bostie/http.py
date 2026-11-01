@@ -1,5 +1,6 @@
 import secrets
 from collections.abc import Callable, Mapping, Sequence
+from http import HTTPStatus
 from typing import Any
 
 import msgspec
@@ -109,7 +110,7 @@ class HTTPClient:
             content_type=content_type,
             reason=reason,
         )
-        if status >= 400:
+        if status >= HTTPStatus.BAD_REQUEST:
             bot_route = not any(token in route for token in TOKEN_PLACEHOLDERS)
             raise _status_error(status, data, bot_route=bot_route)
         return data
@@ -167,9 +168,9 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
         error = _error_decoder.decode(body)
     except msgspec.DecodeError:
         error = _ErrorBody()
-    if status == 401 and bot_route:
+    if status == HTTPStatus.UNAUTHORIZED and bot_route:
         return InvalidToken(error.message or "401: Unauthorized")
-    if status == 429:
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
         return RateLimited(
             status,
             error.code,
@@ -180,6 +181,8 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
             is_global=error.is_global,
         )
     exception = (
-        ServerError if status >= 500 else STATUS_ERRORS.get(status, HTTPException)
+        ServerError
+        if status >= HTTPStatus.INTERNAL_SERVER_ERROR
+        else STATUS_ERRORS.get(status, HTTPException)
     )
     return exception(status, error.code, error.message, error.errors, body)

@@ -532,10 +532,7 @@ class FakeDiscord(VoiceGateway):
                 break
         resource = request.match_info.route.resource
         if resource is None:
-            fault = self._take_fault(request.method, record.path)
-            if fault is None:
-                return _error(404, 0, "404: Not Found")
-            return fault({})
+            return self._unrouted(request.method, record.path)
         route = resource.canonical
         authorization = request.headers.get(hdrs.AUTHORIZATION)
         if "{interaction_token}" not in route and authorization != f"Bot {self.token}":
@@ -551,6 +548,10 @@ class FakeDiscord(VoiceGateway):
         response = await handler(request)
         response.headers.update(window)
         return response
+
+    def _unrouted(self, method: str, path: str) -> web.StreamResponse:
+        fault = self._take_fault(method, path)
+        return _error(404, 0, "404: Not Found") if fault is None else fault({})
 
     def _take_window(
         self, method: str, route: str, params: Mapping[str, str]

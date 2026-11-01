@@ -150,10 +150,14 @@ def test_options_a_call_does_not_take_raise_type_error(call: str, option: str) -
             "move": lambda: vc.move(OTHER_VOICE, **options),
             "edit": lambda: vc.edit(**options),
         }
-        with pytest.raises(TypeError, match=option):
+
+        async def attempt() -> None:
             result = attempts[call]()
             if inspect.isawaitable(result):
                 await result
+
+        with pytest.raises(TypeError, match=option):
+            await attempt()
         assert bot.calls("voice_file") == bot.calls("voice_update") == []
 
     run(scenario)

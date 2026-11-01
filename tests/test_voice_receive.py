@@ -225,16 +225,19 @@ def test_iteration_ends_after_the_queued_items_with_the_reason(
 def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        native: FakeReceiver | None = None
-        with pytest.raises(LookupError):
-            async with vc.receive() as rx:
-                native = bot.core.receivers[-1]
-                native.counters = (3, 1, 2)
-                waiting = asyncio.ensure_future(anext(rx, None))
-                await settle()
+        rx = vc.receive()
+        native = bot.core.receivers[-1]
+        native.counters = (3, 1, 2)
+        waiting = asyncio.ensure_future(anext(rx, None))
+        await settle()
+
+        async def leave_with_an_error() -> None:
+            async with rx:
                 raise LookupError
+
+        with pytest.raises(LookupError):
+            await leave_with_an_error()
         assert await waiting is None
-        assert native is not None
         assert (native.closed, native.reads) == (True, [256])
         assert (rx.closed, rx.closed_reason) == (True, voice.ClosedReason.CLOSED)
         rx.clear()

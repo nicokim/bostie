@@ -18,6 +18,7 @@ from bostie.models.base import encoder
 SHARD = 0
 CLOSE_TIMEOUT = 2.0
 BUG_CLOSE_CODES = frozenset({4001, 4002, 4005, 4008})
+AUTHENTICATION_FAILED = 4004
 CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
     4011: ShardingRequired,
     4014: PrivilegedIntentsRequired,
@@ -138,7 +139,7 @@ class GatewayClient:
 
 
 def _close_error(code: int, reason: str) -> BostieError:
-    if code == 4004:
+    if code == AUTHENTICATION_FAILED:
         return InvalidToken(
             f"the gateway closed the connection with code 4004: {reason}"
         )

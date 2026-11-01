@@ -5,7 +5,7 @@ import shutil
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Literal, Protocol, Self
+from typing import TYPE_CHECKING, Literal, Protocol, Self, override
 from urllib.parse import urlsplit
 
 from bostie._aio import Wake
@@ -77,7 +77,7 @@ class Source(ABC):
 
     async def seek(self, position: float) -> None:
         """Continue from `position` seconds."""
-        raise SourceError(repr(self), "not seekable")
+        raise SourceError(repr(self), f"not seekable, so it cannot go to {position} s")
 
     async def aclose(self) -> None:
         self._done = True
@@ -217,6 +217,7 @@ class Stream(Source):
         self._items_format = format
         self._iterator: AsyncIterator[bytes] | None = None
 
+    @override
     async def open(self, manager: "VoiceManager") -> None:
         self._check_unused()
         if self._iterator is None:
@@ -253,6 +254,7 @@ class FFmpeg(Source):
         self._process: asyncio.subprocess.Process | None = None
         self._errors: asyncio.Task[str] | None = None
 
+    @override
     async def open(self, manager: "VoiceManager") -> None:
         self._check_unused()
         if self._process is not None:

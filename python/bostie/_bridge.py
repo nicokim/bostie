@@ -145,7 +145,7 @@ class Bridge:
         except Exception as error:
             self._stop(error)
 
-    def _close_bell(self, pump: asyncio.Task[None]) -> None:
+    def _close_bell(self, _pump: asyncio.Task[None]) -> None:
         self._bell.close()
 
     def _deliver_ready(self) -> None:

@@ -217,7 +217,8 @@ def test_message_calls_return_the_message_discord_created() -> None:
 
             assert {type(answer), type(followup), type(edited)} == {WebhookMessage}
             assert (answer.content, followup.content) == ("hi", "more")
-            assert answer.raw is not None and followup.raw is not None
+            assert answer.raw is not None
+            assert followup.raw is not None
             assert answer.raw["id"] != followup.raw["id"]
             in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
             assert answer.jump_url.startswith(in_guild)

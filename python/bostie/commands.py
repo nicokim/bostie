@@ -1,5 +1,4 @@
 import inspect
-import os
 import typing
 import unicodedata
 import warnings
@@ -7,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from enum import Enum
+from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
@@ -70,12 +70,10 @@ type CommandCallback = Callable[..., Coroutine[Any, Any, None]]
 type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
-type OptionModel = (
-    type[User] | type[Member] | type[Role] | type[PartialChannel] | type[Attachment]
-)
+type OptionModel = type[User | Member | Role | PartialChannel | Attachment]
 type Scope = Literal["global", "guild"]
 
-LIBRARY_DIRECTORY = os.path.dirname(__file__)
+LIBRARY_DIRECTORY = str(Path(__file__).parent)
 MAX_OPTIONS = 25
 MAX_CHOICES = 25
 MAX_NAME = 32
@@ -514,15 +512,19 @@ def _parameters(callback: CommandCallback) -> list[_Parameter]:
 
 def _parameter(parameter: inspect.Parameter, hints: Mapping[str, object]) -> _Parameter:
     try:
-        if parameter.kind not in OPTION_KEYWORD:
-            raise CommandDefinitionError(
-                "options cannot be *args, **kwargs or positional-only"
-            )
-        if parameter.name not in hints:
-            raise CommandDefinitionError("options need a type hint")
-        return _infer(parameter, hints[parameter.name])
+        return _infer(parameter, _hint(parameter, hints))
     except CommandDefinitionError as error:
         raise CommandDefinitionError(f"parameter {parameter.name!r}: {error}") from None
+
+
+def _hint(parameter: inspect.Parameter, hints: Mapping[str, object]) -> object:
+    if parameter.kind not in OPTION_KEYWORD:
+        raise CommandDefinitionError(
+            "options cannot be *args, **kwargs or positional-only"
+        )
+    if parameter.name not in hints:
+        raise CommandDefinitionError("options need a type hint")
+    return hints[parameter.name]
 
 
 def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:

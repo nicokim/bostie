@@ -74,7 +74,7 @@ async def search(
         Option(choices=[Choice("Five", 5), Choice("Ten", 10)]),
     ] = None,
 ) -> None:
-    """Search the bostie docs"""
+    """Search the bostie docs."""
 
 
 COMMANDS: list[Command | Group] = [kit, search]

@@ -141,7 +141,7 @@
     "type": 1,
     "name": "search",
     "name_localizations": null,
-    "description": "Search the bostie docs",
+    "description": "Search the bostie docs.",
     "description_localizations": null,
     "contexts": [
       0

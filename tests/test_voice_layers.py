@@ -351,15 +351,15 @@ def run(scenario: Scenario) -> None:
 
 
 async def play(vc: FakeConnection, source: FakeSource, **options: Any) -> Track:
-    return await layers.play(cast(Any, vc), cast(Any, source), **options)
+    return await layers.play(cast("Any", vc), cast("Any", source), **options)
 
 
 def queue(vc: FakeConnection, **options: Any) -> Queue:
-    return Queue(cast(Any, vc), **options)
+    return Queue(cast("Any", vc), **options)
 
 
 def add(q: Queue, source: FakeSource) -> Track:
-    return q.add(cast(Any, source))
+    return q.add(cast("Any", source))
 
 
 def reason(track: Track) -> EndReason | None:
@@ -491,11 +491,12 @@ def test_broadcast_passes_its_stall_to_every_sink() -> None:
     async def scenario(clock: Clock) -> None:
         dropping, holding = FakeConnection(clock), FakeConnection(clock)
         await layers.broadcast(
-            cast(Any, FakeSource(clock, "a", 3, format=Opus())), [cast(Any, dropping)]
+            cast("Any", FakeSource(clock, "a", 3, format=Opus())),
+            [cast("Any", dropping)],
         )
         await layers.broadcast(
-            cast(Any, FakeSource(clock, "b", 3, format=Opus())),
-            [cast(Any, holding)],
+            cast("Any", FakeSource(clock, "b", 3, format=Opus())),
+            [cast("Any", holding)],
             stall="hold",
         )
         assert [dropping.sinks[0].stall, holding.sinks[0].stall] == ["drop", "hold"]
@@ -867,7 +868,7 @@ def test_broadcast_writes_every_packet_once_to_each_connection() -> None:
     async def scenario(clock: Clock) -> None:
         connections = [FakeConnection(clock) for _ in range(3)]
         source = FakeSource(clock, "p", 10, format=Opus())
-        await layers.broadcast(cast(Any, source), cast(Any, connections))
+        await layers.broadcast(cast("Any", source), cast("Any", connections))
         assert [vc.sinks[0].sent for vc in connections] == [frames("p", 10)] * 3
         assert all(vc.sinks[0].closed for vc in connections)
         assert source.closed
@@ -881,7 +882,9 @@ def test_broadcast_is_not_delayed_by_a_connection_that_is_held() -> None:
         live, held = FakeConnection(clock), FakeConnection(clock)
         held.held = True
         source = FakeSource(clock, "p", 50, format=Opus())
-        await layers.broadcast(cast(Any, source), [cast(Any, live), cast(Any, held)])
+        await layers.broadcast(
+            cast("Any", source), [cast("Any", live), cast("Any", held)]
+        )
         assert live.sinks[0].sent == frames("p", 50)
         assert live.sinks[0].gaps() == 0
         assert held.sinks[0].sent == []
@@ -895,7 +898,7 @@ def test_broadcast_goes_on_without_a_connection_that_ended() -> None:
         connections = [FakeConnection(clock) for _ in range(3)]
         source = FakeSource(clock, "p", 30, format=Opus())
         playing = asyncio.create_task(
-            layers.broadcast(cast(Any, source), cast(Any, connections))
+            layers.broadcast(cast("Any", source), cast("Any", connections))
         )
         await clock.sleep(0.1)
         connections[1].disconnect()
@@ -915,7 +918,7 @@ def test_broadcast_stops_once_no_connection_is_left() -> None:
         ended.state = State.DISCONNECTED
         source = FakeSource(clock, "p", 500, format=Opus())
         playing = asyncio.create_task(
-            layers.broadcast(cast(Any, source), cast(Any, [*connections, ended]))
+            layers.broadcast(cast("Any", source), cast("Any", [*connections, ended]))
         )
         await clock.sleep(0.1)
         for vc in connections:
@@ -938,14 +941,14 @@ def test_broadcast_encodes_pcm_once_for_every_connection(
         connections = [FakeConnection(clock) for _ in range(2)]
         pcm = PCM(24_000, 1)
         source = FakeSource(clock, "s", 3, format=pcm)
-        await layers.broadcast(cast(Any, source), cast(Any, connections))
+        await layers.broadcast(cast("Any", source), cast("Any", connections))
         expected = [b"opus-" + chunk for chunk in frames("s", 3)] + [b"opus-tail"]
         assert [vc.sinks[0].sent for vc in connections] == [expected] * 2
         assert FakeEncoder.made == [(pcm, EncoderSettings())]
         voip = EncoderSettings(application="voip")
         await layers.broadcast(
-            cast(Any, FakeSource(clock, "t", 1, format=pcm)),
-            cast(Any, connections),
+            cast("Any", FakeSource(clock, "t", 1, format=pcm)),
+            cast("Any", connections),
             encoder=voip,
         )
         assert FakeEncoder.made[-1] == (pcm, voip)
@@ -1131,7 +1134,7 @@ def test_utterances_refuses_a_receiver_it_cannot_group_at_the_call(
     rx: FakeReceiver,
 ) -> None:
     with pytest.raises(ValueError, match="markers=True"):
-        utterances(cast(Any, rx))
+        utterances(cast("Any", rx))
 
 
 @pytest.mark.parametrize(
@@ -1197,7 +1200,7 @@ def test_utterances_split_speech_at_stops_gaps_starts_and_max_length(
         rx = FakeReceiver()
         rx.feed(*items)
         rx.end(ClosedReason.DISCONNECTED)
-        grouped = utterances(cast(Any, rx), min_silence=0.1, max_length=max_length)
+        grouped = utterances(cast("Any", rx), min_silence=0.1, max_length=max_length)
         assert [utterance async for utterance in grouped] == expected
 
     run(scenario)
@@ -1209,7 +1212,7 @@ def test_an_utterance_ends_jitter_and_min_silence_after_its_stop() -> None:
         grouped: list[Utterance] = []
 
         async def listen() -> None:
-            async for utterance in utterances(cast(Any, rx), min_silence=5.0):
+            async for utterance in utterances(cast("Any", rx), min_silence=5.0):
                 grouped.append(utterance)
 
         listening = asyncio.create_task(listen())
@@ -1232,7 +1235,7 @@ def test_a_recorder_writes_ogg_opus_pages_into_its_path_template(
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
         template = tmp_path / "{guild_id}" / "{user_id}.opus"
-        async with Recorder(cast(Any, vc), template) as recorder:
+        async with Recorder(cast("Any", vc), template) as recorder:
             vc.rx.feed(Frame(42, 42, 0, 0, STEP, 0.0, b"\xfc\xff\xfe", False))
         path = tmp_path / "7" / "42.opus"
         assert recorder.files == {42: path}
@@ -1282,7 +1285,7 @@ def test_a_recorder_pads_the_start_and_gaps_with_silence_only_when_aligned(
 ) -> None:
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
-        recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=align)
+        recorder = Recorder(cast("Any", vc), tmp_path / "{user_id}.ogg", align=align)
         vc.rx.feed(opus(2), opus(3), opus(4, b"", lost=True), opus(5))
         vc.rx.feed(opus(6, bytes(65_025)), opus(7), opus(110))
         await recorder.stop()
@@ -1305,14 +1308,14 @@ def test_a_recorder_refuses_a_path_that_cannot_hold_one_ogg_file_per_user(
 ) -> None:
     vc = RecordingConnection()
     with pytest.raises(ValueError, match="path"):
-        Recorder(cast(Any, vc), path)
+        Recorder(cast("Any", vc), path)
     assert vc.opened == []
 
 
 def test_stop_waits_for_the_audio_still_in_the_jitter_buffer(tmp_path: Path) -> None:
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
-        recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
+        recorder = Recorder(cast("Any", vc), tmp_path / "{user_id}.ogg", align=False)
         await settle(SETTLE)
         vc.rx.feed(*(opus(index) for index in range(5)))
         vc.rx.hear(opus(5))
@@ -1332,9 +1335,9 @@ def test_a_recorder_raises_its_write_error_from_stop(tmp_path: Path) -> None:
     async def scenario(clock: Clock) -> None:
         (tmp_path / "taken").write_bytes(b"")
         vc = RecordingConnection()
-        recorder = Recorder(cast(Any, vc), tmp_path / "taken" / "{user_id}.ogg")
+        recorder = Recorder(cast("Any", vc), tmp_path / "taken" / "{user_id}.ogg")
         vc.rx.feed(opus(0))
-        with pytest.raises(OSError):
+        with pytest.raises(OSError, match="taken"):
             await recorder.stop()
         assert vc.rx.closed_reason is ClosedReason.CLOSED
 
@@ -1346,7 +1349,7 @@ def test_a_recorder_finishes_its_files_when_its_receiver_moved_away(
 ) -> None:
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
-        recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
+        recorder = Recorder(cast("Any", vc), tmp_path / "{user_id}.ogg", align=False)
         await settle(SETTLE)
         vc.rx.feed(opus(0), opus(1))
         vc.rx.end(ClosedReason.MOVED)

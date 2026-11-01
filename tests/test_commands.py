@@ -37,9 +37,7 @@ CHANNEL_ID = 1335173547294851073
 ATTACHMENT_ID = 1564609863064092673
 
 
-def filled(
-    name: str, type: int, value: str | int | float | bool
-) -> InteractionDataOption:
+def filled(name: str, type: int, value: str | float | bool) -> InteractionDataOption:
     return InteractionDataOption(name=name, type=OptionType(type), value=value)
 
 
@@ -450,7 +448,7 @@ def test_group_tree_payload_and_names() -> None:
     color = role.group("color", "Color roles")
 
     @color.command(name="set")
-    async def color_set(ctx: object, member: Member, hex: Range[str, 7, 7]) -> None:
+    async def color_set(ctx: object, member: Member, code: Range[str, 7, 7]) -> None:
         """Give a member a color role."""
 
     @role.command
@@ -474,7 +472,7 @@ def test_group_tree_payload_and_names() -> None:
                         "description": "Give a member a color role.",
                         "options": [
                             option(6, name="member"),
-                            option(3, name="hex", min_length=7, max_length=7),
+                            option(3, name="code", min_length=7, max_length=7),
                         ],
                     }
                 ],
@@ -684,7 +682,7 @@ def test_autocomplete_choices_fixes_what_discord_would_reject() -> None:
     long_value = "v" * 101
     result = [long_name, long_name, "", long_value, long_value, *range(30)]
 
-    with pytest.warns(UserWarning) as warned:
+    with pytest.warns(UserWarning, match="test_commands.suggest returned") as warned:
         choices = autocomplete_choices(result, suggest)
 
     assert choices[0] == {"name": "n" * 100, "value": "ok"}

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import msgspec
 from fakediscord import settle
 
-from bostie._bridge import Bridge
 from bostie.cache import Cache
 from bostie.enums import Intents
 from bostie.events import Event
@@ -21,6 +20,7 @@ from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults, OpusApplication, Sample, SinkStall
 
 if TYPE_CHECKING:
+    from bostie._bridge import Bridge
     from bostie._native import ReceivedItem
 
 BOT_ID = 1000
@@ -538,8 +538,8 @@ class FakeBot:
             else None
         )
         self.cache = Cache()
-        self.http = HTTPClient(cast(Bridge, self.rest))
-        self.gateway = GatewayClient(cast(Bridge, self.rest), "token")
+        self.http = HTTPClient(cast("Bridge", self.rest))
+        self.gateway = GatewayClient(cast("Bridge", self.rest), "token")
         self._intents = intents
         self.events: list[VoiceEvent] = []
         self.voice = VoiceManager(self, defaults)
@@ -562,13 +562,13 @@ class FakeBot:
     ) -> E:
         future: asyncio.Future[Event] = asyncio.get_running_loop().create_future()
         waiter = (
-            cast(type[Event], event),
-            cast(Callable[[Any], bool] | None, check),
+            cast("type[Event]", event),
+            cast("Callable[[Any], bool] | None", check),
             future,
         )
         self._waiters.append(waiter)
         try:
-            return cast(E, await future)
+            return cast("E", await future)
         finally:
             self._waiters.remove(waiter)
 

@@ -109,7 +109,7 @@ class _Interaction(Model, kw_only=True):
     @property
     def user(self) -> User:
         """The user who triggered the interaction, in a guild or in a DM."""
-        return self.member.user if self.member is not None else cast(User, self._user)
+        return self.member.user if self.member is not None else cast("User", self._user)
 
     @property
     def app_permissions(self) -> Permissions:

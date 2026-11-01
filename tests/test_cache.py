@@ -19,7 +19,7 @@ ADMIN_ROLE = 1335174050611331073
 
 
 def event(fixture: str, **changes: Any) -> Event:
-    name = fixture.split(".")[0]
+    name = fixture.split(".", maxsplit=1)[0]
     document = msgspec.json.decode((EVENT_FIXTURES / f"{fixture}.json").read_bytes())
     document.update(changes)
     return EVENTS[name].decode(0, msgspec.json.encode(document))

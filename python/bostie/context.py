@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
 import msgspec
@@ -190,8 +191,8 @@ class _InteractionContext[
         try:
             response: bytes = await self.bot.http._request(method, route, **request)
         except HTTPException as error:
-            if error.status == 401 or (
-                error.status == 404
+            if error.status == HTTPStatus.UNAUTHORIZED or (
+                error.status == HTTPStatus.NOT_FOUND
                 and error.code
                 in (JSONErrorCode.UNKNOWN_WEBHOOK, JSONErrorCode.UNKNOWN_INTERACTION)
             ):

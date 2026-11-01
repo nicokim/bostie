@@ -217,7 +217,7 @@ def _sync_error(
     node = body[index]
     names = [node["name"]]
     option = ""
-    while len(rest) >= 2 and rest[0] == "options":
+    while len(rest) > 1 and rest[0] == "options":
         node = node["options"][int(rest[1])]
         rest = rest[2:]
         if node["type"] in NESTING_TYPES:

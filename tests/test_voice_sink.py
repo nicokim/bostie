@@ -280,10 +280,15 @@ def test_async_with_drains_then_closes_on_a_normal_exit() -> None:
 def test_async_with_clears_then_closes_on_an_error() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        with pytest.raises(ValueError, match="boom"):
-            async with vc.sink() as out:
+        out = vc.sink()
+
+        async def write_then_fail() -> None:
+            async with out:
                 await out.write(bytes(SECOND // 10))
                 raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            await write_then_fail()
         native = bot.core.sinks[-1]
         assert (native.flushes, native.clears, native.closed) == (0, [None], True)
 

@@ -146,9 +146,9 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
     color = role.group("color", "Color roles")
 
     @color.command(name="set")
-    async def color_set(ctx: Context, member: Member, hex: Range[str, 7, 7]) -> None:
+    async def color_set(ctx: Context, member: Member, code: Range[str, 7, 7]) -> None:
         """Give a member a color role."""
-        await ctx.respond(f"{member.mention} is now {hex}")
+        await ctx.respond(f"{member.mention} is now {code}")
 
     return bot
 
@@ -183,7 +183,8 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
             "role",
         ]
         assert bot.application_id == fake.application_id
-        assert bot.user is not None and bot.user.id == int(fake.bot_user["id"])
+        assert bot.user is not None
+        assert bot.user.id == int(fake.bot_user["id"])
         assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
         assert "capabilities" not in identify
         assert identify["presence"] == presence
@@ -270,7 +271,7 @@ def test_a_subcommand_in_a_group_gets_its_resolved_member() -> None:
         set_color = payloads.subcommand(
             "set",
             payloads.option("member", USER, MEMBER_ID),
-            payloads.option("hex", STRING, "#ff8800"),
+            payloads.option("code", STRING, "#ff8800"),
         )
         data = payloads.command(
             "role", payloads.group("color", set_color), resolved=payloads.resolved()
@@ -452,7 +453,8 @@ def test_listeners_the_cache_and_wait_for_see_gateway_events() -> None:
                 bot.wait_for(GuildCreate), fake.dispatch("GUILD_CREATE", guild)
             )
             cached_guild = bot.cache.guild(int(guild["id"]))
-            assert cached_guild is not None and cached_guild.name == guild["name"]
+            assert cached_guild is not None
+            assert cached_guild.name == guild["name"]
             assert created.guild.id == cached_guild.id
 
             message = payloads.message()
@@ -923,7 +925,8 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
                 "message_reference": {"type": 0, "message_id": 5},
                 "attachments": [{"id": 0, "filename": "a.txt"}],
             }
-            assert sent.content == "hello" and sent.raw["id"] == str(sent.id)
+            assert sent.content == "hello"
+            assert sent.raw["id"] == str(sent.id)
 
             edited = await bot.edit_message(
                 channel_id, sent.id, "edited", attachments=[7]
@@ -1057,7 +1060,7 @@ def test_a_failing_dispatch_is_logged_once_and_the_next_event_arrives(
         apply = bot.cache.apply
 
         def apply_or_fail(event: Any) -> None:
-            if isinstance(event, ChannelUpdate):
+            if event.NAME == ChannelUpdate.NAME:
                 raise RuntimeError("cache bug")
             apply(event)
 
