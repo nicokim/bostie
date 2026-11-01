@@ -168,7 +168,7 @@ impl Resampling {
         loop {
             let needed = self.fft.input_frames_next();
             if available - used < needed
-                || !self.process(Indexing::new().input_offset(used), u64::MAX, mono, out)
+                || !self.process(&Indexing::new().input_offset(used), u64::MAX, mono, out)
             {
                 break;
             }
@@ -186,7 +186,7 @@ impl Resampling {
         while self.emitted < target {
             let take = remaining.min(self.fft.input_frames_next());
             let indexing = Indexing::new().input_offset(offset).partial_len(take);
-            if !self.process(indexing, target - self.emitted, mono, out) {
+            if !self.process(&indexing, target - self.emitted, mono, out) {
                 break;
             }
             offset += take;
@@ -195,7 +195,7 @@ impl Resampling {
         self.reset();
     }
 
-    fn process(&mut self, indexing: Indexing, limit: u64, mono: bool, out: &mut Vec<f32>) -> bool {
+    fn process(&mut self, indexing: &Indexing, limit: u64, mono: bool, out: &mut Vec<f32>) -> bool {
         let channels = self.channels();
         let frames = self.pending.len() / channels;
         let input = InterleavedSlice::new(&self.pending, channels, frames);
@@ -203,7 +203,7 @@ impl Resampling {
         let result = match (input, output) {
             (Ok(input), Ok(mut output)) => self
                 .fft
-                .process_into_buffer(&input, &mut output, Some(&indexing))
+                .process_into_buffer(&input, &mut output, Some(indexing))
                 .map_err(|error| error.to_string()),
             (Err(error), _) | (_, Err(error)) => Err(error.to_string()),
         };
@@ -269,6 +269,7 @@ mod tests {
         Converter::new(format(rate, channels, sample)).unwrap()
     }
 
+    #[expect(clippy::cast_possible_truncation)]
     fn s16_bytes(samples: &[f32]) -> Vec<u8> {
         samples
             .iter()
@@ -283,6 +284,11 @@ mod tests {
             .collect()
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     fn tone(rate: u32, channels: u8, seconds: f32) -> Vec<f32> {
         let frames = (rate as f32 * seconds) as usize;
         (0..frames)
@@ -297,6 +303,7 @@ mod tests {
         stereo.iter().step_by(2).copied().collect()
     }
 
+    #[expect(clippy::cast_precision_loss)]
     fn frequency(samples: &[f32]) -> f32 {
         let crossings: Vec<f32> = samples
             .windows(2)
@@ -380,7 +387,12 @@ mod tests {
                 assert!((pitch - 1_000.0).abs() < 1.0, "{case}: {pitch} Hz");
                 if channels == 1 {
                     let (frames, _) = out.as_chunks::<2>();
-                    assert!(frames.iter().all(|[left, right]| left == right), "{case}");
+                    assert!(
+                        frames
+                            .iter()
+                            .all(|[left, right]| left.to_bits() == right.to_bits()),
+                        "{case}"
+                    );
                 }
             }
         }

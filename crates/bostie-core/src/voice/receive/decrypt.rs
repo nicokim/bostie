@@ -409,7 +409,7 @@ mod tests {
     fn a_recovery_is_asked_only_when_every_condition_holds() {
         let asked = Instant::now();
         let now = asked + RECOVERY_INTERVAL;
-        let (old, recent) = (Some(asked), Some(now - RECOVERY_INTERVAL / 2));
+        let (old, recent) = (Some(asked), Some(asked + RECOVERY_INTERVAL / 2));
         let cap = RECOVERIES_PER_USER;
         let streak = |failures, requested, last_request| Streak {
             failures,

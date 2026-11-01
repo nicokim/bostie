@@ -438,6 +438,7 @@ pub(crate) mod tests {
         stereo.iter().step_by(2).copied().collect()
     }
 
+    #[expect(clippy::cast_precision_loss)]
     fn pitch(samples: &[f32]) -> f32 {
         let rises = samples
             .windows(2)
@@ -572,7 +573,7 @@ pub(crate) mod tests {
                 .as_chunks::<2>()
                 .0
                 .iter()
-                .all(|[left, right]| left == right)
+                .all(|[left, right]| left.to_bits() == right.to_bits())
         );
         let peak = samples
             .iter()
@@ -679,7 +680,10 @@ pub(crate) mod tests {
         assert_eq!(error, None);
         let again = samples(&again);
         let first = samples(&first);
-        let differ = again.iter().zip(&first).position(|(a, b)| a != b);
+        let differ = again
+            .iter()
+            .zip(&first)
+            .position(|(a, b)| a.to_bits() != b.to_bits());
         assert_eq!((again.len(), differ), (first.len(), None));
     }
 

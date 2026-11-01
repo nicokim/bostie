@@ -66,7 +66,7 @@ pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Sen
 const COMMAND_QUEUE: usize = 32;
 const LOG_EVERY: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Tuning {
     pub(crate) connection: ConnectionTuning,
     pub(crate) source_prefetch: Duration,

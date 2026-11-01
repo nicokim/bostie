@@ -59,6 +59,7 @@ fn opus(count: usize, amplitude: f32) -> Vec<Bytes> {
         packet_loss: 10,
         complexity: 10,
     };
+    #[expect(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     let tone: Vec<u8> = (0..count * 960)
         .flat_map(|index| {
             let sample = ((index as f32) * 0.07).sin() * amplitude * 32_767.0;
@@ -751,7 +752,11 @@ fn a_failure_streak_asks_for_one_recovery_and_a_success_resets_it() {
         rig.step();
         rig.recovered()
     };
-    let failing = |count: u32| (0..count).map(|index| garbage(index as u16)).collect();
+    let failing = |count: u32| {
+        (0..count)
+            .map(|index| garbage(u16::try_from(index).unwrap()))
+            .collect()
+    };
     let refused = (0..tolerance)
         .flat_map(|_| [Vec::new(), vec![0x03]])
         .collect();
@@ -1121,7 +1126,7 @@ fn streams_and_failure_streaks_unheard_for_the_stream_idle_are_forgotten() {
     let receiver = rig.open(options(ReceiveFormat::Opus));
     let packets = opus(2, 0.3);
     rig.send(ALICE_SSRC, 1, &call.speak(user(ALICE), &packets[0]));
-    for sequence in 2..1 + u16::try_from(tolerance).unwrap() {
+    for sequence in 2..=u16::try_from(tolerance).unwrap() {
         rig.send(ALICE_SSRC, sequence, &garbage(sequence));
     }
     rig.step();
@@ -1445,7 +1450,7 @@ fn a_mark_passes_once_the_audio_heard_before_it_left_the_jitter_buffer() {
     let first = receiver.mark().unwrap();
     let marked = Instant::now();
 
-    rig.now = heard + MAX_JITTER - Duration::from_millis(1);
+    rig.now = heard + MAX_JITTER.saturating_sub(Duration::from_millis(1));
     rig.tick();
     let early = (read(&receiver).len(), rig.marks());
     rig.now = marked + MAX_JITTER;

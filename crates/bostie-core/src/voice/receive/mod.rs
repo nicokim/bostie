@@ -31,11 +31,10 @@ use crate::voice::peak::Peak;
 use crate::voice::playout::{Check, Slot, Stream, to_samples};
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
-    Direction, FRAME_SAMPLES, ReceiveTuning, SAMPLE_RATE, SILENCE_FRAME, Speaking,
+    Direction, FRAME_48K, ReceiveTuning, SAMPLE_RATE, SILENCE_FRAME, Speaking,
 };
 use crate::voice::{Throttle, panic_message};
 
-const FRAME_48K: u32 = FRAME_SAMPLES as u32;
 const NANOS_PER_3_SAMPLES: u64 = 3_000_000_000 / SAMPLE_RATE as u64;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 
@@ -415,15 +414,12 @@ impl State {
         }
         let at48 = samples_since(self.core.epoch, item.arrival.at);
         let ssrc = item.arrival.ssrc;
-        match &item.plain {
-            Some(plain) => {
-                let duration = samples.unwrap_or(FRAME_48K);
-                self.speak(item.user, ssrc, at48, plain, false, duration);
-            }
-            None => {
-                let payload = item.arrival.payload.as_deref().unwrap_or_default();
-                self.speak(item.user, ssrc, at48, payload, false, FRAME_48K);
-            }
+        if let Some(plain) = &item.plain {
+            let duration = samples.unwrap_or(FRAME_48K);
+            self.speak(item.user, ssrc, at48, plain, false, duration);
+        } else {
+            let payload = item.arrival.payload.as_deref().unwrap_or_default();
+            self.speak(item.user, ssrc, at48, payload, false, FRAME_48K);
         }
     }
 

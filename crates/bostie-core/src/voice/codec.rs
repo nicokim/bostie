@@ -105,9 +105,9 @@ impl Encoder {
             Application::Voip => opus::Application::Voip,
             Application::LowDelay => opus::Application::LowDelay,
         };
-        let mut opus =
-            opus::Encoder::new(SAMPLE_RATE, Channels::Stereo, application).map_err(rejected)?;
-        configure(&mut opus, &settings)?;
+        let mut opus = opus::Encoder::new(SAMPLE_RATE, Channels::Stereo, application)
+            .map_err(|error| rejected(&error))?;
+        configure(&mut opus, settings)?;
         Ok(Self {
             opus,
             settings,
@@ -121,7 +121,7 @@ impl Encoder {
             return Ok(());
         }
         settings.validate()?;
-        configure(&mut self.opus, &settings)?;
+        configure(&mut self.opus, settings)?;
         self.settings = settings;
         Ok(())
     }
@@ -143,17 +143,16 @@ impl Encoder {
     }
 }
 
-fn configure(opus: &mut opus::Encoder, settings: &EncoderSettings) -> Result<(), CoreError> {
+fn configure(opus: &mut opus::Encoder, settings: EncoderSettings) -> Result<(), CoreError> {
     let bitrate = i32::try_from(settings.bitrate).unwrap_or(i32::MAX);
-    opus.set_bitrate(Bitrate::Bits(bitrate)).map_err(rejected)?;
-    opus.set_inband_fec(settings.fec).map_err(rejected)?;
-    opus.set_packet_loss_perc(i32::from(settings.packet_loss))
-        .map_err(rejected)?;
-    opus.set_complexity(i32::from(settings.complexity))
-        .map_err(rejected)
+    opus.set_bitrate(Bitrate::Bits(bitrate))
+        .and_then(|()| opus.set_inband_fec(settings.fec))
+        .and_then(|()| opus.set_packet_loss_perc(i32::from(settings.packet_loss)))
+        .and_then(|()| opus.set_complexity(i32::from(settings.complexity)))
+        .map_err(|error| rejected(&error))
 }
 
-fn rejected(error: opus::Error) -> CoreError {
+fn rejected(error: &opus::Error) -> CoreError {
     CoreError::InvalidRequest(format!("libopus rejected the encoder settings: {error}"))
 }
 
@@ -252,6 +251,7 @@ fn write_each<const N: usize>(pcm: &[f32], out: &mut BytesMut, convert: impl Fn(
     }
 }
 
+#[expect(clippy::cast_possible_truncation)]
 fn to_s16(value: f32) -> i16 {
     let scaled = value.clamp(-1.0, 1.0) * 32_767.0;
     (scaled + 0.5_f32.copysign(scaled)) as i16
@@ -321,6 +321,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[expect(clippy::cast_precision_loss)]
     pub(crate) fn packet(channels: Channels, frames: usize) -> Vec<u8> {
         let mut encoder =
             opus::Encoder::new(SAMPLE_RATE, channels, opus::Application::Audio).unwrap();
@@ -438,6 +439,7 @@ pub(crate) mod tests {
             sample: SampleFormat::S16Le,
         };
         let mut encoder = FrameEncoder::new(format, settings()).unwrap();
+        #[expect(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
         let second: Vec<u8> = (0..24_000)
             .flat_map(|frame| {
                 let sample = (TAU * 440.0 * frame as f32 / 24_000.0).sin() * 16_000.0;
@@ -476,6 +478,7 @@ pub(crate) mod tests {
         assert!(FrameEncoder::new(format, settings()).is_err());
     }
 
+    #[expect(clippy::cast_precision_loss)]
     fn speech(frames: usize) -> Vec<Vec<u8>> {
         let mut encoder =
             opus::Encoder::new(SAMPLE_RATE, Channels::Mono, opus::Application::Voip).unwrap();
@@ -600,7 +603,7 @@ pub(crate) mod tests {
     #[test]
     fn samples_are_written_as_rounded_clamped_s16le_or_as_f32le() {
         let edges = [1.5, -1.5, 0.5, -0.25, 1.0, -1.0, f32::NAN];
-        let ties = (-32_768..32_768).map(|step| (step as f32 + 0.5) / 32_767.0);
+        let ties = (i16::MIN..=i16::MAX).map(|step| (f32::from(step) + 0.5) / 32_767.0);
         let pcm: Vec<f32> = edges
             .into_iter()
             .chain(ties.flat_map(|tie| [tie.next_down(), tie, tie.next_up()]))
@@ -616,6 +619,7 @@ pub(crate) mod tests {
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
         assert_eq!(s16[..known.len()], known);
+        #[expect(clippy::cast_possible_truncation)]
         let rounded: Vec<u8> = pcm
             .iter()
             .flat_map(|sample| ((sample.clamp(-1.0, 1.0) * 32_767.0).round() as i16).to_le_bytes())

@@ -403,7 +403,7 @@ impl Server {
             return;
         };
         if !holding {
-            self.send_now(json_message(op::HEARTBEAT_ACK, json!({"t": t}), None))
+            self.send_now(json_message(op::HEARTBEAT_ACK, &json!({"t": t}), None))
                 .await;
         }
     }
@@ -420,7 +420,7 @@ impl Server {
         }
         let seq_ack = d["seq_ack"].as_i64().unwrap_or(-1);
         self.attach();
-        self.send_now(json_message(op::RESUMED, json!(null), None))
+        self.send_now(json_message(op::RESUMED, &json!(null), None))
             .await;
         if self.config.hello == HelloAt::AfterReady {
             self.send_now(self.hello()).await;
@@ -451,7 +451,7 @@ impl Server {
         let millis = self.config.heartbeat_interval.as_secs_f64() * 1000.0;
         json_message(
             op::HELLO,
-            json!({"v": VOICE_GATEWAY_VERSION, "heartbeat_interval": millis}),
+            &json!({"v": VOICE_GATEWAY_VERSION, "heartbeat_interval": millis}),
             None,
         )
     }
@@ -466,7 +466,7 @@ impl Server {
         self.seq = self.seq.wrapping_add(1);
         let seq = self.seq;
         let message = match outgoing {
-            Outgoing::Json { op, d } => json_message(op, d, Some(seq)),
+            Outgoing::Json { op, d } => json_message(op, &d, Some(seq)),
             Outgoing::Binary { op, payload } => {
                 Message::binary([&seq.to_be_bytes()[..], &[op], &payload].concat())
             }
@@ -522,10 +522,11 @@ async fn next_message(
     }
 }
 
-fn json_message(op: u8, d: Value, seq: Option<u16>) -> Message {
-    let frame = match seq {
-        Some(seq) => json!({"op": op, "d": d, "seq": seq}),
-        None => json!({"op": op, "d": d}),
+fn json_message(op: u8, d: &Value, seq: Option<u16>) -> Message {
+    let frame = if let Some(seq) = seq {
+        json!({"op": op, "d": d, "seq": seq})
+    } else {
+        json!({"op": op, "d": d})
     };
     Message::text(frame.to_string())
 }

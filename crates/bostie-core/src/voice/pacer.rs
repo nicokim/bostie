@@ -459,7 +459,7 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
             home.rebalance(&mut lanes, &mut afters, sent, next + FRAME);
         }
         if !afters.is_empty() {
-            let deadline = next + FRAME - AFTER_MARGIN;
+            let deadline = next + FRAME.saturating_sub(AFTER_MARGIN);
             let done = run_afters(&mut afters, tick, deadline, clock, sent);
             load.record_after(done.saturating_duration_since(sent));
             shed = strain.sustained(load.receive(), done, &home.placement.tuning);
@@ -916,7 +916,7 @@ mod tests {
         let mut expected = Vec::new();
         for (tick, afters) in (0..).zip([vec![0, 1, 2], vec![2, 0], vec![0, 2], vec![2, 0]]) {
             let now = origin + FRAME * tick;
-            let deadline = now + FRAME - AFTER_MARGIN;
+            let deadline = now + FRAME.saturating_sub(AFTER_MARGIN);
             expected.extend((0..3).map(|lane| (Call::Lane(lane), now, None)));
             expected.extend(
                 afters
@@ -1035,7 +1035,11 @@ mod tests {
         let mut strain = Strain::default();
 
         assert!(!strain.sustained(heavy, at(0), &tuning));
-        assert!(!strain.sustained(heavy - Duration::from_micros(1), at(500), &tuning));
+        assert!(!strain.sustained(
+            heavy.saturating_sub(Duration::from_micros(1)),
+            at(500),
+            &tuning
+        ));
         assert!(!strain.sustained(heavy, at(600), &tuning));
         assert!(!strain.sustained(heavy, at(1_599), &tuning));
         assert!(strain.sustained(heavy, at(1_600), &tuning));
@@ -1092,7 +1096,12 @@ mod tests {
                 .any(|(sent, name)| sent.is_none() && name == "bostie-voice-1")
         );
         let sent: Vec<u32> = moved_calls.iter().filter_map(|(sent, _)| *sent).collect();
-        assert!(sent.iter().copied().eq(1..=sent.len() as u32), "{sent:?}");
+        assert!(
+            sent.iter()
+                .copied()
+                .eq(1..=u32::try_from(sent.len()).unwrap()),
+            "{sent:?}"
+        );
         assert_eq!(threads(&pool), [1, 1]);
     }
 

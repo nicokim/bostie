@@ -245,9 +245,11 @@ mod tests {
     const KEY: [u8; KEY_LEN] = {
         let mut key = [0; KEY_LEN];
         let mut index = 0;
+        let mut byte = 0;
         while index < KEY_LEN {
-            key[index] = index as u8;
+            key[index] = byte;
             index += 1;
+            byte += 1;
         }
         key
     };

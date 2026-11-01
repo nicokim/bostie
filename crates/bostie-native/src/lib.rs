@@ -1,3 +1,5 @@
+#![expect(clippy::needless_pass_by_value)]
+
 mod voice;
 
 use std::collections::HashMap;
@@ -72,7 +74,7 @@ impl NativeCore {
     fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> Result<()> {
         Ok(self
             .0
-            .gateway_start(ShardId::from(shard_id), url, identify.into())?)
+            .gateway_start(ShardId::from(shard_id), url, &identify)?)
     }
 
     fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> Result<()> {
@@ -331,6 +333,7 @@ impl NativeCore {
     }
 }
 
+#[expect(clippy::too_many_lines)]
 fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, PyAny>> {
     match delivery {
         Delivery::Response {

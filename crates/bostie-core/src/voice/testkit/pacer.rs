@@ -6,9 +6,9 @@ use crate::error::CoreError;
 use crate::voice::pacer::{AfterFn, LaneFn, Pace, Tick};
 use crate::voice::types::FRAME;
 
-pub(crate) struct ManualPacer(Mutex<Lanes>);
+pub(crate) struct ManualPacer(Mutex<Scheduled>);
 
-struct Lanes {
+struct Scheduled {
     now: Instant,
     lanes: Vec<LaneFn>,
     afters: Vec<AfterFn>,
@@ -16,7 +16,7 @@ struct Lanes {
 
 impl ManualPacer {
     pub(crate) fn new() -> Self {
-        Self(Mutex::new(Lanes {
+        Self(Mutex::new(Scheduled {
             now: Instant::now(),
             lanes: Vec::new(),
             afters: Vec::new(),

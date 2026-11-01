@@ -278,12 +278,11 @@ impl Shard {
             () = self.signals.close.notified() => return false,
             fetched = timeout(self.shared.limits.connect_timeout, rest.fetch_gateway_url()) => fetched.ok().flatten(),
         };
-        match fetched.as_deref().and_then(gateway_url) {
-            Some(url) => {
-                debug!(shard = %self.id, %url, "refreshed the gateway URL");
-                self.url = url;
-            }
-            None => debug!(shard = %self.id, "could not refresh the gateway URL"),
+        if let Some(url) = fetched.as_deref().and_then(gateway_url) {
+            debug!(shard = %self.id, %url, "refreshed the gateway URL");
+            self.url = url;
+        } else {
+            debug!(shard = %self.id, "could not refresh the gateway URL");
         }
         true
     }
@@ -624,7 +623,9 @@ impl Shard {
                 if self.session.is_none() {
                     let delay = &self.shared.limits.invalid_session_delay;
                     let (shortest, longest) = (*delay.start(), *delay.end());
-                    return Some(shortest + (longest - shortest).mul_f64(fastrand::f64()));
+                    return Some(
+                        shortest + longest.saturating_sub(shortest).mul_f64(fastrand::f64()),
+                    );
                 }
             }
             Ending::Unreachable(error) => {

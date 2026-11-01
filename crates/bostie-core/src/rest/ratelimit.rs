@@ -3,11 +3,11 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use reqwest::StatusCode;
-use reqwest::header::{HeaderMap, RETRY_AFTER};
+use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 use twilight_http_ratelimiting::{Endpoint, RateLimitHeaders};
 
 const FALLBACK_RETRY_AFTER: Duration = Duration::from_secs(5);
-const LONGEST_HONORED_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
+const LONGEST_HONORED_WAIT: Duration = Duration::from_hours(24);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Scope {
@@ -52,7 +52,7 @@ impl ResponseLimits {
 fn scope(headers: &HeaderMap) -> Scope {
     match headers
         .get(RateLimitHeaders::SCOPE)
-        .map(|value| value.as_bytes())
+        .map(HeaderValue::as_bytes)
     {
         Some(b"shared") => Scope::Shared,
         Some(b"global") => Scope::Global,
@@ -161,7 +161,6 @@ impl InteractionBuckets {
 mod tests {
     use futures_util::FutureExt;
     use proptest::prelude::*;
-    use reqwest::header::HeaderValue;
     use twilight_http_ratelimiting::Method;
 
     use super::*;
@@ -178,11 +177,11 @@ mod tests {
             .collect()
     }
 
-    fn limited(scope: Scope, seconds: f64) -> Option<Limited> {
-        Some(Limited {
+    fn limited(scope: Scope, seconds: f64) -> Limited {
+        Limited {
             scope,
             retry_after: Duration::from_secs_f64(seconds),
-        })
+        }
     }
 
     #[test]
@@ -211,7 +210,11 @@ mod tests {
                 }),
                 "{scope:?}"
             );
-            assert_eq!(parsed.limited, limited(Scope::Route, 65.0), "{scope:?}");
+            assert_eq!(
+                parsed.limited,
+                Some(limited(Scope::Route, 65.0)),
+                "{scope:?}"
+            );
         }
     }
 
@@ -238,7 +241,7 @@ mod tests {
                 reset_at: now + Duration::from_secs(1337),
             })
         );
-        assert_eq!(parsed.limited, limited(Scope::Shared, 1337.0));
+        assert_eq!(parsed.limited, Some(limited(Scope::Shared, 1337.0)));
     }
 
     #[test]
@@ -258,7 +261,7 @@ mod tests {
                 ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, Instant::now());
 
             assert_eq!(parsed.bucket, None);
-            assert_eq!(parsed.limited, limited(Scope::Global, retry_after));
+            assert_eq!(parsed.limited, Some(limited(Scope::Global, retry_after)));
         }
     }
 
@@ -284,7 +287,7 @@ mod tests {
         ] {
             let parsed = ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, now);
 
-            assert_eq!(parsed.limited, limited(scope, 5.0));
+            assert_eq!(parsed.limited, Some(limited(scope, 5.0)));
         }
     }
 

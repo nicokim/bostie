@@ -443,7 +443,7 @@ pub(crate) mod tests {
     #[test]
     fn marker_and_payload_type_are_read_from_the_second_byte() {
         let mut packet = header_bytes(false, &[], None, 7);
-        packet[1] = 0x80 | 96;
+        packet[1] = 0x80 | 0x60;
 
         let header = Header::parse(&packet).unwrap();
 

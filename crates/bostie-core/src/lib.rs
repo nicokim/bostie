@@ -137,7 +137,7 @@ impl Core {
         &self,
         shard: ShardId,
         url: &str,
-        identify: Bytes,
+        identify: &[u8],
     ) -> Result<(), CoreError> {
         self.owner.check()?;
         let table = self.tasks.lock();
@@ -386,11 +386,7 @@ mod tests {
         server.disconnected.recv_timeout(WAIT).unwrap();
         assert!(matches!(core.request(me()), Err(CoreError::Closed)));
         assert!(matches!(
-            core.gateway_start(
-                ShardId::from(0),
-                "ws://127.0.0.1:1",
-                Bytes::from_static(b"{}")
-            ),
+            core.gateway_start(ShardId::from(0), "ws://127.0.0.1:1", b"{}"),
             Err(CoreError::Closed)
         ));
     }

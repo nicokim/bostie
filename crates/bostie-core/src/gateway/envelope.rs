@@ -130,7 +130,7 @@ pub(crate) fn ready_session(data: &[u8]) -> Option<ReadySession> {
 
 pub(crate) fn identify_frame(payload: &[u8]) -> Result<Bytes, CoreError> {
     let value: Value = sonic_rs::from_slice(payload)
-        .map_err(|error| invalid("the identify payload", EnvelopeError::from(error)))?;
+        .map_err(|error| invalid("the identify payload", &EnvelopeError::from(error)))?;
     if !value.is_object() {
         return Err(CoreError::InvalidRequest(
             "the identify payload must be a JSON object".to_owned(),
@@ -147,14 +147,14 @@ pub(crate) fn identify_frame(payload: &[u8]) -> Result<Bytes, CoreError> {
 pub(crate) fn check_command(payload: &[u8]) -> Result<(), CoreError> {
     check_size(payload)?;
     let value: Value = sonic_rs::from_slice(payload)
-        .map_err(|error| invalid("the gateway payload", EnvelopeError::from(error)))?;
+        .map_err(|error| invalid("the gateway payload", &EnvelopeError::from(error)))?;
     if !value.is_object() {
         return Err(CoreError::InvalidRequest(
             "a gateway payload must be a JSON object".to_owned(),
         ));
     }
-    match value.get("op").and_then(|op| op.as_i64()) {
-        None => Err(invalid("the gateway payload", EnvelopeError::Field("op"))),
+    match value.get("op").and_then(JsonValueTrait::as_i64) {
+        None => Err(invalid("the gateway payload", &EnvelopeError::Field("op"))),
         Some(op @ (1 | 2 | 6)) => Err(CoreError::InvalidRequest(format!(
             "op {op} is sent by bostie itself"
         ))),
@@ -172,7 +172,7 @@ fn check_size(payload: &[u8]) -> Result<(), CoreError> {
     Ok(())
 }
 
-fn invalid(what: &str, error: EnvelopeError) -> CoreError {
+fn invalid(what: &str, error: &EnvelopeError) -> CoreError {
     CoreError::InvalidRequest(format!("{what} has {error}"))
 }
 

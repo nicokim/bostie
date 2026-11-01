@@ -458,7 +458,10 @@ fn recoveries_count_toward_the_limit_for_exactly_the_window() {
 
     for (after, flagged) in [
         (RECOVERY_WINDOW / 2, false),
-        (RECOVERY_WINDOW - Duration::from_nanos(1), false),
+        (
+            RECOVERY_WINDOW.saturating_sub(Duration::from_nanos(1)),
+            false,
+        ),
         (RECOVERY_WINDOW, true),
     ] {
         let (mut dave, _) = started(1);
@@ -933,7 +936,7 @@ fn a_davey_panic_drops_the_session_and_rebuilds_it_from_the_cached_sender() {
         .unwrap_err();
     let dropped = dave.session.is_none();
     let mut out = Vec::new();
-    dave.failed(MlsCall::Proposals, failure, last_transition, now, &mut out)
+    dave.failed(MlsCall::Proposals, &failure, last_transition, now, &mut out)
         .unwrap();
     for message in out {
         call.receive(user(BOT), message);

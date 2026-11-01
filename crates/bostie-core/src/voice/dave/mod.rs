@@ -134,7 +134,7 @@ pub(crate) struct Dave {
     last_transition: u16,
     recovering: bool,
     recoveries: VecDeque<Instant>,
-    dave_grace: Duration,
+    grace: Duration,
     downgrade_expiry: u32,
     upgrade_passthrough: u32,
     settled: Option<Instant>,
@@ -156,7 +156,7 @@ impl Dave {
             last_transition: 0,
             recovering: false,
             recoveries: VecDeque::new(),
-            dave_grace: tuning.dave_grace,
+            grace: tuning.dave_grace,
             downgrade_expiry: tuning.downgrade_expiry,
             upgrade_passthrough: tuning.upgrade_passthrough,
             settled: None,
@@ -321,7 +321,7 @@ impl Dave {
             || !self.pending.is_empty()
             || self
                 .settled
-                .is_none_or(|at| now.saturating_duration_since(at) < self.dave_grace)
+                .is_none_or(|at| now.saturating_duration_since(at) < self.grace)
     }
 
     pub(crate) fn receive_recovery(
@@ -400,7 +400,7 @@ impl Dave {
             Err(Failure::NoSession) if transition_id == 0 => return Ok(None),
             Err(Failure::NoSession) => {}
             Err(failure) => {
-                self.failed(MlsCall::Prepare, failure, transition_id, now, out)?;
+                self.failed(MlsCall::Prepare, &failure, transition_id, now, out)?;
                 return Ok(None);
             }
         }
@@ -430,7 +430,7 @@ impl Dave {
                 Ok(None)
             }
             Err(failure) => {
-                self.failed(MlsCall::Execute, failure, transition_id, now, out)?;
+                self.failed(MlsCall::Execute, &failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
@@ -516,7 +516,7 @@ impl Dave {
             }
             Err(failure) => {
                 let transition_id = self.last_transition;
-                self.failed(MlsCall::ExternalSender, failure, transition_id, now, out)
+                self.failed(MlsCall::ExternalSender, &failure, transition_id, now, out)
             }
         }
     }
@@ -550,7 +550,7 @@ impl Dave {
             Ok(None) | Err(Failure::NoSession) => Ok(()),
             Err(failure) => {
                 let transition_id = self.last_transition;
-                self.failed(MlsCall::Proposals, failure, transition_id, now, out)
+                self.failed(MlsCall::Proposals, &failure, transition_id, now, out)
             }
         }
     }
@@ -588,7 +588,7 @@ impl Dave {
                 Ok(None)
             }
             Err(failure) => {
-                self.failed(MlsCall::Commit, failure, transition_id, now, out)?;
+                self.failed(MlsCall::Commit, &failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
@@ -612,7 +612,7 @@ impl Dave {
             }
             Err(Failure::NoSession) => Ok(None),
             Err(failure) => {
-                self.failed(MlsCall::Welcome, failure, transition_id, now, out)?;
+                self.failed(MlsCall::Welcome, &failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
@@ -621,13 +621,13 @@ impl Dave {
     fn failed(
         &mut self,
         call: MlsCall,
-        failure: Failure,
+        failure: &Failure,
         transition_id: u16,
         now: Instant,
         out: &mut Vec<Outbound>,
     ) -> Result<(), DaveError> {
         if let (MlsCall::ExternalSender | MlsCall::Proposals, Failure::Rejected(reason)) =
-            (call, &failure)
+            (call, failure)
         {
             warn!(?call, %reason, "a DAVE message was refused and ignored");
             return Ok(());

@@ -451,13 +451,12 @@ fn converter_for<'a>(
         current.flush(out);
         *slot = None;
     }
-    match slot {
-        Some(converter) => Ok(converter),
-        None => {
-            let converter = Converter::new(format)
-                .map_err(|error| DecodeError::Unplayable(error.to_string()))?;
-            Ok(slot.insert(converter))
-        }
+    if let Some(converter) = slot {
+        Ok(converter)
+    } else {
+        let converter =
+            Converter::new(format).map_err(|error| DecodeError::Unplayable(error.to_string()))?;
+        Ok(slot.insert(converter))
     }
 }
 

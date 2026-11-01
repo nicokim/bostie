@@ -132,13 +132,11 @@ impl Receiver {
         if !items.is_empty() {
             return Ok(ReceiveRead::Items(items));
         }
-        Ok(match queue.ended {
-            Some(why) => ReceiveRead::Ended(why),
-            None => {
-                queue.wake_armed = true;
-                ReceiveRead::Pending
-            }
-        })
+        if let Some(why) = queue.ended {
+            return Ok(ReceiveRead::Ended(why));
+        }
+        queue.wake_armed = true;
+        Ok(ReceiveRead::Pending)
     }
 
     pub fn queued(&self) -> Result<Duration, CoreError> {

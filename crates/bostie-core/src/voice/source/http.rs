@@ -450,7 +450,10 @@ mod tests {
     fn http_media_seeks_with_a_range_request_from_the_new_position() {
         let harness = Harness::new();
         let body: Vec<u8> = (0..200_000_u32)
-            .map(|index| index.to_le_bytes()[0] ^ (index >> 8) as u8)
+            .map(|index| {
+                let [low, high, ..] = index.to_le_bytes();
+                low ^ high
+            })
             .collect();
         let server = Server::start(body.clone(), true);
         let mut media = HttpMedia::new(&harness.http, &server.url("/body"), &[]).unwrap();
@@ -466,7 +469,7 @@ mod tests {
         assert!(media.is_seekable());
         assert_eq!(media.byte_len(), Some(200_000));
         assert_eq!(head, body[..100]);
-        assert!(rest == body[150_000..]);
+        assert_eq!(rest, body[150_000..]);
         let requests = server.received();
         assert_eq!(requests.len(), 2);
         assert!(!requests[0].contains("range:"));
@@ -512,7 +515,7 @@ mod tests {
 
         assert_eq!(error, None);
         assert_eq!(frames(SourceKind::Pcm, &again), 48_000);
-        assert!(again == first);
+        assert_eq!(again, first);
     }
 
     #[test]

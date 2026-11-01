@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use opus::{Channels, SoftClip};
 use tracing::debug;
 
-use super::{Core, FRAME_48K, Feed, Key, Moment, instant, samples_since, speaking};
+use super::{Core, Feed, Key, Moment, instant, samples_since, speaking};
 use crate::ids::{Handle, UserId};
 use crate::voice::codec::{self, Decoder};
 use crate::voice::media::{Arrival, Media};
@@ -18,7 +18,7 @@ use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
-    FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE,
+    FRAME, FRAME_48K, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE,
 };
 
 const FRAME_OFFSETS: u64 = FRAME_SAMPLES as u64;

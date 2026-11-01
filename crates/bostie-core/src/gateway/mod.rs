@@ -108,12 +108,12 @@ impl Gateway {
         &self,
         shard: ShardId,
         url: &str,
-        identify: Bytes,
+        identify: &[u8],
     ) -> Result<(), CoreError> {
         let url = shard::gateway_url(url).ok_or_else(|| {
             CoreError::InvalidRequest(format!("{url:?} is not a ws:// or wss:// gateway URL"))
         })?;
-        let identify = envelope::identify_frame(&identify)?;
+        let identify = envelope::identify_frame(identify)?;
         let mut shards = self.shards.lock();
         if shards.get(&shard).is_some_and(ShardHandle::is_running) {
             return Err(CoreError::ShardRunning(shard));

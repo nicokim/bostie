@@ -7,13 +7,13 @@ use bytes::Bytes;
 use crate::ids::UserId;
 use crate::voice::types::{NANOS_PER_SECOND, SAMPLE_RATE};
 
-const RING: usize = 64;
+const RING: usize = OLDEST as usize + 1;
 const MAX_DROPOUT: u16 = 3_000;
 const MAX_MISORDER: u16 = 100;
 const RESYNC: Duration = Duration::from_secs(1);
 const ANCHOR_WINDOW: Duration = Duration::from_secs(10);
 
-const OLDEST: u16 = (RING - 1) as u16;
+const OLDEST: u16 = 63;
 const TIMESTAMP_SLACK: u32 = 960;
 
 pub(crate) fn to_samples(duration: Duration) -> i64 {

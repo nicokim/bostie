@@ -122,7 +122,7 @@ struct FakeGateway {
 }
 
 impl FakeGateway {
-    async fn start(zstd: bool) -> Self {
+    fn start(zstd: bool) -> Self {
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_recv_buffer_size(4096).unwrap();
         socket.bind(SocketAddr::from(([127, 0, 0, 1], 0))).unwrap();
@@ -301,19 +301,22 @@ impl Drop for Harness {
 }
 
 impl Harness {
-    async fn new(zstd: bool) -> Self {
-        Self::limited(zstd, LIMITS).await
+    fn new(zstd: bool) -> Self {
+        Self::limited(zstd, LIMITS)
     }
 
-    async fn limited(zstd: bool, limits: Limits) -> Self {
+    fn limited(zstd: bool, limits: Limits) -> Self {
         let refusing = crate::refusing_socket();
         let api_url = format!("http://{}/api/v10", address_of(&refusing));
-        let mut harness = Self::with(FakeGateway::start(zstd).await, &api_url, limits);
-        harness._refusing_api = Some(refusing);
-        harness
+        Self::with(FakeGateway::start(zstd), &api_url, limits, Some(refusing))
     }
 
-    fn with(fake: FakeGateway, api_url: &str, limits: Limits) -> Self {
+    fn with(
+        fake: FakeGateway,
+        api_url: &str,
+        limits: Limits,
+        refusing_api: Option<TcpSocket>,
+    ) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::with_dispatch_limit(bell, INBOX_LIMIT));
@@ -344,13 +347,13 @@ impl Harness {
             _bell: receiver,
             fake,
             received: VecDeque::new(),
-            _refusing_api: None,
+            _refusing_api: refusing_api,
         }
     }
 
     fn start(&self) {
         self.gateway
-            .start(shard(), &self.fake.url(), Bytes::from_static(IDENTIFY))
+            .start(shard(), &self.fake.url(), IDENTIFY)
             .unwrap();
     }
 
@@ -446,7 +449,7 @@ impl Harness {
 
 #[tokio::test]
 async fn identify_wraps_the_python_payload_byte_for_byte() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
 
     let mut peer = harness.fake.accept().await;
@@ -465,7 +468,7 @@ async fn identify_wraps_the_python_payload_byte_for_byte() {
 }
 
 async fn ready_and_message(zstd: bool) -> Vec<(u64, Box<str>, Bytes)> {
-    let mut harness = Harness::new(zstd).await;
+    let mut harness = Harness::new(zstd);
     harness.start();
     let mut peer = harness.fake.accept().await;
     peer.send(&hello(SLOW_HEARTBEAT)).await;
@@ -492,7 +495,7 @@ async fn dispatches_carry_the_exact_payload_over_text_and_zstd() {
 
 #[tokio::test]
 async fn filtered_dispatches_are_not_delivered_but_count_for_resume() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness
         .gateway
         .set_filter(Some(vec!["MESSAGE_CREATE".to_owned()]));
@@ -510,7 +513,7 @@ async fn filtered_dispatches_are_not_delivered_but_count_for_resume() {
 
 #[tokio::test]
 async fn heartbeat_requests_get_the_last_seq_and_acks_set_latency() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
     let mut peer = harness.fake.accept().await;
     peer.send(&hello(QUIET_HEARTBEAT)).await;
@@ -534,7 +537,7 @@ async fn heartbeat_requests_get_the_last_seq_and_acks_set_latency() {
 
 #[tokio::test]
 async fn frames_without_a_heartbeat_ack_still_make_a_zombie() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(200).await;
     let request = || Message::text(fixture(HEARTBEAT_REQUEST).to_owned());
 
@@ -566,7 +569,7 @@ async fn frames_without_a_heartbeat_ack_still_make_a_zombie() {
 
 #[tokio::test]
 async fn a_ready_without_resume_gateway_url_identifies_after_a_disconnect() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
     let mut peer = harness.fake.accept().await;
     peer.send(&hello(SLOW_HEARTBEAT)).await;
@@ -593,21 +596,18 @@ async fn a_ready_without_resume_gateway_url_identifies_after_a_disconnect() {
 
 #[tokio::test]
 async fn a_refusing_base_url_falls_back_to_get_gateway() {
-    let fake = FakeGateway::start(false).await;
+    let fake = FakeGateway::start(false);
     let gateway = format!(r#"{{"url":"{}"}}"#, fake.url());
     let mut api = Server::start(vec![NO_REPLY, reply("200 OK", &[], &gateway)]).await;
     let limits = Limits {
         connect_timeout: Duration::from_millis(500),
         ..LIMITS
     };
-    let mut harness = Harness::with(fake, &api.url, limits);
+    let mut harness = Harness::with(fake, &api.url, limits, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
 
-    harness
-        .gateway
-        .start(shard(), &refusing, Bytes::from_static(IDENTIFY))
-        .unwrap();
+    harness.gateway.start(shard(), &refusing, IDENTIFY).unwrap();
 
     for _ in 0..4 {
         let (code, _, resuming) = harness.disconnected().await;
@@ -630,7 +630,7 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
 #[tokio::test]
 async fn only_consecutive_failures_on_the_base_url_refresh_it() {
     let mut api = Server::start(Vec::new()).await;
-    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url, LIMITS);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, LIMITS, None);
     let closed = crate::refusing_socket();
     let dead = address_of(&closed).to_string();
     harness.start();
@@ -663,13 +663,10 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
         connect_timeout: NEVER,
         ..LIMITS
     };
-    let mut harness = Harness::with(FakeGateway::start(false).await, &api.url, limits);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, limits, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
-    harness
-        .gateway
-        .start(shard(), &refusing, Bytes::from_static(IDENTIFY))
-        .unwrap();
+    harness.gateway.start(shard(), &refusing, IDENTIFY).unwrap();
     for _ in 0..2 {
         harness.disconnected().await;
     }
@@ -688,7 +685,7 @@ async fn reconnect_and_invalid_session_requests_resume_or_identify() {
         invalid_session_delay: delay..=delay,
         ..LIMITS
     };
-    let mut harness = Harness::limited(false, limits).await;
+    let mut harness = Harness::limited(false, limits);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
     peer.send(fixture(RECONNECT)).await;
@@ -730,7 +727,7 @@ async fn frames_before_ready_reconnect_without_a_session() {
             hello_timeout: NEVER,
             ..LIMITS
         };
-        let mut harness = Harness::limited(false, limits).await;
+        let mut harness = Harness::limited(false, limits);
         harness.start();
         let mut peer = harness.fake.accept().await;
 
@@ -751,7 +748,7 @@ async fn frames_before_ready_reconnect_without_a_session() {
 async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
     for code in [4000, 4007, 4004, 4999] {
         let (action, text) = classify(code);
-        let mut harness = Harness::new(false).await;
+        let mut harness = Harness::new(false);
         let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
         peer.close(code).await;
@@ -784,7 +781,7 @@ async fn a_dropped_connection_resumes_without_backing_off() {
             backoff_max: NEVER,
             ..LIMITS
         };
-        let mut harness = Harness::limited(zstd, limits).await;
+        let mut harness = Harness::limited(zstd, limits);
         let peer = harness.ready(SLOW_HEARTBEAT).await;
 
         drop(peer);
@@ -797,7 +794,7 @@ async fn a_dropped_connection_resumes_without_backing_off() {
 
 #[tokio::test]
 async fn refused_connections_back_off_longer_each_time() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
 
     let mut arrivals = Vec::new();
@@ -812,7 +809,7 @@ async fn refused_connections_back_off_longer_each_time() {
 
 #[tokio::test]
 async fn an_empty_identify_budget_opens_no_connection_until_the_reset() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let reset_after = Duration::from_millis(300);
     let seeded = Instant::now();
     harness.gateway.set_identify_limit(IdentifyLimit {
@@ -832,12 +829,12 @@ async fn an_empty_identify_budget_opens_no_connection_until_the_reset() {
         )
     );
     harness.fake.connection().await;
-    assert!(seeded.elapsed() >= reset_after - Duration::from_millis(5));
+    assert!(seeded.elapsed() >= reset_after.saturating_sub(Duration::from_millis(5)));
 }
 
 #[tokio::test]
 async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.gateway.set_identify_limit(IdentifyLimit {
         remaining: 1,
         total: 1000,
@@ -846,11 +843,7 @@ async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
     for id in 0..2 {
         harness
             .gateway
-            .start(
-                ShardId::from(id),
-                &harness.fake.url(),
-                Bytes::from_static(IDENTIFY),
-            )
+            .start(ShardId::from(id), &harness.fake.url(), IDENTIFY)
             .unwrap();
     }
     let mut peers = [harness.fake.accept().await, harness.fake.accept().await];
@@ -876,7 +869,7 @@ async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
 
 #[tokio::test]
 async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.inbox.push(Delivery::Dispatch {
         shard: shard(),
         seq: 0,
@@ -896,7 +889,7 @@ async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
 
 #[tokio::test]
 async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
     let mut peer = harness.fake.accept().await;
     peer.send(&hello(SLOW_HEARTBEAT)).await;
@@ -927,7 +920,7 @@ async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
 
 #[tokio::test]
 async fn a_pause_that_starts_after_an_unanswered_heartbeat_is_no_zombie() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(500).await;
     peer.send(fixture(HEARTBEAT_ACK)).await;
     peer.heartbeat().await;
@@ -956,7 +949,7 @@ async fn a_pause_that_starts_after_an_unanswered_heartbeat_is_no_zombie() {
 
 #[tokio::test]
 async fn a_slow_consumer_pauses_reading_without_losing_events() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(150).await;
 
     for seq in 2..=14 {
@@ -994,7 +987,7 @@ async fn a_slow_consumer_pauses_reading_without_losing_events() {
 
 #[tokio::test]
 async fn reconnecting_while_paused_delivers_the_held_event_once() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
     for seq in 2..=14 {
         peer.send(&message(seq)).await;
@@ -1033,7 +1026,7 @@ async fn reconnecting_while_paused_delivers_the_held_event_once() {
 
 #[tokio::test]
 async fn queued_commands_wait_for_ready_or_resumed() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
     harness.gateway.send(shard(), voice_state(1)).unwrap();
     harness.gateway.send(shard(), voice_state(2)).unwrap();
@@ -1058,7 +1051,7 @@ async fn queued_commands_wait_for_ready_or_resumed() {
 
 #[tokio::test]
 async fn the_api_rejects_bad_input_and_full_queues() {
-    let harness = Harness::new(false).await;
+    let harness = Harness::new(false);
     let gateway = &harness.gateway;
     let command = || Bytes::from_static(br#"{"op":3,"d":{}}"#);
 
@@ -1067,20 +1060,16 @@ async fn the_api_rejects_bad_input_and_full_queues() {
         Err(CoreError::UnknownShard(_))
     ));
     assert!(matches!(
-        gateway.start(
-            shard(),
-            "https://gateway.discord.gg",
-            Bytes::from_static(IDENTIFY)
-        ),
+        gateway.start(shard(), "https://gateway.discord.gg", IDENTIFY),
         Err(CoreError::InvalidRequest(_))
     ));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), Bytes::from_static(b"[]")),
+        gateway.start(shard(), &harness.fake.url(), b"[]"),
         Err(CoreError::InvalidRequest(_))
     ));
     let oversized = format!(r#"{{"token":"{}"}}"#, "x".repeat(4096));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), Bytes::from(oversized)),
+        gateway.start(shard(), &harness.fake.url(), oversized.as_bytes()),
         Err(CoreError::InvalidRequest(_))
     ));
     harness.start();
@@ -1096,7 +1085,7 @@ async fn the_api_rejects_bad_input_and_full_queues() {
         Err(CoreError::SendQueueFull(_))
     ));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), Bytes::from_static(IDENTIFY)),
+        gateway.start(shard(), &harness.fake.url(), IDENTIFY),
         Err(CoreError::ShardRunning(_))
     ));
 }
@@ -1120,7 +1109,7 @@ impl Drop for DropWaitsForRelease {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness.start();
     let _peer = harness.fake.accept().await;
     let (release, held) = std::sync::mpsc::channel();
@@ -1133,10 +1122,9 @@ async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds(
     harness.gateway.close(shard()).unwrap();
     assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
     let latency = harness.gateway.latency(shard());
-    let restarted =
-        harness
-            .gateway
-            .start(shard(), &harness.fake.url(), Bytes::from_static(IDENTIFY));
+    let restarted = harness
+        .gateway
+        .start(shard(), &harness.fake.url(), IDENTIFY);
     release.send(()).unwrap();
 
     assert!(
@@ -1148,7 +1136,7 @@ async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds(
 
 #[tokio::test]
 async fn reconnect_resumes_and_close_stops() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
     harness.gateway.reconnect(shard()).unwrap();
@@ -1167,7 +1155,7 @@ async fn reconnect_resumes_and_close_stops() {
 
 #[tokio::test]
 async fn invalid_frames_reconnect_instead_of_panicking() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let huge = format!(
         r#"{{"t":"X","s":1,"op":0,"d":"{}"}}"#,
         "h".repeat(1100 * 1024)
@@ -1200,7 +1188,7 @@ fn the_tls_connector_builds_with_one_rustls_provider() {
 
 #[tokio::test]
 async fn filtered_voice_updates_still_reach_the_voice_tap() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     harness
         .gateway
         .set_filter(Some(vec!["MESSAGE_CREATE".to_owned()]));
@@ -1227,7 +1215,7 @@ async fn filtered_voice_updates_still_reach_the_voice_tap() {
 
 #[tokio::test]
 async fn voice_updates_the_filter_wants_reach_both_python_and_the_voice_tap() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut slot = harness
         .tap
         .register(GuildId::from(GUILD), shard(), UserId::from(BOT));
@@ -1261,7 +1249,7 @@ impl Wake for SendOnWake {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_later_ready_reaches_the_voice_tap_after_stale_commands() {
-    let mut harness = Harness::new(false).await;
+    let mut harness = Harness::new(false);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
     let mut slot = harness
         .tap

@@ -8,7 +8,8 @@ use crate::voice::crypto::Mode;
 use crate::voice::testkit::mls::Call;
 use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
-    Application, FRAME, PcmFormat, SampleFormat, SinkFormat, SinkOptions, StallPolicy,
+    Application, FRAME, FRAME_SAMPLES, PcmFormat, SampleFormat, SinkFormat, SinkOptions,
+    StallPolicy,
 };
 
 const GUILD: u64 = 10;
@@ -39,7 +40,8 @@ fn pcm_format() -> PcmFormat {
     }
 }
 
-fn tone(frames: usize) -> Vec<u8> {
+#[expect(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+pub(crate) fn tone(frames: usize) -> Vec<u8> {
     (0..frames * 2)
         .flat_map(|index| {
             let sample = ((index / 2) as f32 * 0.05).sin() * 8_000.0;
@@ -174,8 +176,8 @@ impl Rig {
     }
 }
 
-fn queued_frames(sink: &Sink) -> u64 {
-    sink.queued().unwrap().as_micros() as u64 * 48 / 1000
+pub(crate) fn queued_frames(sink: &Sink) -> u64 {
+    u64::try_from(sink.queued().unwrap().as_micros()).unwrap() * 48 / 1000
 }
 
 fn markers(deliveries: &[Delivery]) -> Vec<(u64, bool)> {
@@ -387,14 +389,11 @@ fn rtp_sequence_counts_packets_and_the_timestamp_counts_every_tick() {
 
     let packets = rig.packets(8);
     let first = packets[0].header;
-    for (index, packet) in packets[..6].iter().enumerate() {
-        assert_eq!(
-            packet.header.sequence,
-            first.sequence.wrapping_add(index as u16)
-        );
+    for (index, packet) in (0_u16..).zip(&packets[..6]) {
+        assert_eq!(packet.header.sequence, first.sequence.wrapping_add(index));
         assert_eq!(
             packet.header.timestamp,
-            first.timestamp.wrapping_add(960 * index as u32)
+            first.timestamp.wrapping_add(960 * u32::from(index))
         );
     }
     assert_eq!(

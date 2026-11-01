@@ -536,7 +536,7 @@ pub(crate) mod tests {
     pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> String {
         let headers: String = headers
             .iter()
-            .map(|(name, value)| format!("{name}: {value}\r\n"))
+            .flat_map(|&(name, value)| [name, ": ", value, "\r\n"])
             .collect();
         format!(
             "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\n\r\n{body}",

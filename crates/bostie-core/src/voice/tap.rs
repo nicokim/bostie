@@ -230,7 +230,7 @@ fn snowflake(value: &LazyValue<'_>) -> Option<u64> {
 }
 
 fn flag(value: Option<&LazyValue<'_>>) -> bool {
-    value.and_then(|value| value.as_bool()).unwrap_or(false)
+    value.and_then(JsonValueTrait::as_bool).unwrap_or(false)
 }
 
 #[cfg(test)]

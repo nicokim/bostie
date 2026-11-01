@@ -43,15 +43,14 @@ struct OwnedRuntime {
 static RUNTIME: OnceLock<OwnedRuntime> = OnceLock::new();
 
 pub(crate) fn shared() -> Result<Handle, CoreError> {
-    let shared = match RUNTIME.get() {
-        Some(existing) => existing,
-        None => {
-            let built = OwnedRuntime {
-                owner: Owner::current(),
-                runtime: build()?,
-            };
-            RUNTIME.get_or_init(|| built)
-        }
+    let shared = if let Some(existing) = RUNTIME.get() {
+        existing
+    } else {
+        let built = OwnedRuntime {
+            owner: Owner::current(),
+            runtime: build()?,
+        };
+        RUNTIME.get_or_init(|| built)
     };
     shared.owner.check()?;
     Ok(shared.runtime.handle().clone())

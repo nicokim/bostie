@@ -154,14 +154,14 @@ pub(crate) fn parse_text(text: &[u8]) -> Frame {
     }
 }
 
-pub(crate) fn parse_binary(message: Bytes) -> Frame {
+pub(crate) fn parse_binary(message: &Bytes) -> Frame {
     let seq = message
         .first_chunk::<2>()
         .map(|&seq| u64::from(u16::from_be_bytes(seq)));
     let inbound = if message.len() > WS_MAX_MESSAGE {
         Err(ProtoError::TooLarge { len: message.len() })
     } else {
-        binary(&message)
+        binary(message)
     };
     Frame { seq, inbound }
 }
@@ -468,7 +468,7 @@ mod tests {
 
     fn parse_fixture(line: &str) -> Frame {
         match fixture_bytes(line) {
-            Some(bytes) => parse_binary(Bytes::from(bytes)),
+            Some(bytes) => parse_binary(&Bytes::from(bytes)),
             None => parse_text(line.as_bytes()),
         }
     }
@@ -791,7 +791,7 @@ mod tests {
         let welcome = binary_frame(5, 30, &[0xFF, 0xFE, 0xE0]);
 
         let parsed = [external_sender, append, revoke, commit, welcome]
-            .map(|message| parse_binary(message).inbound.unwrap());
+            .map(|message| parse_binary(&message).inbound.unwrap());
 
         assert_eq!(
             parsed,
@@ -819,7 +819,7 @@ mod tests {
 
     #[test]
     fn binary_frames_take_their_seq_from_the_big_endian_prefix() {
-        let frame = parse_binary(binary_frame(0x0102, 25, &[]));
+        let frame = parse_binary(&binary_frame(0x0102, 25, &[]));
 
         assert_eq!(frame.seq, Some(258));
         assert_eq!(
@@ -863,7 +863,7 @@ mod tests {
             Inbound::Other { op: 4096 }
         );
         assert_eq!(
-            parse_binary(binary_frame(7, 2, b"{}")).inbound,
+            parse_binary(&binary_frame(7, 2, b"{}")).inbound,
             Ok(Inbound::Other { op: 2 })
         );
     }
@@ -901,7 +901,7 @@ mod tests {
         ];
         for (bytes, expected) in cases {
             assert_eq!(
-                parse_binary(Bytes::copy_from_slice(bytes)).inbound,
+                parse_binary(&Bytes::copy_from_slice(bytes)).inbound,
                 Err(expected),
                 "{bytes:?}"
             );
@@ -910,10 +910,10 @@ mod tests {
 
     #[test]
     fn an_invalid_frame_keeps_any_seq_it_carries() {
-        assert_eq!(parse_binary(Bytes::from_static(&[0])).seq, None);
-        assert_eq!(parse_binary(Bytes::from_static(&[0, 9])).seq, Some(9));
+        assert_eq!(parse_binary(&Bytes::from_static(&[0])).seq, None);
+        assert_eq!(parse_binary(&Bytes::from_static(&[0, 9])).seq, Some(9));
         assert_eq!(
-            parse_binary(Bytes::from_static(&[0, 9, 29, 0])).seq,
+            parse_binary(&Bytes::from_static(&[0, 9, 29, 0])).seq,
             Some(9)
         );
 
@@ -933,7 +933,7 @@ mod tests {
     fn proposals_with_an_unknown_operation_are_invalid() {
         for operation in [2, 255] {
             assert_eq!(
-                parse_binary(binary_frame(1, 27, &[operation, 0])).inbound,
+                parse_binary(&binary_frame(1, 27, &[operation, 0])).inbound,
                 Err(ProtoError::ProposalsOperation(operation))
             );
         }
@@ -942,10 +942,10 @@ mod tests {
     #[test]
     fn messages_over_the_size_limit_are_invalid() {
         let largest = binary_frame(3, 25, &vec![0; WS_MAX_MESSAGE - BINARY_HEADER]);
-        assert!(parse_binary(largest).inbound.is_ok());
+        assert!(parse_binary(&largest).inbound.is_ok());
 
         let over = binary_frame(3, 25, &vec![0; WS_MAX_MESSAGE - BINARY_HEADER + 1]);
-        let frame = parse_binary(over);
+        let frame = parse_binary(&over);
         assert_eq!(frame.seq, Some(3));
         assert_eq!(
             frame.inbound,
@@ -1182,7 +1182,7 @@ mod tests {
 
         #[test]
         fn random_binary_never_panics(bytes in vec(any::<u8>(), 0..64)) {
-            let _ = parse_binary(Bytes::from(bytes));
+            let _ = parse_binary(&Bytes::from(bytes));
         }
 
         #[test]
@@ -1198,7 +1198,7 @@ mod tests {
             op in prop_oneof![Just(25_u8), Just(27), Just(29), Just(30), any::<u8>()],
             payload in vec(any::<u8>(), 0..40),
         ) {
-            let frame = parse_binary(binary_frame(seq, op, &payload));
+            let frame = parse_binary(&binary_frame(seq, op, &payload));
 
             prop_assert_eq!(frame.seq, Some(u64::from(seq)));
         }

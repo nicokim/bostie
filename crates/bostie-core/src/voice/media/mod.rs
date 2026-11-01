@@ -21,13 +21,12 @@ use crate::voice::receiver::{Ended, Receiver};
 use crate::voice::rtp::{self, HEADER_LEN};
 use crate::voice::sink::Sink;
 use crate::voice::types::{
-    Direction, EncoderSettings, FRAME_SAMPLES, ReceiveFormat, ReceiveStall, ReceiveTuning,
+    Direction, EncoderSettings, FRAME_48K, ReceiveFormat, ReceiveStall, ReceiveTuning,
     SILENCE_FRAME,
 };
 
 pub(crate) const SILENCE_TAIL: u8 = 5;
 
-const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
 const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -409,7 +408,7 @@ impl Lane {
                 if let Some(rtp) = &mut self.rtp {
                     rtp.timestamp = rtp
                         .timestamp
-                        .wrapping_add(SAMPLES_PER_TICK.wrapping_mul(tick.skipped.wrapping_add(1)));
+                        .wrapping_add(FRAME_48K.wrapping_mul(tick.skipped.wrapping_add(1)));
                 }
             }
         }
@@ -608,4 +607,4 @@ fn seal_and_send(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

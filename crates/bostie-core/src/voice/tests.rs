@@ -13,6 +13,7 @@ use super::*;
 use crate::bell::{self, BellReceiver};
 use crate::voice::crypto::Mode;
 use crate::voice::dave::{Outbound, RECOVERY_LIMIT, SendMode};
+use crate::voice::media::tests::{queued_frames, tone};
 use crate::voice::proto::op;
 use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
@@ -93,15 +94,6 @@ fn pcm() -> SinkFormat {
         channels: 2,
         sample: SampleFormat::S16Le,
     })
-}
-
-fn tone(frames: usize) -> Vec<u8> {
-    (0..frames * 2)
-        .flat_map(|index| {
-            let sample = ((index / 2) as f32 * 0.05).sin() * 8_000.0;
-            (sample as i16).to_le_bytes()
-        })
-        .collect()
 }
 
 fn opus(frames: usize) -> Vec<Bytes> {
@@ -300,13 +292,14 @@ impl Server {
                 epoch,
                 protocol_version,
             } => {
-                let d = match transition_id {
-                    Some(transition_id) => json!({
+                let d = if let Some(transition_id) = transition_id {
+                    json!({
                         "transition_id": transition_id,
                         "epoch": epoch,
                         "protocol_version": protocol_version,
-                    }),
-                    None => json!({"epoch": epoch, "protocol_version": protocol_version}),
+                    })
+                } else {
+                    json!({"epoch": epoch, "protocol_version": protocol_version})
                 };
                 self.gateway.send(op::DAVE_PREPARE_EPOCH, d);
             }
@@ -432,7 +425,7 @@ impl Harness {
         }
     }
 
-    fn request(&self) -> ConnectRequest {
+    fn request() -> ConnectRequest {
         ConnectRequest {
             guild: guild(),
             channel: ChannelId::from(CHANNEL),
@@ -448,7 +441,7 @@ impl Harness {
     }
 
     fn connect(&self) {
-        self.voice.connect(&self.request()).unwrap();
+        self.voice.connect(&Self::request()).unwrap();
     }
 
     fn offer_state(&self, guild: GuildId, channel: Option<u64>, extra: &str) {
@@ -1070,10 +1063,6 @@ fn speaking_ssrc(delivery: &Delivery) -> Option<u32> {
     }
 }
 
-fn queued_frames(sink: &Sink) -> u64 {
-    sink.queued().unwrap().as_micros() as u64 * 48 / 1000
-}
-
 impl Harness {
     async fn speaking_from(&mut self, ssrc: u32) {
         self.wait_for(|delivery| (speaking_ssrc(delivery) == Some(ssrc)).then_some(()))
@@ -1097,7 +1086,7 @@ impl Harness {
         self.voice
             .connect(&ConnectRequest {
                 guild: second,
-                ..self.request()
+                ..Self::request()
             })
             .unwrap();
         self.offer_state(second, Some(CHANNEL), "");
@@ -1221,7 +1210,7 @@ async fn a_terminated_call_waits_the_server_change_delay_even_past_the_timeout()
         .connect(&ConnectRequest {
             timeout: Duration::from_secs(1),
             server_change_delay: delay,
-            ..harness.request()
+            ..Harness::request()
         })
         .unwrap();
     harness.announce().await;
@@ -1246,7 +1235,7 @@ async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
         .voice
         .connect(&ConnectRequest {
             server_change_delay: Duration::from_secs(3_600),
-            ..harness.request()
+            ..Harness::request()
         })
         .unwrap();
     harness.announce().await;
@@ -1269,7 +1258,7 @@ async fn a_changed_server_change_delay_applies_to_the_next_server_change() {
         .voice
         .connect(&ConnectRequest {
             server_change_delay: Duration::from_secs(3_600),
-            ..harness.request()
+            ..Harness::request()
         })
         .unwrap();
     harness.announce().await;
@@ -1294,7 +1283,7 @@ async fn a_session_replaced_during_the_change_delay_waits_for_new_server() {
         .voice
         .connect(&ConnectRequest {
             server_change_delay: Duration::from_secs(3_600),
-            ..harness.request()
+            ..Harness::request()
         })
         .unwrap();
     harness.announce().await;
@@ -1431,7 +1420,7 @@ async fn a_connect_timeout_names_what_is_missing() {
             .voice
             .connect(&ConnectRequest {
                 timeout,
-                ..harness.request()
+                ..Harness::request()
             })
             .unwrap();
         match offered {
@@ -1590,7 +1579,7 @@ async fn closing_the_core_ends_without_a_leave_and_drops_the_lane() {
     assert!(sink.is_closed());
     assert_eq!(harness.pacer.lanes(), 0);
     assert!(matches!(
-        harness.voice.connect(&harness.request()),
+        harness.voice.connect(&Harness::request()),
         Err(CoreError::Closed)
     ));
 }
@@ -2623,7 +2612,7 @@ impl Harness {
             sequence,
             u32::from(sequence) * 960,
             payload,
-            Sealing::default(),
+            &Sealing::default(),
         );
     }
 
@@ -2923,7 +2912,7 @@ async fn the_speech_hangover_is_checked_against_its_bounds() {
     let hangover = |duration| harness.voice.set_speech_hangover(guild(), duration);
 
     for refused in [
-        FRAME - Duration::from_nanos(1),
+        FRAME.saturating_sub(Duration::from_nanos(1)),
         Duration::from_secs(10) + FRAME,
     ] {
         assert!(

@@ -3,7 +3,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::Instant;
 
-const BUDGET_PERIOD: Duration = Duration::from_secs(24 * 60 * 60);
+const BUDGET_PERIOD: Duration = Duration::from_hours(24);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IdentifyLimit {

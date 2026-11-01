@@ -206,6 +206,7 @@ impl Strip {
         self.carried < self.carry.len()
     }
 
+    #[expect(clippy::float_cmp)]
     fn passes(&self) -> bool {
         self.gain == 1.0
             && self.target == 1.0
@@ -265,6 +266,7 @@ impl Strip {
         let (sum, _) = sum.as_chunks_mut::<CHANNELS>();
         let (frame, _) = self.frame.as_chunks::<CHANNELS>();
         for (index, (mixed, frame)) in sum.iter_mut().zip(frame).enumerate() {
+            #[expect(clippy::cast_precision_loss)]
             let gain = start + change * ((index + 1) as f32 / FRAME_SAMPLES as f32);
             mixed
                 .iter_mut()
@@ -379,7 +381,7 @@ mod tests {
                         .as_chunks::<2>()
                         .0
                         .iter()
-                        .all(|[left, right]| left == right)
+                        .all(|[left, right]| left.to_bits() == right.to_bits())
                 );
                 assert!(frame.iter().any(|sample| *sample != 0.0));
             }
@@ -431,9 +433,9 @@ mod tests {
         mixer.mix(&sinks).unwrap();
 
         let left: Vec<f32> = mixer.sum.iter().step_by(2).copied().collect();
-        for (index, sample) in left.iter().enumerate() {
-            let expected = 0.5 * (1.0 - (index + 1) as f32 / 960.0);
-            assert!((sample - expected).abs() < 1e-6, "sample {index}: {sample}");
+        for (step, sample) in (1_u16..).zip(&left) {
+            let expected = 0.5 * (1.0 - f32::from(step) / 960.0);
+            assert!((sample - expected).abs() < 1e-6, "sample {step}: {sample}");
         }
         assert_eq!(left[959], 0.0);
     }

@@ -141,14 +141,14 @@ impl Sfu {
         sequence: u16,
         timestamp: u32,
         payload: &[u8],
-        send: Sealing,
+        send: &Sealing,
     ) {
         let packet = {
             let mut state = self.shared.state.lock();
             let nonce = state.nonce;
             state.nonce = nonce.wrapping_add(1);
             let cipher = state.keys.last().expect("send needs a registered key");
-            seal(cipher, nonce, ssrc, sequence, timestamp, payload, &send)
+            seal(cipher, nonce, ssrc, sequence, timestamp, payload, send)
         };
         self.send_raw(&packet);
     }
@@ -242,9 +242,8 @@ impl Drop for Sfu {
 fn serve(socket: &UdpSocket, shared: &Shared) {
     let mut buffer = [0; 2048];
     while !shared.stop.load(Ordering::Relaxed) {
-        let (len, from) = match socket.recv_from(&mut buffer) {
-            Ok(received) => received,
-            Err(_) => continue,
+        let Ok((len, from)) = socket.recv_from(&mut buffer) else {
+            continue;
         };
         let at = Instant::now();
         let datagram = &buffer[..len];
@@ -337,14 +336,14 @@ mod tests {
             9,
             960,
             b"opus",
-            Sealing {
+            &Sealing {
                 extension: Some(vec![0x10, 0xAA]),
                 padding: 3,
                 csrcs: 2,
                 marker: true,
             },
         );
-        sfu.send(SSRC, 10, 1920, b"next", Sealing::default());
+        sfu.send(SSRC, 10, 1920, b"next", &Sealing::default());
         sfu.send_raw(b"rtcp");
 
         let mut first = receive();

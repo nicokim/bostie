@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const SLOT: Duration = Duration::from_secs(60);
-const WINDOW: Duration = Duration::from_secs(11 * 60);
+const WINDOW: Duration = Duration::from_mins(11);
 const WARN_AT: [u32; 3] = [1_000, 5_000, 9_000];
 const REFUSE_AT: u32 = 9_500;
 const RESUME_BELOW: u32 = 9_000;
@@ -75,11 +75,11 @@ mod tests {
         let mut invalid = InvalidRequests::default();
 
         record(&mut invalid, 600, start);
-        record(&mut invalid, 400, start + Duration::from_secs(5 * 60));
+        record(&mut invalid, 400, start + Duration::from_mins(5));
 
-        assert_eq!(invalid.count(start + Duration::from_secs(10 * 60)), 1_000);
-        assert_eq!(invalid.count(start + Duration::from_secs(11 * 60)), 400);
-        assert_eq!(invalid.count(start + Duration::from_secs(16 * 60)), 0);
+        assert_eq!(invalid.count(start + Duration::from_mins(10)), 1_000);
+        assert_eq!(invalid.count(start + Duration::from_mins(11)), 400);
+        assert_eq!(invalid.count(start + Duration::from_mins(16)), 0);
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(record(&mut invalid, 9_200, start), [1_000, 5_000, 9_000]);
         assert!(record(&mut invalid, 100, start).is_empty());
 
-        let later = start + Duration::from_secs(11 * 60);
+        let later = start + Duration::from_mins(11);
         assert_eq!(record(&mut invalid, 1_000, later), [1_000]);
     }
 

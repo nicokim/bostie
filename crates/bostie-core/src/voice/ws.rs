@@ -170,7 +170,7 @@ impl VoiceSocket {
                 return Received::Frame(proto::parse_text(message.as_payload()));
             }
             if message.is_binary() {
-                return Received::Frame(proto::parse_binary(message.into_payload().into()));
+                return Received::Frame(proto::parse_binary(&message.into_payload().into()));
             }
         }
     }
