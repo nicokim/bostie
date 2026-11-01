@@ -1,9 +1,9 @@
 mod bell;
 mod error;
-pub mod gateway;
+pub(crate) mod gateway;
 mod ids;
-pub mod inbox;
-pub mod rest;
+pub(crate) mod inbox;
+pub(crate) mod rest;
 mod runtime;
 mod tasks;
 pub mod voice;

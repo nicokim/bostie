@@ -1,29 +1,29 @@
-pub mod close;
-pub mod codec;
-pub mod connection;
-pub mod convert;
-pub mod crypto;
-pub mod dave;
-pub mod media;
-pub mod mixer;
-pub mod pacer;
-pub mod playout;
-pub mod proto;
-pub mod receive;
-pub mod receiver;
-pub mod rtp;
-pub mod session;
-pub mod sink;
-pub mod source;
-pub mod speech;
-pub mod tap;
+pub(crate) mod close;
+pub(crate) mod codec;
+pub(crate) mod connection;
+pub(crate) mod convert;
+pub(crate) mod crypto;
+pub(crate) mod dave;
+pub(crate) mod media;
+pub(crate) mod mixer;
+pub(crate) mod pacer;
+pub(crate) mod playout;
+pub(crate) mod proto;
+pub(crate) mod receive;
+pub(crate) mod receiver;
+pub(crate) mod rtp;
+pub(crate) mod session;
+pub(crate) mod sink;
+pub(crate) mod source;
+pub(crate) mod speech;
+pub(crate) mod tap;
 #[cfg(test)]
-pub mod testkit;
+pub(crate) mod testkit;
 #[cfg(test)]
 mod tests;
 pub mod types;
-pub mod udp;
-pub mod ws;
+pub(crate) mod udp;
+pub(crate) mod ws;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -41,16 +41,18 @@ use tokio::task::JoinHandle;
 use tokio_websockets::Connector;
 use tracing::{debug, error};
 
+pub use self::codec::FrameEncoder;
 pub use self::connection::HistoryEntry;
 use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
-use self::pacer::{PacerPool, Seat, ThreadLoad};
+pub use self::pacer::ThreadLoad;
+use self::pacer::{PacerPool, Seat};
 use self::receive::Reception;
-use self::receiver::Receiver;
-use self::sink::Sink;
-use self::source::Source;
+pub use self::receiver::{Ended, Item, ReceiveRead, Receiver};
+pub use self::sink::Sink;
 use self::source::http::Http;
+pub use self::source::{Source, SourceRead};
 use self::tap::GatewayTap;
 use self::types::{
     ConnectRequest, DisconnectReason, EncoderSettings, ReceiveOptions, SPEECH_HANGOVERS,

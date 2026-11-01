@@ -115,6 +115,7 @@ impl Encoder {
         })
     }
 
+    #[cfg(test)]
     pub fn settings(&self) -> EncoderSettings {
         self.settings
     }

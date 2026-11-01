@@ -201,6 +201,7 @@ impl PacerPool {
         load.lanes.store(lanes.len(), Ordering::Relaxed);
     }
 
+    #[cfg(test)]
     pub fn assign(&self, lane: LaneFn) -> Result<usize, CoreError> {
         self.place(Assignment::new(lane, None))
             .map(|seat| seat.thread())
@@ -235,6 +236,7 @@ impl PacerPool {
         Ok(seat)
     }
 
+    #[cfg(test)]
     pub fn lanes(&self) -> usize {
         self.threads().iter().map(|thread| thread.lanes).sum()
     }

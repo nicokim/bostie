@@ -201,6 +201,7 @@ impl Info {
         self.view.lock().clone()
     }
 
+    #[cfg(test)]
     pub fn status(&self) -> VoiceStatus {
         self.view.lock().status
     }
