@@ -79,6 +79,7 @@ from bostie.models import (
     VoiceState,
 )
 from bostie.router import Router
+from bostie.sync import SyncResult
 
 __all__ = [
     "ActionRow",
@@ -153,6 +154,7 @@ __all__ = [
     "ServerError",
     "ShardingRequired",
     "StickerItem",
+    "SyncResult",
     "ThreadMetadata",
     "TransportError",
     "UnavailableGuild",
