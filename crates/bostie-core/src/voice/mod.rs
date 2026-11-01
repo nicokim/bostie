@@ -305,7 +305,7 @@ impl Voice {
 
     pub fn dave(&self, guild: GuildId) -> Result<DaveInfo, CoreError> {
         let media = self.media(guild)?;
-        Ok(media.dave_view.lock().info.clone())
+        Ok(media.dave_info())
     }
 
     pub fn verification_code(&self, guild: GuildId, user: UserId) -> Result<String, CoreError> {

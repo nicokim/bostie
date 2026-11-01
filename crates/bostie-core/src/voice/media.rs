@@ -51,9 +51,9 @@ pub struct Transport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DaveView {
-    pub info: DaveInfo,
-    pub session_built: bool,
+struct DaveView {
+    info: DaveInfo,
+    session_built: bool,
 }
 
 impl DaveView {
@@ -77,9 +77,9 @@ pub struct Media {
     stall_after: Duration,
     arrival_limit: usize,
     pub transport: Mutex<Option<Arc<Transport>>>,
-    pub gate: AtomicU8,
+    gate: AtomicU8,
     pub dave: Mutex<Dave>,
-    pub dave_view: Mutex<DaveView>,
+    dave_view: Mutex<DaveView>,
     pub sinks: Mutex<Vec<Arc<Sink>>>,
     pub encoder: Mutex<Option<EncoderSettings>>,
     pub others: AtomicUsize,
@@ -304,6 +304,10 @@ impl Media {
         *self.dave_view.lock() = DaveView::of(dave);
     }
 
+    pub fn dave_info(&self) -> DaveInfo {
+        self.dave_view.lock().info.clone()
+    }
+
     pub fn protocol_version(&self) -> u16 {
         self.dave_view.lock().info.protocol_version
     }
@@ -449,10 +453,11 @@ impl Lane {
     }
 
     fn send(&mut self, transport: &Transport, now: Instant) {
-        let media = Arc::clone(&self.media);
-        let mut mode = media.gate();
+        let media;
+        let mut mode = self.media.gate();
         let mut dave = None;
         if mode == SendMode::Encrypt {
+            media = Arc::clone(&self.media);
             let Some(guard) = media.dave.try_lock() else {
                 self.hold(now);
                 return;
