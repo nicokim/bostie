@@ -62,7 +62,7 @@ from bostie.models import (
     decode,
 )
 from bostie.models.message import in_guild
-from bostie.router import RAW_EVENT_NAME, EventClass, Listener, Router
+from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 from bostie.voice.formats import Defaults
@@ -91,10 +91,10 @@ type Handler = Callable[..., Coroutine[Any, Any, None]]
 
 
 @dataclass(frozen=True, slots=True)
-class _Waiter:
-    event: type[EventClass]
-    check: Callable[[Any], bool] | None
-    future: asyncio.Future[Any]
+class _Waiter[E: AnyEvent]:
+    event: type[E]
+    check: Callable[[E], bool] | None
+    future: asyncio.Future[E]
 
 
 class Bot(Router):
@@ -134,7 +134,7 @@ class Bot(Router):
         self._closing: asyncio.Task[None] | None = None
         self._ready = False
         self._ready_waiters: list[asyncio.Future[None]] = []
-        self._waiters: dict[str, list[_Waiter]] = {}
+        self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._replaying = False
         self._failed_dispatches: set[str] = set()
@@ -249,7 +249,7 @@ class Bot(Router):
         finally:
             self._ready_waiters.remove(future)
 
-    async def wait_for[E: Event | VoiceEvent](
+    async def wait_for[E: AnyEvent](
         self,
         event: type[E],
         *,
@@ -259,13 +259,14 @@ class Bot(Router):
 
         An exception from `check` is raised here; bound the wait with asyncio.timeout().
         """
-        waiter = _Waiter(event, check, asyncio.get_running_loop().create_future())
+        future: asyncio.Future[E] = asyncio.get_running_loop().create_future()
+        waiter = _Waiter(event, check, future)
         waiters = self._waiters.setdefault(event.NAME, [])
         waiters.append(waiter)
         if len(waiters) == 1:
             self._refresh_filter()
         try:
-            return cast(E, await waiter.future)
+            return await waiter.future
         finally:
             waiters.remove(waiter)
             if not waiters:
@@ -454,7 +455,7 @@ class Bot(Router):
     def _warn_about_privileged_intents(self) -> None:
         for listeners in self.listeners.values():
             for listener in listeners:
-                event = cast("type[Event] | None", listener.event)
+                event = listener.event
                 if event is None:
                     continue
                 missing = event.INTENTS & PRIVILEGED_INTENTS & ~self._intents
@@ -552,7 +553,7 @@ class Bot(Router):
         for key in (name, RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
                 if not waiter.future.done():
-                    _resolve(waiter, event(cast("type[Event]", waiter.event)))
+                    _resolve(waiter, event(waiter.event))
         if name == InteractionCreate.NAME:
             created = event(InteractionCreate)
             if created is not None:
@@ -753,7 +754,7 @@ def _resolve_token(token: str | None) -> str:
     return token.removeprefix("Bot ")
 
 
-def _resolve(waiter: _Waiter, event: Event | VoiceEvent | None) -> None:
+def _resolve[E: AnyEvent](waiter: _Waiter[E], event: E | None) -> None:
     if event is None:
         return
     try:
@@ -765,9 +766,7 @@ def _resolve(waiter: _Waiter, event: Event | VoiceEvent | None) -> None:
         waiter.future.set_result(event)
 
 
-async def _run_listener(
-    listener: Listener, event: Event | VoiceEvent, name: str
-) -> None:
+async def _run_listener(listener: Listener, event: AnyEvent, name: str) -> None:
     try:
         await listener.callback(event)
     except Exception:

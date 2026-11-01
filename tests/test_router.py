@@ -1,22 +1,11 @@
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 
 from bostie import Bot
 from bostie.errors import CommandDefinitionError
+from bostie.events import MessageCreate, MessageUpdate, RawEvent
 from bostie.router import Listener, Router
-
-
-class MessageCreate:
-    NAME: ClassVar[str] = "MESSAGE_CREATE"
-
-
-class MessageUpdate:
-    NAME: ClassVar[str] = "MESSAGE_UPDATE"
-
-
-class RawEvent:
-    NAME: ClassVar[str] = "*"
 
 
 class AppError(Exception):

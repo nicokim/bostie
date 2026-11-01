@@ -6,7 +6,6 @@ from types import EllipsisType, UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
-    Protocol,
     TypeAliasType,
     Union,
     get_args,
@@ -18,19 +17,18 @@ from bostie.commands import Command, CommandCallback, Group
 from bostie.custom_id import ComponentRoute
 from bostie.enums import Permissions
 from bostie.errors import CommandDefinitionError
+from bostie.events import Event, RawEvent
+from bostie.voice.events import VoiceEvent
 
 if TYPE_CHECKING:
     from bostie.bot import Bot
 
-RAW_EVENT_NAME = "*"
+RAW_EVENT_NAME = RawEvent.NAME
 
+type AnyEvent = Event | VoiceEvent
 type ListenerCallback = Callable[[Any], Coroutine[Any, Any, None]]
+type EventHandler[E: AnyEvent] = Callable[[E], Coroutine[Any, Any, None]]
 type ErrorHandler = Callable[[Any, Any], Coroutine[Any, Any, None]]
-
-
-class EventClass(Protocol):
-    @property
-    def NAME(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +36,7 @@ class Listener:
     """A registered listener; `event` is the class to decode, or None for RawEvent."""
 
     callback: ListenerCallback
-    event: type[EventClass] | None
+    event: type[AnyEvent] | None
 
 
 class Router:
@@ -113,12 +111,21 @@ class Router:
         return group
 
     @overload
-    def listen[L: ListenerCallback](self, listener: L, /) -> L: ...
+    def listen[E: AnyEvent](
+        self, event: type[E], /
+    ) -> Callable[[EventHandler[E]], EventHandler[E]]: ...
 
     @overload
     def listen[L: ListenerCallback](
-        self, *events: type[EventClass]
+        self,
+        first: type[AnyEvent],
+        second: type[AnyEvent],
+        /,
+        *more: type[AnyEvent],
     ) -> Callable[[L], L]: ...
+
+    @overload
+    def listen[L: ListenerCallback](self, listener: L, /) -> L: ...
 
     def listen(self, *targets: Any) -> Any:
         """Register a listener for the events in its annotation, or the given ones."""
@@ -220,11 +227,11 @@ class Router:
 
     def _listen[L: ListenerCallback](self, listener: L, events: tuple[Any, ...]) -> L:
         for event in events or _annotated_events(listener):
-            name = getattr(event, "NAME", None)
-            if not isinstance(name, str):
+            if not (isinstance(event, type) and issubclass(event, (Event, VoiceEvent))):
                 raise TypeError(f"{event!r} is not an event class")
             self._add_listener(
-                name, Listener(listener, None if name == RAW_EVENT_NAME else event)
+                event.NAME,
+                Listener(listener, None if event.NAME == RAW_EVENT_NAME else event),
             )
         return listener
 
