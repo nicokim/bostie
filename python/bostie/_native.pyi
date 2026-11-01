@@ -1,7 +1,41 @@
 from collections.abc import Buffer
-from typing import Literal, final
+from typing import Final, Literal, final
 
-__all__ = ["Core", "OpusEncoder", "Receiver", "Sink", "Source", "versions"]
+__all__ = [
+    "DECODE_RATES",
+    "MAX_BITRATE",
+    "MAX_BUFFER",
+    "MAX_COMPLEXITY",
+    "MAX_JITTER",
+    "MAX_RATE",
+    "MAX_RESAMPLER_BLOCK",
+    "MAX_SPEECH_HANGOVER",
+    "MIN_BITRATE",
+    "MIN_BUFFER",
+    "MIN_RATE",
+    "MIN_SPEECH_HANGOVER",
+    "SAMPLE_RATE",
+    "Core",
+    "OpusEncoder",
+    "Receiver",
+    "Sink",
+    "Source",
+    "versions",
+]
+
+SAMPLE_RATE: Final[int]
+MIN_RATE: Final[int]
+MAX_RATE: Final[int]
+MAX_RESAMPLER_BLOCK: Final[int]
+DECODE_RATES: Final[list[int]]
+MIN_BITRATE: Final[int]
+MAX_BITRATE: Final[int]
+MAX_COMPLEXITY: Final[int]
+MIN_BUFFER: Final[float]
+MAX_BUFFER: Final[float]
+MIN_SPEECH_HANGOVER: Final[float]
+MAX_SPEECH_HANGOVER: Final[float]
+MAX_JITTER: Final[float]
 
 type FailureKind = Literal["transport", "invalid_token", "request_budget", "bug"]
 type VoiceStateName = Literal[

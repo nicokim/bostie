@@ -562,8 +562,37 @@ impl From<Error> for PyErr {
 
 #[pymodule]
 mod _native {
+    use bostie_core::voice::types;
+
     #[pymodule_export]
     use super::NativeCore;
     #[pymodule_export]
     use super::voice::{NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions};
+
+    #[pymodule_export]
+    const SAMPLE_RATE: u32 = types::SAMPLE_RATE;
+    #[pymodule_export]
+    const MIN_RATE: u32 = *types::RATES.start();
+    #[pymodule_export]
+    const MAX_RATE: u32 = *types::RATES.end();
+    #[pymodule_export]
+    const MAX_RESAMPLER_BLOCK: u32 = types::MAX_RESAMPLER_BLOCK;
+    #[pymodule_export]
+    const DECODE_RATES: [u32; 5] = types::DECODE_RATES;
+    #[pymodule_export]
+    const MIN_BITRATE: u32 = *types::BITRATES.start();
+    #[pymodule_export]
+    const MAX_BITRATE: u32 = *types::BITRATES.end();
+    #[pymodule_export]
+    const MAX_COMPLEXITY: u8 = types::MAX_COMPLEXITY;
+    #[pymodule_export]
+    const MIN_BUFFER: f64 = types::BUFFERS.start().as_secs_f64();
+    #[pymodule_export]
+    const MAX_BUFFER: f64 = types::BUFFERS.end().as_secs_f64();
+    #[pymodule_export]
+    const MIN_SPEECH_HANGOVER: f64 = types::SPEECH_HANGOVERS.start().as_secs_f64();
+    #[pymodule_export]
+    const MAX_SPEECH_HANGOVER: f64 = types::SPEECH_HANGOVERS.end().as_secs_f64();
+    #[pymodule_export]
+    const MAX_JITTER: f64 = types::MAX_JITTER.as_secs_f64();
 }

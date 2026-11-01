@@ -21,13 +21,13 @@ pub const MAX_DAVE_PROTOCOL_VERSION: u16 = 1;
 pub const DECODE_RATES: [u32; 5] = [8_000, 12_000, 16_000, 24_000, 48_000];
 pub const MAX_JITTER: Duration = Duration::from_secs(1);
 pub const SPEECH_HANGOVERS: RangeInclusive<Duration> = FRAME..=Duration::from_secs(10);
+pub const BITRATES: RangeInclusive<u32> = 500..=512_000;
+pub const MAX_COMPLEXITY: u8 = 10;
+pub const RATES: RangeInclusive<u32> = 8_000..=192_000;
+pub const MAX_RESAMPLER_BLOCK: u32 = 960;
+pub const BUFFERS: RangeInclusive<Duration> = FRAME..=Duration::from_secs(60);
 
-const BITRATES: RangeInclusive<u32> = 500..=512_000;
 const MAX_PACKET_LOSS: u8 = 100;
-const MAX_COMPLEXITY: u8 = 10;
-const RATES: RangeInclusive<u32> = 8_000..=192_000;
-const MAX_RESAMPLER_BLOCK: u32 = 960;
-const BUFFERS: RangeInclusive<Duration> = FRAME..=Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceStatus {

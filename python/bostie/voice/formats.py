@@ -2,21 +2,22 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from bostie import _native
 from bostie.enums import SpeakingFlags
 
-SAMPLE_RATE = 48_000
-MIN_RATE = 8_000
-MAX_RATE = 192_000
-MAX_RESAMPLER_BLOCK = 960
-MIN_BITRATE = 500
-MAX_BITRATE = 512_000
-MAX_COMPLEXITY = 10
-MIN_BUFFER = 0.02
-MAX_BUFFER = 60.0
-MIN_SPEECH_HANGOVER = 0.02
-MAX_SPEECH_HANGOVER = 10.0
-MAX_JITTER = 1.0
-DECODE_RATES = frozenset({8_000, 12_000, 16_000, 24_000, 48_000})
+SAMPLE_RATE = _native.SAMPLE_RATE
+MIN_RATE = _native.MIN_RATE
+MAX_RATE = _native.MAX_RATE
+MAX_RESAMPLER_BLOCK = _native.MAX_RESAMPLER_BLOCK
+MIN_BITRATE = _native.MIN_BITRATE
+MAX_BITRATE = _native.MAX_BITRATE
+MAX_COMPLEXITY = _native.MAX_COMPLEXITY
+MIN_BUFFER = _native.MIN_BUFFER
+MAX_BUFFER = _native.MAX_BUFFER
+MIN_SPEECH_HANGOVER = _native.MIN_SPEECH_HANGOVER
+MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
+MAX_JITTER = _native.MAX_JITTER
+DECODE_RATES = frozenset(_native.DECODE_RATES)
 
 
 @dataclass(frozen=True, slots=True)
