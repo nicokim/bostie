@@ -1,0 +1,23 @@
+{
+  "id": "1565104621892631073",
+  "guild_id": "1335172792320131073",
+  "name": "Mention spam",
+  "creator_id": "308882807193731073",
+  "event_type": 1,
+  "trigger_type": 5,
+  "trigger_metadata": {
+    "mention_total_limit": 5,
+    "mention_raid_protection_enabled": true
+  },
+  "actions": [
+    {
+      "type": 1,
+      "metadata": {
+        "custom_message": null
+      }
+    }
+  ],
+  "enabled": false,
+  "exempt_roles": [],
+  "exempt_channels": []
+}

@@ -84,12 +84,28 @@ from bostie.models.message import (
     build_message,
     decode_message,
 )
+from bostie.models.moderation import (
+    AuditLogChange,
+    AuditLogEntry,
+    AuditLogEntryInfo,
+    AutoModerationAction,
+    AutoModerationActionMetadata,
+    AutoModerationRule,
+    AutoModerationTriggerMetadata,
+)
 from bostie.models.user import PartialUser, User
 
 __all__ = [
     "ActionRow",
     "AllowedMentions",
     "Attachment",
+    "AuditLogChange",
+    "AuditLogEntry",
+    "AuditLogEntryInfo",
+    "AutoModerationAction",
+    "AutoModerationActionMetadata",
+    "AutoModerationRule",
+    "AutoModerationTriggerMetadata",
     "AutocompleteInteraction",
     "Builder",
     "Button",

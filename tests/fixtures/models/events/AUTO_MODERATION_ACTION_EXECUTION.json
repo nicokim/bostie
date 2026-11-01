@@ -1,0 +1,18 @@
+{
+  "guild_id": "1335172792320131073",
+  "action": {
+    "type": 2,
+    "metadata": {
+      "channel_id": "1335175308902531073"
+    }
+  },
+  "rule_id": "1565104381239831073",
+  "rule_trigger_type": 1,
+  "user_id": "820774541721731073",
+  "channel_id": "1335173295636611073",
+  "message_id": "1565110232613631073",
+  "alert_system_message_id": "1565110233251231073",
+  "content": "my dog is a good boy",
+  "matched_keyword": "*dog",
+  "matched_content": "dog"
+}

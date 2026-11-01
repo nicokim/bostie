@@ -49,7 +49,12 @@ ENUM_KEYS = {
     "premium_tier",
     "nsfw_level",
     "format_type",
+    "event_type",
+    "trigger_type",
+    "rule_trigger_type",
+    "action_type",
 }
+ENUM_LIST_KEYS = {"channel_types", "presets"}
 FLAG_KEYS = {
     "flags",
     "flags_new",
@@ -233,7 +238,7 @@ def test_unknown_enum_values_and_flag_bits_are_kept(
         for key, item in value.items():
             if key in ENUM_KEYS and isinstance(item, int):
                 value[key] = 9999
-            elif key == "channel_types":
+            elif key in ENUM_LIST_KEYS:
                 value[key] = [9999]
             elif key in FLAG_KEYS:
                 value[key] = (

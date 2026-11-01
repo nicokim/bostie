@@ -4,8 +4,16 @@ from typing import Any, ClassVar, Self, dataclass_transform, override
 
 import msgspec
 
-from bostie.enums import ChannelType, Intents, MemberFlags
+from bostie.enums import (
+    AutoModerationTriggerType,
+    ChannelType,
+    Intents,
+    MemberFlags,
+)
 from bostie.models import (
+    AuditLogEntry,
+    AutoModerationAction,
+    AutoModerationRule,
     Channel,
     Guild,
     Interaction,
@@ -382,6 +390,88 @@ class VoiceServerUpdate(Event, kw_only=True):
     endpoint: str | None
 
 
+class _AutoModerationRuleEvent(Event, kw_only=True):
+    INTENTS = Intents.AUTO_MODERATION_CONFIGURATION
+
+    rule: AutoModerationRule
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id, raw_json=data, rule=decode(AutoModerationRule, data)
+        )
+
+
+class AutoModerationRuleCreate(_AutoModerationRuleEvent, kw_only=True):
+    NAME = "AUTO_MODERATION_RULE_CREATE"
+
+
+class AutoModerationRuleUpdate(_AutoModerationRuleEvent, kw_only=True):
+    NAME = "AUTO_MODERATION_RULE_UPDATE"
+
+
+class AutoModerationRuleDelete(_AutoModerationRuleEvent, kw_only=True):
+    NAME = "AUTO_MODERATION_RULE_DELETE"
+
+
+class AutoModerationActionExecution(Event, kw_only=True):
+    """A rule acted on a user's content; `content` needs the MESSAGE_CONTENT intent."""
+
+    NAME = "AUTO_MODERATION_ACTION_EXECUTION"
+    INTENTS = Intents.AUTO_MODERATION_EXECUTION
+
+    guild_id: int
+    action: AutoModerationAction
+    rule_id: int
+    rule_trigger_type: AutoModerationTriggerType
+    user_id: int
+    channel_id: int | None = None
+    message_id: int | None = None
+    alert_system_message_id: int | None = None
+    content: str
+    matched_keyword: str | None
+    matched_content: str | None
+
+
+class _AuditLogEntryPayload(AuditLogEntry, kw_only=True):
+    guild_id: int
+
+
+class AuditLogEntryCreate(Event, kw_only=True):
+    NAME = "GUILD_AUDIT_LOG_ENTRY_CREATE"
+    INTENTS = Intents.GUILD_MODERATION
+
+    guild_id: int
+    entry: AuditLogEntry
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _AuditLogEntryPayload = decoder(_AuditLogEntryPayload).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            guild_id=payload.guild_id,
+            entry=_narrow(AuditLogEntry, payload),
+        )
+
+
+class _BanEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_MODERATION
+
+    guild_id: int
+    user: User
+
+
+class BanAdd(_BanEvent, kw_only=True):
+    NAME = "GUILD_BAN_ADD"
+
+
+class BanRemove(_BanEvent, kw_only=True):
+    NAME = "GUILD_BAN_REMOVE"
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -421,6 +511,13 @@ EVENTS: dict[str, type[Event]] = {
         InteractionCreate,
         VoiceStateUpdate,
         VoiceServerUpdate,
+        AutoModerationRuleCreate,
+        AutoModerationRuleUpdate,
+        AutoModerationRuleDelete,
+        AutoModerationActionExecution,
+        AuditLogEntryCreate,
+        BanAdd,
+        BanRemove,
     )
 }
 

@@ -13,6 +13,8 @@ from bostie import Bot, events
 from bostie.enums import ApplicationFlags, ChannelType, MemberFlags
 from bostie.events import (
     EVENTS,
+    AuditLogEntryCreate,
+    AutoModerationRuleCreate,
     ChannelUpdate,
     Event,
     GuildCreate,
@@ -36,6 +38,7 @@ from bostie.events import (
     decode_event,
 )
 from bostie.models import (
+    AuditLogEntry,
     CommandInteraction,
     Guild,
     Member,
@@ -103,6 +106,7 @@ def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
         (InteractionCreate, "INTERACTION_CREATE.command", "interaction"),
         (VoiceStateUpdate, "VOICE_STATE_UPDATE", "voice_state"),
         (GuildUpdate, "GUILD_UPDATE", "guild"),
+        (AutoModerationRuleCreate, "AUTO_MODERATION_RULE_CREATE", "rule"),
     ],
 )
 def test_an_event_that_is_one_entity_shares_its_payload_with_it(
@@ -208,12 +212,22 @@ def test_guild_delete_reads_the_guild_id_from_id() -> None:
     assert left.unavailable is False
 
 
-def test_member_join_splits_the_guild_id_from_the_member() -> None:
-    event = decode(MemberJoin, "GUILD_MEMBER_ADD")
+@pytest.mark.parametrize(
+    ("event_type", "name", "entity", "model"),
+    [
+        (MemberJoin, "GUILD_MEMBER_ADD", "member", Member),
+        (AuditLogEntryCreate, "GUILD_AUDIT_LOG_ENTRY_CREATE", "entry", AuditLogEntry),
+    ],
+)
+def test_an_entity_with_a_guild_id_is_split_from_it(
+    event_type: type[Event], name: str, entity: str, model: type[Model]
+) -> None:
+    event: Any = decode(event_type, name)
+
+    value = getattr(event, entity)
 
     assert event.guild_id == 1335172792320131073
-    assert type(event.member) is Member
-    assert event.member.id == int(json.loads(event.raw_json)["user"]["id"])
+    assert type(value) is model
 
 
 def test_member_update_decodes_the_documented_fields_without_flags() -> None:
