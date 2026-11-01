@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
@@ -82,15 +82,6 @@ counters!(ReceiveCounters {
     rx_panics,
 });
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct UserCounters {
-    pub packets: u64,
-    pub lost: u64,
-    pub duplicates: u64,
-    pub decrypt_failures: u64,
-    pub invalid_payloads: u64,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arrival {
     pub ssrc: u32,
@@ -155,7 +146,6 @@ pub struct Media {
     pub speech_hangover: AtomicU64,
     pub speech_activity: AtomicBool,
     pub receive: ReceiveCounters,
-    pub users: Mutex<HashMap<UserId, UserCounters>>,
     #[cfg(test)]
     pub faults: Faults,
 }
@@ -196,7 +186,6 @@ impl Media {
             speech_hangover: AtomicU64::new(nanos(DEFAULT_SPEECH_HANGOVER)),
             speech_activity: AtomicBool::new(true),
             receive: ReceiveCounters::default(),
-            users: Mutex::new(HashMap::new()),
             #[cfg(test)]
             faults: Faults::default(),
         }

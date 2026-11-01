@@ -304,15 +304,6 @@ impl Rig {
             .1
     }
 
-    fn user_counters(&self, id: u64) -> UserCounters {
-        self.media
-            .users
-            .lock()
-            .get(&user(id))
-            .copied()
-            .unwrap_or_default()
-    }
-
     fn recovered(&self) -> bool {
         self.media.recover.notified().now_or_never().is_some()
     }
@@ -468,7 +459,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
     rig.send(ALICE_SSRC, 0, &garbage(0));
     let receiver = rig.open(only(&[ALICE], ReceiveFormat::Opus));
     rig.step();
-    let queued_before_the_receiver = (read(&receiver), rig.user_counters(ALICE));
+    let queued_before_the_receiver = read(&receiver);
     rig.send(BOB_SSRC, 0, &garbage(1));
     rig.step();
     let speech = rig.speech();
@@ -487,12 +478,13 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
     let switched_off = rig.speech();
     rig.send(BOB_SSRC, 2, &garbage(4));
     rig.step();
+    rig.now += rig.reception.tuning.hold;
+    rig.step();
 
     assert!(rig.speech().is_empty());
     assert_eq!(restarted, [(BOB, true, Duration::ZERO)]);
     assert_eq!(switched_off, [(BOB, false, FRAME)]);
-    assert!(queued_before_the_receiver.0.is_empty());
-    assert_eq!(queued_before_the_receiver.1.decrypt_failures, 0);
+    assert!(queued_before_the_receiver.is_empty());
     assert_eq!(
         speech,
         [(ALICE, true, Duration::ZERO), (BOB, true, Duration::ZERO)]
@@ -502,9 +494,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
         stopped,
         [(ALICE, false, FRAME * 2 + sixty_ms), (BOB, false, FRAME)]
     );
-    assert_eq!(rig.user_counters(BOB).decrypt_failures, 0);
-    assert_eq!(rig.user_counters(BOB).packets, 3);
-    assert_eq!(rig.user_counters(ALICE).decrypt_failures, 1);
+    assert_eq!(rig.counter("undecryptable"), 1);
 }
 
 #[test]
@@ -564,8 +554,6 @@ fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
         assert_eq!(still_held, 0, "{speaker}");
         assert_eq!(rig.counter("undecryptable"), 1, "{speaker}");
         assert_eq!(rig.counter("duplicates"), 1, "{speaker}");
-        let failures = [speaker, STRANGER].map(|id| rig.user_counters(id).decrypt_failures);
-        assert_eq!(failures, [12, 1], "{speaker}");
         assert!(read(&receiver).is_empty(), "{speaker}");
         assert!(!rig.recovered(), "{speaker}");
     }
@@ -870,7 +858,6 @@ fn a_failure_streak_requests_spaced_and_capped_recoveries() {
         }
         rig.step();
         assert!(!rig.recovered(), "{case}");
-        assert!(rig.user_counters(speaker).packets > 0, "{case}");
         let dropped_at_once = match case {
             "empty or unparseable" => ("invalid_payloads", tolerance * 2),
             "protocol version 0" => ("undecryptable", tolerance * 2),
@@ -939,42 +926,6 @@ fn lost_packets_become_lost_frames_and_longer_gaps_are_skipped() {
             }
         }
     }
-}
-
-#[test]
-fn each_user_counts_packets_losses_duplicates_and_invalid_payloads() {
-    let mut rig = Rig::new(tuning());
-    rig.map(ALICE_SSRC, ALICE);
-    let _receiver = rig.open(options(ReceiveFormat::Opus));
-    let packets = opus(4, 0.3);
-
-    for (sequence, payload) in [
-        (0, long(6)),
-        (1, packets[1].to_vec()),
-        (1, packets[1].to_vec()),
-        (3, packets[3].to_vec()),
-        (4, Vec::new()),
-        (5, vec![0; 12]),
-        (40_000, packets[2].to_vec()),
-    ] {
-        rig.send(ALICE_SSRC, sequence, &payload);
-    }
-    rig.step();
-
-    assert_eq!(
-        rig.user_counters(ALICE),
-        UserCounters {
-            packets: 7,
-            lost: 1,
-            duplicates: 1,
-            decrypt_failures: 0,
-            invalid_payloads: 3,
-        }
-    );
-    assert_eq!(
-        ["duplicates", "invalid_payloads", "late_packets"].map(|name| rig.counter(name)),
-        [1, 3, 1]
-    );
 }
 
 #[test]
@@ -1204,7 +1155,7 @@ fn a_new_transport_resets_stream_state_and_keeps_receivers() {
 }
 
 #[test]
-fn streams_and_users_unheard_for_the_stream_idle_are_forgotten() {
+fn streams_and_failure_streaks_unheard_for_the_stream_idle_are_forgotten() {
     let tolerance = ReceiveTuning::default().decrypt_tolerance;
     let tuning = ReceiveTuning {
         dave_grace: Duration::ZERO,
@@ -1214,31 +1165,6 @@ fn streams_and_users_unheard_for_the_stream_idle_are_forgotten() {
     let mut rig = Rig::new(tuning);
     let mut call = rig.group(&[ALICE]);
     rig.map(ALICE_SSRC, ALICE);
-    rig.map(BOB_SSRC, BOB);
-    rig.info.members.lock().insert(user(BOB));
-    rig.media.others.store(1, Ordering::Relaxed);
-    let listed = |rig: &Rig| {
-        let mut users: Vec<u64> = rig
-            .media
-            .users
-            .lock()
-            .keys()
-            .map(|&id| u64::from(id))
-            .collect();
-        users.sort_unstable();
-        users
-    };
-    rig.send(ALICE_SSRC, 0, &SILENCE_FRAME);
-    rig.send(BOB_SSRC, 0, &SILENCE_FRAME);
-    rig.step();
-    let heard = listed(&rig);
-    rig.now += tuning.stream_idle;
-    rig.step();
-    let after_the_idle = listed(&rig);
-    rig.info.members.lock().remove(&user(BOB));
-    rig.media.others.store(0, Ordering::Relaxed);
-    rig.step();
-    let after_bob_left = listed(&rig);
 
     let receiver = rig.open(options(ReceiveFormat::Opus));
     let packets = opus(2, 0.3);
@@ -1255,9 +1181,6 @@ fn streams_and_users_unheard_for_the_stream_idle_are_forgotten() {
     rig.send(ALICE_SSRC, 40_001, &call.speak(user(ALICE), &packets[1]));
     rig.step();
 
-    assert_eq!(heard, [ALICE, BOB]);
-    assert_eq!(after_the_idle, [BOB]);
-    assert!(after_bob_left.is_empty());
     assert_eq!(data(&read(&receiver)), packets);
     assert!(!recovered);
     assert_eq!(rig.counter("late_packets"), 0);

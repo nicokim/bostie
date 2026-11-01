@@ -48,7 +48,6 @@ pub struct Stream {
     anchor: Option<Anchor>,
     restarts: u64,
     last_packet: Option<i64>,
-    expected: u64,
 }
 
 impl Stream {
@@ -61,7 +60,6 @@ impl Stream {
             anchor: None,
             restarts: 0,
             last_packet: None,
-            expected: 0,
         }
     }
 
@@ -71,10 +69,6 @@ impl Stream {
 
     pub fn last_packet(&self) -> Option<i64> {
         self.last_packet
-    }
-
-    pub fn expected(&self) -> u64 {
-        self.expected
     }
 
     pub fn check(&mut self, sequence: u16) -> Check {
@@ -153,7 +147,6 @@ impl Stream {
             .highest
             .map_or(1, |highest| sequence.wrapping_sub(highest));
         if (1..=MAX_DROPOUT).contains(&ahead) {
-            self.expected = self.expected.saturating_add(u64::from(ahead));
             self.highest = Some(sequence);
         }
     }
@@ -598,7 +591,6 @@ mod tests {
                 .map(|&sequence| u64::from(start(sequence)))
                 .collect();
             assert_eq!(player.offsets(), offsets, "{samples} {lost} {pause}");
-            assert_eq!(player.stream.expected(), 12);
         }
 
         let mut player = Player::new(0);
@@ -653,10 +645,8 @@ mod tests {
         ] {
             assert_eq!(stream.check(sequence), check, "{sequence}");
         }
-        let expected = stream.expected();
         assert!(!stream.insert(steady(30), Check::Fresh));
         assert!(!stream.insert(steady(60), Check::Fresh));
-        assert_eq!(stream.expected(), expected);
     }
 
     #[test]

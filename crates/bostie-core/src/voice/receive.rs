@@ -20,7 +20,7 @@ use crate::voice::codec::{self, Decoder};
 use crate::voice::connection::Info;
 use crate::voice::crypto::ReplayWindow;
 use crate::voice::dave::{self, Dave, DecryptFailure};
-use crate::voice::media::{Arrival, Media, Transport, UserCounters, bump};
+use crate::voice::media::{Arrival, Media, Transport, bump};
 use crate::voice::pacer::Tick;
 use crate::voice::panic_message;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, is_before, to_samples};
@@ -163,8 +163,6 @@ struct Feed {
     own: bool,
     stream: Stream,
     created: i64,
-    received: u64,
-    reported_lost: u64,
     trimmed: Option<u16>,
 }
 
@@ -262,7 +260,6 @@ struct Subscriber {
 
 struct Context<'a> {
     media: &'a Media,
-    users: &'a mut HashMap<UserId, UserCounters>,
     scratch: &'a mut Vec<f32>,
     epoch: Instant,
     now: Instant,
@@ -270,7 +267,6 @@ struct Context<'a> {
     hangover: i64,
     max_conceal: i64,
     heard: bool,
-    changed: bool,
 }
 
 pub struct Reception {
@@ -317,11 +313,9 @@ struct State {
     scratch: Vec<f32>,
     plain: Vec<u8>,
     payloads: BytesMut,
-    users: HashMap<UserId, UserCounters>,
     heard_at: HashMap<UserId, i64>,
     forget_at: Option<i64>,
     member_count: usize,
-    users_changed: bool,
     undecryptable: u64,
     warned: Option<Instant>,
     next_feed: u64,
@@ -425,11 +419,9 @@ impl State {
             scratch: Vec::new(),
             plain: Vec::new(),
             payloads: BytesMut::new(),
-            users: HashMap::new(),
             heard_at: HashMap::new(),
             forget_at: None,
             member_count: 0,
-            users_changed: false,
             undecryptable: 0,
             warned: None,
             next_feed: 0,
@@ -477,7 +469,6 @@ impl State {
         self.release(now, now48, skipped, deadline, hangover, transport.is_some());
         self.watch(now);
         self.prune(now, now48);
-        self.publish_users();
         self.warn_undecryptable(now);
         self.shrink_buffers();
         true
@@ -693,9 +684,6 @@ impl State {
     ) {
         let own = arrival.own;
         if !own {
-            let counters = self.users.entry(user).or_default();
-            counters.packets = counters.packets.saturating_add(1);
-            self.users_changed = true;
             self.heard_at.insert(user, now48);
         }
         let wanted = self.wanted(user, own);
@@ -725,8 +713,6 @@ impl State {
         };
         if check == Check::Duplicate {
             bump(&self.media.receive.duplicates);
-            let counters = self.users.entry(user).or_default();
-            counters.duplicates = counters.duplicates.saturating_add(1);
             return;
         }
         self.admitted.insert(admitted);
@@ -736,7 +722,7 @@ impl State {
                 && !dave::has_marker(payload)
                 && codec::packet_samples(payload).is_none());
         if refused {
-            self.invalid(user);
+            bump(&self.media.receive.invalid_payloads);
             return;
         }
         let plain = (own
@@ -782,7 +768,6 @@ impl State {
                 None => break,
             }
         }
-        self.users_changed = true;
         if !settling {
             self.request_recovery(now);
         }
@@ -866,13 +851,10 @@ impl State {
                     item.plain = Some(share(&mut self.payloads, &self.plain));
                 }
                 Err(failure) => {
-                    failed(
-                        &mut self.streaks,
-                        &mut self.users,
-                        item.user,
-                        failure,
-                        counting,
-                    );
+                    if counting && failure != DecryptFailure::NoDecryptor {
+                        let streak = self.streaks.entry(item.user).or_default();
+                        streak.failures = streak.failures.saturating_add(1);
+                    }
                     if failure == DecryptFailure::Unencrypted || protocol_version == 0 {
                         bump(&self.media.receive.undecryptable);
                     } else {
@@ -983,7 +965,7 @@ impl State {
             return;
         };
         let Some(samples) = samples else {
-            self.invalid(user);
+            bump(&self.media.receive.invalid_payloads);
             return;
         };
         let Some(feed) = self.streams.get_mut(&(arrival.ssrc, user)) else {
@@ -997,7 +979,6 @@ impl State {
             payload: Some(plain.clone()),
         };
         if feed.stream.insert(slot, check) {
-            feed.received = feed.received.saturating_add(1);
             let own = feed.own;
             let played = self.subscribers.values().any(|subscriber| {
                 subscriber.out.format != ReceiveFormat::Packets
@@ -1075,13 +1056,6 @@ impl State {
         }
     }
 
-    fn invalid(&mut self, user: UserId) {
-        bump(&self.media.receive.invalid_payloads);
-        let counters = self.users.entry(user).or_default();
-        counters.invalid_payloads = counters.invalid_payloads.saturating_add(1);
-        self.users_changed = true;
-    }
-
     fn wanted(&self, user: UserId, own: bool) -> bool {
         self.receivers
             .iter()
@@ -1154,7 +1128,6 @@ impl State {
         self.turn = self.turn.wrapping_add(1);
         let mut context = Context {
             media: &self.media,
-            users: &mut self.users,
             scratch: &mut self.scratch,
             epoch: self.epoch,
             now,
@@ -1162,7 +1135,6 @@ impl State {
             hangover,
             max_conceal: to_samples(self.tuning.max_conceal),
             heard: false,
-            changed: false,
         };
         let mut deferred = false;
         for handle in &self.handles {
@@ -1175,7 +1147,6 @@ impl State {
             deferred = !subscriber.play(&mut self.streams, &self.keys, &mut context, deadline);
         }
         self.heard |= context.heard;
-        self.users_changed |= context.changed;
         if deferred {
             bump(&self.media.receive.receive_deferred);
         }
@@ -1275,24 +1246,6 @@ impl State {
         }
     }
 
-    fn publish_users(&mut self) {
-        for feed in self.streams.values_mut().filter(|feed| !feed.own) {
-            let lost = feed.stream.expected().saturating_sub(feed.received);
-            if lost != feed.reported_lost {
-                let counters = self.users.entry(feed.stream.user()).or_default();
-                counters.lost = counters
-                    .lost
-                    .saturating_add(lost)
-                    .saturating_sub(feed.reported_lost);
-                feed.reported_lost = lost;
-                self.users_changed = true;
-            }
-        }
-        if mem::take(&mut self.users_changed) {
-            self.media.users.lock().clone_from(&self.users);
-        }
-    }
-
     fn prune(&mut self, now: Instant, now48: i64) {
         let idle = to_samples(self.tuning.stream_idle);
         self.streams.retain(|_, feed| {
@@ -1333,14 +1286,8 @@ impl State {
         let members = self.info.members.lock();
         let heard_at = &self.heard_at;
         let kept = |user: &UserId| heard_at.contains_key(user) || members.contains(user);
-        let before = self.users.len();
-        self.users.retain(|user, _| kept(user));
         self.streaks.retain(|user, _| kept(user));
         self.member_count = members.len();
-        drop(members);
-        if self.users.len() != before {
-            self.users_changed = true;
-        }
     }
 
     fn warn_undecryptable(&mut self, now: Instant) {
@@ -1393,8 +1340,6 @@ impl Feed {
             own,
             stream: Stream::new(user),
             created: now48,
-            received: 0,
-            reported_lost: 0,
             trimmed: None,
         }
     }
@@ -1511,7 +1456,7 @@ impl Output {
                         .is_none_or(|trimmed| is_before(trimmed, slot.sequence))
                 {
                     feed.trimmed = Some(slot.sequence);
-                    context.invalid(user);
+                    bump(&context.media.receive.invalid_payloads);
                 }
                 self.packet(&slot, due, samples, user, ssrc, track, context);
             }
@@ -1593,7 +1538,7 @@ impl Output {
                     Some(Ok(decoded)) => decoded,
                     Some(Err(error)) => {
                         debug!(%error, %user, "a received packet did not decode");
-                        context.invalid(user);
+                        bump(&context.media.receive.invalid_payloads);
                         let lost = Lost {
                             timestamp: slot.timestamp,
                             due,
@@ -1838,15 +1783,6 @@ struct Lost {
     samples: u32,
 }
 
-impl Context<'_> {
-    fn invalid(&mut self, user: UserId) {
-        bump(&self.media.receive.invalid_payloads);
-        let counters = self.users.entry(user).or_default();
-        counters.invalid_payloads = counters.invalid_payloads.saturating_add(1);
-        self.changed = true;
-    }
-}
-
 impl Mix {
     fn new(format: PcmFormat, jitter: Duration) -> Self {
         let channels = if format.channels == 1 {
@@ -1958,21 +1894,6 @@ fn owner(spans: &[Span], at: Instant, hold: Duration) -> Option<UserId> {
                     .is_none_or(|until| until.checked_add(hold).is_none_or(|end| at <= end))
         })
         .map(|span| span.user)
-}
-
-fn failed(
-    streaks: &mut HashMap<UserId, Streak>,
-    users: &mut HashMap<UserId, UserCounters>,
-    user: UserId,
-    failure: DecryptFailure,
-    counting: bool,
-) {
-    let counters = users.entry(user).or_default();
-    counters.decrypt_failures = counters.decrypt_failures.saturating_add(1);
-    if counting && failure != DecryptFailure::NoDecryptor {
-        let streak = streaks.entry(user).or_default();
-        streak.failures = streak.failures.saturating_add(1);
-    }
 }
 
 fn unhold(held_users: &mut HashMap<UserId, usize>, user: UserId) {

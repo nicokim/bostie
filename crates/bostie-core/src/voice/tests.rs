@@ -2954,7 +2954,6 @@ async fn include_self_hears_the_bots_own_audio() {
     assert_eq!(frames(&heard)[..3], spoken(u64::from(bot()), &sent));
     assert_eq!(open, 1);
     assert_eq!(harness.media().open_receivers.load(Ordering::Relaxed), 0);
-    assert!(harness.media().users.lock().is_empty());
     assert_eq!(
         harness.count(|delivery| matches!(delivery, Delivery::VoiceSpeech { .. })),
         0
