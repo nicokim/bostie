@@ -6,7 +6,7 @@ import signal
 import threading
 import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Unpack, cast
 
@@ -92,6 +92,29 @@ class _Waiter[E: AnyEvent]:
     event: type[E]
     check: Callable[[E], bool] | None
     future: asyncio.Future[E]
+
+
+@dataclass(slots=True)
+class _Dispatch:
+    shard_id: int
+    seq: int
+    name: str
+    data: bytes
+    decoded: dict[type[Event], Event | None] = field(default_factory=dict)
+
+    def event[E: Event](self, cls: type[E]) -> E | None:
+        if cls not in self.decoded:
+            self.decoded[cls] = (
+                RawEvent(
+                    shard_id=self.shard_id,
+                    raw_json=self.data,
+                    name=self.name,
+                    seq=self.seq,
+                )
+                if cls is RawEvent
+                else decode_event(cls, self.shard_id, self.data)
+            )
+        return cast("E | None", self.decoded[cls])
 
 
 class Bot(Router):
@@ -492,20 +515,36 @@ class Bot(Router):
     def _dispatch(
         self, shard_id: int, seq: int, name: str, data: bytes, received: float
     ) -> None:
-        decoded: dict[type[Event], Event | None] = {}
+        dispatch = _Dispatch(shard_id, seq, name, data)
+        self._follow_session(dispatch)
+        if self._caching and name in Cache.NAMES:
+            cached = dispatch.event(EVENTS[name])
+            if cached is not None:
+                self.cache.apply(cached)
+        for key in (name, RAW_EVENT_NAME):
+            for waiter in self._waiters.get(key, ()):
+                if not waiter.future.done():
+                    _resolve(waiter, dispatch.event(waiter.event))
+        if name == InteractionCreate.NAME:
+            created = dispatch.event(InteractionCreate)
+            if created is not None:
+                self._route(created.interaction, received)
+        for listener in (
+            *self.listeners.get(name, ()),
+            *self.listeners.get(RAW_EVENT_NAME, ()),
+        ):
+            payload = dispatch.event(
+                RawEvent
+                if listener.event is None
+                else cast("type[Event]", listener.event)
+            )
+            if payload is not None:
+                spawn(self._tasks, _run_listener(listener, payload, name), eager=True)
 
-        def event[E: Event](cls: type[E]) -> E | None:
-            if cls not in decoded:
-                decoded[cls] = (
-                    RawEvent(shard_id=shard_id, raw_json=data, name=name, seq=seq)
-                    if cls is RawEvent
-                    else decode_event(cls, shard_id, data)
-                )
-            return cast("E | None", decoded[cls])
-
-        if name == Ready.NAME:
+    def _follow_session(self, dispatch: _Dispatch) -> None:
+        if dispatch.name == Ready.NAME:
             self._replaying = False
-            ready = event(Ready)
+            ready = dispatch.event(Ready)
             if ready is not None:
                 self.user = ready.user
                 self.application_id = ready.application.id
@@ -513,38 +552,15 @@ class Bot(Router):
             for future in self._ready_waiters:
                 if not future.done():
                     future.set_result(None)
-        elif name == Resumed.NAME:
+        elif dispatch.name == Resumed.NAME:
             self._replaying = False
-        elif name == "RATE_LIMITED":
-            limit = msgspec.json.decode(data)
+        elif dispatch.name == "RATE_LIMITED":
+            limit = msgspec.json.decode(dispatch.data)
             log.warning(
                 "the gateway rate limited opcode %s; retry after %s s",
                 limit.get("opcode"),
                 limit.get("retry_after"),
             )
-        if self._caching and name in Cache.NAMES:
-            cached = event(EVENTS[name])
-            if cached is not None:
-                self.cache.apply(cached)
-        for key in (name, RAW_EVENT_NAME):
-            for waiter in self._waiters.get(key, ()):
-                if not waiter.future.done():
-                    _resolve(waiter, event(waiter.event))
-        if name == InteractionCreate.NAME:
-            created = event(InteractionCreate)
-            if created is not None:
-                self._route(created.interaction, received)
-        for listener in (
-            *self.listeners.get(name, ()),
-            *self.listeners.get(RAW_EVENT_NAME, ()),
-        ):
-            payload = event(
-                RawEvent
-                if listener.event is None
-                else cast("type[Event]", listener.event)
-            )
-            if payload is not None:
-                spawn(self._tasks, _run_listener(listener, payload, name), eager=True)
 
     def _route(self, interaction: Interaction, received: float) -> None:
         anchor = received
