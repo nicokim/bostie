@@ -708,7 +708,7 @@ impl State {
             || all_plain
             || payload.as_ref() == SILENCE_FRAME
             || (protocol_version == 0 && !dave::has_marker(payload)))
-        .then(|| share(&mut self.payloads, payload));
+        .then(|| payload.clone());
         work.push(Work {
             user,
             arrival,
