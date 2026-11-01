@@ -80,23 +80,11 @@ class _MessageFlagsOnly(msgspec.Struct):
 class _InteractionContext[
     I: CommandInteraction | ComponentInteraction | AutocompleteInteraction
 ]:
-    def __init__(
-        self,
-        interaction: I,
-        bot: "Bot",
-        *,
-        received: float,
-        ephemeral: bool,
-        auto_defer: float | None,
-        allowed_mentions: AllowedMentions | None,
-    ) -> None:
+    def __init__(self, interaction: I, bot: "Bot", *, received: float) -> None:
         self.interaction = interaction
         self.bot = bot
         self.received = received
         self.state = ResponseState.PENDING
-        self._ephemeral = ephemeral
-        self._auto_defer = auto_defer
-        self._allowed_mentions = allowed_mentions
         self._lock = asyncio.Lock()
         self._loop = asyncio.get_running_loop()
 
@@ -193,6 +181,21 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
     _original_ephemeral = False
     _warned_ephemeral = False
     _auto_defer_task: "asyncio.Task[None] | None" = None
+
+    def __init__(
+        self,
+        interaction: I,
+        bot: "Bot",
+        *,
+        received: float,
+        ephemeral: bool,
+        auto_defer: float | None,
+        allowed_mentions: AllowedMentions,
+    ) -> None:
+        super().__init__(interaction, bot, received=received)
+        self._ephemeral = ephemeral
+        self._auto_defer = auto_defer
+        self._allowed_mentions = allowed_mentions
 
     @contextmanager
     def auto_defer(self) -> Iterator[None]:
@@ -369,8 +372,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         self, content: str | None, allowed: frozenset[str], **parts: Unpack[EditParts]
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
-        if self._allowed_mentions is not None:
-            parts.setdefault("allowed_mentions", self._allowed_mentions)
+        parts.setdefault("allowed_mentions", self._allowed_mentions)
         return build_message(content, **parts)
 
     @property

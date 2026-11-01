@@ -646,14 +646,7 @@ class Bot(Router):
         function = None if focused is None else command.autocompletes.get(focused.name)
         if focused is None or function is None:
             return None
-        ctx = AutocompleteContext(
-            interaction,
-            self,
-            received=received,
-            ephemeral=False,
-            auto_defer=None,
-            allowed_mentions=None,
-        )
+        ctx = AutocompleteContext(interaction, self, received=received)
         return self._autocomplete(ctx, command.router, function, focused.value)
 
     async def _run_handler(
