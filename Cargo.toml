@@ -57,6 +57,7 @@ panic = "deny"
 indexing_slicing = "deny"
 dbg_macro = "deny"
 todo = "deny"
+self_named_module_files = "warn"
 
 [profile.dev.package."*"]
 opt-level = 2
