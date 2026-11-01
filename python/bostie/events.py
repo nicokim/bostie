@@ -84,8 +84,8 @@ class _GuildCreatePayload(Guild, kw_only=True):
     threads: tuple[Channel, ...]
     roles: tuple[Role, ...]
     voice_states: tuple[VoiceState, ...]
-    members_json: msgspec.Raw = msgspec.field(name="members")
-    presences_json: msgspec.Raw = msgspec.field(name="presences")
+    _members: msgspec.Raw = msgspec.field(name="members")
+    _presences: msgspec.Raw = msgspec.field(name="presences")
 
 
 class GuildCreate(Event, kw_only=True):
@@ -99,19 +99,17 @@ class GuildCreate(Event, kw_only=True):
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
     voice_states: tuple[VoiceState, ...] = ()
-    members_json: msgspec.Raw = msgspec.Raw(b"[]")
-    presences_json: msgspec.Raw = msgspec.Raw(b"[]")
+    _members: msgspec.Raw = msgspec.Raw(b"[]")
+    _presences: msgspec.Raw = msgspec.Raw(b"[]")
 
     @property
     def members(self) -> tuple[Member, ...]:
-        members: tuple[Member, ...] = decoder(tuple[Member, ...]).decode(
-            self.members_json
-        )
+        members: tuple[Member, ...] = decoder(tuple[Member, ...]).decode(self._members)
         return members
 
     @property
     def presences(self) -> list[dict[str, Any]]:
-        presences: list[dict[str, Any]] = msgspec.json.decode(self.presences_json)
+        presences: list[dict[str, Any]] = msgspec.json.decode(self._presences)
         return presences
 
     @classmethod
@@ -131,8 +129,8 @@ class GuildCreate(Event, kw_only=True):
             threads=payload.threads,
             roles=payload.roles,
             voice_states=payload.voice_states,
-            members_json=payload.members_json,
-            presences_json=payload.presences_json,
+            _members=payload._members,
+            _presences=payload._presences,
         )
 
 

@@ -454,7 +454,7 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _component_message_is_ephemeral(self) -> bool:
-        message = decoder(_MessageFlagsOnly).decode(self.interaction.message_json)
+        message = decoder(_MessageFlagsOnly).decode(self.interaction._message)
         return MessageFlags.EPHEMERAL in message.flags
 
     @property

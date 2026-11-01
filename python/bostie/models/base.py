@@ -13,7 +13,7 @@ def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
     return [
         (name, getattr(struct, name))
         for name in struct.__struct_fields__
-        if name not in HIDDEN_FIELDS
+        if name not in HIDDEN_FIELDS and not name.startswith("_")
     ]
 
 
@@ -44,6 +44,9 @@ class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 )
 class Builder(msgspec.Struct, kw_only=True, frozen=True, gc=False, omit_defaults=True):
     """Base of the models that are decoded from Discord and can be sent back to it."""
+
+    __repr__ = redacted_repr
+    __rich_repr__ = shown_fields
 
 
 @cache

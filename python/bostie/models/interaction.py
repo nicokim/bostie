@@ -132,12 +132,12 @@ class ComponentInteraction(_Interaction, kw_only=True):
     """A button press or a select menu pick."""
 
     data: ComponentData
-    message_json: msgspec.Raw = msgspec.field(name="message")
+    _message: msgspec.Raw = msgspec.field(name="message")
 
     @property
     def message(self) -> Message | WebhookMessage:
         """The message the component is on, decoded on each access."""
-        return nested_message(self.message_json, self.guild_id)
+        return nested_message(self._message, self.guild_id)
 
 
 class UnknownInteraction(Model, kw_only=True):

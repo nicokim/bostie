@@ -263,7 +263,7 @@ def test_unknown_component_types_become_unknown_components(
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
-def test_no_repr_shows_a_token_or_the_payload_holding_it(
+def test_no_repr_shows_a_token_raw_json_or_a_private_field(
     path: Path, decoder: Decoder
 ) -> None:
     document = load(path)
@@ -275,6 +275,13 @@ def test_no_repr_shows_a_token_or_the_payload_holding_it(
         if isinstance(decoded, msgspec.Struct):
             for text in (repr(decoded), str(decoded), repr(decoded.__rich_repr__())):
                 assert TOKEN not in text
+            if not isinstance(decoded, UnknownComponent):
+                assert "msgspec.Raw" not in repr(decoded)
+                assert not [
+                    name
+                    for name, _ in decoded.__rich_repr__()
+                    if name.startswith("_") or name == "raw_json"
+                ]
 
 
 def test_unknown_components_keep_their_raw_json() -> None:

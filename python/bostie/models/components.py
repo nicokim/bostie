@@ -24,11 +24,11 @@ class _Component(Builder, kw_only=True, tag_field="type"):
 
 
 class ActionRow(_Component, kw_only=True, tag=ComponentType.ACTION_ROW.value):
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
 
     @property
     def components(self) -> "tuple[Component, ...]":
-        return decode_components(self.components_json)
+        return decode_components(self._components)
 
 
 class Button(_Component, kw_only=True, tag=ComponentType.BUTTON.value):
@@ -109,16 +109,16 @@ class UnfurledMediaItem(Builder, kw_only=True):
 class Section(_Component, kw_only=True, tag=ComponentType.SECTION.value):
     """Text components with a button or thumbnail beside them."""
 
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
-    accessory_json: msgspec.Raw = msgspec.field(name="accessory")
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
+    _accessory: msgspec.Raw = msgspec.field(name="accessory")
 
     @property
     def components(self) -> "tuple[Component, ...]":
-        return decode_components(self.components_json)
+        return decode_components(self._components)
 
     @property
     def accessory(self) -> "Component":
-        return _decode_component(self.accessory_json)
+        return _decode_component(self._accessory)
 
 
 class TextDisplay(_Component, kw_only=True, tag=ComponentType.TEXT_DISPLAY.value):
@@ -156,13 +156,13 @@ class Separator(_Component, kw_only=True, tag=ComponentType.SEPARATOR.value):
 
 
 class Container(_Component, kw_only=True, tag=ComponentType.CONTAINER.value):
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
     accent_color: int | None = None
     spoiler: bool | None = None
 
     @property
     def components(self) -> "tuple[Component, ...]":
-        return decode_components(self.components_json)
+        return decode_components(self._components)
 
 
 class UnknownComponent(msgspec.Struct, kw_only=True, frozen=True, gc=False):

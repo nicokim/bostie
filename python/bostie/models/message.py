@@ -158,26 +158,24 @@ class PartialMessage(Model, kw_only=True):
     webhook_id: int | None = None
     flags: MessageFlags = MessageFlags(0)
     message_reference: MessageReference | None = None
-    referenced_message_json: msgspec.Raw = msgspec.field(
+    _referenced_message: msgspec.Raw = msgspec.field(
         default=NULL, name="referenced_message"
     )
     thread: Channel | None = None
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
-        default=(), name="components"
-    )
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
     sticker_items: tuple[StickerItem, ...] = ()
     position: int | None = None
 
     @property
     def components(self) -> tuple[Component, ...]:
-        return decode_components(self.components_json)
+        return decode_components(self._components)
 
     @property
     def referenced_message(self) -> "Message | WebhookMessage | None":
         """The message this one replies to, decoded on each access."""
-        if self.referenced_message_json == NULL:
+        if self._referenced_message == NULL:
             return None
-        return nested_message(self.referenced_message_json, self.guild_id)
+        return nested_message(self._referenced_message, self.guild_id)
 
     @property
     def jump_url(self) -> str:
