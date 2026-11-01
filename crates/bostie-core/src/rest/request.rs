@@ -352,41 +352,45 @@ mod tests {
     }
 
     #[test]
-    fn classifies_routes_by_their_credentials() {
-        for (route, params, class) in [
+    fn classifies_routes_by_their_credentials_and_global_gate() {
+        for (route, params, class, gated) in [
             (
                 "/interactions/{interaction_id}/{interaction_token}/callback",
                 &[("interaction_id", "1"), ("interaction_token", "t")][..],
                 RouteClass::Callback,
+                false,
             ),
             (
                 "/webhooks/{application_id}/{interaction_token}/messages/@original",
                 &[("application_id", "1"), ("interaction_token", "t")],
                 RouteClass::Interaction,
+                false,
             ),
             (
                 "/webhooks/{webhook_id}/{webhook_token}",
                 &[("webhook_id", "1"), ("webhook_token", "t")],
                 RouteClass::Webhook,
+                true,
             ),
             (
                 "/webhooks/{webhook_id}",
                 &[("webhook_id", "1")],
                 RouteClass::Bot,
+                true,
             ),
-            ("/gateway", &[], RouteClass::Anonymous),
-            ("/gateway/bot", &[], RouteClass::Bot),
+            ("/gateway", &[], RouteClass::Anonymous, true),
+            ("/gateway/bot", &[], RouteClass::Bot, true),
             (
                 "/channels/{channel_id}",
                 &[("channel_id", "1")],
                 RouteClass::Bot,
+                true,
             ),
         ] {
-            assert_eq!(
-                parse("POST", route, params).unwrap().class,
-                class,
-                "{route}"
-            );
+            let class_of = parse("POST", route, params).unwrap().class;
+
+            assert_eq!(class_of, class, "{route}");
+            assert_eq!(class_of.waits_for_the_global_gate(), gated, "{route}");
         }
     }
 }

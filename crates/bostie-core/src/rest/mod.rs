@@ -551,14 +551,14 @@ pub(crate) mod tests {
     }
 
     fn rest(url: &str) -> (Rest, BellReceiver) {
-        limited_rest(url, 50)
+        limited_rest(url, 50, LIMITS)
     }
 
-    fn limited_rest(url: &str, global_limit: u16) -> (Rest, BellReceiver) {
+    fn limited_rest(url: &str, global_limit: u16, limits: Limits) -> (Rest, BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
         let global_limit = NonZeroU16::new(global_limit).unwrap();
         let inbox = Arc::new(Inbox::new(bell));
-        let rest = Rest::with_limits("token", url, global_limit, inbox, LIMITS).unwrap();
+        let rest = Rest::with_limits("token", url, global_limit, inbox, limits).unwrap();
         (rest, receiver)
     }
 
@@ -622,8 +622,19 @@ pub(crate) mod tests {
         }
     }
 
-    fn invalid_count(rest: &Rest) -> u32 {
-        rest.invalid.lock().count(Instant::now())
+    fn primed_to_warn(rest: &Rest) {
+        let now = Instant::now();
+        let mut invalid = rest.invalid.lock();
+        for _ in 0..999 {
+            invalid.record(now);
+        }
+    }
+
+    fn warned(rest: &Rest) -> bool {
+        rest.inbox
+            .drain()
+            .iter()
+            .any(|delivery| matches!(delivery, Delivery::InvalidRequests { count: 1_000 }))
     }
 
     #[test]
@@ -648,6 +659,11 @@ pub(crate) mod tests {
             retries.after_response(&Method::POST, StatusCode::TOO_MANY_REQUESTS, short),
             None
         );
+        assert!(
+            retries
+                .after_response(&Method::GET, StatusCode::BAD_GATEWAY, None)
+                .is_some()
+        );
         assert_eq!(
             Retries::new(LIMITS).after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, long),
             None
@@ -666,18 +682,27 @@ pub(crate) mod tests {
         assert!(first.is_some_and(|wait| wait >= base && wait <= base * 3 / 2));
         assert!(second.is_some_and(|wait| wait >= base * 2 && wait <= base * 3));
         assert_eq!(third, None);
-        for (method, status) in [
-            (Method::POST, StatusCode::INTERNAL_SERVER_ERROR),
-            (Method::GET, StatusCode::NOT_IMPLEMENTED),
-            (Method::GET, StatusCode::BAD_REQUEST),
-            (Method::GET, StatusCode::UNAUTHORIZED),
-            (Method::GET, StatusCode::FORBIDDEN),
-            (Method::GET, StatusCode::NOT_FOUND),
-            (Method::PUT, StatusCode::NO_CONTENT),
+        let short = Some(Limited {
+            scope: Scope::Route,
+            retry_after: base,
+        });
+        assert_eq!(
+            retries.after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, short),
+            Some(base)
+        );
+        for (method, status, retried) in [
+            (Method::GET, StatusCode::INTERNAL_SERVER_ERROR, true),
+            (Method::PUT, StatusCode::GATEWAY_TIMEOUT, true),
+            (Method::POST, StatusCode::INTERNAL_SERVER_ERROR, false),
+            (Method::GET, StatusCode::NOT_IMPLEMENTED, false),
+            (Method::GET, StatusCode::NOT_FOUND, false),
+            (Method::PUT, StatusCode::NO_CONTENT, false),
         ] {
             assert_eq!(
-                Retries::new(LIMITS).after_response(&method, status, None),
-                None,
+                Retries::new(LIMITS)
+                    .after_response(&method, status, None)
+                    .is_some(),
+                retried,
                 "{method} {status}"
             );
         }
@@ -805,42 +830,53 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn an_exhausted_followup_bucket_delays_only_its_own_token() {
+    async fn an_exhausted_followup_bucket_delays_or_holds_back_only_its_token() {
         crate::init_test_tracing();
-        let exhausted = reply(
-            "200 OK",
-            &[
-                ("X-RateLimit-Bucket", "abc"),
-                ("X-RateLimit-Limit", "5"),
-                ("X-RateLimit-Remaining", "0"),
-                ("X-RateLimit-Reset-After", "0.2"),
-            ],
-            "{}",
-        );
-        let mut server = Server::start(vec![exhausted]).await;
-        let (rest, _receiver) = rest(&server.url);
+        for (reset_after, same_token) in [("0.2", 200), ("120", 429)] {
+            let exhausted = reply(
+                "200 OK",
+                &[
+                    ("X-RateLimit-Bucket", "abc"),
+                    ("X-RateLimit-Limit", "5"),
+                    ("X-RateLimit-Remaining", "0"),
+                    ("X-RateLimit-Reset-After", reset_after),
+                ],
+                "{}",
+            );
+            let mut server = Server::start(vec![exhausted]).await;
+            let (rest, _receiver) = rest(&server.url);
 
-        status(rest.execute(Ticket::from(1), followup("first")).await);
-        tokio::join!(
-            rest.execute(Ticket::from(2), followup("first")),
-            rest.execute(Ticket::from(3), followup("second")),
-            rest.execute(Ticket::from(4), callback()),
-        );
+            status(rest.execute(Ticket::from(1), followup("first")).await);
+            let (same, other, interaction) = timeout(PATIENCE, async {
+                tokio::join!(
+                    rest.execute(Ticket::from(2), followup("first")),
+                    rest.execute(Ticket::from(3), followup("second")),
+                    rest.execute(Ticket::from(4), callback()),
+                )
+            })
+            .await
+            .unwrap();
 
-        let first = server.next().await.at;
-        let arrivals = arrivals(&mut server, 3).await;
-        let same_token = arrivals["/api/v10/webhooks/1/first"];
-        let waited = same_token - first;
-        assert!(waited >= Duration::from_millis(190), "{waited:?}");
-        assert!(arrivals["/api/v10/webhooks/1/second"] < same_token);
-        assert!(arrivals["/api/v10/interactions/1/abc/callback"] < same_token);
+            let codes = (status(same).0, status(other).0, status(interaction).0);
+            assert_eq!(codes, (same_token, 200, 200), "{reset_after}");
+            let first = server.next().await.at;
+            let sent = 2 + usize::from(same_token == 200);
+            let arrivals = arrivals(&mut server, sent).await;
+            assert_eq!(server.received(), 0, "{reset_after}");
+            if let Some(&same) = arrivals.get("/api/v10/webhooks/1/first") {
+                let waited = same - first;
+                assert!(waited >= Duration::from_millis(190), "{waited:?}");
+                assert!(arrivals["/api/v10/webhooks/1/second"] < same);
+                assert!(arrivals["/api/v10/interactions/1/abc/callback"] < same);
+            }
+        }
     }
 
     #[tokio::test]
     async fn the_global_limit_is_configurable_and_spares_interaction_routes() {
         crate::init_test_tracing();
         let mut server = Server::start(Vec::new()).await;
-        let (rest, _receiver) = limited_rest(&server.url, 1);
+        let (rest, _receiver) = limited_rest(&server.url, 1, LIMITS);
 
         status(rest.execute(Ticket::from(1), me()).await);
         tokio::join!(
@@ -859,7 +895,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_user_rate_limit_is_retried_after_retry_after_and_counted_invalid() {
+    async fn a_user_rate_limit_is_retried_after_retry_after() {
         crate::init_test_tracing();
         let limited = too_many(&[
             ("Retry-After", "0.3"),
@@ -878,28 +914,6 @@ pub(crate) mod tests {
         let first = server.next().await.at;
         let retry = server.next().await.at;
         assert!(retry - first >= Duration::from_millis(300));
-        assert_eq!(invalid_count(&rest), 1);
-    }
-
-    #[tokio::test]
-    async fn a_shared_rate_limit_is_retried_without_counting_as_invalid() {
-        crate::init_test_tracing();
-        let shared = too_many(&[
-            ("Retry-After", "0.2"),
-            ("X-RateLimit-Scope", "shared"),
-            ("X-RateLimit-Bucket", "abc"),
-            ("X-RateLimit-Limit", "10"),
-            ("X-RateLimit-Remaining", "9"),
-            ("X-RateLimit-Reset-After", "0.2"),
-        ]);
-        let mut server = Server::start(vec![shared]).await;
-        let (rest, _receiver) = rest(&server.url);
-
-        let (code, _) = status(rest.execute(Ticket::from(1), message("1", "10")).await);
-
-        assert_eq!(code, 200);
-        assert_eq!(server.received(), 2);
-        assert_eq!(invalid_count(&rest), 0);
     }
 
     #[tokio::test]
@@ -911,43 +925,19 @@ pub(crate) mod tests {
             ("X-RateLimit-Scope", "global"),
         ]);
         let mut server = Server::start(vec![global]).await;
-        let (rest, _receiver) = rest(&server.url);
-        let rest = Arc::new(rest);
+        let limits = Limits {
+            max_retry_wait: Duration::from_millis(100),
+            ..LIMITS
+        };
+        let (rest, _receiver) = limited_rest(&server.url, 50, limits);
 
-        let limited = tokio::spawn({
-            let rest = Arc::clone(&rest);
-            async move { rest.execute(Ticket::from(1), me()).await }
-        });
+        let (limited_code, _) = status(rest.execute(Ticket::from(1), me()).await);
+        let (other_code, _) = status(rest.execute(Ticket::from(2), message("2", "20")).await);
+
+        assert_eq!((limited_code, other_code), (429, 200));
         let first = server.next().await.at;
-        timeout(PATIENCE, async {
-            while timeout(Duration::ZERO, rest.gate.wait()).await.is_ok() {
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .unwrap();
-        let (other_code, _) = status(rest.execute(Ticket::from(1), message("2", "20")).await);
-        let (limited_code, _) = status(limited.await.unwrap());
-
-        assert_eq!((other_code, limited_code), (200, 200));
-        let arrivals = arrivals(&mut server, 2).await;
-        let waited = arrivals["/api/v10/channels/2/messages/20"] - first;
+        let waited = server.next().await.at - first;
         assert!(waited >= Duration::from_millis(500), "{waited:?}");
-        assert_eq!(invalid_count(&rest), 1);
-    }
-
-    #[tokio::test]
-    async fn webhook_routes_wait_for_the_global_gate() {
-        crate::init_test_tracing();
-        let mut server = Server::start(Vec::new()).await;
-        let (rest, _receiver) = rest(&server.url);
-        let paused = Instant::now();
-        rest.gate.pause(Duration::from_millis(300));
-
-        status(rest.execute(Ticket::from(1), webhook()).await);
-
-        let waited = server.next().await.at - paused;
-        assert!(waited >= Duration::from_millis(300), "{waited:?}");
     }
 
     #[tokio::test]
@@ -1011,21 +1001,46 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_rate_limit_whose_body_breaks_off_is_still_counted_and_retried() {
+    async fn a_body_that_breaks_off_is_retried_after_a_429_or_an_unposted_200() {
         crate::init_test_tracing();
-        let truncated = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 0.1\r\nX-RateLimit-Scope: user\r\nConnection: close\r\nContent-Length: 100\r\n\r\n{}";
-        let mut server = Server::start(vec![truncated.to_owned()]).await;
-        let (rest, _receiver) = rest(&server.url);
-        let post = request(
-            "POST",
-            "/channels/{channel_id}/messages",
-            &[("channel_id", "1")],
-        );
+        for (method, head, sent, delivered) in [
+            (
+                "POST",
+                "429 Too Many Requests\r\nRetry-After: 0.1\r\nX-RateLimit-Scope: user",
+                2,
+                Some(200),
+            ),
+            ("GET", "200 OK", 2, Some(200)),
+            ("POST", "200 OK", 1, None),
+        ] {
+            let truncated =
+                format!("HTTP/1.1 {head}\r\nConnection: close\r\nContent-Length: 100\r\n\r\n{{}}");
+            let mut server = Server::start(vec![truncated]).await;
+            let (rest, _receiver) = rest(&server.url);
+            primed_to_warn(&rest);
+            let request = request(
+                method,
+                "/channels/{channel_id}/messages",
+                &[("channel_id", "1")],
+            );
 
-        let (code, _) = status(rest.execute(Ticket::from(1), post).await);
+            let delivery = rest.execute(Ticket::from(1), request).await;
 
-        assert_eq!((code, server.received()), (200, 2));
-        assert_eq!(invalid_count(&rest), 1);
+            let code = match delivery {
+                Delivery::Response { status, .. } => Some(status),
+                Delivery::Failure {
+                    kind: FailureKind::Transport,
+                    ..
+                } => None,
+                other => panic!("unexpected {other:?}"),
+            };
+            assert_eq!(
+                (code, server.received()),
+                (delivered, sent),
+                "{method} {head}"
+            );
+            assert_eq!(warned(&rest), head.starts_with("429"), "{method} {head}");
+        }
     }
 
     #[tokio::test]
@@ -1114,18 +1129,10 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn client_errors_are_returned_and_only_idempotent_server_errors_retried() {
+    async fn server_errors_are_retried_only_when_not_posted() {
         crate::init_test_tracing();
         let bad_gateway = || reply("502 Bad Gateway", &[], "");
-        let mut server = Server::start(vec![
-            reply("403 Forbidden", &[], "{}"),
-            reply("404 Not Found", &[], "{}"),
-            bad_gateway(),
-            bad_gateway(),
-            bad_gateway(),
-            bad_gateway(),
-        ])
-        .await;
+        let mut server = Server::start(vec![bad_gateway(); 4]).await;
         let (rest, _receiver) = rest(&server.url);
         let post = request(
             "POST",
@@ -1133,12 +1140,109 @@ pub(crate) mod tests {
             &[("channel_id", "1")],
         );
 
-        for (expected, attempts) in [(403, 1), (404, 1), (502, 3)] {
-            let (code, _) = status(rest.execute(Ticket::from(1), me()).await);
-            assert_eq!((code, server.received()), (expected, attempts));
+        let (got, _) = status(rest.execute(Ticket::from(1), me()).await);
+        assert_eq!((got, server.received()), (502, 3));
+        let (posted, _) = status(rest.execute(Ticket::from(1), post).await);
+        assert_eq!((posted, server.received()), (502, 1));
+    }
+
+    #[tokio::test]
+    async fn responses_count_as_invalid_pause_the_gate_or_reject_the_token() {
+        let limited = |scope| {
+            Some(Limited {
+                scope,
+                retry_after: Duration::from_secs(60),
+            })
+        };
+        let too_many = StatusCode::TOO_MANY_REQUESTS;
+        for (status, class, limited, expected) in [
+            (StatusCode::OK, RouteClass::Bot, None, (false, false, false)),
+            (
+                StatusCode::UNAUTHORIZED,
+                RouteClass::Bot,
+                None,
+                (true, false, true),
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                RouteClass::Interaction,
+                None,
+                (true, false, false),
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                RouteClass::Callback,
+                None,
+                (true, false, false),
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                RouteClass::Webhook,
+                None,
+                (true, false, false),
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                RouteClass::Bot,
+                None,
+                (true, false, false),
+            ),
+            (
+                StatusCode::NOT_FOUND,
+                RouteClass::Bot,
+                None,
+                (false, false, false),
+            ),
+            (
+                too_many,
+                RouteClass::Bot,
+                limited(Scope::Route),
+                (true, false, false),
+            ),
+            (
+                too_many,
+                RouteClass::Bot,
+                limited(Scope::Shared),
+                (false, false, false),
+            ),
+            (
+                too_many,
+                RouteClass::Bot,
+                limited(Scope::Global),
+                (true, true, false),
+            ),
+            (
+                too_many,
+                RouteClass::Interaction,
+                limited(Scope::Global),
+                (true, true, false),
+            ),
+            (
+                StatusCode::BAD_GATEWAY,
+                RouteClass::Bot,
+                None,
+                (false, false, false),
+            ),
+        ] {
+            let (rest, _receiver) = rest("http://127.0.0.1:1/api/v10");
+            primed_to_warn(&rest);
+
+            rest.observe(class, status, limited);
+
+            let paused = rest.gate.wait().now_or_never().is_none();
+            let rejected = matches!(
+                rest.refusal(Ticket::from(1), &me()),
+                Some(Delivery::Failure {
+                    kind: FailureKind::InvalidToken,
+                    ..
+                })
+            );
+            assert_eq!(
+                (warned(&rest), paused, rejected),
+                expected,
+                "{status} {class:?} {limited:?}"
+            );
         }
-        let (code, _) = status(rest.execute(Ticket::from(1), post).await);
-        assert_eq!((code, server.received()), (502, 1));
     }
 
     #[tokio::test]
@@ -1195,7 +1299,7 @@ pub(crate) mod tests {
     async fn a_request_cancelled_after_sending_keeps_its_global_slot() {
         crate::init_test_tracing();
         let mut server = Server::start(vec![NO_REPLY]).await;
-        let (rest, _receiver) = limited_rest(&server.url, 1);
+        let (rest, _receiver) = limited_rest(&server.url, 1, LIMITS);
         let rest = Arc::new(rest);
         let sent = tokio::spawn({
             let rest = Arc::clone(&rest);
