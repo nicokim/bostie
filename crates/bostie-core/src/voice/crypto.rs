@@ -48,7 +48,7 @@ pub enum CryptoError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Opened<'a> {
     pub header: Header,
-    pub nonce: u32,
+    pub nonce: [u8; NONCE_LEN],
     pub payload: &'a [u8],
     pub extension: &'a [u8],
 }
@@ -161,6 +161,7 @@ impl Cipher {
         payload: &[u8],
         out: &mut Vec<u8>,
     ) -> Result<(), CryptoError> {
+        let counter = nonce.to_be_bytes();
         out.clear();
         out.extend_from_slice(header);
         out.extend_from_slice(payload);
@@ -169,15 +170,15 @@ impl Cipher {
             .ok_or(CryptoError::Seal)?;
         let tag = match &self.0 {
             Aead::Aes256Gcm(aead) => {
-                aead.encrypt_inout_detached(&full_nonce(nonce).into(), aad, body.into())
+                aead.encrypt_inout_detached(&full_nonce(counter).into(), aad, body.into())
             }
             Aead::XChaCha20Poly1305(aead) => {
-                aead.encrypt_inout_detached(&full_nonce(nonce).into(), aad, body.into())
+                aead.encrypt_inout_detached(&full_nonce(counter).into(), aad, body.into())
             }
         }
         .map_err(|_| CryptoError::Seal)?;
         out.extend_from_slice(&tag);
-        out.extend_from_slice(&nonce.to_be_bytes());
+        out.extend_from_slice(&counter);
         Ok(())
     }
 
@@ -187,7 +188,7 @@ impl Cipher {
         let (sealed, nonce) = packet
             .split_last_chunk_mut::<NONCE_LEN>()
             .ok_or(too_short)?;
-        let nonce = u32::from_be_bytes(*nonce);
+        let nonce = *nonce;
         let (sealed, tag) = sealed.split_last_chunk_mut::<TAG_LEN>().ok_or(too_short)?;
         let tag = Array::from(*tag);
         let (aad, body) = sealed
@@ -218,10 +219,10 @@ impl Cipher {
     }
 }
 
-fn full_nonce<const N: usize>(counter: u32) -> [u8; N] {
+fn full_nonce<const N: usize>(counter: [u8; NONCE_LEN]) -> [u8; N] {
     let mut nonce = [0; N];
     if let Some(head) = nonce.first_chunk_mut::<NONCE_LEN>() {
-        *head = counter.to_be_bytes();
+        *head = counter;
     }
     nonce
 }
@@ -364,7 +365,7 @@ mod tests {
             let opened = cipher.open(&mut packet).unwrap();
 
             assert_eq!(opened.header, Header::parse(&header()).unwrap());
-            assert_eq!(opened.nonce, 7);
+            assert_eq!(opened.nonce, 7_u32.to_be_bytes());
             assert_eq!(opened.payload, OPUS);
             assert_eq!(opened.extension, b"");
         }
@@ -389,7 +390,7 @@ mod tests {
             let mut packet = sealed(mode, u32::MAX, &header(), OPUS);
 
             assert_eq!(packet[packet.len() - NONCE_LEN..], [0xFF; 4]);
-            assert_eq!(cipher.open(&mut packet).unwrap().nonce, u32::MAX);
+            assert_eq!(cipher.open(&mut packet).unwrap().nonce, [0xFF; 4]);
         }
     }
 

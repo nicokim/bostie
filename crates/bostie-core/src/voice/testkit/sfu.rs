@@ -271,7 +271,7 @@ fn capture(shared: &Shared, datagram: &[u8], at: Instant) {
                     at,
                     key,
                     header: opened.header,
-                    nonce: opened.nonce,
+                    nonce: u32::from_be_bytes(opened.nonce),
                     payload: opened.payload.to_vec(),
                 })
             })
@@ -390,7 +390,7 @@ mod tests {
                 }),
             }
         );
-        assert_eq!(opened.nonce, 0);
+        assert_eq!(opened.nonce, [0; 4]);
         assert_eq!(opened.extension, [0x10, 0xAA, 0, 0]);
         assert_eq!(opened.payload, b"opus");
         let mut second = receive();

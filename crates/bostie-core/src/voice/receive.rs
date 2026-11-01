@@ -102,7 +102,7 @@ impl Intake {
             .windows
             .entry(header.ssrc)
             .or_insert_with(|| ReplayWindow::new(replay_window));
-        let counter = u32::from_le_bytes(opened.nonce.to_be_bytes());
+        let counter = u32::from_le_bytes(opened.nonce);
         if !window.accept(counter) {
             bump(&media.receive.replays);
             return;
