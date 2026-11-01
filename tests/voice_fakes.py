@@ -292,7 +292,7 @@ class FakeCore:
         self.receivers: list[FakeReceiver] = []
         self.ssrc_map: dict[int, int] = {}
         self.user_counters: dict[int, dict[str, int]] = {}
-        self.handle: Callable[[VoiceDelivery, float], None] | None = None
+        self.handle: Callable[[VoiceDelivery], None] | None = None
         self.auto_disconnect = True
         self.probe: tuple[Literal["pcm", "opus"], float | None, bool] | None = (
             "pcm",
@@ -310,7 +310,7 @@ class FakeCore:
         self.track(delivery)
         handle = self.handle
         if handle is not None:
-            asyncio.get_running_loop().call_soon(handle, delivery, 0.0)
+            asyncio.get_running_loop().call_soon(handle, delivery)
 
     def track(self, delivery: VoiceDelivery) -> None:
         if delivery[0] == "voice_state" and delivery[2] == "disconnected":
@@ -574,9 +574,9 @@ class FakeBot:
             ):
                 future.set_result(event)
 
-    def deliver(self, delivery: VoiceDelivery, received: float = 0.0) -> None:
+    def deliver(self, delivery: VoiceDelivery) -> None:
         self.core.track(delivery)
-        self.voice._handle(delivery, received)
+        self.voice._handle(delivery)
 
     def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
         return [event for event in self.events if isinstance(event, kind)]

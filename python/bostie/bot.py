@@ -501,7 +501,7 @@ class Bot(Router):
                 | "voice_deaf",
                 *_,
             ):
-                self.voice._handle(delivery, received)
+                self.voice._handle(delivery)
 
     def _emit(self, event: VoiceEvent) -> None:
         for waiter in self._waiters.get(event.NAME, ()):

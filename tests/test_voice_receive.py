@@ -321,14 +321,14 @@ def test_speech_updates_speaking_before_its_event_and_a_disconnect_stops_it(
             bot, "_emit", lambda event: seen.append((event, dict(vc.speaking)))
         )
         now = time.monotonic()
-        bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.5, 0.0), now)
-        bot.deliver(("voice_speech", GUILD_ID, USER_ID + 1, 12, True, 0.25, 0.0), now)
-        bot.deliver(
-            ("voice_speech", GUILD_ID, USER_ID + 1, 12, False, 0.125, 0.25), now
-        )
+        with monkeypatch.context() as frozen:
+            frozen.setattr(time, "monotonic", lambda: now)
+            bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.5, 0.0))
+            bot.deliver(("voice_speech", GUILD_ID, USER_ID + 1, 12, True, 0.25, 0.0))
+            bot.deliver(("voice_speech", GUILD_ID, USER_ID + 1, 12, False, 0.125, 0.25))
         bot.deliver(disconnected("removed"))
         ended = time.monotonic()
-        bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.0, 0.0), now)
+        bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.0, 0.0))
         stop = seen[3][0]
         assert isinstance(stop, voice.SpeechStop)
         assert now <= stop.at <= ended

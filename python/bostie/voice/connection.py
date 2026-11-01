@@ -446,7 +446,7 @@ class VoiceManager:
         for task in self._tasks:
             task.cancel()
 
-    def _handle(self, delivery: VoiceDelivery, received: float) -> None:
+    def _handle(self, delivery: VoiceDelivery) -> None:
         match delivery:
             case ("voice_wake", handle):
                 target = self._handles.get(handle)
@@ -459,7 +459,7 @@ class VoiceManager:
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:
-                    vc._apply(delivery, received)
+                    vc._apply(delivery)
 
     def _running_user(self, call: str) -> User:
         user = self._bot.user
@@ -1011,7 +1011,7 @@ class VoiceConnection:
             elif self._state is State.DISCONNECTED:
                 future.set_result(False)
 
-    def _apply(self, delivery: VoiceDelivery, received: float) -> None:
+    def _apply(self, delivery: VoiceDelivery) -> None:
         match delivery:
             case ("voice_state", _, status, reason, code, detail):
                 self._set_state(status, reason, code, detail)
@@ -1073,7 +1073,7 @@ class VoiceConnection:
                     )
                 )
             case ("voice_speech", _, user_id, ssrc, True, age, _):
-                at = received - age
+                at = time.monotonic() - age
                 self._speaking[user_id] = at
                 self._speech_ssrcs[user_id] = ssrc
                 self._emit(
@@ -1089,7 +1089,7 @@ class VoiceConnection:
                         guild_id=self.guild_id,
                         user_id=user_id,
                         ssrc=ssrc,
-                        at=received - age,
+                        at=time.monotonic() - age,
                         duration=duration,
                     )
                 )
