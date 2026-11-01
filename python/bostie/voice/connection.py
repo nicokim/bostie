@@ -160,18 +160,23 @@ class VoiceCore(Protocol):
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
 
-class ConnectOptions(TypedDict, total=False):
-    """Settings for one connect() call; each overrides voice.Defaults unless None."""
+class ExternalConnectOptions(TypedDict, total=False):
+    """Settings for one connect_external() call; each overrides voice.Defaults."""
 
-    self_deaf: bool | None
-    self_mute: bool | None
-    timeout: float | None
-    server_change_delay: float | None
-    encoder: EncoderSettings | None
-    speaking_flags: SpeakingFlags | None
-    stage: StageRole | None
-    speech_hangover: float | None
-    speech_activity: bool | None
+    self_deaf: bool
+    self_mute: bool
+    timeout: float
+
+
+class ConnectOptions(ExternalConnectOptions, total=False):
+    """Settings for one connect() call; each overrides voice.Defaults."""
+
+    server_change_delay: float
+    encoder: EncoderSettings
+    speaking_flags: SpeakingFlags
+    stage: StageRole
+    speech_hangover: float
+    speech_activity: bool
 
 
 class _HasCore(Protocol):
@@ -287,10 +292,7 @@ class VoiceManager:
         self,
         guild_id: int,
         channel_id: int,
-        *,
-        self_deaf: bool | None = None,
-        self_mute: bool | None = None,
-        timeout: float | None = None,
+        **options: Unpack[ExternalConnectOptions],
     ) -> ExternalVoice:
         """Join a voice channel for an external voice engine and return its credentials.
 
@@ -302,9 +304,7 @@ class VoiceManager:
             raise RuntimeError(
                 f"bostie already runs a voice connection in guild {guild_id}"
             )
-        settings = self._settings(
-            self_deaf=self_deaf, self_mute=self_mute, timeout=timeout
-        )
+        settings = self._settings(**options)
         loop = asyncio.get_running_loop()
         state = asyncio.Task(
             self._bot.wait_for(
@@ -390,11 +390,8 @@ class VoiceManager:
             raise RuntimeError("voice needs a running bot")
         return bridge.core
 
-    def _settings(self, **overrides: Any) -> Defaults:
-        return replace(
-            self.defaults,
-            **{name: value for name, value in overrides.items() if value is not None},
-        )
+    def _settings(self, **options: Unpack[ConnectOptions]) -> Defaults:
+        return replace(self.defaults, **options)
 
     async def _voice_channel(self, channel_id: int) -> tuple[int, Channel]:
         channel = self._bot.cache.channel(channel_id) or await self._bot.fetch_channel(
