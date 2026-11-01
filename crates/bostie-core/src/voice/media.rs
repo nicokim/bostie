@@ -376,10 +376,46 @@ struct RtpState {
     exhausted: bool,
 }
 
-#[derive(Debug, Default)]
-struct Stall {
-    since: Option<Instant>,
-    reported: bool,
+#[derive(Debug, Default, Clone, Copy)]
+pub enum Stall {
+    #[default]
+    Clear,
+    Pending(Instant),
+    Reported(Instant),
+}
+
+impl Stall {
+    pub fn press(&mut self, now: Instant, after: Duration) -> Option<Duration> {
+        let since = match *self {
+            Self::Clear => now,
+            Self::Pending(since) => since,
+            Self::Reported(_) => return None,
+        };
+        let stalled = now.saturating_duration_since(since);
+        if stalled < after {
+            *self = Self::Pending(since);
+            return None;
+        }
+        *self = Self::Reported(since);
+        Some(stalled)
+    }
+
+    pub fn ease(&mut self) {
+        if let Self::Pending(_) = self {
+            *self = Self::Clear;
+        }
+    }
+
+    pub fn resume(&mut self, now: Instant) -> Option<Duration> {
+        match mem::take(self) {
+            Self::Reported(since) => Some(now.saturating_duration_since(since)),
+            Self::Clear | Self::Pending(_) => None,
+        }
+    }
+
+    pub fn reported(self) -> bool {
+        matches!(self, Self::Reported(_))
+    }
 }
 
 pub struct Lane {
@@ -569,11 +605,8 @@ impl Lane {
             self.stalling(now);
             return;
         }
-        if let Some(since) = self.stall.since.take()
-            && mem::take(&mut self.stall.reported)
-        {
-            self.media
-                .stalled(Direction::Send, false, now.saturating_duration_since(since));
+        if let Some(duration) = self.stall.resume(now) {
+            self.media.stalled(Direction::Send, false, duration);
         }
     }
 
@@ -585,15 +618,10 @@ impl Lane {
             && (self.media.others.load(Ordering::Relaxed) > 0
                 || self.media.protocol_version() == 0);
         if !stalled {
-            if !self.stall.reported {
-                self.stall.since = None;
-            }
+            self.stall.ease();
             return;
         }
-        let since = *self.stall.since.get_or_insert(now);
-        let duration = now.saturating_duration_since(since);
-        if !self.stall.reported && duration >= self.media.stall_after {
-            self.stall.reported = true;
+        if let Some(duration) = self.stall.press(now, self.media.stall_after) {
             self.media.stalled(Direction::Send, true, duration);
         }
     }

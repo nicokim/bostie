@@ -20,7 +20,7 @@ use crate::voice::codec::{self, Decoder};
 use crate::voice::connection::Info;
 use crate::voice::crypto::ReplayWindow;
 use crate::voice::dave::{self, Dave, DecryptFailure};
-use crate::voice::media::{Arrival, Media, Transport, bump};
+use crate::voice::media::{Arrival, Media, Stall, Transport, bump};
 use crate::voice::pacer::Tick;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, is_before, to_samples};
 use crate::voice::receiver::{Item, Receiver};
@@ -187,8 +187,7 @@ struct Streak {
 struct Watchdog {
     failures: u64,
     media: Option<Instant>,
-    since: Option<Instant>,
-    reported: bool,
+    stall: Stall,
 }
 
 #[derive(Debug, Default)]
@@ -495,7 +494,7 @@ impl State {
             && self.unmapped.is_empty()
             && self.held.is_empty()
             && self.streams.is_empty()
-            && !self.watchdog.reported
+            && !self.watchdog.stall.reported()
             && self.forget_at.is_none_or(|at| now48 < at)
             && self.media.others.load(Ordering::Relaxed) == self.member_count
     }
@@ -1228,32 +1227,22 @@ impl State {
             self.resume(now);
             return;
         }
-        let watchdog = &mut self.watchdog;
-        let reaching = watchdog
+        let reaching = self
+            .watchdog
             .media
             .is_some_and(|at| now.saturating_duration_since(at) <= MEDIA_RECENT);
-        if reaching {
-            let since = *watchdog.since.get_or_insert(now);
-            let stalled = now.saturating_duration_since(since);
-            if !watchdog.reported && stalled >= self.media.stall_after() {
-                watchdog.reported = true;
-                self.media.stalled(Direction::Receive, true, stalled);
-            }
-        } else if !watchdog.reported {
-            watchdog.since = None;
+        if !reaching {
+            self.watchdog.stall.ease();
+            return;
+        }
+        if let Some(stalled) = self.watchdog.stall.press(now, self.media.stall_after()) {
+            self.media.stalled(Direction::Receive, true, stalled);
         }
     }
 
     fn resume(&mut self, now: Instant) {
-        let since = self.watchdog.since.take();
-        if mem::take(&mut self.watchdog.reported)
-            && let Some(since) = since
-        {
-            self.media.stalled(
-                Direction::Receive,
-                false,
-                now.saturating_duration_since(since),
-            );
+        if let Some(duration) = self.watchdog.stall.resume(now) {
+            self.media.stalled(Direction::Receive, false, duration);
         }
     }
 
