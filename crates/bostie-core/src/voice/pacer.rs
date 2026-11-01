@@ -18,7 +18,6 @@ pub const AFTER_MARGIN: Duration = Duration::from_millis(2);
 const LANES_PER_THREAD: usize = 4;
 const LATE_REANCHOR: Duration = FRAME.saturating_mul(3);
 const WORK_SMOOTHING: u64 = 8;
-const AFTER_BUCKETS: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tick {
@@ -60,20 +59,6 @@ impl Seat {
     fn is(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
-}
-
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThreadLoad {
-    pub lanes: usize,
-    pub work_ewma: Duration,
-    pub work_max: Duration,
-    pub after_ewma: Duration,
-    pub after_max: Duration,
-    pub after_p50: Duration,
-    pub after_p99: Duration,
-    pub late_ticks: u64,
-    pub lane_panics: u64,
 }
 
 pub struct PacerPool {
@@ -126,13 +111,7 @@ struct Strain {
 #[derive(Default)]
 struct Load {
     lanes: AtomicUsize,
-    work_ewma: AtomicU64,
-    work_max: AtomicU64,
     after_ewma: AtomicU64,
-    after_max: AtomicU64,
-    after_micros: [AtomicU64; AFTER_BUCKETS],
-    late_ticks: AtomicU64,
-    lane_panics: AtomicU64,
 }
 
 #[cfg(test)]
@@ -194,12 +173,10 @@ impl PacerPool {
             load,
         } = &mut *manual;
         *now += FRAME.saturating_mul(skipped.saturating_add(1));
-        load.late_ticks
-            .fetch_add(u64::from(skipped), Ordering::Relaxed);
         let tick = Tick { now: *now, skipped };
-        run_lanes(lanes, tick, load);
+        run_lanes(lanes, tick);
         let start = Instant::now();
-        run_afters(afters, tick, start + FRAME, load, &Wall, start);
+        run_afters(afters, tick, start + FRAME, &Wall, start);
         load.lanes.store(lanes.len(), Ordering::Relaxed);
     }
 
@@ -240,19 +217,19 @@ impl PacerPool {
 
     #[cfg(test)]
     pub fn lanes(&self) -> usize {
-        self.threads().iter().map(|thread| thread.lanes).sum()
+        self.threads().iter().sum()
     }
 
     #[cfg(test)]
-    pub fn threads(&self) -> Vec<ThreadLoad> {
+    pub fn threads(&self) -> Vec<usize> {
         match &self.mode {
             Mode::Threads(workers) => workers
                 .lock()
                 .iter()
-                .map(|worker| worker.load.snapshot())
+                .map(|worker| worker.load.lanes())
                 .collect(),
             #[cfg(test)]
-            Mode::Manual(manual) => vec![manual.lock().load.snapshot()],
+            Mode::Manual(manual) => vec![manual.lock().load.lanes()],
         }
     }
 }
@@ -476,26 +453,6 @@ impl Strain {
 }
 
 impl Load {
-    #[cfg(test)]
-    fn snapshot(&self) -> ThreadLoad {
-        let after_max = Duration::from_nanos(self.after_max.load(Ordering::Relaxed));
-        let after_micros = self
-            .after_micros
-            .each_ref()
-            .map(|count| count.load(Ordering::Relaxed));
-        ThreadLoad {
-            lanes: self.lanes(),
-            work_ewma: Duration::from_nanos(self.work_ewma.load(Ordering::Relaxed)),
-            work_max: Duration::from_nanos(self.work_max.load(Ordering::Relaxed)),
-            after_ewma: self.receive(),
-            after_max,
-            after_p50: quantile(&after_micros, 50).min(after_max),
-            after_p99: quantile(&after_micros, 99).min(after_max),
-            late_ticks: self.late_ticks.load(Ordering::Relaxed),
-            lane_panics: self.lane_panics.load(Ordering::Relaxed),
-        }
-    }
-
     fn lanes(&self) -> usize {
         self.lanes.load(Ordering::Relaxed)
     }
@@ -504,48 +461,14 @@ impl Load {
         Duration::from_nanos(self.after_ewma.load(Ordering::Relaxed))
     }
 
-    fn record_work(&self, work: Duration) {
-        smooth(&self.work_ewma, &self.work_max, work);
-    }
-
     fn record_after(&self, after: Duration) {
-        smooth(&self.after_ewma, &self.after_max, after);
-        let bucket =
-            usize::try_from(u128::BITS - after.as_micros().leading_zeros()).unwrap_or(usize::MAX);
-        if let Some(count) = self.after_micros.get(bucket).or(self.after_micros.last()) {
-            count.fetch_add(1, Ordering::Relaxed);
-        }
+        let average = ewma(self.after_ewma.load(Ordering::Relaxed), after);
+        self.after_ewma.store(average, Ordering::Relaxed);
     }
 }
 
 fn ewma(average: u64, took: Duration) -> u64 {
     average - average / WORK_SMOOTHING + nanos(took) / WORK_SMOOTHING
-}
-
-fn smooth(average: &AtomicU64, max: &AtomicU64, took: Duration) {
-    average.store(
-        ewma(average.load(Ordering::Relaxed), took),
-        Ordering::Relaxed,
-    );
-    max.fetch_max(nanos(took), Ordering::Relaxed);
-}
-
-#[cfg(test)]
-fn quantile(micros: &[u64], percent: u64) -> Duration {
-    let rank = micros
-        .iter()
-        .sum::<u64>()
-        .saturating_mul(percent)
-        .div_ceil(100)
-        .max(1);
-    let mut seen = 0;
-    for (&count, bucket) in micros.iter().zip(0_u32..) {
-        seen += count;
-        if seen >= rank {
-            return Duration::from_micros(1 << bucket);
-        }
-    }
-    Duration::ZERO
 }
 
 trait Clock {
@@ -616,13 +539,10 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
         } else {
             0
         };
-        load.late_ticks
-            .fetch_add(u64::from(skipped), Ordering::Relaxed);
         let tick = Tick { now, skipped };
         let before = lanes.len();
-        run_lanes(&mut lanes, tick, load);
+        run_lanes(&mut lanes, tick);
         let sent = clock.now();
-        load.record_work(sent.saturating_duration_since(now));
         load.lanes
             .fetch_sub(before - lanes.len(), Ordering::Relaxed);
         if mem::take(&mut shed) {
@@ -630,7 +550,7 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
         }
         if !afters.is_empty() {
             let deadline = next + FRAME - AFTER_MARGIN;
-            let done = run_afters(&mut afters, tick, deadline, load, clock, sent);
+            let done = run_afters(&mut afters, tick, deadline, clock, sent);
             load.record_after(done.saturating_duration_since(sent));
             shed = strain.sustained(load.receive(), done, &home.placement.tuning);
             if afters.is_empty() {
@@ -641,23 +561,20 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
     }
 }
 
-fn run_lanes(lanes: &mut Vec<(Seat, LaneFn)>, tick: Tick, load: &Load) {
-    lanes.retain_mut(|(_, lane)| contained(load, "a voice lane", || lane(tick)));
+fn run_lanes(lanes: &mut Vec<(Seat, LaneFn)>, tick: Tick) {
+    lanes.retain_mut(|(_, lane)| contained("a voice lane", || lane(tick)));
 }
 
 fn run_afters(
     afters: &mut Vec<After>,
     tick: Tick,
     deadline: Instant,
-    load: &Load,
     clock: &impl Clock,
     start: Instant,
 ) -> Instant {
     let mut mark = start;
     afters.retain_mut(|after| {
-        let alive = contained(load, "a voice receive phase", || {
-            (after.call)(tick, deadline)
-        });
+        let alive = contained("a voice receive phase", || (after.call)(tick, deadline));
         let end = clock.now();
         after.cost = ewma(after.cost, end.saturating_duration_since(mark));
         mark = end;
@@ -669,9 +586,8 @@ fn run_afters(
     mark
 }
 
-fn contained(load: &Load, what: &str, call: impl FnOnce() -> bool) -> bool {
+fn contained(what: &str, call: impl FnOnce() -> bool) -> bool {
     panic::catch_unwind(AssertUnwindSafe(call)).unwrap_or_else(|payload| {
-        load.lane_panics.fetch_add(1, Ordering::Relaxed);
         tracing::error!(
             panic = panic_message(payload.as_ref()),
             "{what} panicked and was dropped"
@@ -885,28 +801,25 @@ mod tests {
         assert_eq!(pool.assign(neighbour).unwrap(), 0);
         assert_eq!(pool.assign(panicking).unwrap(), 0);
 
-        wait_until(|| pool.threads()[0].lane_panics == 1);
+        wait_until(|| dropped.load(Ordering::Relaxed));
         take(&ticks, 5);
 
-        assert!(dropped.load(Ordering::Relaxed));
         assert_eq!(pool.lanes(), 1);
     }
 
     #[test]
     fn an_idle_thread_blocks_instead_of_ticking() {
-        let pool = PacerPool::new();
-        pool.assign(Box::new(|_| {
-            thread::sleep(Duration::from_millis(2));
-            false
-        }))
-        .unwrap();
-        wait_until(|| pool.lanes() == 0);
-        let before = pool.threads()[0];
+        let clock = Synthetic::new();
+        let load = Arc::new(Load::default());
+        load.lanes.store(1, Ordering::Relaxed);
+        let leaving = Assignment::new(Box::new(|_| false), None);
+        let _pacer = pace_loaded(&clock, vec![leaving], Arc::clone(&load));
+        wait_until(|| load.lanes() == 0);
+        let idle = clock.now();
 
         thread::sleep(FRAME * 3);
 
-        assert!(before.work_ewma > Duration::ZERO);
-        assert_eq!(pool.threads()[0], before);
+        assert_eq!(clock.now(), idle);
     }
 
     #[test]
@@ -1039,8 +952,7 @@ mod tests {
         }
         assert_eq!(first[5].now - first[4].now, FRAME * 4);
         assert_eq!(first[5].skipped, 3);
-        let load = pool.threads()[0];
-        assert_eq!((load.lanes, load.lane_panics, load.late_ticks), (2, 1, 3));
+        assert_eq!(pool.lanes(), 2);
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -1057,7 +969,6 @@ mod tests {
         let assignments = (0..3)
             .map(|index| {
                 let (lane_calls, after_calls) = (sender.clone(), sender.clone());
-                let clock = clock.clone();
                 let mut count = 0;
                 let lane: LaneFn = Box::new(move |tick| {
                     lane_calls.send((Call::Lane(index), tick.now, None)).is_ok()
@@ -1065,10 +976,6 @@ mod tests {
                 let after: AfterFn = Box::new(move |tick, deadline| {
                     count += 1;
                     assert!(index != 1 || count < 2, "receive failure");
-                    if index == 0 {
-                        let work = if count == 3 { 12_000 } else { 500 };
-                        clock.advance(Duration::from_micros(work));
-                    }
                     after_calls
                         .send((Call::After(index), tick.now, Some(deadline)))
                         .is_ok()
@@ -1076,8 +983,7 @@ mod tests {
                 Assignment::new(lane, Some(after))
             })
             .collect();
-        let load = Arc::new(Load::default());
-        let _pacer = pace_loaded(&clock, assignments, Arc::clone(&load));
+        let _pacer = pace_loaded(&clock, assignments, Arc::default());
 
         let calls: Vec<_> = (0..22)
             .map(|_| calls.recv_timeout(PATIENCE).unwrap())
@@ -1096,17 +1002,6 @@ mod tests {
         }
         expected.push((Call::Lane(0), origin + FRAME * 4, None));
         assert_eq!(calls, expected);
-        let load = load.snapshot();
-        assert_eq!(load.lane_panics, 1);
-        assert_eq!(load.work_max, Duration::ZERO);
-        assert_eq!(
-            (load.after_p50, load.after_p99, load.after_max),
-            (
-                Duration::from_micros(512),
-                Duration::from_millis(12),
-                Duration::from_millis(12)
-            )
-        );
     }
 
     #[test]
@@ -1151,7 +1046,7 @@ mod tests {
 
         wait_until(|| load.lanes() == 0);
 
-        assert_eq!(load.snapshot().after_ewma, Duration::ZERO);
+        assert_eq!(load.receive(), Duration::ZERO);
     }
 
     fn loaded(threads: &[(usize, u64)]) -> Vec<Worker> {
@@ -1274,8 +1169,7 @@ mod tests {
         );
         let sent: Vec<u32> = moved_calls.iter().filter_map(|(sent, _)| *sent).collect();
         assert!(sent.iter().copied().eq(1..=sent.len() as u32), "{sent:?}");
-        let lanes: Vec<usize> = pool.threads().iter().map(|thread| thread.lanes).collect();
-        assert_eq!(lanes, [1, 1]);
+        assert_eq!(pool.threads(), [1, 1]);
     }
 
     #[test]
