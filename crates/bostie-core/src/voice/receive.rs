@@ -1,5 +1,6 @@
 #![deny(clippy::arithmetic_side_effects)]
 
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem;
 use std::net::UdpSocket;
@@ -372,21 +373,23 @@ impl Reception {
         });
         match panic::catch_unwind(AssertUnwindSafe(|| state.run(now, skipped, deadline))) {
             Ok(alive) => alive,
-            Err(payload) => {
-                bump(&self.media.receive.rx_panics);
-                if self.panicked.allows(now) {
-                    error!(
-                        panic = panic_message(payload.as_ref()),
-                        "the voice receive phase panicked and starts over"
-                    );
-                }
-                if let Some(mut state) = self.state.take() {
-                    state.expire_speech(i64::MAX, 0);
-                    state.resume(now);
-                }
-                !self.media.closed.load(Ordering::Acquire)
-            }
+            Err(payload) => self.restart(now, payload.as_ref()),
         }
+    }
+
+    fn restart(&mut self, now: Instant, payload: &(dyn Any + Send)) -> bool {
+        bump(&self.media.receive.rx_panics);
+        if self.panicked.allows(now) {
+            error!(
+                panic = panic_message(payload),
+                "the voice receive phase panicked and starts over"
+            );
+        }
+        if let Some(mut state) = self.state.take() {
+            state.expire_speech(i64::MAX, 0);
+            state.resume(now);
+        }
+        !self.media.closed.load(Ordering::Acquire)
     }
 }
 
@@ -447,15 +450,6 @@ impl State {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }
-        #[cfg(test)]
-        assert!(
-            !self
-                .media
-                .faults
-                .receive_panic
-                .swap(false, Ordering::Relaxed),
-            "injected receive panic"
-        );
         self.subscribe();
         let now48 = samples_since(self.epoch, now);
         mem::swap(&mut *self.media.arrivals.lock(), &mut self.arrivals);

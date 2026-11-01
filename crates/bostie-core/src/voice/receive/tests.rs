@@ -295,6 +295,11 @@ impl Rig {
         self.tick();
     }
 
+    fn panic(&mut self) {
+        self.now += FRAME;
+        assert!(self.reception.restart(self.now, &"boom"));
+    }
+
     fn counter(&self, name: &str) -> u64 {
         let counters = self.media.receive.snapshot();
         counters
@@ -1077,11 +1082,7 @@ fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
 
     rig.send(ALICE_SSRC, 0, &packets[0]);
     rig.step();
-    rig.media
-        .faults
-        .receive_panic
-        .store(true, Ordering::Relaxed);
-    rig.step();
+    rig.panic();
     rig.send(ALICE_SSRC, 1, &packets[1]);
     rig.step();
 
@@ -1120,11 +1121,7 @@ fn a_receive_panic_ends_the_stall_it_reported() {
         rig.step();
     }
     let stalled = rig.stalls();
-    rig.media
-        .faults
-        .receive_panic
-        .store(true, Ordering::Relaxed);
-    rig.step();
+    rig.panic();
 
     assert_eq!(stalled, [(Direction::Receive, true, STALL)]);
     assert_eq!(

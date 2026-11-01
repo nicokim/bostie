@@ -147,8 +147,6 @@ pub struct Media {
     pub speech_hangover: AtomicU64,
     pub speech_activity: AtomicBool,
     pub receive: ReceiveCounters,
-    #[cfg(test)]
-    pub faults: Faults,
 }
 
 impl Media {
@@ -188,8 +186,6 @@ impl Media {
             speech_hangover: AtomicU64::new(nanos(DEFAULT_SPEECH_HANGOVER)),
             speech_activity: AtomicBool::new(true),
             receive: ReceiveCounters::default(),
-            #[cfg(test)]
-            faults: Faults::default(),
         }
     }
 
@@ -481,7 +477,7 @@ impl Lane {
             generation: transport.generation,
             sequence: fastrand::u16(..),
             timestamp: fastrand::u32(..),
-            nonce: first_nonce(&self.media),
+            nonce: 0,
             exhausted: false,
         });
     }
@@ -549,7 +545,7 @@ impl Lane {
         let wire: &[u8] = match &mut dave {
             Some(dave) => {
                 self.dave_out.clear();
-                if let Err(failure) = encrypt(&self.media, dave, payload, &mut self.dave_out) {
+                if let Err(failure) = dave.encrypt(payload, &mut self.dave_out) {
                     match failure {
                         EncryptFailure::NotReady => bump(&counters.dave_not_ready),
                         EncryptFailure::Failed => bump(&counters.encrypt_failures),
@@ -635,49 +631,6 @@ fn count_mixed(counters: &SendCounters, mixed: &Mixed<'_>) {
     } else {
         bump(&counters.encoded_packets);
     }
-}
-
-#[cfg(not(test))]
-fn encrypt(
-    _: &Media,
-    dave: &mut Dave,
-    payload: &[u8],
-    out: &mut Vec<u8>,
-) -> Result<(), EncryptFailure> {
-    dave.encrypt(payload, out)
-}
-
-#[cfg(test)]
-fn encrypt(
-    media: &Media,
-    dave: &mut Dave,
-    payload: &[u8],
-    out: &mut Vec<u8>,
-) -> Result<(), EncryptFailure> {
-    media
-        .faults
-        .encrypt
-        .lock()
-        .take()
-        .map_or_else(|| dave.encrypt(payload, out), Err)
-}
-
-#[cfg(not(test))]
-fn first_nonce(_: &Media) -> u32 {
-    0
-}
-
-#[cfg(test)]
-fn first_nonce(media: &Media) -> u32 {
-    media.faults.nonce_start.load(Ordering::Relaxed)
-}
-
-#[cfg(test)]
-#[derive(Default)]
-pub struct Faults {
-    pub nonce_start: std::sync::atomic::AtomicU32,
-    pub encrypt: Mutex<Option<EncryptFailure>>,
-    pub receive_panic: AtomicBool,
 }
 
 fn seal_and_send(

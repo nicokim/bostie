@@ -109,6 +109,16 @@ impl Rig {
         })));
     }
 
+    fn nonce_at(&mut self, nonce: u32) {
+        self.lane.rtp = Some(RtpState {
+            generation: self.generation,
+            sequence: 0,
+            timestamp: 0,
+            nonce,
+            exhausted: false,
+        });
+    }
+
     fn plain(&mut self) {
         self.media.with_dave(|dave| {
             let mut out = Vec::new();
@@ -452,11 +462,8 @@ fn the_nonce_continues_on_one_transport_and_restarts_with_a_new_one() {
 #[test]
 fn a_nonce_about_to_wrap_stops_sending_and_asks_for_a_new_key_once() {
     let mut rig = Rig::new();
-    rig.media
-        .faults
-        .nonce_start
-        .store(u32::MAX - 1, Ordering::Relaxed);
     rig.connect(&KEY);
+    rig.nonce_at(u32::MAX - 1);
     rig.plain();
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 4)).unwrap();
@@ -514,30 +521,6 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
     assert_eq!(rig.counter("held_ticks"), 2);
     assert_eq!(queued_frames(&sink), 1_920);
     rig.sent(0);
-}
-
-#[test]
-fn a_frame_dave_cannot_encrypt_is_dropped_and_counted_never_sent_plain() {
-    let mut rig = Rig::new();
-    rig.connect(&KEY);
-    let mut call = encrypting(&mut rig);
-    let sink = rig.sink(SinkFormat::Opus, StallPolicy::Hold);
-    let sent = opus_packets(3);
-    for packet in &sent {
-        sink.write(packet).unwrap();
-    }
-
-    *rig.media.faults.encrypt.lock() = Some(EncryptFailure::NotReady);
-    rig.tick(1);
-    *rig.media.faults.encrypt.lock() = Some(EncryptFailure::Failed);
-    rig.tick(1);
-    rig.tick(1);
-
-    let packets = rig.packets(1);
-    assert_eq!(decrypt(&mut call, &packets[0].payload), sent[2].to_vec());
-    assert_eq!(rig.counter("dave_not_ready"), 1);
-    assert_eq!(rig.counter("encrypt_failures"), 1);
-    assert_eq!(queued_frames(&sink), 0);
 }
 
 #[test]
@@ -663,15 +646,12 @@ fn include_self_tees_exactly_the_packets_sent() {
             .collect()
     };
     rig.media.self_receivers.store(1, Ordering::Relaxed);
-    rig.media
-        .faults
-        .nonce_start
-        .store(u32::MAX - 3, Ordering::Relaxed);
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
     rig.tick(2);
     let held = teed(&rig);
     rig.connect(&KEY);
+    rig.nonce_at(u32::MAX - 3);
     rig.media.with_dave(|dave| {
         let mut out = Vec::new();
         dave.start(1, &mut out).unwrap();

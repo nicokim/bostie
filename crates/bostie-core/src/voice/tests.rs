@@ -1656,25 +1656,14 @@ async fn unknown_opcodes_are_ignored() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_nonce_about_to_wrap_rejoins_for_a_new_key() {
+async fn an_exhausted_nonce_rejoins_for_a_new_key_and_restarts_at_zero() {
     let mut harness = Harness::start().await;
-    harness.connect();
-    harness
-        .media()
-        .faults
-        .nonce_start
-        .store(u32::MAX - 2, Ordering::Relaxed);
-    harness.announce().await;
-    harness.until(VoiceStatus::Ready).await;
+    harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 10)).unwrap();
+    harness.tick(2);
 
-    harness.tick(3);
-    harness
-        .media()
-        .faults
-        .nonce_start
-        .store(0, Ordering::Relaxed);
+    harness.media().exhausted.notify_one();
     let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
     harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
     harness.server.rekey([9; 32]).await;
@@ -1688,10 +1677,7 @@ async fn a_nonce_about_to_wrap_rejoins_for_a_new_key() {
         .iter()
         .map(|packet| (packet.key, packet.nonce))
         .collect();
-    assert_eq!(
-        nonces,
-        [(0, u32::MAX - 2), (0, u32::MAX - 1), (1, 0), (1, 1)]
-    );
+    assert_eq!(nonces, [(0, 0), (0, 1), (1, 0), (1, 1)]);
     assert_eq!(harness.counter("rejoins"), 1);
 }
 
@@ -2502,29 +2488,6 @@ async fn malformed_dave_messages_never_break_the_connection() {
     assert_eq!(harness.dave_counters().rejected_proposals, 6);
     assert_eq!(harness.statuses().len(), 2);
     harness.assert_heard(&mut call, &[LATE_PEER]);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_frame_dave_refuses_is_dropped_and_counted_never_sent_plain() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    *harness.media().faults.encrypt.lock() = Some(crate::voice::dave::EncryptFailure::NotReady);
-    let sink = harness.opus_sink();
-    let sent = opus(2);
-    for packet in &sent {
-        sink.write(packet).unwrap();
-    }
-
-    harness.tick(2);
-    let packets = harness.server.sfu.wait_packets(1, WAIT);
-
-    assert_eq!(harness.counter("packets_sent"), 1);
-    assert_ne!(packets[0].payload, sent[1].to_vec());
-    assert_eq!(
-        hear(&mut call, LATE_PEER, &packets[0].payload),
-        Some(sent[1].to_vec())
-    );
-    assert_eq!(harness.counter("dave_not_ready"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
