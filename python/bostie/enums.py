@@ -96,6 +96,17 @@ class InteractionType(DiscordIntEnum):
     MODAL_SUBMIT = 5
 
 
+class InteractionCallbackType(DiscordIntEnum):
+    PONG = 1
+    CHANNEL_MESSAGE_WITH_SOURCE = 4
+    DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE = 5
+    DEFERRED_UPDATE_MESSAGE = 6
+    UPDATE_MESSAGE = 7
+    APPLICATION_COMMAND_AUTOCOMPLETE_RESULT = 8
+    MODAL = 9
+    LAUNCH_ACTIVITY = 12
+
+
 class InteractionContextType(DiscordIntEnum):
     GUILD = 0
     BOT_DM = 1
@@ -123,6 +134,48 @@ class ComponentType(DiscordIntEnum):
     RADIO_GROUP = 21
     CHECKBOX_GROUP = 22
     CHECKBOX = 23
+
+
+class OverwriteType(DiscordIntEnum):
+    ROLE = 0
+    MEMBER = 1
+
+
+class VerificationLevel(DiscordIntEnum):
+    NONE = 0
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    VERY_HIGH = 4
+
+
+class PremiumTier(DiscordIntEnum):
+    NONE = 0
+    TIER_1 = 1
+    TIER_2 = 2
+    TIER_3 = 3
+
+
+class NSFWLevel(DiscordIntEnum):
+    DEFAULT = 0
+    EXPLICIT = 1
+    SAFE = 2
+    AGE_RESTRICTED = 3
+
+
+class StickerFormatType(DiscordIntEnum):
+    PNG = 1
+    APNG = 2
+    LOTTIE = 3
+    GIF = 4
+
+
+class JSONErrorCode(DiscordIntEnum):
+    """The JSON error codes bostie acts on; HTTPException.code holds any code."""
+
+    UNKNOWN_WEBHOOK = 10015
+    UNKNOWN_INTERACTION = 10062
+    UNKNOWN_VOICE_STATE = 10065
 
 
 class MessageReferenceType(DiscordIntEnum):
@@ -300,6 +353,50 @@ class ApplicationFlags(DiscordIntFlag):
     GATEWAY_MESSAGE_CONTENT = 1 << 18
     GATEWAY_MESSAGE_CONTENT_LIMITED = 1 << 19
     APPLICATION_COMMAND_BADGE = 1 << 23
+
+
+class UserFlags(DiscordIntFlag):
+    STAFF = 1 << 0
+    PARTNER = 1 << 1
+    HYPESQUAD = 1 << 2
+    BUG_HUNTER_LEVEL_1 = 1 << 3
+    HYPESQUAD_ONLINE_HOUSE_1 = 1 << 6
+    HYPESQUAD_ONLINE_HOUSE_2 = 1 << 7
+    HYPESQUAD_ONLINE_HOUSE_3 = 1 << 8
+    PREMIUM_EARLY_SUPPORTER = 1 << 9
+    TEAM_PSEUDO_USER = 1 << 10
+    BUG_HUNTER_LEVEL_2 = 1 << 14
+    VERIFIED_BOT = 1 << 16
+    VERIFIED_DEVELOPER = 1 << 17
+    CERTIFIED_MODERATOR = 1 << 18
+    BOT_HTTP_INTERACTIONS = 1 << 19
+
+
+class MemberFlags(DiscordIntFlag):
+    DID_REJOIN = 1 << 0
+    COMPLETED_ONBOARDING = 1 << 1
+    BYPASSES_VERIFICATION = 1 << 2
+    STARTED_ONBOARDING = 1 << 3
+    IS_GUEST = 1 << 4
+    STARTED_HOME_ACTIONS = 1 << 5
+    COMPLETED_HOME_ACTIONS = 1 << 6
+    AUTOMOD_QUARANTINED_USERNAME = 1 << 7
+    DM_SETTINGS_UPSELL_ACKNOWLEDGED = 1 << 9
+    AUTOMOD_QUARANTINED_GUILD_TAG = 1 << 10
+
+
+class RoleFlags(DiscordIntFlag):
+    IN_PROMPT = 1 << 0
+
+
+class AttachmentFlags(DiscordIntFlag):
+    IS_CLIP = 1 << 0
+    IS_THUMBNAIL = 1 << 1
+    IS_SPOILER = 1 << 3
+    CONTAINS_EXPLICIT_CONTENT = 1 << 4
+    IS_ANIMATED = 1 << 5
+    CONTAINS_GORE_CONTENT = 1 << 6
+    CONTAINS_SELF_HARM_CONTENT = 1 << 7
 
 
 class SpeakingFlags(DiscordIntFlag):

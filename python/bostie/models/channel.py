@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import msgspec
 
-from bostie.enums import ChannelFlags, ChannelType, Permissions
+from bostie.enums import ChannelFlags, ChannelType, OverwriteType, Permissions
 from bostie.models.base import Model, permissions_from
 
 if TYPE_CHECKING:
@@ -11,10 +11,10 @@ if TYPE_CHECKING:
 
 
 class Overwrite(Model, kw_only=True):
-    """A permission overwrite for a role (type 0) or a member (type 1)."""
+    """A permission overwrite for a role or a member."""
 
     id: int
-    type: int | None = None
+    type: OverwriteType | None = None
     _allow: str | None = msgspec.field(default=None, name="allow")
     _deny: str | None = msgspec.field(default=None, name="deny")
 

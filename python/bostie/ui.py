@@ -3,6 +3,7 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from bostie.custom_id import MAX_CUSTOM_ID
 from bostie.enums import ButtonStyle, ChannelType, ComponentType
+from bostie.models.components import SelectDefaultType
 
 __all__ = [
     "ButtonDict",
@@ -44,7 +45,6 @@ type _Raw = Mapping[str, Any]
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
 ]
-type _DefaultType = Literal["user", "role", "channel"]
 type _EntitySelectType = Literal[
     ComponentType.USER_SELECT,
     ComponentType.ROLE_SELECT,
@@ -83,7 +83,7 @@ class StringSelectDict(TypedDict):
 
 class SelectDefaultDict(TypedDict):
     id: int
-    type: _DefaultType
+    type: SelectDefaultType
 
 
 class EntitySelectDict(TypedDict):
@@ -441,7 +441,7 @@ def _entity_select(
     return select
 
 
-def _defaults(ids: Iterable[int], type: _DefaultType) -> list[SelectDefaultDict]:
+def _defaults(ids: Iterable[int], type: SelectDefaultType) -> list[SelectDefaultDict]:
     return [{"id": id, "type": type} for id in ids]
 
 

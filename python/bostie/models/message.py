@@ -1,14 +1,16 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, Unpack
 
 import msgspec
 
 from bostie.enums import (
+    AttachmentFlags,
     ComponentType,
     MessageFlags,
     MessageReferenceType,
     MessageType,
+    StickerFormatType,
 )
 from bostie.file import File
 from bostie.models.base import Builder, Model
@@ -24,6 +26,8 @@ from bostie.models.user import User
 
 if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
+
+type MentionType = Literal["roles", "users", "everyone"]
 
 V2_COMPONENT_TYPES = frozenset(
     {
@@ -55,7 +59,7 @@ class Attachment(Model, kw_only=True):
     width: int | None = None
     ephemeral: bool | None = None
     duration_secs: float | None = None
-    flags: int | None = None
+    flags: AttachmentFlags | None = None
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
@@ -130,13 +134,13 @@ class MessageReference(Builder, kw_only=True):
 class StickerItem(Model, kw_only=True):
     id: int
     name: str | None = None
-    format_type: int | None = None
+    format_type: StickerFormatType | None = None
 
 
 class AllowedMentions(Builder, kw_only=True):
     """Which mentions in a message may notify; `parse=()` silences all of them."""
 
-    parse: tuple[str, ...] | None = None
+    parse: tuple[MentionType, ...] | None = None
     roles: tuple[int, ...] | None = None
     users: tuple[int, ...] | None = None
     replied_user: bool | None = None

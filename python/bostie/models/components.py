@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import cast
+from typing import Literal, cast
 
 import msgspec
 
@@ -51,11 +51,14 @@ class SelectOption(Builder, kw_only=True):
     default: bool | None = None
 
 
+type SelectDefaultType = Literal["user", "role", "channel"]
+
+
 class SelectDefaultValue(Builder, kw_only=True):
     """A user, role or channel a select shows as already chosen."""
 
     id: int
-    type: str | None = None
+    type: SelectDefaultType | None = None
 
 
 class _Select(_Component, kw_only=True):

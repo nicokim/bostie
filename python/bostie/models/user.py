@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, ClassVar
 
+from bostie.enums import UserFlags
 from bostie.models.base import Model
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ class User(Model, kw_only=True):
     system: bool | None = None
     banner: str | None = None
     accent_color: int | None = None
-    public_flags: int | None = None
+    public_flags: UserFlags | None = None
 
     @property
     def mention(self) -> str:

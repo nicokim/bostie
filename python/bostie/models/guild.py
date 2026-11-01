@@ -3,7 +3,14 @@ from typing import TYPE_CHECKING, ClassVar
 
 import msgspec
 
-from bostie.enums import Permissions
+from bostie.enums import (
+    MemberFlags,
+    NSFWLevel,
+    Permissions,
+    PremiumTier,
+    RoleFlags,
+    VerificationLevel,
+)
 from bostie.models.base import Model, permissions_from
 from bostie.models.user import User
 
@@ -32,7 +39,7 @@ class Role(Model, kw_only=True):
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     managed: bool | None = None
     mentionable: bool | None = None
-    flags: int | None = None
+    flags: RoleFlags | None = None
 
     @property
     def permissions(self) -> Permissions | None:
@@ -63,7 +70,7 @@ class Member(Model, kw_only=True):
     pending: bool | None = None
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
-    flags: int | None = None
+    flags: MemberFlags | None = None
 
     @property
     def permissions(self) -> Permissions | None:
@@ -95,7 +102,7 @@ class Guild(Model, kw_only=True):
     icon: str | None = None
     owner_id: int | None = None
     afk_channel_id: int | None = None
-    verification_level: int | None = None
+    verification_level: VerificationLevel | None = None
     features: tuple[str, ...] = ()
     member_count: int | None = None
     large: bool | None = None
@@ -103,11 +110,11 @@ class Guild(Model, kw_only=True):
     system_channel_id: int | None = None
     rules_channel_id: int | None = None
     preferred_locale: str | None = None
-    premium_tier: int | None = None
+    premium_tier: PremiumTier | None = None
     description: str | None = None
     banner: str | None = None
     vanity_url_code: str | None = None
-    nsfw_level: int | None = None
+    nsfw_level: NSFWLevel | None = None
 
 
 class UnavailableGuild(Model, kw_only=True):

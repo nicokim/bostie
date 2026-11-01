@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 import msgspec
 
-from bostie.enums import MessageFlags, OptionType
+from bostie.enums import (
+    InteractionCallbackType,
+    JSONErrorCode,
+    MessageFlags,
+    OptionType,
+)
 from bostie.errors import (
     HTTPException,
     InteractionExpired,
@@ -42,13 +47,6 @@ CALLBACK_ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
 ORIGINAL_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/@original"
 FOLLOWUP_ROUTE = "/webhooks/{application_id}/{interaction_token}"
 
-CHANNEL_MESSAGE = 4
-DEFERRED_CHANNEL_MESSAGE = 5
-DEFERRED_UPDATE_MESSAGE = 6
-UPDATE_MESSAGE = 7
-AUTOCOMPLETE_RESULT = 8
-UNKNOWN_WEBHOOK = 10015
-UNKNOWN_INTERACTION = 10062
 
 SUBCOMMAND_TYPES = (OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP)
 
@@ -144,7 +142,7 @@ class _InteractionContext:
 
     async def _callback(
         self,
-        type: int,
+        type: InteractionCallbackType,
         data: Mapping[str, Any] | None = None,
         files: Sequence[File] = (),
     ) -> bytes:
@@ -183,7 +181,8 @@ class _InteractionContext:
         except HTTPException as error:
             if error.status == 401 or (
                 error.status == 404
-                and error.code in (UNKNOWN_WEBHOOK, UNKNOWN_INTERACTION)
+                and error.code
+                in (JSONErrorCode.UNKNOWN_WEBHOOK, JSONErrorCode.UNKNOWN_INTERACTION)
             ):
                 self.state = ResponseState.EXPIRED
             raise
@@ -323,7 +322,7 @@ class Context(_InteractionContext):
 
     async def _defer(self, ephemeral: bool) -> None:
         await self._callback(
-            DEFERRED_CHANNEL_MESSAGE,
+            InteractionCallbackType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
             {"flags": MessageFlags.EPHEMERAL} if ephemeral else None,
         )
         self.state = ResponseState.DEFERRED
@@ -334,7 +333,9 @@ class Context(_InteractionContext):
     ) -> bytes:
         flagged = self._ephemeral_for_new_message(ephemeral)
         response = await self._callback(
-            CHANNEL_MESSAGE, _with_ephemeral(body, flagged), files
+            InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE,
+            _with_ephemeral(body, flagged),
+            files,
         )
         self._original_ephemeral = flagged
         return response
@@ -431,7 +432,7 @@ class ComponentContext(Context):
         await self._defer_update()
 
     async def _defer_update(self) -> None:
-        await self._callback(DEFERRED_UPDATE_MESSAGE)
+        await self._callback(InteractionCallbackType.DEFERRED_UPDATE_MESSAGE)
         self.state = ResponseState.DEFERRED_UPDATE
         self._original_ephemeral = self._component_message_is_ephemeral()
 
@@ -440,7 +441,7 @@ class ComponentContext(Context):
     ) -> bytes:
         self._original_ephemeral = self._component_message_is_ephemeral()
         self._warn_if_ephemeral_differs(ephemeral)
-        return await self._callback(UPDATE_MESSAGE, body, files)
+        return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _component_message_is_ephemeral(self) -> bool:
         message = self.interaction.message
@@ -463,7 +464,10 @@ class AutocompleteContext(_InteractionContext):
             self._ensure_alive()
             if self.state is not ResponseState.PENDING:
                 raise InteractionResponded("the interaction was already answered")
-            await self._callback(AUTOCOMPLETE_RESULT, {"choices": choices})
+            await self._callback(
+                InteractionCallbackType.APPLICATION_COMMAND_AUTOCOMPLETE_RESULT,
+                {"choices": choices},
+            )
             self.state = ResponseState.RESPONDED
 
 

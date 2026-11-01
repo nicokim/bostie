@@ -16,6 +16,7 @@ from bostie.enums import (
     Direction,
     DisconnectReason,
     Intents,
+    JSONErrorCode,
     SpeakingFlags,
     State,
 )
@@ -66,7 +67,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bostie.voice")
 
-UNKNOWN_VOICE_STATE = 10065
 VOICE_STATE_UPDATE = 4
 VOICE_CHANNELS = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
 
@@ -1164,7 +1164,7 @@ class ContextVoice:
                 user_id=self._user_id,
             )
         except NotFound as error:
-            if error.code != UNKNOWN_VOICE_STATE:
+            if error.code != JSONErrorCode.UNKNOWN_VOICE_STATE:
                 raise
             state = {}
         channel_id = state.get("channel_id")

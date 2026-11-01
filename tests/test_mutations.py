@@ -39,7 +39,16 @@ REST_MODELS: dict[str, type[Model]] = {
     "message": Message,
     "application_me": Application,
 }
-ENUM_KEYS = {"type", "style", "component_type", "context"}
+ENUM_KEYS = {
+    "type",
+    "style",
+    "component_type",
+    "context",
+    "verification_level",
+    "premium_tier",
+    "nsfw_level",
+    "format_type",
+}
 FLAG_KEYS = {
     "flags",
     "flags_new",
