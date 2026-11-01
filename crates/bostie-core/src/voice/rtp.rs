@@ -218,6 +218,8 @@ impl Header {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use proptest::collection::vec;
+    use proptest::option;
     use proptest::prelude::*;
 
     use super::*;
@@ -246,6 +248,27 @@ pub(crate) mod tests {
             header.extend_from_slice(&words.to_be_bytes());
         }
         header
+    }
+
+    pub(crate) fn any_extension() -> impl Strategy<Value = (Option<Extension>, Vec<u8>)> {
+        option::of((any::<u16>(), vec(any::<[u8; 4]>(), 0..=3))).prop_map(|extension| {
+            extension.map_or((None, Vec::new()), |(profile, words)| {
+                let extension = Extension {
+                    profile,
+                    words: u16::try_from(words.len()).unwrap(),
+                };
+                (Some(extension), words.concat())
+            })
+        })
+    }
+
+    pub(crate) fn padded(payload: &[u8], padding: u8) -> Vec<u8> {
+        let mut body = payload.to_vec();
+        if padding > 0 {
+            body.extend(std::iter::repeat_n(0, usize::from(padding) - 1));
+            body.push(padding);
+        }
+        body
     }
 
     #[test]
@@ -284,61 +307,6 @@ pub(crate) mod tests {
         );
         assert_eq!(parsed.size(), HEADER_LEN);
         assert_eq!(parsed.payload(b"opus").unwrap(), b"opus");
-    }
-
-    #[test]
-    fn every_csrc_count_extends_the_header_by_four_bytes_each() {
-        for count in 0..=15u32 {
-            let csrcs: Vec<u32> = (0..count).collect();
-            let mut packet = header_bytes(false, &csrcs, None, 7);
-            packet.extend_from_slice(b"opus");
-
-            let header = Header::parse(&packet).unwrap();
-
-            assert_eq!(usize::from(header.csrc_count), csrcs.len());
-            assert_eq!(header.size(), 12 + 4 * csrcs.len());
-            assert_eq!(header.payload(&packet[header.size()..]).unwrap(), b"opus");
-        }
-    }
-
-    #[test]
-    fn one_byte_and_two_byte_extensions_skip_their_body() {
-        for profile in [0xBEDE, 0x1000] {
-            for words in 0..=3u16 {
-                let extension = Extension { profile, words };
-                let mut packet = header_bytes(false, &[1, 2], Some(extension), 7);
-                packet.extend(std::iter::repeat_n(0xAA, 4 * usize::from(words)));
-                packet.extend_from_slice(b"opus");
-
-                let header = Header::parse(&packet).unwrap();
-
-                assert_eq!(header.extension, Some(extension));
-                assert_eq!(header.size(), 12 + 8 + 4);
-                assert_eq!(header.payload(&packet[header.size()..]).unwrap(), b"opus");
-            }
-        }
-    }
-
-    #[test]
-    fn padding_counts_from_1_to_255_are_stripped() {
-        for count in 1..=255u8 {
-            let mut packet = header_bytes(true, &[], None, 7);
-            packet.extend_from_slice(b"opus");
-            packet.extend(std::iter::repeat_n(0, usize::from(count) - 1));
-            packet.push(count);
-
-            let header = Header::parse(&packet).unwrap();
-
-            assert!(header.padding);
-            assert_eq!(header.payload(&packet[HEADER_LEN..]).unwrap(), b"opus");
-        }
-    }
-
-    #[test]
-    fn padding_may_take_the_whole_payload() {
-        let header = Header::parse(&header_bytes(true, &[], None, 7)).unwrap();
-
-        assert_eq!(header.payload(&[0, 0, 3]).unwrap(), b"");
     }
 
     #[test]
@@ -522,7 +490,43 @@ pub(crate) mod tests {
 
     proptest! {
         #[test]
-        fn random_bytes_never_panic(packet in proptest::collection::vec(any::<u8>(), 0..64)) {
+        fn built_packets_parse_back_to_their_fields_and_payload(
+            csrcs in vec(any::<u32>(), 0..=15),
+            (extension, extension_body) in any_extension(),
+            padding in any::<u8>(),
+            marker in any::<bool>(),
+            payload_type in 0_u8..128,
+            sequence in any::<u16>(),
+            payload in vec(any::<u8>(), 0..32),
+        ) {
+            let mut packet = header_bytes(padding > 0, &csrcs, extension, sequence);
+            packet[1] = u8::from(marker) << 7 | payload_type;
+            packet.extend_from_slice(&extension_body);
+            packet.extend_from_slice(&padded(&payload, padding));
+
+            let header = Header::parse(&packet).unwrap();
+            let body = &packet[header.size()..];
+
+            prop_assert_eq!(header, Header {
+                padding: padding > 0,
+                marker,
+                payload_type,
+                sequence,
+                timestamp: 0x5678_9ABC,
+                ssrc: 0xDEAD_BEEF,
+                csrc_count: u8::try_from(csrcs.len()).unwrap(),
+                extension,
+            });
+            prop_assert_eq!(
+                header.size(),
+                HEADER_LEN + 4 * csrcs.len() + 4 * usize::from(extension.is_some())
+            );
+            prop_assert_eq!(header.extension_body(body), &extension_body[..]);
+            prop_assert_eq!(header.payload(body).unwrap(), &payload[..]);
+        }
+
+        #[test]
+        fn random_bytes_never_panic(packet in vec(any::<u8>(), 0..64)) {
             let _ = classify(&packet);
             for profile in [ONE_BYTE_PROFILE, TWO_BYTE_PROFILE] {
                 let _ = extensions(profile, &packet);
