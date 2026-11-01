@@ -34,6 +34,7 @@ __all__ = [
 ]
 
 type _Emoji = str | Mapping[str, Any]
+type _Raw = Mapping[str, Any]
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
 ]
@@ -69,7 +70,7 @@ class SelectDict(TypedDict):
 
 class RowDict(TypedDict):
     type: Literal[ComponentType.ACTION_ROW]
-    components: list[ButtonDict | SelectDict]
+    components: list[ButtonDict | SelectDict | _Raw]
 
 
 class TextDict(TypedDict):
@@ -86,8 +87,8 @@ class ThumbnailDict(TypedDict):
 
 class SectionDict(TypedDict):
     type: Literal[ComponentType.SECTION]
-    components: list[TextDict]
-    accessory: ButtonDict | ThumbnailDict
+    components: list[TextDict | _Raw]
+    accessory: ButtonDict | ThumbnailDict | _Raw
 
 
 class GalleryItemDict(TypedDict):
@@ -98,7 +99,7 @@ class GalleryItemDict(TypedDict):
 
 class MediaGalleryDict(TypedDict):
     type: Literal[ComponentType.MEDIA_GALLERY]
-    items: list[GalleryItemDict]
+    items: list[GalleryItemDict | _Raw]
 
 
 class FileDict(TypedDict):
@@ -114,7 +115,13 @@ class SeparatorDict(TypedDict):
 
 
 type _ContainerChild = (
-    RowDict | TextDict | SectionDict | MediaGalleryDict | FileDict | SeparatorDict
+    RowDict
+    | TextDict
+    | SectionDict
+    | MediaGalleryDict
+    | FileDict
+    | SeparatorDict
+    | _Raw
 )
 
 
@@ -125,7 +132,7 @@ class ContainerDict(TypedDict):
     spoiler: bool
 
 
-def row(*components: ButtonDict | SelectDict) -> RowDict:
+def row(*components: ButtonDict | SelectDict | _Raw) -> RowDict:
     """An action row holding up to five buttons or one select menu."""
     return {"type": ComponentType.ACTION_ROW, "components": list(components)}
 
@@ -219,7 +226,9 @@ def text(content: str) -> TextDict:
     return {"type": ComponentType.TEXT_DISPLAY, "content": content}
 
 
-def section(*texts: TextDict, accessory: ButtonDict | ThumbnailDict) -> SectionDict:
+def section(
+    *texts: TextDict | _Raw, accessory: ButtonDict | ThumbnailDict | _Raw
+) -> SectionDict:
     """One to three `text` components with a `button` or `thumbnail` beside them."""
     return {
         "type": ComponentType.SECTION,
@@ -243,7 +252,7 @@ def thumbnail(
     )
 
 
-def media_gallery(*items: GalleryItemDict) -> MediaGalleryDict:
+def media_gallery(*items: GalleryItemDict | _Raw) -> MediaGalleryDict:
     """One to ten images or videos built with `gallery_item`."""
     return {"type": ComponentType.MEDIA_GALLERY, "items": list(items)}
 
