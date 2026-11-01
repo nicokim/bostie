@@ -298,6 +298,8 @@ impl Item {
 mod tests {
     use std::collections::HashSet;
 
+    use proptest::prelude::*;
+
     use super::*;
     use crate::voice::sink::tests::Fixture;
     use crate::voice::types::{Overflow, ReceiveFormat, ReceiveStall, SILENCE_FRAME};
@@ -546,5 +548,61 @@ mod tests {
             waiting.read(256).unwrap(),
             ReceiveRead::Ended(Ended::Disconnected)
         );
+    }
+
+    proptest! {
+        #[test]
+        fn a_queue_hands_out_frames_in_order_and_accounts_for_each_one(
+            drop_newest in any::<bool>(),
+            steps in proptest::collection::vec((0..3_u64, any::<bool>(), 0..80_u64, 0..3_usize), 1..60),
+        ) {
+            let fixture = Fixture::new();
+            let overflow = if drop_newest { Overflow::DropNewest } else { Overflow::DropOldest };
+            let options = ReceiveOptions { overflow, ..open(&fixture, 100).options().clone() };
+            let receiver = Receiver::new(Handle::from(1), options, Arc::clone(&fixture.inbox)).unwrap();
+            let start = Instant::now();
+            let mut now = start;
+            let (mut pushed, mut edges) = (0, 0);
+            let mut heard = Vec::new();
+            let collect = |read: ReceiveRead, heard: &mut Vec<Item>| match read {
+                ReceiveRead::Items(items) => {
+                    heard.extend(items.into_iter().map(|(_, item)| item));
+                    true
+                }
+                _ => false,
+            };
+
+            for (frames, edge, advance, reads) in steps {
+                now += Duration::from_millis(advance);
+                let mut items: Vec<Item> = (pushed..pushed + frames)
+                    .map(|index| frame(ALICE, index * 960, start))
+                    .collect();
+                pushed += frames;
+                if edge {
+                    edges += 1;
+                    items.push(speech(ALICE, edges % 2 == 1, start));
+                }
+                receiver.push(items, now);
+                if reads > 0 {
+                    collect(receiver.read(reads).unwrap(), &mut heard);
+                }
+            }
+            while collect(receiver.read(256).unwrap(), &mut heard) {}
+
+            let offsets: Vec<u64> = heard
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Frame { offset, .. } => Some(*offset),
+                    _ => None,
+                })
+                .collect();
+            let spoken = heard.iter().filter(|item| matches!(item, Item::Speech { .. })).count();
+            let dropped = receiver.stats().unwrap()[1].1;
+            prop_assert!(offsets.windows(2).all(|pair| pair[0] < pair[1]), "{offsets:?}");
+            prop_assert_eq!(offsets.len() as u64 + dropped, pushed);
+            if drop_newest {
+                prop_assert_eq!(spoken, edges);
+            }
+        }
     }
 }

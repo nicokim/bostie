@@ -376,6 +376,9 @@ fn is_concealable(last: u32, samples: u32, next: u32, gap: u16, max_conceal: i64
 #[cfg(test)]
 #[expect(clippy::arithmetic_side_effects)]
 mod tests {
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+
     use super::*;
 
     const FRAME: i64 = 960;
@@ -850,5 +853,37 @@ mod tests {
         };
         player.run([trimmed, unplayable, packet(2, 0, FRAME)]);
         assert_eq!(player.played, [Out::Play(0), Out::Skip(1), Out::Play(2)]);
+    }
+
+    proptest! {
+        #[test]
+        fn any_arrival_order_within_the_jitter_plays_every_packet_in_order(
+            delays in vec(0..JITTER, 2..40),
+        ) {
+            let count = u16::try_from(delays.len()).unwrap();
+            let mut player = Player::new(JITTER);
+
+            player.run((0..count).zip(&delays).map(|(sequence, delay)| {
+                let slot = steady(sequence);
+                Slot { at: slot.at + delay, ..slot }
+            }));
+
+            prop_assert_eq!(&player.played, &plays(0..count));
+            player.assert_offsets_never_overlap();
+        }
+
+        #[test]
+        fn offsets_never_overlap_or_go_back_for_any_arrivals(
+            arrivals in vec((0..400_u16, 0..20 * FRAME), 1..60),
+        ) {
+            let mut player = Player::new(JITTER);
+
+            player.run(arrivals.into_iter().map(|(sequence, delay)| {
+                let slot = steady(sequence);
+                Slot { at: slot.at + delay, ..slot }
+            }));
+
+            player.assert_offsets_never_overlap();
+        }
     }
 }
