@@ -1,7 +1,0 @@
-POST /guilds/{guild_id}/soundboard-sounds soundboard.create reason
-DELETE /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.delete reason
-PATCH /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.edit reason
-GET /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.fetch
-GET /guilds/{guild_id}/soundboard-sounds soundboard.list
-GET /soundboard-default-sounds soundboard.list_default
-POST /channels/{channel_id}/send-soundboard-sound soundboard.send
