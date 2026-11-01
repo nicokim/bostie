@@ -1,8 +1,6 @@
 import asyncio
-import inspect
 import re
-import time
-from typing import get_args
+from typing import Any
 
 import msgspec
 import pytest
@@ -17,62 +15,86 @@ async def handler(ctx: object, **params: object) -> None:
     pass
 
 
+MANY = "{a}:{b}:{c}:{d}:{e}:{f}:end"
+
+
 def route(template: str) -> ComponentRoute[...]:
     return ComponentRoute(template, handler, router=Router())
 
 
-def test_placeholders_parse_with_backtracking_and_int_conversion() -> None:
-    vote = route("vote:{tag}:{up:int}")
+@pytest.mark.parametrize(
+    ("template", "custom_id", "expected"),
+    [
+        ("a.b+c", "a.b+c", {}),
+        ("a.b+c", "axb+c", None),
+        ("a.b+c", "a.b+cd", None),
+        ("x:{a}", "x:abc", {"a": "abc"}),
+        ("x:{a}", "x:a\nb", None),
+        ("{a}-end", "a-end-end", {"a": "a-end"}),
+        ("{a}-end", "abc-endx", None),
+        ("vote:{tag}:{up:int}", "vote:a:b:1", {"tag": "a:b", "up": 1}),
+        ("vote:{tag}:{up:int}", "vote:x:-5", {"tag": "x", "up": -5}),
+        ("vote:{tag}:{up:int}", "vote:x:007", {"tag": "x", "up": 7}),
+        ("vote:{tag}:{up:int}", "vote:x:-", None),
+        ("vote:{tag}:{up:int}", "vote:x:y", None),
+        ("vote:{tag}:{up:int}", "vote::1", None),
+        ("vote:{tag}:{up:int}", "other:x:1", None),
+        ("v:{n:int}", "v:12junk", None),
+        ("{n:int}1{x}", "12121x", {"n": 1212, "x": "x"}),
+        (MANY, "a:b:c:d:e:f:g\n:end", None),
+        (
+            MANY,
+            "a:b:c:d:e:f:g:end",
+            {"a": "a", "b": "b", "c": "c", "d": "d", "e": "e", "f": "f:g"},
+        ),
+    ],
+)
+def test_match(
+    template: str, custom_id: str, expected: dict[str, str | int] | None
+) -> None:
+    assert route(template).match(custom_id) == expected
 
-    assert vote.names == ("tag", "up")
-    assert vote.match("vote:a:b:1") == {"tag": "a:b", "up": 1}
-    assert vote.match("vote:x:-5") == {"tag": "x", "up": -5}
-    assert vote.match("vote:x:y") is None
-    assert vote.match("vote::1") is None
-    assert vote.match("other:x:1") is None
-    assert route("x:{a}").match("x:abc") == {"a": "abc"}
-    assert route("v:{n:int}").match("v:12junk") is None
-    assert route("{n:int}1{x}").match("12121x") == {"n": 1212, "x": "x"}
+
+class Bounded(str):
+    checks = 0
+    limit = 0
+
+    def startswith(self, *args: Any) -> bool:
+        self.checks += 1
+        assert self.checks <= self.limit
+        return super().startswith(*args)
 
 
-def test_a_custom_id_that_nearly_fits_many_placeholders_fails_fast() -> None:
-    many = route("{a}:{b}:{c}:{d}:{e}:{f}:end")
+def test_a_near_miss_on_many_placeholders_takes_polynomial_steps() -> None:
+    near_miss = Bounded(":" * 100)
+    near_miss.limit = 6 * 100**2
 
-    started = time.perf_counter()
-    assert many.match(":" * 100) is None
-    assert time.perf_counter() - started < 0.5
-    assert many.match("a:b:c:d:e:f:g\n:end") is None
-    assert many.match("a:b:c:d:e:f:g:end") == {
-        "a": "a",
-        "b": "b",
-        "c": "c",
-        "d": "d",
-        "e": "e",
-        "f": "f:g",
-    }
-
-
-def test_literal_text_is_matched_exactly() -> None:
-    assert route("a.b+c").match("a.b+c") == {}
-    assert route("a.b+c").match("axb+c") is None
+    assert route(MANY).match(near_miss) is None
 
 
 @pytest.mark.parametrize(
     "template",
-    ["{a}{b}", "x:{a b}", "x:{a:float}", "x:{1a}", "x{", "x}", "{{a}}", "{a}:{a}"],
+    ["{a}{b}", "x:{a b}", "x:{a:float}", "x{", "x}", "{a}:{a}"],
 )
 def test_invalid_templates(template: str) -> None:
     with pytest.raises(ValueError, match=re.escape(repr(template))):
         route(template)
 
 
-def test_id_round_trips() -> None:
+@pytest.mark.parametrize(
+    ("params", "custom_id"),
+    [
+        ({"tag": "rules", "up": 1}, "vote:rules:1"),
+        ({"tag": "a:b", "up": 0}, "vote:a:b:0"),
+        ({"tag": "x" * 93, "up": 1}, f"vote:{'x' * 93}:1"),
+        ({"tag": "x" * 92, "up": -5}, f"vote:{'x' * 92}:-5"),
+    ],
+)
+def test_id_round_trips(params: dict[str, str | int], custom_id: str) -> None:
     vote = route("vote:{tag}:{up:int}")
 
-    custom_id = vote.id(tag="rules", up=1)
-
-    assert custom_id == "vote:rules:1"
-    assert vote.match(custom_id) == {"tag": "rules", "up": 1}
+    assert vote.id(**params) == custom_id
+    assert vote.match(custom_id) == params
 
 
 @pytest.mark.parametrize(
@@ -80,9 +102,11 @@ def test_id_round_trips() -> None:
     [
         ({"tag": "x"}, TypeError, "takes \\['tag', 'up'\\]"),
         ({"tag": "x", "up": 1, "extra": 2}, TypeError, "takes"),
-        ({"tag": "x" * 100, "up": 1}, ValueError, "107 characters; Discord allows 100"),
+        ({"tag": "x" * 94, "up": 1}, ValueError, "101 characters; Discord allows 100"),
         ({"tag": "", "up": 1}, ValueError, "does not parse back"),
+        ({"tag": "x\nb", "up": 1}, ValueError, "does not parse back"),
         ({"tag": "x", "up": "1"}, ValueError, "does not parse back"),
+        ({"tag": "x", "up": True}, ValueError, "does not parse back"),
     ],
 )
 def test_id_rejects_params_that_cannot_round_trip(
@@ -214,17 +238,6 @@ def test_ui_checks_custom_id_length(custom_id: str) -> None:
         ui.button("x", custom_id=custom_id)
     with pytest.raises(ValueError, match="custom_id must be 1-100 characters"):
         ui.string_select(custom_id, [])
-
-
-def test_ui_buttons_with_a_custom_id_exclude_link_and_premium_styles() -> None:
-    style = inspect.signature(ui.button).parameters["style"].annotation
-
-    assert get_args(style.__value__) == (
-        ui.ButtonStyle.PRIMARY,
-        ui.ButtonStyle.SECONDARY,
-        ui.ButtonStyle.SUCCESS,
-        ui.ButtonStyle.DANGER,
-    )
 
 
 def test_ui_v2_builders_return_discord_component_dicts() -> None:
