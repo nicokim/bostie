@@ -29,7 +29,7 @@ from bostie.errors import (
     VoiceNotConnected,
 )
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
-from bostie.gateway import CLOSE_TIMEOUT, SHARD, GatewayClient
+from bostie.gateway import CLOSE_TIMEOUT, GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import Channel, User, VoiceState, decode
 from bostie.models.base import check_keys
@@ -846,7 +846,7 @@ class VoiceConnection:
             self._core().voice_connect(
                 self.guild_id,
                 self._channel_id,
-                shard_id=SHARD,
+                shard_id=self.manager._bot.gateway.shard_for(self.guild_id),
                 user_id=user_id,
                 self_mute=settings.self_mute,
                 self_deaf=settings.self_deaf,

@@ -91,7 +91,7 @@ A few things the example takes for granted:
 Everything bostie does not model yet stays reachable:
 
 - `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint.
-- `bot.gateway.send(op=..., d=...)` sends any opcode.
+- `bot.gateway.send(op=..., d=...)` sends any opcode: op 3 to every shard, a payload with a `guild_id` to that guild's shard, anything else to shard 0. `bot.gateway.shard(id).send(...)` picks the shard yourself.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
 - `ui.raw({...})` puts a component that `ui` has no builder for into a row, section or container.
 - An `InteractionCreate` listener gets every interaction, routed or not: a modal submit arrives as a `ModalSubmitInteraction`, and a type bostie does not model as an `UnknownInteraction`, with the payload in `raw`.
@@ -218,6 +218,8 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `global_rate_limit`: requests per second across all routes, 50 by default. Interaction responses and follow-ups do not count.
 - `api_url`: the REST API base URL, for a proxy or a fake Discord in tests.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
+- `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
+- `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `wait_until_ready()` waits for every shard here, and each event carries its `shard_id`.
 
 ## License
 

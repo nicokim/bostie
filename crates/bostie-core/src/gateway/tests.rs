@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::num::NonZeroU16;
+use std::num::{NonZeroU16, NonZeroU32};
 use std::pin::pin;
 use std::sync::Arc;
 use std::task::{Context, Wake, Waker};
@@ -816,6 +816,7 @@ async fn an_empty_identify_budget_opens_no_connection_until_the_reset() {
         remaining: 0,
         total: 1000,
         reset_after,
+        max_concurrency: NonZeroU32::MIN,
     });
 
     harness.start();
@@ -839,6 +840,7 @@ async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
         remaining: 1,
         total: 1000,
         reset_after: Duration::from_secs(3600),
+        max_concurrency: NonZeroU32::MIN,
     });
     for id in 0..2 {
         harness

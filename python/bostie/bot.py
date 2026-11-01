@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Unpack, cast, override
+from typing import Any, Literal, Unpack, cast, override
 
 import msgspec
 
@@ -122,7 +122,7 @@ class _Dispatch:
 
 
 class Bot(Router):
-    """A Discord bot on one gateway shard: commands, components, listeners and REST."""
+    """A Discord bot: commands, components, listeners, REST and its gateway shards."""
 
     def __init__(
         self,
@@ -137,8 +137,12 @@ class Bot(Router):
         global_rate_limit: int = 50,
         api_url: str = "https://discord.com/api/v10",
         voice: Defaults = DEFAULT_VOICE,
+        shard_count: int | Literal["auto"] = "auto",
+        shard_ids: Iterable[int] | Literal["all"] = "all",
     ) -> None:
         super().__init__()
+        self._shard_count = shard_count
+        self._shard_ids = _shard_ids(shard_count, shard_ids)
         self.cache = Cache()
         self.voice = VoiceManager(self, voice)
         self.user: User | None = None
@@ -157,10 +161,11 @@ class Bot(Router):
         self._gateway: GatewayClient | None = None
         self._closing: asyncio.Task[None] | None = None
         self._ready = False
+        self._unready: set[int] = set()
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
-        self._replaying = False
+        self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
 
     @property
@@ -185,7 +190,7 @@ class Bot(Router):
 
     @property
     def latency(self) -> float | None:
-        """Seconds from the last heartbeat to its ACK, or None when there is none."""
+        """Mean seconds from a heartbeat to its ACK over the shards, or None."""
         return None if self._gateway is None else self._gateway.latency
 
     def run(
@@ -222,18 +227,26 @@ class Bot(Router):
         if self._closing is not None and self._closing.done():
             self._closing = None
         self._bridge = bridge
-        self._replaying = False
+        self._replaying.clear()
         async with bridge:
             self._http = http = HTTPClient(bridge)
-            self._gateway = gateway = GatewayClient(bridge, token)
+            self._gateway = None
             try:
                 info = await http.request("GET", "/gateway/bot")
-                shards = info.get("shards", 1)
-                if shards > 1:
-                    log.warning(
-                        "Discord recommends %d shards; bostie runs one for now",
-                        shards,
-                    )
+                count = (
+                    self._shard_count
+                    if isinstance(self._shard_count, int)
+                    else int(info["shards"])
+                )
+                self._gateway = gateway = GatewayClient(
+                    bridge,
+                    token,
+                    shard_count=count,
+                    shard_ids=range(count)
+                    if isinstance(self._shard_ids, str)
+                    else self._shard_ids,
+                )
+                self._unready = set(gateway.shard_ids)
                 application = await http.request("GET", "/applications/@me")
                 self.application_id = int(application["id"])
                 if self._auto_sync:
@@ -264,7 +277,7 @@ class Bot(Router):
         await asyncio.shield(self._closing)
 
     async def wait_until_ready(self) -> None:
-        """Wait for the first READY since `start()`; RuntimeError if it ends first."""
+        """Wait until every shard got READY since `start()`; RuntimeError if it ends."""
         if self._ready:
             return
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -489,8 +502,11 @@ class Bot(Router):
                         exc_info=True,
                     )
                     self._failed_dispatches.add(name)
-            case ("disconnected", _, _, _, resuming):
-                self._replaying = resuming
+            case ("disconnected", shard_id, _, _, resuming):
+                if resuming:
+                    self._replaying.add(shard_id)
+                else:
+                    self._replaying.discard(shard_id)
                 self.gateway._handle(delivery)
             case ("stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway._handle(delivery)
@@ -534,7 +550,7 @@ class Bot(Router):
         if name == InteractionCreate.NAME:
             created = dispatch.event(InteractionCreate)
             if created is not None:
-                self._route(created.interaction, received)
+                self._route(created.interaction, received, shard_id)
         for listener in (
             *self.listeners.get(name, ()),
             *self.listeners.get(RAW_EVENT_NAME, ()),
@@ -549,17 +565,19 @@ class Bot(Router):
 
     def _follow_session(self, dispatch: _Dispatch) -> None:
         if dispatch.name == Ready.NAME:
-            self._replaying = False
+            self._replaying.discard(dispatch.shard_id)
             ready = dispatch.event(Ready)
             if ready is not None:
                 self.user = ready.user
                 self.application_id = ready.application.id
-            self._ready = True
-            for future in self._ready_waiters:
-                if not future.done():
-                    future.set_result(None)
+            self._unready.discard(dispatch.shard_id)
+            if not self._unready and not self._ready:
+                self._ready = True
+                for future in self._ready_waiters:
+                    if not future.done():
+                        future.set_result(None)
         elif dispatch.name == Resumed.NAME:
-            self._replaying = False
+            self._replaying.discard(dispatch.shard_id)
         elif dispatch.name == "RATE_LIMITED":
             limit = msgspec.json.decode(dispatch.data)
             log.warning(
@@ -568,9 +586,9 @@ class Bot(Router):
                 limit.get("retry_after"),
             )
 
-    def _route(self, interaction: Interaction, received: float) -> None:
+    def _route(self, interaction: Interaction, received: float, shard_id: int) -> None:
         anchor = received
-        if self._replaying:
+        if shard_id in self._replaying:
             age = time.time() * 1000 - ((interaction.id >> 22) + DISCORD_EPOCH_MS)
             if age > STALE_INTERACTION_MS:
                 log.warning(
@@ -776,3 +794,20 @@ async def _answer_failure(
         await ctx.respond(FAILURE_ANSWER, ephemeral=True)
     elif ctx.state is ResponseState.DEFERRED:
         await ctx.respond(FAILURE_ANSWER)
+
+
+def _shard_ids(
+    count: int | Literal["auto"], ids: Iterable[int] | Literal["all"]
+) -> tuple[int, ...] | Literal["all"]:
+    if isinstance(count, int) and count < 1:
+        raise ValueError(f"shard_count must be at least 1, got {count}")
+    if isinstance(ids, str):
+        return ids
+    if count == "auto":
+        raise ValueError("shard_ids needs an explicit shard_count")
+    chosen = tuple(ids)
+    if not chosen or len(set(chosen)) != len(chosen):
+        raise ValueError(f"shard_ids must be distinct and not empty, got {chosen}")
+    if outside := [shard_id for shard_id in chosen if not 0 <= shard_id < count]:
+        raise ValueError(f"shard_ids {outside} are outside range({count})")
+    return chosen

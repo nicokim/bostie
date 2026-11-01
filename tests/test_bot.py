@@ -657,8 +657,11 @@ def test_start_seeds_the_daily_identify_budget(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        exhausted = {"total": 1000, "remaining": 0, "reset_after": 300}
         gateway_bot = payloads.fixture("rest/gateway_bot")
+        exhausted = gateway_bot["session_start_limit"] | {
+            "remaining": 0,
+            "reset_after": 300,
+        }
         fake.fail(
             "GET",
             "/gateway/bot",

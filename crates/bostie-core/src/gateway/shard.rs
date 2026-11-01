@@ -494,7 +494,7 @@ impl Shard {
         connection.heartbeat = Some(Heartbeat::after_hello(interval, now, fastrand::f64()));
         connection.limiter = Some(SendLimiter::new(interval));
         let Some(session) = &self.session else {
-            let slot = self.shared.identify.reserve(now);
+            let slot = self.shared.identify.reserve(self.id, now);
             connection.identify_at = Some(slot.ok_or(Ending::NoIdentifyLeft)?);
             return Ok(());
         };

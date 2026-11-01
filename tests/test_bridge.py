@@ -275,7 +275,9 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
             async with Bridge(
                 fake.token, fake.api_url, explode, global_limit=50
             ) as running:
-                gateway = GatewayClient(running, fake.token)
+                gateway = GatewayClient(
+                    running, fake.token, shard_count=1, shard_ids=[0]
+                )
                 started = asyncio.ensure_future(
                     gateway._start(fake.gateway_url, intents=513)
                 )

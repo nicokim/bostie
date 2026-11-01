@@ -6,7 +6,7 @@ import time
 import uuid
 import zlib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, Literal, Self
@@ -61,6 +61,12 @@ class Recorded:
 
 
 @dataclass
+class _Session:
+    id: str
+    buffer: list[bytes] = field(default_factory=list)
+
+
+@dataclass
 class Connection:
     """A gateway connection, with the close code the client sent if it closed first."""
 
@@ -69,6 +75,8 @@ class Connection:
     compress: Callable[[bytes], bytes] | None
     live: bool = False
     close_code: int | None = None
+    shard: int = 0
+    received: list[Any] = field(default_factory=list)
 
     @property
     def path(self) -> str:
@@ -156,9 +164,9 @@ class FakeDiscord(VoiceGateway):
         self._faults: list[_Fault] = []
         self._holds: list[_Hold] = []
         self._windows: dict[tuple[str, str], tuple[float, int]] = {}
-        self._session_id: str | None = None
-        self._buffer: list[bytes] = []
+        self._sessions: dict[int, _Session] = {}
         self._identifies: asyncio.Queue[Json] = asyncio.Queue()
+        self._identify_holds: dict[int, asyncio.Event] = {}
         self._resumes: asyncio.Queue[Json] = asyncio.Queue()
         self._interactions: dict[str, Json] = {}
         self._responses: dict[str, dict[str, Json]] = {}
@@ -257,20 +265,24 @@ class FakeDiscord(VoiceGateway):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        for held in self._identify_holds.values():
+            held.set()
         for connection in self.connections:
             await connection.ws.close(code=WSCloseCode.GOING_AWAY)
         await self._stop_voice()
         await self._runner.cleanup()
 
-    async def dispatch(self, name: str, d: Any) -> int:
-        """Send a dispatch event, kept for RESUME replay, and return its seq."""
-        if self._session_id is None:
-            raise RuntimeError("no gateway session yet; await next_identify() first")
+    async def dispatch(self, name: str, d: Any, *, shard: int = 0) -> int:
+        """Send a dispatch event on a shard, kept for RESUME replay; return its seq."""
+        session = self._sessions.get(shard)
+        if session is None:
+            raise RuntimeError(f"shard {shard} has no session; await next_identify()")
         if name == "INTERACTION_CREATE" and "token" in d:
             self._interactions[d["token"]] = d
-        seq = self._append(name, d)
-        if self.connections and self.connections[-1].live:
-            await self.connections[-1].send(self._buffer[seq - 1])
+        seq = self._append(session, name, d)
+        live = [c for c in self.connections if c.shard == shard and c.live]
+        if live:
+            await live[-1].send(session.buffer[seq - 1])
         return seq
 
     async def send_op(self, op: int, d: Any = None) -> None:
@@ -319,6 +331,11 @@ class FakeDiscord(VoiceGateway):
     async def next_identify(self) -> Json:
         """Wait for the next IDENTIFY and return its ``d``."""
         return await self._identifies.get()
+
+    def hold_identify(self, shard: int) -> asyncio.Event:
+        """Leave ``shard``'s IDENTIFY unanswered until the returned event is set."""
+        release = self._identify_holds[shard] = asyncio.Event()
+        return release
 
     async def next_resume(self) -> Json:
         """Wait for the next RESUME and return its ``d``."""
@@ -369,13 +386,15 @@ class FakeDiscord(VoiceGateway):
             raise RuntimeError("no gateway connection yet")
         return self.connections[-1]
 
-    def _append(self, name: str, d: Any) -> int:
-        self._buffer.append(_frame(name, len(self._buffer) + 1, 0, d))
-        return len(self._buffer)
+    def _append(self, session: _Session, name: str, d: Any) -> int:
+        session.buffer.append(_frame(name, len(session.buffer) + 1, 0, d))
+        return len(session.buffer)
 
-    async def _catch_up(self, connection: Connection, seq: int) -> None:
-        while seq < len(self._buffer):
-            await connection.send(self._buffer[seq])
+    async def _catch_up(
+        self, connection: Connection, session: _Session, seq: int
+    ) -> None:
+        while seq < len(session.buffer):
+            await connection.send(session.buffer[seq])
             seq += 1
         connection.live = True
 
@@ -404,6 +423,7 @@ class FakeDiscord(VoiceGateway):
 
     async def _receive(self, connection: Connection, payload: Any) -> None:
         self.gateway_received.put_nowait(payload)
+        connection.received.append(payload)
         match payload:
             case {"op": 1} if not self._hold_acks:
                 await connection.send(_frame(None, None, 11, None))
@@ -424,27 +444,40 @@ class FakeDiscord(VoiceGateway):
         elif not isinstance(identify.get("intents"), int):
             await connection.ws.close(code=4013, message=b"Invalid intent(s)")
         else:
-            self._session_id = uuid.uuid4().hex
-            self._buffer = []
+            shard = identify.get("shard", [0, 1])
+            if (held := self._identify_holds.get(shard[0])) is not None:
+                await held.wait()
+            connection.shard = shard[0]
+            session = self._sessions[shard[0]] = _Session(uuid.uuid4().hex)
             ready = payloads.fixture("events/READY") | {
                 "user": self.bot_user,
-                "session_id": self._session_id,
+                "session_id": session.id,
                 "resume_gateway_url": self._resume_url,
+                "shard": shard,
             }
-            self._append("READY", ready)
-            await self._catch_up(connection, 0)
+            self._append(session, "READY", ready)
+            await self._catch_up(connection, session, 0)
 
     async def _resume(self, connection: Connection, resume: Json) -> None:
         seq = resume.get("seq")
+        shard, session = next(
+            (
+                (shard, session)
+                for shard, session in self._sessions.items()
+                if session.id == resume.get("session_id")
+            ),
+            (0, None),
+        )
         if resume.get("token") != self.token:
             await connection.ws.close(code=4004, message=b"Authentication failed")
-        elif self._session_id is None or resume.get("session_id") != self._session_id:
+        elif session is None:
             await connection.send(_frame(None, None, 9, False))
-        elif not isinstance(seq, int) or not 0 <= seq <= len(self._buffer):
+        elif not isinstance(seq, int) or not 0 <= seq <= len(session.buffer):
             await connection.ws.close(code=4007, message=b"Invalid seq")
         else:
-            self._append("RESUMED", {"_trace": [TRACE]})
-            await self._catch_up(connection, seq)
+            connection.shard = shard
+            self._append(session, "RESUMED", {"_trace": [TRACE]})
+            await self._catch_up(connection, session, seq)
 
     async def _update_voice_state(self, connection: Connection, update: Any) -> None:
         self._voice_state_updates.put_nowait(update)
@@ -502,7 +535,7 @@ class FakeDiscord(VoiceGateway):
             guild_id=guild_id,
             channel_id=channel_id,
             user_id=self.bot_user["id"],
-            session_id=self._session_id,
+            session_id=self._sessions[0].id,
             self_mute=self_mute,
             self_deaf=self_deaf,
             mute=self.mute,

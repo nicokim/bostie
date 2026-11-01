@@ -27,7 +27,7 @@ class Harness:
         self.fake = fake
         self.deliveries: asyncio.Queue[GatewayDelivery] = asyncio.Queue()
         self.bridge = Bridge(token, fake.api_url, self._on_gateway, global_limit=50)
-        self.gateway = GatewayClient(self.bridge, token)
+        self.gateway = GatewayClient(self.bridge, token, shard_count=1, shard_ids=[0])
 
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
         self.deliveries.put_nowait(delivery)
@@ -77,7 +77,9 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
     async def scenario(harness: Harness) -> None:
         fake, gateway = harness.fake, harness.gateway
         before = gateway.latency
-        gateway._identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
+        gateway._identify_limit(
+            {"remaining": 0, "total": 1, "reset_after": 300, "max_concurrency": 1}
+        )
         harness.start(presence=MappingProxyType({"status": "idle"}))
 
         assert await harness.deliveries.get() == (
@@ -306,7 +308,7 @@ def test_status_deliveries_are_logged_at_their_level(
         "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
     )
 
-    GatewayClient(bridge, "token")._handle(delivery)
+    GatewayClient(bridge, "token", shard_count=1, shard_ids=[0])._handle(delivery)
     asyncio.run(bridge.close())
 
     assert [record.levelno for record in caplog.records] == [level]

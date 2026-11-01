@@ -3,7 +3,7 @@
 mod voice;
 
 use std::collections::HashMap;
-use std::num::NonZeroU16;
+use std::num::{NonZeroU16, NonZeroU32};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -62,12 +62,21 @@ impl NativeCore {
         Ok(ticket.into())
     }
 
-    fn gateway_identify_limit(&self, remaining: u32, total: u32, reset_after: f64) -> Result<()> {
+    fn gateway_identify_limit(
+        &self,
+        remaining: u32,
+        total: u32,
+        reset_after: f64,
+        max_concurrency: u32,
+    ) -> Result<()> {
         let reset_after = seconds("reset_after", reset_after)?;
+        let max_concurrency = NonZeroU32::new(max_concurrency)
+            .ok_or_else(|| PyValueError::new_err("max_concurrency must be at least 1"))?;
         Ok(self.0.gateway_identify_limit(IdentifyLimit {
             remaining,
             total,
             reset_after,
+            max_concurrency,
         })?)
     }
 
