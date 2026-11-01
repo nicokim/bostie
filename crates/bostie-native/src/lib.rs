@@ -14,7 +14,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+use pyo3::types::{PyBytes, PyList, PyString};
 
 use crate::voice::{NativeReceiver, NativeSink, NativeSource};
 
@@ -212,16 +212,6 @@ impl NativeCore {
         Ok(py.detach(|| voice.verification_code(GuildId::from(guild_id), UserId::from(user_id)))?)
     }
 
-    fn voice_stats(&self, guild_id: u64) -> Result<HashMap<&'static str, u64>> {
-        let stats = self.voice()?.stats(GuildId::from(guild_id))?;
-        Ok(stats.into_iter().collect())
-    }
-
-    fn voice_diagnostics<'py>(&self, py: Python<'py>, guild_id: u64) -> Result<Bound<'py, PyDict>> {
-        let diagnostics = self.voice()?.diagnostics(GuildId::from(guild_id))?;
-        Ok(voice::diagnostics(py, diagnostics)?)
-    }
-
     #[pyo3(signature = (guild_id, *, kind, rate, channels, sample, buffer, volume, stall))]
     #[expect(clippy::too_many_arguments)]
     fn voice_sink(
@@ -315,14 +305,6 @@ impl NativeCore {
         Ok(ssrcs
             .into_iter()
             .map(|(ssrc, user)| (ssrc, u64::from(user)))
-            .collect())
-    }
-
-    fn voice_user_stats(&self, guild_id: u64) -> Result<HashMap<u64, HashMap<&'static str, u64>>> {
-        let users = self.voice()?.user_stats(GuildId::from(guild_id))?;
-        Ok(users
-            .into_iter()
-            .map(|(user, counters)| (u64::from(user), counters.into_iter().collect()))
             .collect())
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::future::{self, Future};
 use std::mem;
 use std::pin::pin;
@@ -13,7 +13,6 @@ use tracing::debug;
 
 use super::Shared;
 use super::close::{self, CloseAction};
-use super::crypto::Mode;
 use super::media::{Media, bump};
 use super::proto;
 use super::receiver::Ended;
@@ -26,7 +25,6 @@ use crate::inbox::Delivery;
 
 const REJOIN_LIMIT: u32 = 3;
 const RESUME_ATTEMPTS: u32 = 2;
-const HISTORY: usize = 20;
 const UNKNOWN_LATENCY: u64 = u64::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,26 +128,6 @@ impl Step {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HistoryEntry {
-    pub at: std::time::Instant,
-    pub status: VoiceStatus,
-    pub reason: Option<DisconnectReason>,
-    pub code: Option<u16>,
-    pub detail: Box<str>,
-}
-
-#[derive(Debug, Clone)]
-pub struct InfoView {
-    pub status: VoiceStatus,
-    pub channel: ChannelId,
-    pub endpoint_host: Option<Box<str>>,
-    pub mode: Option<Mode>,
-    pub ssrc: Option<u32>,
-    pub last_close: Option<u16>,
-    pub history: VecDeque<HistoryEntry>,
-}
-
 pub struct Info {
     pub guild: GuildId,
     pub shard: ShardId,
@@ -157,11 +135,11 @@ pub struct Info {
     pub members: Mutex<HashSet<UserId>>,
     latency_ws: AtomicU64,
     latency_udp: AtomicU64,
-    view: Mutex<InfoView>,
+    status: Mutex<VoiceStatus>,
 }
 
 impl Info {
-    pub fn new(guild: GuildId, shard: ShardId, channel: ChannelId) -> Self {
+    pub fn new(guild: GuildId, shard: ShardId) -> Self {
         Self {
             guild,
             shard,
@@ -169,15 +147,7 @@ impl Info {
             members: Mutex::new(HashSet::new()),
             latency_ws: AtomicU64::new(UNKNOWN_LATENCY),
             latency_udp: AtomicU64::new(UNKNOWN_LATENCY),
-            view: Mutex::new(InfoView {
-                status: VoiceStatus::Connecting,
-                channel,
-                endpoint_host: None,
-                mode: None,
-                ssrc: None,
-                last_close: None,
-                history: VecDeque::with_capacity(HISTORY),
-            }),
+            status: Mutex::new(VoiceStatus::Connecting),
         }
     }
 
@@ -197,38 +167,13 @@ impl Info {
         self.latency_udp.store(nanos(latency), Ordering::Relaxed);
     }
 
-    pub fn view(&self) -> InfoView {
-        self.view.lock().clone()
-    }
-
     #[cfg(test)]
     pub fn status(&self) -> VoiceStatus {
-        self.view.lock().status
+        *self.status.lock()
     }
 
-    pub fn update(&self, change: impl FnOnce(&mut InfoView)) {
-        change(&mut self.view.lock());
-    }
-
-    pub fn record(
-        &self,
-        status: VoiceStatus,
-        reason: Option<DisconnectReason>,
-        code: Option<u16>,
-        detail: &str,
-    ) {
-        let mut view = self.view.lock();
-        view.status = status;
-        if view.history.len() == HISTORY {
-            view.history.pop_front();
-        }
-        view.history.push_back(HistoryEntry {
-            at: std::time::Instant::now(),
-            status,
-            reason,
-            code,
-            detail: detail.into(),
-        });
+    pub fn set_status(&self, status: VoiceStatus) {
+        *self.status.lock() = status;
     }
 }
 
@@ -497,7 +442,6 @@ impl Connection {
                     None => return Some(GatewayEvent::Removed),
                     Some(channel) if channel != self.target => {
                         let from = mem::replace(&mut self.target, channel);
-                        self.info.update(|view| view.channel = channel);
                         self.media.end_receivers(Ended::Moved);
                         self.push(Delivery::VoiceMoved {
                             guild: self.guild,
@@ -562,7 +506,7 @@ impl Connection {
 
     fn announce(&mut self, status: VoiceStatus, detail: &str) {
         self.status = status;
-        self.info.record(status, None, None, detail);
+        self.info.set_status(status);
         self.push(Delivery::VoiceState {
             guild: self.guild,
             status,
@@ -667,7 +611,6 @@ impl Connection {
         match end {
             SessionEnd::Closed(code) => {
                 self.last_code = Some(code);
-                self.info.update(|view| view.last_close = Some(code));
                 let (action, text) = close::classify(code);
                 self.last_failure = Some(format!("closed with {code}: {text}"));
                 match action {
@@ -892,7 +835,7 @@ mod tests {
 
     #[test]
     fn latency_is_unknown_until_measured() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2));
+        let info = Info::new(GuildId::from(1), ShardId::from(0));
         assert_eq!(info.latency(), (None, None));
 
         info.set_latency_ws(Duration::from_millis(12));
@@ -905,20 +848,6 @@ mod tests {
                 Some(Duration::from_millis(3))
             )
         );
-    }
-
-    #[test]
-    fn the_history_keeps_the_last_twenty_changes() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0), ChannelId::from(2));
-        for index in 0..25 {
-            info.record(VoiceStatus::Reconnecting, None, Some(index), "step");
-        }
-
-        let view = info.view();
-        assert_eq!(view.history.len(), HISTORY);
-        assert_eq!(view.history.front().unwrap().code, Some(5));
-        assert_eq!(view.history.back().unwrap().code, Some(24));
-        assert_eq!(view.status, VoiceStatus::Reconnecting);
     }
 
     #[test]

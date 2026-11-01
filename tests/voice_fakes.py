@@ -291,7 +291,6 @@ class FakeCore:
         self.sources: list[FakeSource] = []
         self.receivers: list[FakeReceiver] = []
         self.ssrc_map: dict[int, int] = {}
-        self.user_counters: dict[int, dict[str, int]] = {}
         self.handle: Callable[[VoiceDelivery], None] | None = None
         self.auto_disconnect = True
         self.probe: tuple[Literal["pcm", "opus"], float | None, bool] | None = (
@@ -301,8 +300,6 @@ class FakeCore:
         )
         self.latency: tuple[float | None, float | None] = (0.01, 0.02)
         self.dave_view: tuple[int, int | None, str | None] = (1, 4, "11111 22222")
-        self.counters: dict[str, int] = {}
-        self.diagnostic_values: dict[str, object] = {"status": "ready"}
         self.live: set[int] = set()
         self._next_handle = 100
 
@@ -393,14 +390,6 @@ class FakeCore:
         self._record("voice_verification_code", guild_id, user_id)
         return f"code for {user_id} on {threading.current_thread().name}"
 
-    def voice_stats(self, guild_id: int) -> dict[str, int]:
-        self._record("voice_stats", guild_id)
-        return dict(self.counters)
-
-    def voice_diagnostics(self, guild_id: int) -> dict[str, object]:
-        self._record("voice_diagnostics", guild_id)
-        return dict(self.diagnostic_values)
-
     def voice_sink(
         self,
         guild_id: int,
@@ -462,10 +451,6 @@ class FakeCore:
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]:
         self._record("voice_ssrcs", guild_id)
         return dict(self.ssrc_map)
-
-    def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]:
-        self._record("voice_user_stats", guild_id)
-        return {user: dict(counters) for user, counters in self.user_counters.items()}
 
     def _source(self, name: str, *arguments: Any) -> FakeSource:
         self.calls.append((name, arguments, {}))

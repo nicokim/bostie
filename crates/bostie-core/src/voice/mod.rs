@@ -41,12 +41,10 @@ use tokio_websockets::Connector;
 use tracing::{debug, error};
 
 pub use self::codec::FrameEncoder;
-pub use self::connection::HistoryEntry;
 use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
-pub use self::pacer::ThreadLoad;
-use self::pacer::{PacerPool, Seat};
+use self::pacer::PacerPool;
 use self::receive::Reception;
 pub use self::receiver::{Ended, Item, ReceiveRead, Receiver};
 pub use self::sink::Sink;
@@ -63,7 +61,6 @@ use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
 
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
-pub type Counters = Vec<(&'static str, u64)>;
 
 const COMMAND_QUEUE: usize = 32;
 
@@ -109,26 +106,7 @@ struct ConnectionHandle {
     stop: watch::Sender<bool>,
     info: Arc<Info>,
     media: Arc<Media>,
-    pacer_thread: Seat,
     supervisor: JoinHandle<()>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Diagnostics {
-    pub guild: GuildId,
-    pub channel: ChannelId,
-    pub shard: ShardId,
-    pub status: VoiceStatus,
-    pub endpoint_host: Option<Box<str>>,
-    pub mode: Option<&'static str>,
-    pub ssrc: Option<u32>,
-    pub dave: DaveInfo,
-    pub members: Vec<UserId>,
-    pub last_close_code: Option<u16>,
-    pub history: Vec<HistoryEntry>,
-    pub pacer: Option<ThreadLoad>,
-    pub receivers: usize,
-    pub counters: Vec<(&'static str, u64)>,
 }
 
 impl Voice {
@@ -203,7 +181,7 @@ impl Voice {
             tuning.stall_after,
             tuning.receive,
         ));
-        let info = Arc::new(Info::new(guild, request.shard, request.channel));
+        let info = Arc::new(Info::new(guild, request.shard));
         let mut lane = media.lane(request.encoder)?;
         let mut reception = Reception::new(
             Arc::clone(&media),
@@ -211,7 +189,7 @@ impl Voice {
             request.user,
             tuning.receive,
         );
-        let pacer_thread = self.shared.pacer.assign_pair(
+        self.shared.pacer.assign_pair(
             Box::new(move |tick| lane.tick(tick)),
             Box::new(move |tick, deadline| reception.tick(tick, deadline)),
         )?;
@@ -257,7 +235,6 @@ impl Voice {
                 stop,
                 info,
                 media,
-                pacer_thread,
                 supervisor,
             },
         );
@@ -327,40 +304,6 @@ impl Voice {
         Ok(dave::verification_code(fingerprints)?)
     }
 
-    pub fn stats(&self, guild: GuildId) -> Result<Vec<(&'static str, u64)>, CoreError> {
-        let media = self.media(guild)?;
-        Ok(stats(&media))
-    }
-
-    pub fn diagnostics(&self, guild: GuildId) -> Result<Diagnostics, CoreError> {
-        let (info, media, pacer_thread) = self.with_connection(guild, |handle| {
-            (
-                Arc::clone(&handle.info),
-                Arc::clone(&handle.media),
-                handle.pacer_thread.thread(),
-            )
-        })?;
-        let view = info.view();
-        let members = info.members.lock().iter().copied().collect();
-        let dave = media.dave_view.lock().info.clone();
-        Ok(Diagnostics {
-            guild,
-            channel: view.channel,
-            shard: info.shard,
-            status: view.status,
-            endpoint_host: view.endpoint_host,
-            mode: view.mode.map(crypto::Mode::as_str),
-            ssrc: view.ssrc,
-            dave,
-            members,
-            last_close_code: view.last_close,
-            history: view.history.into(),
-            pacer: self.shared.pacer.threads().get(pacer_thread).copied(),
-            receivers: media.open_receivers.load(Ordering::Relaxed),
-            counters: stats(&media),
-        })
-    }
-
     pub fn open_sink(&self, guild: GuildId, options: SinkOptions) -> Result<Arc<Sink>, CoreError> {
         let media = self.media(guild)?;
         let sink = Arc::new(Sink::new(
@@ -417,15 +360,6 @@ impl Voice {
         Ok(ssrcs
             .iter()
             .map(|(&ssrc, &(user, _))| (ssrc, user))
-            .collect())
-    }
-
-    pub fn user_stats(&self, guild: GuildId) -> Result<Vec<(UserId, Counters)>, CoreError> {
-        let media = self.media(guild)?;
-        let users = media.users.lock();
-        Ok(users
-            .iter()
-            .map(|(&user, counters)| (user, counters.snapshot()))
             .collect())
     }
 
@@ -506,26 +440,6 @@ fn check_speaking(flags: u8) -> Result<(), CoreError> {
     Ok(())
 }
 
-fn stats(media: &Media) -> Vec<(&'static str, u64)> {
-    let dave = media.dave_view.lock().counters;
-    let mut stats = media.counters.snapshot();
-    stats.extend([
-        ("key_packages", dave.key_packages),
-        ("commits", dave.commits),
-        ("welcomes", dave.welcomes),
-        ("transitions_executed", dave.transitions_executed),
-        ("recoveries", dave.recoveries),
-        ("dave_panics", dave.dave_panics),
-        ("rejected_proposals", dave.rejected_proposals),
-    ]);
-    stats.extend(media.receive.snapshot());
-    stats.extend([
-        ("receive_recoveries", dave.receive_recoveries),
-        ("decrypt_panics", dave.decrypt_panics),
-    ]);
-    stats
-}
-
 async fn supervise(
     task: JoinHandle<Ending>,
     shared: Arc<Shared>,
@@ -572,12 +486,7 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
         debug!(%error, guild = %info.guild, "the voice leave was not queued");
     }
     debug!(guild = %info.guild, reason = ending.reason.as_str(), "voice connection ended");
-    info.record(
-        VoiceStatus::Disconnected,
-        Some(ending.reason),
-        ending.code,
-        &ending.detail,
-    );
+    info.set_status(VoiceStatus::Disconnected);
     shared.inbox.push(Delivery::VoiceState {
         guild: info.guild,
         status: VoiceStatus::Disconnected,

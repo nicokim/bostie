@@ -94,8 +94,6 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
                 Ok(url) => url,
                 Err(error) => return SessionEnd::Failed(error.to_string()),
             };
-            let host = url.host_str().map(Box::from);
-            conn.info.update(|view| view.endpoint_host = host);
             conn.info.members.lock().clear();
             conn.info.ssrcs.lock().clear();
             conn.media.others.store(0, Ordering::Relaxed);
@@ -457,10 +455,6 @@ impl<'c> Session<'c> {
             ));
         };
         self.mode = Some(mode);
-        self.conn.info.update(|view| {
-            view.mode = Some(mode);
-            view.ssrc = Some(ready.ssrc);
-        });
         self.conn.set_step(Step::Udp);
         let (socket, sender) = udp::bind(SocketAddr::new(ready.ip, ready.port))
             .map_err(|error| SessionEnd::Failed(format!("udp: {error}")))?;

@@ -500,13 +500,11 @@ def test_after_the_end_calls_raise_voice_not_connected(name: str) -> None:
 def test_after_the_end_reads_return_the_last_values() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        bot.core.counters = {"packets_sent": 50}
-        dave, stats, diagnostics = vc.dave, vc.stats(), vc.diagnostics()
+        dave = vc.dave
         bot.deliver(disconnected("requested"))
         await vc.disconnect()
         assert vc.latency == voice.Latency(None, None)
-        assert (vc.dave, vc.stats(), vc.diagnostics()) == (dave, stats, diagnostics)
-        assert vc.stats().send.packets_sent == 50
+        assert vc.dave == dave
         assert bot.voice.connections == ()
 
     run(scenario)
@@ -521,20 +519,9 @@ def test_live_reads_come_from_the_core() -> None:
             4,
             "11111 22222",
         )
-        assert vc.diagnostics() == {"status": "ready"}
         code = await vc.dave.verification_code(USER_ID)
         assert code.startswith(f"code for {USER_ID} on ")
         assert not code.endswith(threading.main_thread().name)
-
-    run(scenario)
-
-
-def test_stats_ignore_unknown_counters_and_count_missing_ones_as_zero() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        bot.core.counters = {"packets_sent": 7, "dave_busy": 2, "added_later": 1}
-        send = vc.stats().send
-        assert (send.packets_sent, send.dave_busy, send.rejoins) == (7, 2, 0)
 
     run(scenario)
 

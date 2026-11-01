@@ -185,8 +185,6 @@ def test_a_second_of_pcm_plays_as_fifty_opus_packets_and_five_silent_ones() -> N
             )
             assert {packet.ssrc for packet in packets} == {ssrc}
             assert_contiguous(packets)
-            stats = vc.stats().send
-            assert (stats.encoded_packets, stats.silence_packets) == (50, 5)
             assert out.stats().underruns == 0
 
     run(scenario)
@@ -396,25 +394,6 @@ def test_ctx_voice_joins_the_channel_of_the_user_who_ran_the_command() -> None:
     run(scenario)
 
 
-def test_versions_and_diagnostics_describe_the_build_and_never_the_token() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        async with started(fake) as bot:
-            vc = await bot.voice.connect(VOICE_ID)
-            diagnostics = repr(vc.diagnostics())
-
-            assert set(voice.versions()) == {
-                "bostie",
-                "libopus",
-                "davey",
-                "dave_protocol",
-            }
-            assert fake.voice_sessions[-1].identify["token"] not in diagnostics
-            assert fake.token not in diagnostics
-            assert str(GUILD_ID) in diagnostics
-
-    run(scenario)
-
-
 def test_voice_listeners_and_waiters_stay_out_of_the_gateway_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -475,7 +454,7 @@ def test_a_busy_python_thread_never_starves_the_clock() -> None:
             packets = await played(fake)
 
             assert underruns == 0
-            assert vc.stats().send.encoded_packets == 5 * FRAMES_PER_SECOND
+            assert len(packets) == 5 * FRAMES_PER_SECOND + len(SILENT_TAIL)
             assert_contiguous(packets)
 
     run(scenario)

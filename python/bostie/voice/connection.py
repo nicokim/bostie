@@ -3,7 +3,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
@@ -120,8 +120,6 @@ class VoiceCore(Protocol):
     def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
     def voice_dave(self, guild_id: int) -> tuple[int, int | None, str | None]: ...
     def voice_verification_code(self, guild_id: int, user_id: int) -> str: ...
-    def voice_stats(self, guild_id: int) -> dict[str, int]: ...
-    def voice_diagnostics(self, guild_id: int) -> dict[str, object]: ...
     def voice_sink(
         self,
         guild_id: int,
@@ -158,7 +156,6 @@ class VoiceCore(Protocol):
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
-    def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
 
 
 class ConnectOptions(TypedDict, total=False):
@@ -202,86 +199,6 @@ class VoiceHost(Protocol):
 
 class _Woken(Protocol):
     def _wake(self) -> None: ...
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SendStats:
-    """Send counters of a voice connection since it started."""
-
-    packets_sent: int = 0
-    bytes_sent: int = 0
-    passthrough_packets: int = 0
-    encoded_packets: int = 0
-    silence_packets: int = 0
-    held_ticks: int = 0
-    alone_ticks: int = 0
-    late_ticks: int = 0
-    send_errors: int = 0
-    dave_frames: int = 0
-    dave_not_ready: int = 0
-    encrypt_failures: int = 0
-    dave_busy: int = 0
-    encode_errors: int = 0
-    invalid_frames: int = 0
-    keepalives_sent: int = 0
-    keepalives_answered: int = 0
-    packets_received: int = 0
-    resumes: int = 0
-    rejoins: int = 0
-    key_packages: int = 0
-    commits: int = 0
-    welcomes: int = 0
-    transitions_executed: int = 0
-    recoveries: int = 0
-    dave_panics: int = 0
-    rejected_proposals: int = 0
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ReceiveStats:
-    """Receive counters of a voice connection since it started."""
-
-    transport_failures: int = 0
-    replays: int = 0
-    own_echoes: int = 0
-    unmapped: int = 0
-    duplicates: int = 0
-    late_packets: int = 0
-    undecryptable: int = 0
-    invalid_payloads: int = 0
-    invalid_extensions: int = 0
-    decrypt_busy: int = 0
-    receive_deferred: int = 0
-    arrivals_dropped: int = 0
-    rx_panics: int = 0
-    rtcp_sender_reports: int = 0
-    receive_recoveries: int = 0
-    decrypt_panics: int = 0
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class UserStats:
-    """One user's receive counters."""
-
-    packets: int = 0
-    lost: int = 0
-    duplicates: int = 0
-    decrypt_failures: int = 0
-    invalid_payloads: int = 0
-
-
-SEND_COUNTERS = frozenset(counter.name for counter in fields(SendStats))
-RECEIVE_COUNTERS = frozenset(counter.name for counter in fields(ReceiveStats))
-USER_COUNTERS = frozenset(counter.name for counter in fields(UserStats))
-
-
-@dataclass(frozen=True, slots=True)
-class VoiceStats:
-    """Send, receive and per-user counters; users: members and anyone heard in 30 s."""
-
-    send: SendStats
-    receive: ReceiveStats = ReceiveStats()
-    users: Mapping[int, UserStats] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -534,8 +451,6 @@ class VoiceConnection:
         self._speech_ssrcs: dict[int, int] = {}
         self._ssrcs: Mapping[int, int] = MappingProxyType({})
         self._dave = Dave(0, None, None, self)
-        self._stats = VoiceStats(SendStats())
-        self._diagnostics: dict[str, Any] = {}
         self._sinks: set[Sink] = set()
         self._receivers: set[Receiver[Any]] = set()
         self._watchers: list[tuple[Callable[[], bool], asyncio.Future[bool]]] = []
@@ -638,7 +553,7 @@ class VoiceConnection:
 
     @property
     def speech_activity(self) -> bool:
-        """Whether speech events fire; off with no receiver, receive stats stop."""
+        """Whether speech events fire; off with no receiver, nothing is decrypted."""
         return self._speech_activity
 
     @speech_activity.setter
@@ -893,28 +808,6 @@ class VoiceConnection:
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(CLOSE_TIMEOUT):
                 await self._until(lambda: self._state is State.DISCONNECTED)
-
-    def stats(self) -> VoiceStats:
-        """Send, receive and per-user counters, or the last read before the end."""
-        if self._state is not State.DISCONNECTED:
-            core = self._core()
-            raw = core.voice_stats(self.guild_id)
-            users = core.voice_user_stats(self.guild_id)
-            self._stats = VoiceStats(
-                SendStats(**_pick(SEND_COUNTERS, raw)),
-                ReceiveStats(**_pick(RECEIVE_COUNTERS, raw)),
-                {
-                    user_id: UserStats(**_pick(USER_COUNTERS, counters))
-                    for user_id, counters in users.items()
-                },
-            )
-        return self._stats
-
-    def diagnostics(self) -> dict[str, Any]:
-        """Connection details for bug reports; never the token."""
-        if self._state is not State.DISCONNECTED:
-            self._diagnostics = dict(self._core().voice_diagnostics(self.guild_id))
-        return dict(self._diagnostics)
 
     async def _start(self, user_id: int) -> None:
         settings = self._settings
@@ -1280,10 +1173,6 @@ class ContextVoice:
                 f"{self._guild_id}"
             )
         return await self._manager.connect(int(channel_id), **options)
-
-
-def _pick(names: frozenset[str], counters: Mapping[str, int]) -> dict[str, int]:
-    return {name: counters[name] for name in names & counters.keys()}
 
 
 def versions() -> dict[str, str]:

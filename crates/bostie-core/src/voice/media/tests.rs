@@ -762,38 +762,3 @@ fn the_arrival_queue_drops_the_oldest_beyond_its_bound() {
     assert_eq!(kept, [1, 2]);
     assert_eq!(media.receive.arrivals_dropped.load(Ordering::Relaxed), 1);
 }
-
-#[test]
-fn send_counters_name_every_key_of_the_stats() {
-    let names: Vec<&str> = SendCounters::default()
-        .snapshot()
-        .into_iter()
-        .map(|(name, _)| name)
-        .collect();
-
-    assert_eq!(
-        names,
-        [
-            "packets_sent",
-            "bytes_sent",
-            "passthrough_packets",
-            "encoded_packets",
-            "silence_packets",
-            "held_ticks",
-            "alone_ticks",
-            "late_ticks",
-            "send_errors",
-            "dave_frames",
-            "dave_not_ready",
-            "encrypt_failures",
-            "dave_busy",
-            "encode_errors",
-            "invalid_frames",
-            "keepalives_sent",
-            "keepalives_answered",
-            "packets_received",
-            "resumes",
-            "rejoins",
-        ]
-    );
-}

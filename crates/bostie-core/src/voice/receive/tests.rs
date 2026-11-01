@@ -200,11 +200,7 @@ impl Rig {
             STALL,
             tuning,
         ));
-        let info = Arc::new(Info::new(
-            GuildId::from(GUILD),
-            ShardId::from(0),
-            ChannelId::from(CHANNEL),
-        ));
+        let info = Arc::new(Info::new(GuildId::from(GUILD), ShardId::from(0)));
         let reception = Reception::new(Arc::clone(&media), Arc::clone(&info), user(BOT), tuning);
         let now = reception.epoch + Duration::from_secs(1);
         let rig = Self {

@@ -98,7 +98,7 @@ async def on_speech(event: voice.SpeechStart) -> None:
 
 With `markers=True`, a PCM or Opus receiver also yields `voice.SpeechStart` and `voice.SpeechStop` in its own stream, in order with the frames. Their `offset` is set, on the receiver's clock, so you know exactly which frames each utterance covers. A `voice.Packets()` receiver yields them in arrival order, with `offset` set to `None`.
 
-A bot that never listens, such as a music bot, can turn speech activity off with `connect(speech_activity=False)`, `voice.Defaults(speech_activity=False)` or `vc.speech_activity = False`. Then no `voice.SpeechStart` or `voice.SpeechStop` event fires and `vc.speaking` stays empty; turning it off ends the speech in progress with a `voice.SpeechStop`. Receivers work as before, `markers=True` included, and so do `vc.ssrcs` and the receive `voice.MediaStalled` events. While speech activity is off and no receiver is open, the bot does not even decrypt the audio it gets, which saves most of the cost of receiving. `vc.stats().receive` and `vc.stats().users` stop counting then, except `rtcp_sender_reports`, while `vc.stats().send.packets_received` still counts every packet.
+A bot that never listens, such as a music bot, can turn speech activity off with `connect(speech_activity=False)`, `voice.Defaults(speech_activity=False)` or `vc.speech_activity = False`. Then no `voice.SpeechStart` or `voice.SpeechStop` event fires and `vc.speaking` stays empty; turning it off ends the speech in progress with a `voice.SpeechStop`. Receivers work as before, `markers=True` included, and so do `vc.ssrcs` and the receive `voice.MediaStalled` events. While speech activity is off and no receiver is open, the bot does not even decrypt the audio it gets, which saves most of the cost of receiving.
 
 ### Mixing
 
@@ -183,9 +183,7 @@ async def stop(ctx: Context) -> None:
 
 ### Stats
 
-- `rx.stats()` returns a `voice.ReceiverStats`: frames and packets `delivered`, `dropped` because your code fell behind, and `lost` on the way.
-- `vc.stats().receive` holds the connection's receive counters, such as `transport_failures`, `undecryptable` and `late_packets`.
-- `vc.stats().users[user_id]` holds one user's `packets`, `lost`, `duplicates`, `decrypt_failures` and `invalid_payloads`, for the people in the call and anyone heard in the last 30 s.
+`rx.stats()` returns a `voice.ReceiverStats`: frames and packets `delivered`, `dropped` because your code fell behind, and `lost` on the way.
 
 ### When a receiver ends
 

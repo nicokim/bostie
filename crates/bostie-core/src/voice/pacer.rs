@@ -48,6 +48,7 @@ impl Default for PacerTuning {
 pub struct Seat(Arc<AtomicUsize>);
 
 impl Seat {
+    #[cfg(test)]
     pub fn thread(&self) -> usize {
         self.0.load(Ordering::Relaxed)
     }
@@ -61,6 +62,7 @@ impl Seat {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThreadLoad {
     pub lanes: usize,
@@ -241,6 +243,7 @@ impl PacerPool {
         self.threads().iter().map(|thread| thread.lanes).sum()
     }
 
+    #[cfg(test)]
     pub fn threads(&self) -> Vec<ThreadLoad> {
         match &self.mode {
             Mode::Threads(workers) => workers
@@ -473,6 +476,7 @@ impl Strain {
 }
 
 impl Load {
+    #[cfg(test)]
     fn snapshot(&self) -> ThreadLoad {
         let after_max = Duration::from_nanos(self.after_max.load(Ordering::Relaxed));
         let after_micros = self
@@ -526,6 +530,7 @@ fn smooth(average: &AtomicU64, max: &AtomicU64, took: Duration) {
     max.fetch_max(nanos(took), Ordering::Relaxed);
 }
 
+#[cfg(test)]
 fn quantile(micros: &[u64], percent: u64) -> Duration {
     let rank = micros
         .iter()

@@ -261,46 +261,9 @@ def test_sink_settings_are_checked(connected: _native.Core) -> None:
         pcm_sink(connected, buffer=-1.0)
 
 
-def test_a_connection_reports_latency_dave_stats_and_diagnostics(
-    connected: _native.Core,
-) -> None:
+def test_a_connection_reports_latency_and_dave(connected: _native.Core) -> None:
     assert connected.voice_latency(GUILD) == (None, None)
     assert connected.voice_dave(GUILD) == (0, None, None)
-    stats = connected.voice_stats(GUILD)
-    assert stats["packets_sent"] == 0
-    assert stats["recoveries"] == 0
-    wait_until(lambda: bool(connected.voice_diagnostics(GUILD)["history"]))
-
-    diagnostics = connected.voice_diagnostics(GUILD)
-
-    assert diagnostics["versions"] == _native.versions()
-    assert diagnostics["guild_id"] == GUILD
-    assert diagnostics["channel_id"] == CHANNEL
-    assert diagnostics["shard_id"] == 0
-    assert diagnostics["status"] == "connecting"
-    assert diagnostics["endpoint_host"] is None
-    assert diagnostics["dave"] == {"protocol_version": 0, "epoch": None}
-    assert diagnostics["members"] == []
-    history = diagnostics["history"]
-    assert isinstance(history, list)
-    seconds_ago, status, reason, code, _ = history[0]
-    assert 0 <= seconds_ago < 10
-    assert (status, reason, code) == ("connecting", None, None)
-    pacer = diagnostics["pacer"]
-    assert isinstance(pacer, dict)
-    assert pacer["lanes"] >= 1
-    assert {
-        "work_ewma_us",
-        "work_max_us",
-        "after_ewma_us",
-        "after_p50_us",
-        "after_p99_us",
-        "after_max_us",
-        "late_ticks",
-    } <= pacer.keys()
-    counters = diagnostics["counters"]
-    assert isinstance(counters, dict)
-    assert counters.keys() == stats.keys()
 
 
 def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
@@ -311,7 +274,6 @@ def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
     assert rx.read(256) == []
     assert rx.queued() == 0
     assert rx.closed_reason() is None
-    assert connected.voice_diagnostics(GUILD)["receivers"] == 1
     rx.close()
     rx.close()
 
@@ -324,7 +286,7 @@ def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
 
 def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
     with pytest.raises(RuntimeError, match=f"no voice connection in guild {GUILD}"):
-        core.voice_stats(GUILD)
+        core.voice_dave(GUILD)
     core.voice_disconnect(GUILD)
     with pytest.raises(RuntimeError, match="shard 0 is not running"):
         connect(core)
@@ -457,7 +419,7 @@ def test_voice_handles_refuse_to_work_in_a_forked_child(
             lambda: sink.write(bytes(FRAME_BYTES)),
             source.read,
             lambda: rx.read(256),
-            lambda: connected.voice_stats(GUILD),
+            lambda: connected.voice_dave(GUILD),
         ):
             try:
                 call()

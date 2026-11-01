@@ -372,25 +372,6 @@ def test_speech_updates_speaking_before_its_event_and_a_disconnect_stops_it(
     run(scenario)
 
 
-def test_stats_sort_counters_into_send_receive_and_users() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        bot.core.counters = {
-            "packets_sent": 5,
-            "rejected_proposals": 2,
-            "replays": 3,
-            "decrypt_panics": 1,
-        }
-        bot.core.user_counters = {USER_ID: {"packets": 50, "lost": 2, "added": 1}}
-        assert vc.stats() == voice.VoiceStats(
-            voice.SendStats(packets_sent=5, rejected_proposals=2),
-            voice.ReceiveStats(replays=3, decrypt_panics=1),
-            {USER_ID: voice.UserStats(packets=50, lost=2)},
-        )
-
-    run(scenario)
-
-
 def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)

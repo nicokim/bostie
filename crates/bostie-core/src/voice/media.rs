@@ -13,7 +13,7 @@ use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::voice::crypto::Cipher;
-use crate::voice::dave::{Dave, DaveCounters, DaveInfo, EncryptFailure, SendMode};
+use crate::voice::dave::{Dave, DaveInfo, EncryptFailure, SendMode};
 use crate::voice::mixer::{Mixed, Mixer};
 use crate::voice::nanos;
 use crate::voice::pacer::Tick;
@@ -38,6 +38,7 @@ macro_rules! counters {
         }
 
         impl $counters {
+            #[cfg(test)]
             pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
                 vec![$((stringify!($name), self.$name.load(Ordering::Relaxed)),)+]
             }
@@ -94,18 +95,6 @@ pub struct UserCounters {
     pub invalid_payloads: u64,
 }
 
-impl UserCounters {
-    pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
-        vec![
-            ("packets", self.packets),
-            ("lost", self.lost),
-            ("duplicates", self.duplicates),
-            ("decrypt_failures", self.decrypt_failures),
-            ("invalid_payloads", self.invalid_payloads),
-        ]
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arrival {
     pub ssrc: u32,
@@ -133,7 +122,6 @@ pub struct Transport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaveView {
     pub info: DaveInfo,
-    pub counters: DaveCounters,
     pub session_built: bool,
 }
 
@@ -141,7 +129,6 @@ impl DaveView {
     fn of(dave: &Dave) -> Self {
         Self {
             info: dave.info(),
-            counters: dave.counters(),
             session_built: dave.generation() > 0,
         }
     }

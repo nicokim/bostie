@@ -3,19 +3,18 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
-    Application, DisconnectReason, EncoderSettings, Overflow, PcmFormat, ReceiveFormat,
-    ReceiveStall, SampleFormat, SinkFormat, SinkOptions, StallPolicy,
+    Application, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall, SampleFormat,
+    SinkFormat, SinkOptions, StallPolicy,
 };
 use bostie_core::voice::{
-    Diagnostics, Ended, FrameEncoder, HistoryEntry, Item, ReceiveRead, Receiver, Sink, Source,
-    SourceRead, ThreadLoad,
+    Ended, FrameEncoder, Item, ReceiveRead, Receiver, Sink, Source, SourceRead,
 };
 use bostie_core::{CoreError, UserId};
 use pyo3::IntoPyObjectExt;
 use pyo3::buffer::PyBuffer;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::PyBytes;
 
 use crate::{Error, Result};
 
@@ -313,72 +312,6 @@ pub(crate) fn seconds(name: &str, value: f64) -> Result<Duration> {
         .map_err(|error| CoreError::InvalidRequest(format!("{name}: {error}")).into())
 }
 
-pub(crate) fn diagnostics(py: Python<'_>, diagnostics: Diagnostics) -> PyResult<Bound<'_, PyDict>> {
-    let now = Instant::now();
-    let dave = PyDict::new(py);
-    dave.set_item("protocol_version", diagnostics.dave.protocol_version)?;
-    dave.set_item("epoch", diagnostics.dave.epoch)?;
-    let history: Vec<_> = diagnostics
-        .history
-        .iter()
-        .map(|entry| history_entry(now, entry))
-        .collect();
-    let dict = PyDict::new(py);
-    dict.set_item("versions", versions())?;
-    dict.set_item("guild_id", u64::from(diagnostics.guild))?;
-    dict.set_item("channel_id", u64::from(diagnostics.channel))?;
-    dict.set_item("shard_id", u32::from(diagnostics.shard))?;
-    dict.set_item("status", diagnostics.status.as_str())?;
-    dict.set_item("endpoint_host", diagnostics.endpoint_host.as_deref())?;
-    dict.set_item("mode", diagnostics.mode)?;
-    dict.set_item("ssrc", diagnostics.ssrc)?;
-    dict.set_item("dave", dave)?;
-    dict.set_item(
-        "members",
-        diagnostics
-            .members
-            .into_iter()
-            .map(u64::from)
-            .collect::<Vec<_>>(),
-    )?;
-    dict.set_item("last_close_code", diagnostics.last_close_code)?;
-    dict.set_item("history", history)?;
-    dict.set_item("pacer", diagnostics.pacer.map(pacer))?;
-    dict.set_item("receivers", diagnostics.receivers)?;
-    dict.set_item(
-        "counters",
-        diagnostics.counters.into_iter().collect::<HashMap<_, _>>(),
-    )?;
-    Ok(dict)
-}
-
-fn history_entry(
-    now: Instant,
-    entry: &HistoryEntry,
-) -> (f64, &'static str, Option<&'static str>, Option<u16>, &str) {
-    (
-        age(now, entry.at),
-        entry.status.as_str(),
-        entry.reason.map(DisconnectReason::as_str),
-        entry.code,
-        &entry.detail,
-    )
-}
-
-fn pacer(load: ThreadLoad) -> HashMap<&'static str, u64> {
-    HashMap::from([
-        ("lanes", u64::try_from(load.lanes).unwrap_or(u64::MAX)),
-        ("work_ewma_us", micros(load.work_ewma)),
-        ("work_max_us", micros(load.work_max)),
-        ("after_ewma_us", micros(load.after_ewma)),
-        ("after_p50_us", micros(load.after_p50)),
-        ("after_p99_us", micros(load.after_p99)),
-        ("after_max_us", micros(load.after_max)),
-        ("late_ticks", load.late_ticks),
-        ("lane_panics", load.lane_panics),
-    ])
-}
-
 fn received_item(
     py: Python<'_>,
     now: Instant,
@@ -455,10 +388,6 @@ fn received_item(
 
 fn age(now: Instant, at: Instant) -> f64 {
     now.saturating_duration_since(at).as_secs_f64()
-}
-
-fn micros(duration: Duration) -> u64 {
-    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 fn sample_format(sample: &str) -> Result<SampleFormat> {
