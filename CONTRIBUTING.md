@@ -36,7 +36,7 @@ uv run pytest
 
 CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
-Keep a pull request to one change. Its title goes into the release notes as it is, so say what changes for someone using bostie. A pull request that changes nothing for them gets the `skip-changelog` label. A commit message has a short imperative subject, like "Add the GUILD_EMOJIS_UPDATE event", and a body that says why. A bug fix comes with the test that failed before it.
+Keep a pull request to one change. Its title goes into the release notes as it is, so say what changes for someone using bostie. A pull request that changes nothing for them gets the `skip-changelog` label. A commit message is one [Conventional Commits](https://www.conventionalcommits.org) line of 100 characters at most, like `feat(events): add the GUILD_EMOJIS_UPDATE event`; the why goes in the pull request. A bug fix comes with the test that failed before it.
 
 ## Adding a gateway event
 
@@ -94,28 +94,6 @@ Parsers and crypto get a round trip, a known-answer vector when one exists, and 
 Don't wait on the clock. Pass short timeouts and intervals through configuration, not a `#[cfg(test)]` constant. The pacer tests are the exception, because real time is what they measure. Their default bound holds on a busy CI runner. To check the clock's precision, run `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer` on an idle machine, which holds it to 5 ms at p99.
 
 Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending`. Python tests go in `tests/test_<module>.py`. Nothing in the suite touches the network or real Discord.
-
-## Checking against real Discord
-
-The scripts in `tests/live` need a real bot, so pytest and CI never run them. In the [Developer Portal](https://discord.com/developers/applications), create an application with a bot, invite it to a test server with the `bot` and `applications.commands` scopes, and let it send messages and attach files in one channel. Turn on Developer Mode in Discord to copy ids.
-
-```sh
-BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_CHANNEL=<channel id> uv run python tests/live/live_check.py
-```
-
-When the script asks, within 120 s, type `/bostie-check`, pick a suggested flavor, send the command and click its button. Each step prints PASS or FAIL, and the script exits non-zero if any step failed.
-
-**The script syncs `/bostie-check` with a bulk overwrite, which replaces every guild command the application already has in that server.** Use a bot or server whose guild commands you don't need, or save them first with `GET /applications/{application_id}/guilds/{guild_id}/commands` and `PUT` them back afterwards. `/bostie-check` stays registered when the script ends.
-
-The voice check needs you listening in the Discord client, and it syncs no commands. Let the bot connect, speak and manage the channel in a voice channel nobody is in. It switches the channel's region and back to test a voice server change.
-
-```sh
-BOSTIE_TOKEN=... BOSTIE_LIVE_GUILD=<server id> BOSTIE_LIVE_VOICE=<empty voice channel id> uv run python tests/live/voice_check.py
-```
-
-Add `BOSTIE_LIVE_VOICE_2=<channel id>` to test moves, and `BOSTIE_LIVE_STAGE=<channel id>` for a stage channel where the bot may request to speak. Join the channel when asked, answer the y/n questions about what you hear, and follow the bot when it moves. The privacy code and verification code it prints should match the call's details in your client. The DAVE recovery step prints SKIP unless Discord starts a recovery during the run, which a bot can't trigger.
-
-The receive steps ask you to talk, to mute and unmute, and to leave and rejoin the channel. If you can, they also ask you to turn on your camera and to have a second person join and leave while you talk; answer n to skip those. Set `BOSTIE_LIVE_SOAK=1` to add a 30-minute run that only receives.
 
 ## Style
 
