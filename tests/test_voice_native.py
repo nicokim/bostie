@@ -308,6 +308,23 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
         receiver(core, jitter=2.0)
     with pytest.raises(ValueError, match="markers=True needs per-user frames"):
         receiver(core, markers=True, mix=True)
+    with pytest.raises(ValueError, match="mix=True needs a PCM format"):
+        core.voice_receive(
+            GUILD,
+            kind="opus",
+            rate=48_000,
+            channels=2,
+            sample="s16le",
+            users=None,
+            exclude=[],
+            include_self=False,
+            buffer=2.0,
+            jitter=0.1,
+            markers=False,
+            mix=True,
+            overflow="drop_oldest",
+            stall="wait",
+        )
     with pytest.raises(RuntimeError, match="already has a voice connection"):
         connect(core)
     with pytest.raises(RuntimeError, match="code: there is no DAVE session"):

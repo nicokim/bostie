@@ -18,7 +18,7 @@ use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
-    FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE,
+    FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE, SampleFormat,
 };
 
 const FRAME_OFFSETS: u64 = FRAME_SAMPLES as u64;
@@ -46,6 +46,7 @@ struct Fifo {
 }
 
 struct Mix {
+    sample: SampleFormat,
     fifos: HashMap<Key, Fifo>,
     owed: u32,
     next: Option<u64>,
@@ -269,7 +270,7 @@ impl Subscriber {
         let options = receiver.options();
         let jitter = to_samples(options.jitter);
         let mix = match options.format {
-            ReceiveFormat::Pcm(format) if options.mix => Some(Mix::new(format, options.jitter)),
+            ReceiveFormat::Mixed(format) => Some(Mix::new(format, options.jitter)),
             _ => None,
         };
         let out = Output {
@@ -466,7 +467,7 @@ impl Output {
                 .max(0);
         }
         let end = match self.format {
-            ReceiveFormat::Pcm(format) => {
+            ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) => {
                 let decoder = decoder(track, format);
                 let decoded = match decoder
                     .as_mut()
@@ -536,7 +537,7 @@ impl Output {
         context: &mut Context<'_>,
     ) {
         match self.format {
-            ReceiveFormat::Pcm(format) => {
+            ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) => {
                 let decoder = decoder(track, format);
                 let Some(Ok(decoded)) = decoder
                     .as_mut()
@@ -626,9 +627,6 @@ impl Output {
     }
 
     fn mix(&mut self, context: &mut Context<'_>, deadline: Instant) -> bool {
-        let ReceiveFormat::Pcm(format) = self.format else {
-            return true;
-        };
         let Some(mix) = &mut self.mix else {
             return true;
         };
@@ -656,7 +654,7 @@ impl Output {
             }
             mix.clip.apply(&mut mix.sum);
             let mut data = BytesMut::new();
-            codec::write_samples(&mix.sum, format.sample, &mut data);
+            codec::write_samples(&mix.sum, mix.sample, &mut data);
             self.items.push(Item::Frame {
                 user: None,
                 ssrc: None,
@@ -713,6 +711,7 @@ impl Mix {
             .unwrap_or(NonZeroUsize::MIN);
         let limit = (jitter.saturating_add(MIX_SLACK).as_nanos() / FRAME_NANOS).max(1);
         Self {
+            sample: format.sample,
             fifos: HashMap::new(),
             owed: 0,
             next: None,

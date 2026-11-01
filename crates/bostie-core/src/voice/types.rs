@@ -225,6 +225,7 @@ impl SinkOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceiveFormat {
     Pcm(PcmFormat),
+    Mixed(PcmFormat),
     Opus,
     Packets,
 }
@@ -250,14 +251,13 @@ pub struct ReceiveOptions {
     pub buffer: Duration,
     pub jitter: Duration,
     pub markers: bool,
-    pub mix: bool,
     pub overflow: Overflow,
     pub stall: ReceiveStall,
 }
 
 impl ReceiveOptions {
     pub fn validate(&self) -> Result<(), CoreError> {
-        if let ReceiveFormat::Pcm(format) = self.format {
+        if let ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) = self.format {
             format.validate()?;
             if !DECODE_RATES.contains(&format.rate) {
                 return Err(CoreError::InvalidRequest(format!(
@@ -274,12 +274,7 @@ impl ReceiveOptions {
                 self.jitter
             )));
         }
-        if self.mix && !matches!(self.format, ReceiveFormat::Pcm(_)) {
-            return Err(CoreError::InvalidRequest(
-                "mix=True needs a PCM format".to_owned(),
-            ));
-        }
-        if self.mix && self.markers {
+        if self.markers && matches!(self.format, ReceiveFormat::Mixed(_)) {
             return Err(CoreError::InvalidRequest(
                 "markers=True needs per-user frames; a mix has none".to_owned(),
             ));
@@ -482,7 +477,6 @@ mod tests {
             buffer: Duration::from_secs(2),
             jitter: Duration::from_millis(100),
             markers: false,
-            mix: false,
             overflow: Overflow::DropOldest,
             stall: ReceiveStall::Wait,
         }
@@ -634,6 +628,7 @@ mod tests {
     #[test]
     fn receive_options_are_checked_against_their_bounds_and_the_decode_rates() {
         let stereo = ReceiveFormat::Pcm(pcm(48_000, 2));
+        let mixed = ReceiveFormat::Mixed(pcm(48_000, 2));
 
         let accepted = DECODE_RATES
             .map(|rate| receive(ReceiveFormat::Pcm(pcm(rate, 1))))
@@ -646,8 +641,7 @@ mod tests {
                 },
                 ReceiveOptions {
                     jitter: Duration::ZERO,
-                    mix: true,
-                    ..receive(stereo)
+                    ..receive(mixed)
                 },
                 ReceiveOptions {
                     markers: true,
@@ -664,24 +658,13 @@ mod tests {
             ),
             (receive(ReceiveFormat::Pcm(pcm(16_000, 3))), "channels"),
             (
-                ReceiveOptions {
-                    mix: true,
-                    ..receive(ReceiveFormat::Opus)
-                },
-                "mix=True needs a PCM format",
+                receive(ReceiveFormat::Mixed(pcm(44_100, 2))),
+                "receive decodes at 8, 12, 16, 24 or 48 kHz, got 44100",
             ),
             (
                 ReceiveOptions {
-                    mix: true,
-                    ..receive(ReceiveFormat::Packets)
-                },
-                "mix=True needs a PCM format",
-            ),
-            (
-                ReceiveOptions {
-                    mix: true,
                     markers: true,
-                    ..receive(stereo)
+                    ..receive(mixed)
                 },
                 "markers=True needs per-user frames",
             ),

@@ -276,16 +276,24 @@ pub(crate) fn receive_format(
     rate: u32,
     channels: u8,
     sample: &str,
+    mix: bool,
 ) -> Result<ReceiveFormat> {
-    Ok(match kind {
-        "pcm" => ReceiveFormat::Pcm(PcmFormat {
+    let pcm = || -> Result<PcmFormat> {
+        Ok(PcmFormat {
             rate,
             channels,
             sample: sample_format(sample)?,
-        }),
-        "opus" => ReceiveFormat::Opus,
-        "packets" => ReceiveFormat::Packets,
-        other => return Err(unknown("kind", other)),
+        })
+    };
+    Ok(match (kind, mix) {
+        ("pcm", false) => ReceiveFormat::Pcm(pcm()?),
+        ("pcm", true) => ReceiveFormat::Mixed(pcm()?),
+        ("opus", false) => ReceiveFormat::Opus,
+        ("packets", false) => ReceiveFormat::Packets,
+        ("opus" | "packets", true) => {
+            return Err(CoreError::InvalidRequest("mix=True needs a PCM format".to_owned()).into());
+        }
+        (other, _) => return Err(unknown("kind", other)),
     })
 }
 

@@ -79,7 +79,6 @@ fn options(format: ReceiveFormat) -> ReceiveOptions {
         buffer: Duration::from_secs(10),
         jitter: Duration::ZERO,
         markers: false,
-        mix: false,
         overflow: Overflow::DropOldest,
         stall: ReceiveStall::Wait,
     }
@@ -1121,10 +1120,11 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
     let mut rig = Rig::new(tuning());
     rig.map(ALICE_SSRC, ALICE);
     rig.map(BOB_SSRC, BOB);
-    let receiver = rig.open(ReceiveOptions {
-        mix: true,
-        ..options(pcm(48_000, 2, SampleFormat::F32Le))
-    });
+    let receiver = rig.open(options(ReceiveFormat::Mixed(PcmFormat {
+        rate: 48_000,
+        channels: 2,
+        sample: SampleFormat::F32Le,
+    })));
     let (quiet, loud) = (opus(6, 0.2), opus(2, 0.9));
     let decoded = |packets: &[Bytes]| -> Vec<f32> {
         let mut decoder = Decoder::new(48_000, 2).unwrap();
@@ -1456,7 +1456,7 @@ proptest! {
             rig.open(markers),
             rig.open(options(ReceiveFormat::Opus)),
             rig.open(ReceiveOptions { markers: true, ..options(ReceiveFormat::Packets) }),
-            rig.open(ReceiveOptions { mix: true, ..options(pcm(48_000, 2, SampleFormat::F32Le)) }),
+            rig.open(options(ReceiveFormat::Mixed(PcmFormat { rate: 48_000, channels: 2, sample: SampleFormat::F32Le }))),
         ];
         let valid = opus(4, 0.5);
         let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);

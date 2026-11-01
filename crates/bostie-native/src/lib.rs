@@ -271,14 +271,13 @@ impl NativeCore {
         stall: &str,
     ) -> Result<NativeReceiver> {
         let options = ReceiveOptions {
-            format: voice::receive_format(kind, rate, channels, sample)?,
+            format: voice::receive_format(kind, rate, channels, sample, mix)?,
             users: users.map(voice::users),
             exclude: voice::users(exclude),
             include_self,
             buffer: seconds("buffer", buffer)?,
             jitter: seconds("jitter", jitter)?,
             markers,
-            mix,
             overflow: voice::overflow(overflow)?,
             stall: voice::receive_stall(stall)?,
         };

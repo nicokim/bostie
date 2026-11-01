@@ -314,7 +314,6 @@ mod tests {
             buffer: Duration::from_millis(buffer_ms),
             jitter: Duration::ZERO,
             markers: true,
-            mix: false,
             overflow: Overflow::DropOldest,
             stall: ReceiveStall::Wait,
         };

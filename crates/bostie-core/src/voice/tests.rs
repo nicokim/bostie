@@ -2675,7 +2675,6 @@ fn receiving(format: ReceiveFormat) -> ReceiveOptions {
         buffer: Duration::from_secs(10),
         jitter: Duration::ZERO,
         markers: false,
-        mix: false,
         overflow: Overflow::DropOldest,
         stall: ReceiveStall::Wait,
     }
