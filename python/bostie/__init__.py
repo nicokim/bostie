@@ -77,6 +77,7 @@ from bostie.enums import (
     UserFlags,
     VerificationLevel,
     VideoQualityMode,
+    WebhookType,
     Weekday,
 )
 from bostie.errors import (
@@ -275,7 +276,10 @@ from bostie.models import (
     VoiceChannelInfo,
     VoiceRegion,
     VoiceState,
+    Webhook,
     WebhookMessage,
+    WebhookSourceChannel,
+    WebhookSourceGuild,
     WelcomeScreen,
     WelcomeScreenChannel,
 )
@@ -555,7 +559,11 @@ __all__ = [
     "VoiceChannelInfo",
     "VoiceRegion",
     "VoiceState",
+    "Webhook",
     "WebhookMessage",
+    "WebhookSourceChannel",
+    "WebhookSourceGuild",
+    "WebhookType",
     "Weekday",
     "WelcomeScreen",
     "WelcomeScreenChannel",

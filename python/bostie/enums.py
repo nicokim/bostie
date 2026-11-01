@@ -250,6 +250,12 @@ class BaseTheme(DiscordIntEnum):
     MIDNIGHT = 4
 
 
+class WebhookType(DiscordIntEnum):
+    INCOMING = 1
+    CHANNEL_FOLLOWER = 2
+    APPLICATION = 3
+
+
 class ButtonStyle(DiscordIntEnum):
     PRIMARY = 1
     SECONDARY = 2

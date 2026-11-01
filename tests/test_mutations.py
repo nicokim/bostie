@@ -42,6 +42,7 @@ from bostie.models import (
     User,
     VanityURL,
     VoiceRegion,
+    Webhook,
     WelcomeScreen,
     decode,
 )
@@ -69,6 +70,8 @@ REST_MODELS: dict[str, type[Model]] = {
     "poll_message": Message,
     "forum_channel": Channel,
     "active_threads": ActiveThreads,
+    "webhook": Webhook,
+    "webhook_follower": Webhook,
 }
 ENUM_KEYS = {
     "type",

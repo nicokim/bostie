@@ -198,6 +198,7 @@ from bostie.models.user import (
     PrimaryGuild,
     User,
 )
+from bostie.models.webhook import Webhook, WebhookSourceChannel, WebhookSourceGuild
 
 __all__ = [
     "SKU",
@@ -370,7 +371,10 @@ __all__ = [
     "VoiceChannelInfo",
     "VoiceRegion",
     "VoiceState",
+    "Webhook",
     "WebhookMessage",
+    "WebhookSourceChannel",
+    "WebhookSourceGuild",
     "WelcomeScreen",
     "WelcomeScreenChannel",
     "build_message",
