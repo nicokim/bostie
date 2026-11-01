@@ -34,25 +34,20 @@ class GatewayClient:
         self._token = token
         self._stopped: asyncio.Future[None] | None = None
 
-    def identify_limit(self, session_start_limit: Mapping[str, Any]) -> None:
-        """Seed the daily identify budget from /gateway/bot's session_start_limit."""
+    def _identify_limit(self, session_start_limit: Mapping[str, Any]) -> None:
         self._bridge.core.gateway_identify_limit(
             session_start_limit["remaining"],
             session_start_limit["total"],
             session_start_limit["reset_after"] / 1000,
         )
 
-    async def start(
+    async def _start(
         self,
         url: str,
         *,
         intents: int,
         presence: Mapping[str, Any] | None = None,
     ) -> None:
-        """Identify at ``url`` and stay connected until the shard stops.
-
-        Returns after ``close()``; a fatal close code raises its bostie error.
-        """
         identify: dict[str, Any] = {
             "token": self._token,
             "intents": intents,
@@ -77,8 +72,7 @@ class GatewayClient:
         """
         self._bridge.core.gateway_send(SHARD, encoder.encode({"op": op, "d": d}))
 
-    def filter(self, names: Iterable[str] | None) -> None:
-        """Forward only dispatches with these names, or every dispatch for None."""
+    def _filter(self, names: Iterable[str] | None) -> None:
         self._bridge.core.gateway_filter(None if names is None else list(names))
 
     def reconnect(self) -> None:
@@ -104,8 +98,7 @@ class GatewayClient:
         except RuntimeError:
             return None
 
-    def handle(self, delivery: StatusDelivery) -> None:
-        """Log a status delivery from the bridge, and end ``start()`` on ``stopped``."""
+    def _handle(self, delivery: StatusDelivery) -> None:
         match delivery:
             case ("disconnected", shard_id, code, reason, resuming):
                 cause = reason if code is None else f"{reason} (close code {code})"

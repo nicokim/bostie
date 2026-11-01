@@ -218,9 +218,9 @@ class Bot(Router):
                         self._dev_guilds,
                     )
                 self._warn_about_privileged_intents()
-                gateway.filter(self._dispatch_names())
-                gateway.identify_limit(info["session_start_limit"])
-                await gateway.start(
+                gateway._filter(self._dispatch_names())
+                gateway._identify_limit(info["session_start_limit"])
+                await gateway._start(
                     info["url"],
                     intents=self._intents,
                     presence=self._presence,
@@ -445,7 +445,7 @@ class Bot(Router):
 
     def _refresh_filter(self) -> None:
         if self._gateway is not None:
-            self._gateway.filter(self._dispatch_names())
+            self._gateway._filter(self._dispatch_names())
 
     def _registered(self) -> None:
         self._refresh_filter()
@@ -483,9 +483,9 @@ class Bot(Router):
                     self._failed_dispatches.add(name)
             case ("disconnected", _, _, _, resuming):
                 self._replaying = resuming
-                self.gateway.handle(delivery)
+                self.gateway._handle(delivery)
             case ("stopped" | "backpressure" | "invalid_requests", *_):
-                self.gateway.handle(delivery)
+                self.gateway._handle(delivery)
             case (
                 "voice_state"
                 | "voice_moved"
@@ -501,7 +501,7 @@ class Bot(Router):
                 | "voice_deaf",
                 *_,
             ):
-                self.voice.handle(delivery, received)
+                self.voice._handle(delivery, received)
 
     def _emit(self, event: VoiceEvent) -> None:
         for waiter in self._waiters.get(event.NAME, ()):
@@ -713,7 +713,7 @@ class Bot(Router):
         value: Any,
     ) -> None:
         try:
-            await ctx.respond(
+            await ctx._respond(
                 autocomplete_choices(await function(ctx, value), function)
             )
         except Exception as error:
@@ -786,7 +786,7 @@ async def _run_listener(
 async def _answer_failure(ctx: Context | AutocompleteContext) -> None:
     if ctx.state is ResponseState.PENDING:
         if isinstance(ctx, AutocompleteContext):
-            await ctx.respond([])
+            await ctx._respond([])
         else:
             await ctx.respond(FAILURE_ANSWER, ephemeral=True)
     elif ctx.state is ResponseState.DEFERRED and isinstance(ctx, Context):

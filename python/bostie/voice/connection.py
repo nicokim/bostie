@@ -446,8 +446,7 @@ class VoiceManager:
         for task in self._tasks:
             task.cancel()
 
-    def handle(self, delivery: VoiceDelivery, received: float) -> None:
-        """Apply one voice delivery from the core."""
+    def _handle(self, delivery: VoiceDelivery, received: float) -> None:
         match delivery:
             case ("voice_wake", handle):
                 target = self._handles.get(handle)

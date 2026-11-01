@@ -521,8 +521,7 @@ class AutocompleteContext(_InteractionContext):
         _, leaves = _split_subcommands(() if data is None else data.options)
         return {option.name: option.value for option in leaves if option.name}
 
-    async def respond(self, choices: list[dict[str, Any]]) -> None:
-        """Send the autocomplete choices."""
+    async def _respond(self, choices: list[dict[str, Any]]) -> None:
         async with self._lock:
             self._ensure_alive()
             if self.state is not ResponseState.PENDING:

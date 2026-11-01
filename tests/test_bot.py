@@ -491,13 +491,13 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache_setting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     filters: list[list[str] | None] = []
-    send_filter = GatewayClient.filter
+    send_filter = GatewayClient._filter
 
     def record(gateway: GatewayClient, names: Iterable[str] | None) -> None:
         filters.append(None if names is None else list(names))
         send_filter(gateway, names)
 
-    monkeypatch.setattr(GatewayClient, "filter", record)
+    monkeypatch.setattr(GatewayClient, "_filter", record)
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url, cache=False)

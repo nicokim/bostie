@@ -33,11 +33,11 @@ class Harness:
         self.deliveries.put_nowait(delivery)
         match delivery:
             case ("disconnected" | "stopped" | "backpressure" | "invalid_requests", *_):
-                self.gateway.handle(delivery)
+                self.gateway._handle(delivery)
 
     def start(self, **identify: Any) -> "asyncio.Task[None]":
         return asyncio.create_task(
-            self.gateway.start(self.fake.gateway_url, intents=513, **identify)
+            self.gateway._start(self.fake.gateway_url, intents=513, **identify)
         )
 
     async def next_dispatch(self) -> tuple[int, str, Any]:
@@ -74,7 +74,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
     async def scenario(harness: Harness) -> None:
         fake, gateway = harness.fake, harness.gateway
         assert gateway.latency is None
-        gateway.identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
+        gateway._identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
         started = harness.start(presence=MappingProxyType({"status": "idle"}))
 
         assert await harness.deliveries.get() == (
@@ -128,7 +128,7 @@ def test_start_on_a_bridge_that_is_not_running_starts_no_shard() -> None:
         async with FakeDiscord() as fake:
             harness = Harness(fake, fake.token)
             with pytest.raises(RuntimeError, match="not running"):
-                await harness.gateway.start(fake.gateway_url, intents=513)
+                await harness.gateway._start(fake.gateway_url, intents=513)
 
             async with harness.bridge, asyncio.timeout(10):
                 started = await harness.ready()
@@ -170,7 +170,7 @@ def test_close_after_start_is_cancelled_still_closes_with_1000() -> None:
 
 def test_the_filter_drops_dispatches_nobody_listens_to() -> None:
     async def scenario(harness: Harness) -> None:
-        harness.gateway.filter(["MESSAGE_CREATE"])
+        harness.gateway._filter(["MESSAGE_CREATE"])
         await harness.ready()
 
         await harness.fake.dispatch("BRAND_NEW_EVENT", {"answer": 42})
@@ -300,7 +300,7 @@ def test_status_deliveries_are_logged_at_their_level(
         "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
     )
 
-    GatewayClient(bridge, "token").handle(delivery)
+    GatewayClient(bridge, "token")._handle(delivery)
     asyncio.run(bridge.close())
 
     assert [record.levelno for record in caplog.records] == [level]

@@ -325,9 +325,9 @@ def test_autocomplete_answers_once_with_choices() -> None:
 
     async def scenario(http: RecordingHTTP) -> None:
         ctx = context(AutocompleteContext, http)
-        await ctx.respond(choices)
+        await ctx._respond(choices)
         with pytest.raises(InteractionResponded):
-            await ctx.respond(choices)
+            await ctx._respond(choices)
 
         assert ctx.options == {"limit": 10, "query": "lyre"}
         assert ctx.command_name == "search"

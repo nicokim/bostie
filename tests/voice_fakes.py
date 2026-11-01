@@ -536,7 +536,7 @@ class FakeBot:
         self._intents = intents
         self.events: list[VoiceEvent] = []
         self.voice = VoiceManager(self, defaults)
-        self.core.handle = self.voice.handle
+        self.core.handle = self.voice._handle
         self._waiters: list[
             tuple[type[Event], Callable[[Any], bool] | None, asyncio.Future[Event]]
         ] = []
@@ -576,7 +576,7 @@ class FakeBot:
 
     def deliver(self, delivery: VoiceDelivery, received: float = 0.0) -> None:
         self.core.track(delivery)
-        self.voice.handle(delivery, received)
+        self.voice._handle(delivery, received)
 
     def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
         return [event for event in self.events if isinstance(event, kind)]

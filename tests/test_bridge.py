@@ -276,7 +276,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
             ) as running:
                 gateway = GatewayClient(running, fake.token)
                 started = asyncio.ensure_future(
-                    gateway.start(fake.gateway_url, intents=513)
+                    gateway._start(fake.gateway_url, intents=513)
                 )
                 await exploded.wait()
                 assert (await me(running))[0] == 200
