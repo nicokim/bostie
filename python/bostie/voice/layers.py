@@ -863,6 +863,7 @@ class Recorder:
 
     async def stop(self) -> dict[int, Path]:
         """Stop recording, finish every file and return them by user id."""
+        await asyncio.wait({self._task}, timeout=self._rx.jitter)
         if not self._stopping.done():
             self._stopping.set_result(None)
         await asyncio.wait({self._task})

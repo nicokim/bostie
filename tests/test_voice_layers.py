@@ -1293,9 +1293,12 @@ def test_stopping_a_recorder_writes_what_was_still_queued(tmp_path: Path) -> Non
         recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
         await settle()
         vc.rx.feed(*(opus(index) for index in range(5)))
-        await recorder.stop()
+        stopping = asyncio.create_task(recorder.stop())
+        await asyncio.sleep(vc.rx.jitter / 2)
+        vc.rx.feed(opus(5))
+        await stopping
         packets, _ = read_ogg(tmp_path / "42.ogg")
-        assert packets == [bytes([index]) * 3 for index in range(5)]
+        assert packets == [bytes([index]) * 3 for index in range(6)]
 
     run(scenario)
 
