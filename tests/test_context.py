@@ -6,7 +6,7 @@ from functools import partial
 from typing import Annotated, Any
 
 import pytest
-from fakediscord import FakeDiscord, Recorded, payloads, run, running
+from fakediscord import FakeDiscord, Recorded, payloads, run, running, settle
 
 from bostie import (
     AllowedMentions,
@@ -485,11 +485,6 @@ def test_an_expired_interaction_sends_nothing(
         assert await on.answer(ComponentContext, handler) == []
 
     run_bot(scenario)
-
-
-async def settle() -> None:
-    for _ in range(5):
-        await asyncio.sleep(0)
 
 
 async def wait(ctx: Context | ComponentContext) -> None:

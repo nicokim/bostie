@@ -22,6 +22,7 @@ __all__ = [
     "payloads",
     "run",
     "running",
+    "settle",
 ]
 
 type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
@@ -35,6 +36,12 @@ def run(scenario: Scenario, **options: Any) -> None:
             await scenario(fake)
 
     asyncio.run(main())
+
+
+async def settle(rounds: int = 5) -> None:
+    """Yield to the event loop ``rounds`` times so ready callbacks and tasks run."""
+    for _ in range(rounds):
+        await asyncio.sleep(0)
 
 
 @contextlib.asynccontextmanager

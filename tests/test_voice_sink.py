@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from voice_fakes import FakeBot, FakeSink, connected, disconnected, run, settle
+from fakediscord import settle
+from voice_fakes import FakeBot, FakeSink, connected, disconnected, run
 
 from bostie import voice
 from bostie.errors import BufferFull, SinkClosed

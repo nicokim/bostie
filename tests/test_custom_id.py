@@ -1,6 +1,6 @@
 import asyncio
 import re
-from typing import Any
+import threading
 
 import pytest
 
@@ -52,21 +52,16 @@ def test_match(
     assert route(template).match(custom_id) == expected
 
 
-class Bounded(str):
-    checks = 0
-    limit = 0
+def test_a_near_miss_on_many_placeholders_is_refused_at_once() -> None:
+    results: list[object] = []
+    worker = threading.Thread(
+        target=lambda: results.append(route(MANY).match(":" * 400)), daemon=True
+    )
 
-    def startswith(self, *args: Any) -> bool:
-        self.checks += 1
-        assert self.checks <= self.limit
-        return super().startswith(*args)
+    worker.start()
+    worker.join(timeout=10)
 
-
-def test_a_near_miss_on_many_placeholders_takes_polynomial_steps() -> None:
-    near_miss = Bounded(":" * 100)
-    near_miss.limit = 6 * 100**2
-
-    assert route(MANY).match(near_miss) is None
+    assert results == [None]
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import msgspec
+from fakediscord import settle
 
 from bostie._bridge import Bridge
 from bostie.cache import Cache
@@ -637,11 +638,6 @@ def disconnected(
     guild_id: int = GUILD_ID,
 ) -> VoiceDelivery:
     return ("voice_state", guild_id, "disconnected", reason, code, detail)
-
-
-async def settle() -> None:
-    for _ in range(5):
-        await asyncio.sleep(0)
 
 
 async def connected(

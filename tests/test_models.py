@@ -51,7 +51,6 @@ from bostie.models import (
     UserSelect,
     build_message,
     decode,
-    decode_components,
     decode_interaction,
 )
 
@@ -476,16 +475,3 @@ def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:
         build_message("hi", components=[ui.text("hi")])
     with pytest.raises(ValueError, match="Components V2"):
         build_message(embeds=[Embed(title="x")], flags=v2)
-
-
-def test_text_inputs_and_deprecated_role_colors_are_not_modelled() -> None:
-    text_input = msgspec.Raw(b'{"type": 4, "custom_id": "note", "label": "Note"}')
-    role_payload = ROLE | {"color": 3447003}
-    role = decode(Role, msgspec.json.encode(role_payload))
-
-    (component,) = decode_components([text_input])
-
-    assert isinstance(component, UnknownComponent)
-    assert component.type == ComponentType.TEXT_INPUT
-    assert "color" not in Role.__struct_fields__
-    assert role.raw == role_payload

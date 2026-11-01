@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from voice_fakes import FakeBot, run, settle
+from fakediscord import settle
+from voice_fakes import FakeBot, run
 
 from bostie import voice
 from bostie.errors import SourceError

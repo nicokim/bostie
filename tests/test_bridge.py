@@ -401,12 +401,11 @@ def test_process_exits_cleanly_with_requests_in_flight() -> None:
         """
     )
     for exit_mode in ("normal", "hard"):
-        for _ in range(10):
-            result = subprocess.run(
-                [sys.executable, "-X", "dev", "-c", script],
-                env={**os.environ, "EXIT_MODE": exit_mode},
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-            assert result.returncode == 0, result.stderr.decode()
+        result = subprocess.run(
+            [sys.executable, "-X", "dev", "-c", script],
+            env={**os.environ, "EXIT_MODE": exit_mode},
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr.decode()

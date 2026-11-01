@@ -4,6 +4,7 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, assert_type
 
 import pytest
+from fakediscord import settle
 from voice_fakes import (
     GUILD_ID,
     NO_BITRATE,
@@ -18,7 +19,6 @@ from voice_fakes import (
     ready,
     rest_voice_state,
     run,
-    settle,
 )
 
 from bostie import voice

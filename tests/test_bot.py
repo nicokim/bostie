@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal
 
 import pytest
-from fakediscord import FakeDiscord, Recorded, payloads, run, running
+from fakediscord import FakeDiscord, Recorded, payloads, run, running, settle
 
 from bostie import (
     AutocompleteContext,
@@ -94,11 +94,6 @@ async def sent_op(fake: FakeDiscord, op: int) -> Any:
     while (payload := await fake.gateway_received.get())["op"] != op:
         pass
     return payload["d"]
-
-
-async def settle() -> None:
-    for _ in range(5):
-        await asyncio.sleep(0)
 
 
 def levels(caplog: pytest.LogCaptureFixture, logger: str) -> list[int]:

@@ -8,7 +8,7 @@ from typing import Any
 
 import msgspec
 import pytest
-from fakediscord import payloads
+from fakediscord import payloads, settle
 from voice_fakes import (
     BOT_ID,
     ELSEWHERE,
@@ -26,7 +26,6 @@ from voice_fakes import (
     ready,
     rest_voice_state,
     run,
-    settle,
     voice_state,
 )
 from voice_fakes import Call as CoreCall

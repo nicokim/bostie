@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Self, Unpack, cast
 
 import pytest
+from fakediscord import settle
 
 from bostie.enums import ClosedReason, State
 from bostie.errors import (
@@ -78,8 +79,7 @@ class Clock:
 
     async def run(self) -> None:
         while True:
-            for _ in range(SETTLE):
-                await asyncio.sleep(0)
+            await settle(SETTLE)
             self.tick()
 
 
@@ -1056,11 +1056,6 @@ class RecordingConnection:
         return self.rx
 
 
-async def settle() -> None:
-    for _ in range(SETTLE):
-        await asyncio.sleep(0)
-
-
 def frame(user: int, index: int, *, lost: bool = False) -> Frame:
     data = bytes([user * 16 + index]) * SPEECH_BYTES
     return Frame(user, user, index * STEP, index * STEP, STEP, 0.0, data, lost)
@@ -1219,10 +1214,10 @@ def test_an_utterance_ends_jitter_and_min_silence_after_its_stop() -> None:
 
         listening = asyncio.create_task(listen())
         rx.feed(start(1, 1), frame(1, 1), stop(1, 2, at=time.monotonic() - 10.0))
-        await settle()
+        await settle(SETTLE)
         assert grouped == []
         rx.feed(start(1, 4), frame(1, 4), stop(1, 5, at=time.monotonic() - 20.0))
-        await settle()
+        await settle(SETTLE)
         assert grouped == [heard(1, 1, None, None, 4)]
         rx.end(ClosedReason.DISCONNECTED)
         await listening
@@ -1318,11 +1313,11 @@ def test_stop_waits_for_the_audio_still_in_the_jitter_buffer(tmp_path: Path) -> 
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
         recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
-        await settle()
+        await settle(SETTLE)
         vc.rx.feed(*(opus(index) for index in range(5)))
         vc.rx.hear(opus(5))
         stopping = asyncio.create_task(recorder.stop())
-        await settle()
+        await settle(SETTLE)
         waited = not stopping.done()
         vc.rx.release()
         await stopping
@@ -1352,10 +1347,10 @@ def test_a_recorder_finishes_its_files_when_its_receiver_moved_away(
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
         recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
-        await settle()
+        await settle(SETTLE)
         vc.rx.feed(opus(0), opus(1))
         vc.rx.end(ClosedReason.MOVED)
-        await settle()
+        await settle(SETTLE)
         files = await recorder.stop()
         assert files == {42: tmp_path / "42.ogg"}
         assert read_ogg(files[42]) == ([b"\x00" * 3, b"\x01" * 3], [0, 0, 1_920])

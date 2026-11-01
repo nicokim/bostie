@@ -1,9 +1,9 @@
-import ast
 import math
+import re
 from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, get_args, get_type_hints
+from typing import Any, TypeAliasType, get_args
 
 import pytest
 
@@ -13,22 +13,20 @@ from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlag
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 
 VALID = nullcontext()
+CRATES = Path(__file__).parents[1] / "crates"
+TYPES = "bostie-core/src/voice/types.rs"
+NATIVE = "bostie-native/src/voice.rs"
+RUST_NAME = re.compile(r'(?:=> |\()"([^"]+)"')
 
 
 def invalid(message: str) -> AbstractContextManager[object]:
     return pytest.raises(ValueError, match=message)
 
 
-def stub_literals(alias: str) -> list[str]:
-    stub = ast.parse((Path(bostie.__file__).parent / "_native.pyi").read_text())
-    for node in stub.body:
-        if isinstance(node, ast.TypeAlias) and node.name.id == alias:
-            return [
-                literal.value
-                for literal in ast.walk(node.value)
-                if isinstance(literal, ast.Constant) and isinstance(literal.value, str)
-            ]
-    raise LookupError(alias)
+def rust_names(path: str, impl: str) -> list[str]:
+    source = (CRATES / path).read_text()
+    start = source.index(f"impl {impl} {{")
+    return RUST_NAME.findall(source, start, source.index("\n}\n", start))
 
 
 @pytest.mark.parametrize(
@@ -150,27 +148,34 @@ def test_formats_default_to_the_documented_values() -> None:
 
 
 @pytest.mark.parametrize(
-    ("enum", "alias"),
+    ("enum", "path", "impl"),
     [
-        (State, "VoiceStateName"),
-        (DisconnectReason, "DisconnectReasonName"),
-        (Direction, "VoiceStalledDelivery"),
-        (ClosedReason, "ClosedReasonName"),
+        (State, TYPES, "VoiceStatus"),
+        (DisconnectReason, TYPES, "DisconnectReason"),
+        (Direction, TYPES, "Direction"),
+        (ClosedReason, "bostie-core/src/voice/receiver.rs", "Ended"),
     ],
 )
-def test_enum_values_match_the_native_names(enum: type[StrEnum], alias: str) -> None:
-    native = [name for name in stub_literals(alias) if name != "voice_stalled"]
-
-    assert [member.value for member in enum] == native
+def test_enum_values_are_the_names_rust_sends(
+    enum: type[StrEnum], path: str, impl: str
+) -> None:
+    assert [member.value for member in enum] == rust_names(path, impl)
 
 
 @pytest.mark.parametrize(
-    ("field", "alias"),
-    [("overflow", "OverflowName"), ("receive_stall", "ReceiveStallName")],
+    ("alias", "impl"),
+    [
+        (voice.OpusApplication, "Application"),
+        (voice.Sample, "SampleFormat"),
+        (voice.SinkStall, "StallPolicy"),
+        (voice.Overflow, "Overflow"),
+        (voice.ReceiveStall, "ReceiveStall"),
+    ],
 )
-def test_receive_defaults_take_the_native_names(field: str, alias: str) -> None:
-    hint = get_type_hints(voice.Defaults)[field]
-    assert list(get_args(hint.__value__)) == stub_literals(alias)
+def test_option_literals_are_the_names_rust_accepts(
+    alias: TypeAliasType, impl: str
+) -> None:
+    assert list(get_args(alias.__value__)) == rust_names(NATIVE, f"Choices for {impl}")
 
 
 def test_voice_events_need_no_intent_and_have_local_names() -> None:
