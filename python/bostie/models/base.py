@@ -17,9 +17,9 @@ def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
     ]
 
 
-def redacted_repr(struct: msgspec.Struct) -> str:
-    shown = ", ".join(f"{name}={value!r}" for name, value in shown_fields(struct))
-    return f"{type(struct).__name__}({shown})"
+def redacted_repr(self: msgspec.Struct) -> str:
+    shown = ", ".join(f"{name}={value!r}" for name, value in shown_fields(self))
+    return f"{type(self).__name__}({shown})"
 
 
 @dataclass_transform(

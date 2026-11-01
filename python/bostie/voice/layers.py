@@ -171,7 +171,7 @@ class _Player:
         self.closed = False
         self._volume = volume
         self._buffer = buffer
-        self._stall = stall
+        self._stall: Literal["hold", "drop"] | None = stall
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
         self._format: Format | None = None
