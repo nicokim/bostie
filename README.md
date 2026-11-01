@@ -84,7 +84,7 @@ async def wave_back(event: MessageCreate) -> None:
     message = event.message
     mentioned = {user.id for user in message.mentions}
     if bot.user and bot.user.id in mentioned:
-        await bot.send_message(
+        await bot.rest.messages.create(
             message.channel_id,
             components=[ui.text("Hi! Try /roll.")],
             reply_to=message.id,
@@ -106,6 +106,8 @@ A few things the example takes for granted:
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
+
+`bot.rest` groups Discord's REST operations by resource once the bot has started, such as `bot.rest.messages.create(channel_id, "hi")` or `bot.rest.members.fetch(guild_id, user_id)`. Ids come first and positional, in the order of the URL. Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
 
 Everything bostie does not model yet stays reachable:
 
@@ -197,7 +199,7 @@ async def captions(vc: voice.VoiceConnection, channel_id: int) -> None:
     async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
         async for said in voice.utterances(rx):
             text = await speech_to_text(said.data)
-            await bot.send_message(
+            await bot.rest.messages.create(
                 channel_id,
                 f"<@{said.user_id}>: {text}",
                 allowed_mentions=AllowedMentions(parse=()),
@@ -245,7 +247,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 A bad argument raises `ValueError` or `TypeError`. Every other error bostie raises, the Rust core's included, is a `bostie.BostieError`:
 
 - `HTTPException` and its subclasses such as `NotFound` when Discord answers with an error status, `TransportError` when a request fails before it answers, and `GatewayClosed` when Discord ends the gateway session for good.
-- `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.
+- `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` or `bot.rest` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.
 - `MissingIntent`, also a `ValueError`, when a feature needs an intent the bot did not ask for, and `StartupError`, also an `OSError`, when bostie cannot set up a thread, socket, HTTP client or TLS context it needs.
 - `CommandError` for commands and interactions, and `voice.VoiceError` for voice.
 

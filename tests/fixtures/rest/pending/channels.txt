@@ -7,7 +7,6 @@ DELETE /channels/{channel_id}/permissions/{overwrite_id} channels.delete_permiss
 PATCH /channels/{channel_id} channels.edit reason
 PUT /channels/{channel_id}/permissions/{overwrite_id} channels.edit_permissions reason
 PATCH /guilds/{guild_id}/channels channels.edit_positions reason
-GET /channels/{channel_id} channels.fetch
 GET /channels/{channel_id}/permissions/member/{user_id} channels.fetch_member_permissions
 GET /channels/{channel_id}/permissions/role/{role_id} channels.fetch_role_permissions
 POST /channels/{channel_id}/followers channels.follow reason

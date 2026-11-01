@@ -63,27 +63,16 @@ from bostie.http import HTTPClient
 from bostie.models import (
     AllowedMentions,
     AutocompleteInteraction,
-    Channel,
     CommandData,
     CommandInteraction,
     ComponentInteraction,
-    EditParts,
-    Guild,
     Interaction,
     InteractionDataOption,
-    Member,
-    Message,
-    MessageParts,
     ModalSubmitInteraction,
     UnknownInteraction,
     User,
-    WebhookMessage,
-    build_message,
-    decode,
-    decode_message,
 )
 from bostie.models.base import check_keys
-from bostie.models.message import MESSAGE_PARTS, in_guild, message_body
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.voice.connection import VoiceManager
@@ -401,106 +390,6 @@ class Bot(Router):
             self._dev_guilds,
             always_put=True,
         )
-
-    async def send_message(
-        self,
-        channel_id: int,
-        content: str | None = None,
-        *,
-        reply_to: int | None = None,
-        **parts: Unpack[MessageParts],
-    ) -> Message:
-        """Send a message; `reply_to` takes the id of a message in the same channel."""
-        check_keys(parts, MESSAGE_PARTS, "message parts")
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = message_body(content, parts, reply_to=reply_to)
-        message = await self.http._decoded(
-            partial(decode, Message),
-            "POST",
-            "/channels/{channel_id}/messages",
-            json=body,
-            files=files,
-            channel_id=channel_id,
-        )
-        return in_guild(message, self._guild_of(channel_id))
-
-    async def edit_message(
-        self,
-        channel_id: int,
-        message_id: int,
-        content: str | None = None,
-        **parts: Unpack[EditParts],
-    ) -> Message | WebhookMessage:
-        """Edit a message; only the parts passed change.
-
-        With `files` or `attachments`, only the listed `attachments` stay.
-        """
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = build_message(content, **parts)
-        message = await self.http._decoded(
-            decode_message,
-            "PATCH",
-            "/channels/{channel_id}/messages/{message_id}",
-            json=body,
-            files=files,
-            channel_id=channel_id,
-            message_id=message_id,
-        )
-        return in_guild(message, self._guild_of(channel_id))
-
-    async def delete_message(
-        self, channel_id: int, message_id: int, *, reason: str | None = None
-    ) -> None:
-        await self.http._request(
-            "DELETE",
-            "/channels/{channel_id}/messages/{message_id}",
-            reason=reason,
-            channel_id=channel_id,
-            message_id=message_id,
-        )
-
-    async def fetch_message(
-        self, channel_id: int, message_id: int
-    ) -> Message | WebhookMessage:
-        message = await self.http._decoded(
-            decode_message,
-            "GET",
-            "/channels/{channel_id}/messages/{message_id}",
-            channel_id=channel_id,
-            message_id=message_id,
-        )
-        return in_guild(message, self._guild_of(channel_id))
-
-    async def fetch_channel(self, channel_id: int) -> Channel:
-        return await self.http._decoded(
-            partial(decode, Channel),
-            "GET",
-            "/channels/{channel_id}",
-            channel_id=channel_id,
-        )
-
-    async def fetch_user(self, user_id: int) -> User:
-        return await self.http._decoded(
-            partial(decode, User), "GET", "/users/{user_id}", user_id=user_id
-        )
-
-    async def fetch_guild(self, guild_id: int) -> Guild:
-        return await self.http._decoded(
-            partial(decode, Guild), "GET", "/guilds/{guild_id}", guild_id=guild_id
-        )
-
-    async def fetch_member(self, guild_id: int, user_id: int) -> Member:
-        return await self.http._decoded(
-            partial(decode, Member),
-            "GET",
-            "/guilds/{guild_id}/members/{user_id}",
-            guild_id=guild_id,
-            user_id=user_id,
-        )
-
-    def _guild_of(self, channel_id: int) -> int | None:
-        channel = self.cache.channel(channel_id)
-        return None if channel is None else channel.guild_id
 
     async def _run(self, token: str | None) -> None:
         started = asyncio.ensure_future(self.start(token))

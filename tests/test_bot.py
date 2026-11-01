@@ -20,7 +20,6 @@ from bostie import (
     CommandSyncError,
     ComponentContext,
     Context,
-    File,
     Forbidden,
     HTTPException,
     Intents,
@@ -31,7 +30,6 @@ from bostie import (
     MissingIntent,
     ModalContext,
     ModalSubmitInteraction,
-    NotFound,
     Option,
     OptionType,
     Permissions,
@@ -40,7 +38,6 @@ from bostie import (
     Router,
     StateError,
     Status,
-    UnexpectedResponse,
     WebhookMessage,
     activity,
     ui,
@@ -883,7 +880,7 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
         @admin.command
         async def purge(ctx: Context) -> None:
             """Purge a channel."""
-            await bot.fetch_channel(channel_id)
+            await bot.rest.channels.fetch(channel_id)
 
         @bot.command
         async def crash(ctx: Context) -> None:
@@ -1020,77 +1017,6 @@ def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
         with pytest.raises(ValueError, match="zero"):
             await bot.start(fake.token)
         assert fake.requests == []
-
-    run(scenario)
-
-
-def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        guild_id = int(payloads.fixture("rest/guild")["id"])
-        channel_id = int(payloads.channel()["id"])
-        member_id = int(payloads.member()["user"]["id"])
-        async with running(bot, fake):
-            await asyncio.gather(
-                bot.wait_for(GuildCreate),
-                fake.dispatch("GUILD_CREATE", payloads.guild()),
-            )
-            sent = await bot.send_message(
-                channel_id, "hello", files=[File("a.txt", b"A")], reply_to=5
-            )
-            assert fake.requests[-1].json == {
-                "content": "hello",
-                "allowed_mentions": MENTIONS,
-                "message_reference": {"type": 0, "message_id": 5},
-                "attachments": [{"id": 0, "filename": "a.txt"}],
-            }
-            assert sent.content == "hello"
-            assert sent.raw["id"] == str(sent.id)
-
-            edited = await bot.edit_message(
-                channel_id, sent.id, "edited", attachments=[7]
-            )
-            assert fake.requests[-1].json == {
-                "content": "edited",
-                "allowed_mentions": MENTIONS,
-                "attachments": [{"id": 7}],
-            }
-            fetched = await bot.fetch_message(channel_id, sent.id)
-            assert (edited.content, fetched.content) == ("edited", "edited")
-            link = f"https://discord.com/channels/{guild_id}/{channel_id}/{sent.id}"
-            assert sent.jump_url == edited.jump_url == fetched.jump_url == link
-
-            await bot.delete_message(channel_id, sent.id, reason="cleanup")
-            assert fake.requests[-1].headers["x-audit-log-reason"] == "cleanup"
-            with pytest.raises(NotFound):
-                await bot.fetch_message(channel_id, sent.id)
-
-            assert (await bot.fetch_channel(channel_id)).id == channel_id
-            assert (await bot.fetch_guild(guild_id)).id == guild_id
-            assert (await bot.fetch_user(member_id)).id == member_id
-            member = await bot.fetch_member(guild_id, member_id)
-            assert member.id == member_id
-
-    run(scenario)
-
-
-@pytest.mark.parametrize(
-    ("method", "call", "accepted"),
-    [
-        ("POST", lambda bot: bot.send_message(1, "hi"), "it took effect"),
-        ("GET", lambda bot: bot.fetch_user(1), "Discord answered the request"),
-    ],
-)
-def test_a_rest_answer_that_fails_to_decode_raises_with_its_payload(
-    method: str, call: Callable[[Bot], Awaitable[object]], accepted: str
-) -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        async with running(bot, fake):
-            fake.fail(method, "/", 200, {"id": "1"})
-            with pytest.raises(UnexpectedResponse, match=accepted) as raised:
-                await call(bot)
-            assert raised.value.raw == {"id": "1"}
 
     run(scenario)
 

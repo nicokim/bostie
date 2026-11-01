@@ -74,7 +74,7 @@ def test_vc_stage_works_only_on_a_stage_channel() -> None:
             await vc.stage("speak")
         await vc.disconnect()
         await (await connected(bot, STAGE)).stage("listen")
-        assert bot.rest.requests[-1].json == {
+        assert bot.api.requests[-1].json == {
             "channel_id": str(STAGE),
             "suppress": True,
         }

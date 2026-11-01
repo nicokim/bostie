@@ -3,7 +3,6 @@ PATCH /guilds/{guild_id} guilds.edit reason
 PUT /guilds/{guild_id}/incident-actions guilds.edit_incident_actions
 PATCH /guilds/{guild_id}/welcome-screen guilds.edit_welcome_screen reason
 PATCH /guilds/{guild_id}/widget guilds.edit_widget reason
-GET /guilds/{guild_id} guilds.fetch
 GET /guilds/{guild_id}/preview guilds.fetch_preview
 GET /guilds/{guild_id}/prune guilds.fetch_prune_count
 GET /guilds/{guild_id}/vanity-url guilds.fetch_vanity_url

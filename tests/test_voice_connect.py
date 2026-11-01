@@ -116,7 +116,7 @@ def test_invalid_connect_options_raise_before_anything_is_sent(
         }
         with pytest.raises(error, match=option):
             await attempts[call]()
-        assert (bot.core.sent, bot.rest.requests) == ([], [])
+        assert (bot.core.sent, bot.api.requests) == ([], [])
 
     run(scenario)
 
@@ -141,7 +141,7 @@ def test_voice_needs_the_guild_voice_states_intent(call: str) -> None:
         )
         with pytest.raises(MissingIntent, match=r"Intents\.GUILD_VOICE_STATES"):
             await attempt
-        assert (bot.core.sent, bot.rest.requests) == ([], [])
+        assert (bot.core.sent, bot.api.requests) == ([], [])
 
     run(scenario, intents=Intents.GUILDS)
 
@@ -163,7 +163,7 @@ def test_a_cached_channel_needs_no_request() -> None:
         )
         bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
         await connected(bot)
-        assert bot.rest.requests == []
+        assert bot.api.requests == []
         assert bot.calls("voice_connect")[0][2]["bitrate"] == 128_000
 
     run(scenario)
@@ -172,7 +172,7 @@ def test_a_cached_channel_needs_no_request() -> None:
 @pytest.mark.parametrize("channel_id", [TEXT, 999])
 def test_only_guild_voice_and_stage_channels_connect(channel_id: int) -> None:
     async def scenario(bot: FakeBot) -> None:
-        bot.rest.answers[("GET", "/channels/999")] = (200, {"id": "999", "type": 2})
+        bot.api.answers[("GET", "/channels/999")] = (200, {"id": "999", "type": 2})
         with pytest.raises(ValueError, match="is not a voice or stage channel"):
             await bot.voice.connect(channel_id)
         assert bot.core.sent == []
@@ -198,7 +198,7 @@ def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
 ) -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(bot, channel, **options)
-        sent = [request for request in bot.rest.requests if request.method == "PATCH"]
+        sent = [request for request in bot.api.requests if request.method == "PATCH"]
         assert [request.path for request in sent] == [PATCH_ME] * len(patches)
         assert [request.json for request in sent] == [
             {"channel_id": str(channel)} | patch for patch in patches
@@ -212,7 +212,7 @@ def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
         before = datetime.now(UTC)
         await connected(bot, STAGE, stage="request")
         after = datetime.now(UTC)
-        request = bot.rest.requests[-1]
+        request = bot.api.requests[-1]
         assert request.json.keys() == {"channel_id", "request_to_speak_timestamp"}
         asked = datetime.fromisoformat(request.json["request_to_speak_timestamp"])
         assert before <= asked <= after
@@ -222,7 +222,7 @@ def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
 
 def test_a_failing_stage_request_disconnects_and_raises() -> None:
     async def scenario(bot: FakeBot) -> None:
-        bot.rest.answers[("PATCH", PATCH_ME)] = (
+        bot.api.answers[("PATCH", PATCH_ME)] = (
             403,
             {"code": 50013, "message": "Missing Permissions"},
         )
@@ -323,7 +323,7 @@ def test_entering_a_stage_asks_for_the_connections_stage_role(
 ) -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot, start)
-        before = len(bot.rest.requests)
+        before = len(bot.api.requests)
         task = asyncio.ensure_future(
             bot.voice.connect(STAGE, **options)
             if entry == "connect"
@@ -334,7 +334,7 @@ def test_entering_a_stage_asks_for_the_connections_stage_role(
             bot.deliver(("voice_moved", GUILD_ID, start, STAGE, True))
             bot.deliver(ready())
         await task
-        sent = [r for r in bot.rest.requests[before:] if r.method == "PATCH"]
+        sent = [r for r in bot.api.requests[before:] if r.method == "PATCH"]
         assert [r.json for r in sent] == [
             {"channel_id": str(STAGE)} | patch for patch in patches
         ]
@@ -455,7 +455,7 @@ def context_voice(bot: FakeBot, guild_id: int | None = GUILD_ID) -> voice.Contex
 
 def test_context_voice_connects_to_the_users_channel() -> None:
     async def scenario(bot: FakeBot) -> None:
-        bot.rest.answers[("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")] = (
+        bot.api.answers[("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")] = (
             200,
             rest_voice_state(OTHER_VOICE),
         )
@@ -478,9 +478,9 @@ def test_context_voice_raises_not_in_voice(case: str) -> None:
     async def scenario(bot: FakeBot) -> None:
         route = ("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")
         if case == "unknown voice state":
-            bot.rest.answers[route] = (404, {"code": 10065, "message": "Unknown"})
+            bot.api.answers[route] = (404, {"code": 10065, "message": "Unknown"})
         elif case == "no channel":
-            bot.rest.answers[route] = (200, rest_voice_state(None))
+            bot.api.answers[route] = (200, rest_voice_state(None))
         guild_id = None if case == "dm" else GUILD_ID
         with pytest.raises(voice.NotInVoice):
             await context_voice(bot, guild_id).connect()

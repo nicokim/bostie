@@ -773,7 +773,7 @@ def test_new_messages_refuse_attachments_which_only_edits_take() -> None:
                 ctx.respond,
                 ctx.followup,
                 ctx.defer,
-                partial(on.bot.send_message, 1),
+                partial(on.bot.rest.messages.create, 1),
             ):
                 with pytest.raises(TypeError, match=": attachments"):
                     await send(**parts)

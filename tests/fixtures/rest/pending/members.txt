@@ -2,7 +2,6 @@ PUT /guilds/{guild_id}/members/{user_id} members.add
 PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} members.add_role reason
 PATCH /guilds/{guild_id}/members/{user_id} members.edit reason
 PATCH /guilds/{guild_id}/members/@me members.edit_current reason
-GET /guilds/{guild_id}/members/{user_id} members.fetch
 GET /guilds/{guild_id}/permissions/member/{user_id} members.fetch_permissions
 GET /guilds/{guild_id}/members members.list
 DELETE /guilds/{guild_id}/members/{user_id} members.remove reason

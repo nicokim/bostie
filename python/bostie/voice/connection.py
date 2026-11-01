@@ -36,6 +36,7 @@ from bostie.gateway import CLOSE_TIMEOUT, GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import Channel, User, VoiceState, decode
 from bostie.models.base import check_keys
+from bostie.rest import REST
 from bostie.voice import layers
 from bostie.voice.encoder import DEFAULT_BITRATE, percent
 from bostie.voice.events import (
@@ -237,7 +238,8 @@ class VoiceHost(Protocol):
     def _intents(self) -> Intents: ...
     @property
     def _bridge(self) -> _HasCore | None: ...
-    async def fetch_channel(self, channel_id: int) -> Channel: ...
+    @property
+    def rest(self) -> REST: ...
     async def wait_for[E: Event](
         self, event: type[E], *, check: Callable[[E], bool] | None = None
     ) -> E: ...
@@ -436,9 +438,9 @@ class VoiceManager:
         return replace(self.defaults, **options)
 
     async def _voice_channel(self, channel_id: int) -> tuple[int, Channel]:
-        channel = self._bot.cache.channel(channel_id) or await self._bot.fetch_channel(
+        channel = self._bot.cache.channel(
             channel_id
-        )
+        ) or await self._bot.rest.channels.fetch(channel_id)
         if channel.guild_id is None or channel.type not in VOICE_CHANNELS:
             raise ValueError(f"channel {channel_id} is not a voice or stage channel")
         return channel.guild_id, channel

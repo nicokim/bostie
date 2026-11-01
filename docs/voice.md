@@ -145,7 +145,7 @@ async def captions(vc: voice.VoiceConnection, channel_id: int) -> None:
         async for said in voice.utterances(rx, min_silence=0.6):
             if said.lost < said.duration / 2:
                 text = await speech_to_text(said.data)
-                await bot.send_message(
+                await bot.rest.messages.create(
                     channel_id,
                     f"<@{said.user_id}>: {text}",
                     allowed_mentions=AllowedMentions(parse=()),

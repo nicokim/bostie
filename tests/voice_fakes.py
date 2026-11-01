@@ -21,7 +21,8 @@ from bostie.errors import (
 from bostie.events import Event
 from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
-from bostie.models import Channel, User, decode
+from bostie.models import AllowedMentions, User
+from bostie.rest import REST
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults, OpusApplication, Sample, SinkStall
@@ -526,8 +527,8 @@ class FakeBot:
         running: bool = True,
     ) -> None:
         self.core = FakeCore()
-        self.rest = FakeBridge(self.core)
-        self._bridge: FakeBridge | None = self.rest if running else None
+        self.api = FakeBridge(self.core)
+        self._bridge: FakeBridge | None = self.api if running else None
         self.user: User | None = (
             User(
                 id=BOT_ID,
@@ -541,9 +542,10 @@ class FakeBot:
             else None
         )
         self.cache = Cache()
-        self.http = HTTPClient(cast("Bridge", self.rest))
+        self.http = HTTPClient(cast("Bridge", self.api))
+        self.rest = REST(self.http, AllowedMentions(), self.cache)
         self.gateway = GatewayClient(
-            cast("Bridge", self.rest),
+            cast("Bridge", self.api),
             "token",
             intents=intents,
             shard_count=1,
@@ -559,12 +561,6 @@ class FakeBot:
 
     def _emit(self, event: VoiceEvent) -> None:
         self.events.append(event)
-
-    async def fetch_channel(self, channel_id: int) -> Channel:
-        data = await self.http._request(
-            "GET", "/channels/{channel_id}", channel_id=channel_id
-        )
-        return decode(Channel, data)
 
     async def wait_for[E: Event](
         self, event: type[E], *, check: Callable[[E], bool] | None = None
