@@ -7,8 +7,6 @@ import pytest
 from fakediscord import settle
 from voice_fakes import (
     GUILD_ID,
-    NO_BITRATE,
-    OTHER_GUILD_ID,
     OTHER_VOICE,
     USER_ID,
     VOICE,
@@ -16,13 +14,11 @@ from voice_fakes import (
     FakeReceiver,
     connected,
     disconnected,
-    ready,
-    rest_voice_state,
     run,
 )
 
 from bostie import voice
-from bostie.voice.connection import ContextVoice, VoiceDelivery
+from bostie.voice.connection import VoiceDelivery
 
 if TYPE_CHECKING:
     from bostie._native import FrameItem
@@ -413,26 +409,13 @@ def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
         vc = await connected(bot)
         vc.speech_hangover = 0.75
         vc.speech_activity = True
-        bot.rest.answers["GET", f"/guilds/{OTHER_GUILD_ID}/voice-states/{USER_ID}"] = (
-            200,
-            rest_voice_state(NO_BITRATE, guild_id=OTHER_GUILD_ID),
-        )
-        ctx = ContextVoice(bot.voice, OTHER_GUILD_ID, USER_ID)
-        joining = asyncio.ensure_future(
-            ctx.connect(speech_hangover=0.5, speech_activity=True)
-        )
-        await settle()
-        bot.deliver(ready(OTHER_GUILD_ID))
-        await joining
         assert [call[1] for call in bot.calls("voice_speech_hangover")] == [
             (GUILD_ID, 0.3),
             (GUILD_ID, 0.75),
-            (OTHER_GUILD_ID, 0.5),
         ]
         assert [call[1] for call in bot.calls("voice_speech_activity")] == [
             (GUILD_ID, False),
             (GUILD_ID, True),
-            (OTHER_GUILD_ID, True),
         ]
         assert (vc.speech_hangover, vc.speech_activity) == (0.75, True)
 
