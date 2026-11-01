@@ -23,6 +23,7 @@ use super::receive::Intake;
 use super::types::{DaveOp, DisconnectReason};
 use super::udp::{self, Answer, DiscoveryError};
 use super::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
+use crate::error::describe;
 use crate::inbox::Delivery;
 
 const LOG_EVERY: Duration = Duration::from_secs(1);
@@ -664,7 +665,7 @@ impl<'c> Session<'c> {
                 transition_id: executed.transition_id,
             }),
             Ok(None) => {}
-            Err(error) => return Err(SessionEnd::DaveFailed(error.to_string())),
+            Err(error) => return Err(SessionEnd::DaveFailed(describe(&error))),
         }
         Ok(())
     }

@@ -323,13 +323,8 @@ impl Voice {
 
     pub fn verification_code(&self, guild: GuildId, user: UserId) -> Result<String, CoreError> {
         let media = self.media(guild)?;
-        let fingerprints = media
-            .dave
-            .lock()
-            .fingerprint_pair(user)
-            .map_err(|error| CoreError::InvalidRequest(error.to_string()))?;
-        dave::verification_code(fingerprints)
-            .map_err(|error| CoreError::InvalidRequest(error.to_string()))
+        let fingerprints = media.dave.lock().fingerprint_pair(user)?;
+        Ok(dave::verification_code(fingerprints)?)
     }
 
     pub fn stats(&self, guild: GuildId) -> Result<Vec<(&'static str, u64)>, CoreError> {

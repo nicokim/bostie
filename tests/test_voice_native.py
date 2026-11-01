@@ -348,7 +348,7 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
         receiver(core, markers=True, mix=True)
     with pytest.raises(RuntimeError, match="already has a voice connection"):
         connect(core)
-    with pytest.raises(ValueError, match="no DAVE"):
+    with pytest.raises(RuntimeError, match="code: there is no DAVE session"):
         core.voice_verification_code(GUILD, USER)
 
     core.close()

@@ -2,6 +2,7 @@ use std::error::Error;
 use std::io;
 
 use crate::ids::{GuildId, Handle, ShardId};
+use crate::voice::dave::DaveError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
@@ -28,6 +29,8 @@ pub enum CoreError {
     VoiceQueueFull(GuildId),
     #[error("voice handle {0} is closed")]
     HandleClosed(Handle),
+    #[error(transparent)]
+    Dave(#[from] DaveError),
     #[error("failed to start the async runtime")]
     Runtime(#[source] io::Error),
     #[error("failed to create the wake-up socket")]

@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::error::Error;
 use std::fmt;
 use std::mem;
 use std::num::NonZeroU16;
@@ -107,10 +108,10 @@ pub enum DecryptFailure {
 pub enum DaveError {
     #[error("more than {limit} DAVE recoveries within {window:?}")]
     RecoveryLimit { limit: usize, window: Duration },
-    #[error("the DAVE session could not be built: {0}")]
-    Session(String),
-    #[error("no DAVE verification code: {0}")]
-    Verification(String),
+    #[error("the DAVE session could not be built")]
+    Session(#[source] Box<dyn Error + Send + Sync>),
+    #[error("no DAVE verification code")]
+    Verification(#[source] Box<dyn Error + Send + Sync>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -380,10 +381,10 @@ impl Dave {
         let session = self
             .session
             .as_ref()
-            .ok_or_else(|| DaveError::Verification(Failure::NoSession.to_string()))?;
+            .ok_or_else(|| DaveError::Verification(Failure::NoSession.into()))?;
         session
             .get_key_fingerprint_pair(0, u64::from(user))
-            .map_err(|error| DaveError::Verification(error.to_string()))
+            .map_err(|error| DaveError::Verification(error.into()))
     }
 
     fn epoch(&self) -> Option<u64> {
@@ -708,7 +709,7 @@ impl Dave {
                 out.push(Outbound::KeyPackage(key_package));
                 Ok(())
             }
-            Err(failure) => Err(DaveError::Session(failure.to_string())),
+            Err(failure) => Err(DaveError::Session(failure.into())),
         }
     }
 
@@ -718,10 +719,10 @@ impl Dave {
         let mut session =
             match panic::catch_unwind(move || DaveSession::new(version, user, channel, None)) {
                 Ok(Ok(session)) => session,
-                Ok(Err(error)) => return Err(DaveError::Session(error.to_string())),
+                Ok(Err(error)) => return Err(DaveError::Session(error.into())),
                 Err(payload) => {
                     self.panicked(MlsCall::Create, payload.as_ref());
-                    return Err(DaveError::Session(Failure::Panicked.to_string()));
+                    return Err(DaveError::Session(Failure::Panicked.into()));
                 }
             };
         if self.protocol_version == 0 {
@@ -835,9 +836,9 @@ impl Dave {
 
 pub fn verification_code(fingerprints: [Vec<u8>; 2]) -> Result<String, DaveError> {
     let pairwise = davey::pairwise_fingerprints_internal(fingerprints)
-        .map_err(|error| DaveError::Verification(error.to_string()))?;
+        .map_err(|error| DaveError::Verification(error.into()))?;
     davey::generate_displayable_code(&pairwise, VERIFICATION_CODE_DIGITS, VERIFICATION_CODE_GROUP)
-        .map_err(|error| DaveError::Verification(error.to_string()))
+        .map_err(|error| DaveError::Verification(error.into()))
 }
 
 fn encrypt_failure(error: &EncryptError) -> EncryptFailure {

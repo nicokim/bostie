@@ -559,7 +559,8 @@ impl From<CoreError> for Error {
             | CoreError::UnknownVoice(_)
             | CoreError::VoiceRunning(_)
             | CoreError::VoiceQueueFull(_)
-            | CoreError::HandleClosed(_) => PyRuntimeError::new_err(message),
+            | CoreError::HandleClosed(_)
+            | CoreError::Dave(_) => PyRuntimeError::new_err(message),
             CoreError::Runtime(_)
             | CoreError::Bell(_)
             | CoreError::HttpClient(_)
