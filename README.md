@@ -94,7 +94,7 @@ Everything bostie does not model yet stays reachable:
 - `bot.gateway.send(op=..., d=...)` sends any opcode.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
 - `ui.raw({...})` puts a component that `ui` has no builder for into a row, section or container.
-- An `InteractionCreate` listener gets modal submits and other interactions bostie does not route as an `UnknownInteraction`, with the payload in `raw`.
+- An `InteractionCreate` listener gets every interaction, routed or not: a modal submit arrives as a `ModalSubmitInteraction`, and a type bostie does not model as an `UnknownInteraction`, with the payload in `raw`.
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
 

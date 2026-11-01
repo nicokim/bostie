@@ -140,8 +140,20 @@ class ComponentInteraction(_Interaction, kw_only=True):
         return nested_message(self._message, self.guild_id)
 
 
+class ModalSubmitData(Model, kw_only=True):
+    """The modal a user submitted; the values they entered are in `raw`."""
+
+    custom_id: str
+
+
+class ModalSubmitInteraction(_Interaction, kw_only=True):
+    """A modal submit, which bostie decodes but does not route."""
+
+    data: ModalSubmitData
+
+
 class UnknownInteraction(Model, kw_only=True):
-    """An interaction bostie does not route, such as a modal submit; see `raw`."""
+    """An interaction bostie does not model; see `raw`."""
 
     id: int
     type: InteractionType
@@ -151,6 +163,7 @@ type Interaction = (
     CommandInteraction
     | ComponentInteraction
     | AutocompleteInteraction
+    | ModalSubmitInteraction
     | UnknownInteraction
 )
 
@@ -158,6 +171,7 @@ INTERACTIONS: dict[InteractionType, type[Interaction]] = {
     InteractionType.APPLICATION_COMMAND: CommandInteraction,
     InteractionType.MESSAGE_COMPONENT: ComponentInteraction,
     InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE: AutocompleteInteraction,
+    InteractionType.MODAL_SUBMIT: ModalSubmitInteraction,
 }
 
 

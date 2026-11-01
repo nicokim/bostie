@@ -12,7 +12,6 @@ from bostie.enums import (
     ChannelFlags,
     ChannelType,
     ComponentType,
-    InteractionType,
     MessageFlags,
     MessageType,
     OptionType,
@@ -37,6 +36,7 @@ from bostie.models import (
     MediaGallery,
     Member,
     Message,
+    ModalSubmitInteraction,
     Model,
     PartialChannel,
     Role,
@@ -321,17 +321,16 @@ def test_the_user_comes_from_the_member_in_guilds_and_the_user_in_dms() -> None:
 
 
 def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> None:
-    names = ("command", "button", "select", "autocomplete")
-    modal = json.loads(payload("events/INTERACTION_CREATE.command.json")) | {
-        "type": 5,
-        "data": {"custom_id": "form", "components": []},
+    names = ("command", "button", "select", "autocomplete", "modal")
+    future = json.loads(payload("events/INTERACTION_CREATE.command.json")) | {
+        "type": 99
     }
 
-    command, button, select, autocomplete = (
+    command, button, select, autocomplete, modal = (
         decode_interaction(payload(f"events/INTERACTION_CREATE.{name}.json"))
         for name in names
     )
-    unknown = decode_interaction(msgspec.json.encode(modal))
+    unknown = decode_interaction(msgspec.json.encode(future))
 
     assert isinstance(command, CommandInteraction)
     assert isinstance(button, ComponentInteraction)
@@ -342,9 +341,12 @@ def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> N
     assert select.data.values == ("ant", "lyrebird")
     assert isinstance(autocomplete, AutocompleteInteraction)
     assert [option.focused for option in autocomplete.data.options] == [False, True]
+    assert isinstance(modal, ModalSubmitInteraction)
+    assert (modal.data.custom_id, modal.user.id) == ("feedback:42", 820774541721731073)
+    assert modal.token
     assert isinstance(unknown, UnknownInteraction)
-    assert unknown.type is InteractionType.MODAL_SUBMIT
-    assert unknown.raw == modal
+    assert unknown.type == 99
+    assert unknown.raw == future
 
 
 def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:
