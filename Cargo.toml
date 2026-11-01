@@ -40,6 +40,15 @@ zstd-safe = { version = "8.2.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+rust_2018_idioms = { level = "warn", priority = -1 }
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

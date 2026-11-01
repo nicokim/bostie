@@ -3,23 +3,29 @@
 use crate::voice::types::SILENCE_FRAME;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Edge {
+pub(crate) enum Edge {
     Start { ssrc: u32, at: i64 },
     Stop { ssrc: u32, at: i64, duration: i64 },
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Activity {
+pub(crate) struct Activity {
     since: Option<(u32, i64)>,
     end: i64,
 }
 
 impl Activity {
-    pub fn is_speaking(&self) -> bool {
+    pub(crate) fn is_speaking(&self) -> bool {
         self.since.is_some()
     }
 
-    pub fn packet(&mut self, ssrc: u32, at: i64, samples: u32, speech: bool) -> Option<Edge> {
+    pub(crate) fn packet(
+        &mut self,
+        ssrc: u32,
+        at: i64,
+        samples: u32,
+        speech: bool,
+    ) -> Option<Edge> {
         if !speech {
             return None;
         }
@@ -33,7 +39,7 @@ impl Activity {
         Some(Edge::Start { ssrc, at })
     }
 
-    pub fn expire(&mut self, now: i64, hangover: i64) -> Option<Edge> {
+    pub(crate) fn expire(&mut self, now: i64, hangover: i64) -> Option<Edge> {
         let (ssrc, start) = self.since?;
         if now.saturating_sub(self.end) < hangover {
             return None;
@@ -47,7 +53,7 @@ impl Activity {
     }
 }
 
-pub fn is_speech(payload: &[u8], silence: bool) -> bool {
+pub(crate) fn is_speech(payload: &[u8], silence: bool) -> bool {
     !silence && payload != SILENCE_FRAME
 }
 

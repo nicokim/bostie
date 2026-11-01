@@ -36,7 +36,7 @@ const COMMAND_QUEUE: usize = 128;
 
 type Filter = Option<HashSet<Box<str>>>;
 
-pub struct Gateway {
+pub(crate) struct Gateway {
     runtime: Handle,
     shared: Arc<Shared>,
     shards: Mutex<HashMap<ShardId, ShardHandle>>,
@@ -66,7 +66,7 @@ impl ShardHandle {
 }
 
 impl Gateway {
-    pub fn new(
+    pub(crate) fn new(
         runtime: Handle,
         inbox: Arc<Inbox>,
         token: &str,
@@ -100,11 +100,16 @@ impl Gateway {
         })
     }
 
-    pub fn set_identify_limit(&self, limit: IdentifyLimit) {
+    pub(crate) fn set_identify_limit(&self, limit: IdentifyLimit) {
         self.shared.identify.seed(limit, Instant::now());
     }
 
-    pub fn start(&self, shard: ShardId, url: &str, identify: Bytes) -> Result<(), CoreError> {
+    pub(crate) fn start(
+        &self,
+        shard: ShardId,
+        url: &str,
+        identify: Bytes,
+    ) -> Result<(), CoreError> {
         let url = shard::gateway_url(url).ok_or_else(|| {
             CoreError::InvalidRequest(format!("{url:?} is not a ws:// or wss:// gateway URL"))
         })?;
@@ -135,7 +140,7 @@ impl Gateway {
         Ok(())
     }
 
-    pub fn send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
+    pub(crate) fn send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
         envelope::check_command(&payload)?;
         self.with_running(shard, |handle| {
             handle
@@ -148,33 +153,33 @@ impl Gateway {
         })
     }
 
-    pub fn set_filter(&self, names: Option<Vec<String>>) {
+    pub(crate) fn set_filter(&self, names: Option<Vec<String>>) {
         *self.shared.filter.write() =
             names.map(|names| names.into_iter().map(String::into_boxed_str).collect());
     }
 
-    pub fn reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
+    pub(crate) fn reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle.signals.reconnect.notify_one();
             Ok(())
         })
     }
 
-    pub fn close(&self, shard: ShardId) -> Result<(), CoreError> {
+    pub(crate) fn close(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle.signals.close.notify_one();
             Ok(())
         })
     }
 
-    pub fn latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
+    pub(crate) fn latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
         self.with_running(shard, |handle| {
             let nanos = handle.signals.latency.load(Ordering::Relaxed);
             Ok((nanos != UNKNOWN_LATENCY).then(|| Duration::from_nanos(nanos)))
         })
     }
 
-    pub fn shutdown(&self) {
+    pub(crate) fn shutdown(&self) {
         for (_, handle) in self.shards.lock().drain() {
             handle.task.abort();
         }

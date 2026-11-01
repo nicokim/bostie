@@ -25,13 +25,13 @@ use crate::voice::types::{
     SILENCE_FRAME,
 };
 
-pub const SILENCE_TAIL: u8 = 5;
+pub(crate) const SILENCE_TAIL: u8 = 5;
 
 const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
 const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Arrival {
+pub(crate) struct Arrival {
     pub ssrc: u32,
     pub sequence: u16,
     pub timestamp: u32,
@@ -43,7 +43,7 @@ pub struct Arrival {
 }
 
 #[derive(Debug)]
-pub struct Transport {
+pub(crate) struct Transport {
     pub generation: u64,
     pub socket: Arc<std::net::UdpSocket>,
     pub ssrc: u32,
@@ -71,7 +71,7 @@ struct Roster {
     reconnecting: bool,
 }
 
-pub struct Media {
+pub(crate) struct Media {
     guild: GuildId,
     inbox: Arc<Inbox>,
     stall_after: Duration,
@@ -135,19 +135,19 @@ impl Media {
         }
     }
 
-    pub fn guild(&self) -> GuildId {
+    pub(crate) fn guild(&self) -> GuildId {
         self.guild
     }
 
-    pub fn stall_after(&self) -> Duration {
+    pub(crate) fn stall_after(&self) -> Duration {
         self.stall_after
     }
 
-    pub fn push(&self, delivery: Delivery) {
+    pub(crate) fn push(&self, delivery: Delivery) {
         self.inbox.push(delivery);
     }
 
-    pub fn arrive(&self, arrival: Arrival) {
+    pub(crate) fn arrive(&self, arrival: Arrival) {
         let mut arrivals = self.arrivals.lock();
         if arrivals.len() >= self.arrival_limit {
             arrivals.pop_front();
@@ -155,7 +155,7 @@ impl Media {
         arrivals.push_back(arrival);
     }
 
-    pub fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
+    pub(crate) fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
         let mut roster = self.receivers.lock();
         if self.closed.load(Ordering::Acquire) {
             return false;
@@ -171,7 +171,7 @@ impl Media {
         true
     }
 
-    pub fn drop_ended_receivers(&self, open: &mut Vec<Arc<Receiver>>) {
+    pub(crate) fn drop_ended_receivers(&self, open: &mut Vec<Arc<Receiver>>) {
         let mut roster = self.receivers.lock();
         roster.open.retain(|receiver| {
             let ended = receiver.is_closed();
@@ -186,13 +186,13 @@ impl Media {
         open.extend(roster.open.iter().cloned());
     }
 
-    pub fn end_receivers(&self, why: Ended) {
+    pub(crate) fn end_receivers(&self, why: Ended) {
         for receiver in &self.receivers.lock().open {
             receiver.end(why);
         }
     }
 
-    pub fn set_reconnecting(&self, reconnecting: bool) {
+    pub(crate) fn set_reconnecting(&self, reconnecting: bool) {
         let mut roster = self.receivers.lock();
         roster.reconnecting = reconnecting;
         if reconnecting {
@@ -204,36 +204,36 @@ impl Media {
         }
     }
 
-    pub fn open_receivers(&self) -> usize {
+    pub(crate) fn open_receivers(&self) -> usize {
         self.open_receivers.load(Ordering::Relaxed)
     }
 
-    pub fn packet_receivers(&self) -> usize {
+    pub(crate) fn packet_receivers(&self) -> usize {
         self.packet_receivers.load(Ordering::Relaxed)
     }
 
-    pub fn speech_hangover(&self) -> Duration {
+    pub(crate) fn speech_hangover(&self) -> Duration {
         Duration::from_nanos(self.speech_hangover.load(Ordering::Relaxed))
     }
 
-    pub fn set_speech_hangover(&self, hangover: Duration) {
+    pub(crate) fn set_speech_hangover(&self, hangover: Duration) {
         self.speech_hangover
             .store(nanos(hangover), Ordering::Relaxed);
     }
 
-    pub fn speech_activity(&self) -> bool {
+    pub(crate) fn speech_activity(&self) -> bool {
         self.speech_activity.load(Ordering::Relaxed)
     }
 
-    pub fn set_speech_activity(&self, enabled: bool) {
+    pub(crate) fn set_speech_activity(&self, enabled: bool) {
         self.speech_activity.store(enabled, Ordering::Relaxed);
     }
 
-    pub fn transport_failed(&self) {
+    pub(crate) fn transport_failed(&self) {
         self.transport_failures.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn transport_failures(&self) -> u64 {
+    pub(crate) fn transport_failures(&self) -> u64 {
         self.transport_failures.load(Ordering::Relaxed)
     }
 
@@ -248,7 +248,7 @@ impl Media {
         }
     }
 
-    pub fn lane(self: &Arc<Self>, encoder: EncoderSettings) -> Result<Lane, CoreError> {
+    pub(crate) fn lane(self: &Arc<Self>, encoder: EncoderSettings) -> Result<Lane, CoreError> {
         Ok(Lane {
             media: Arc::clone(self),
             sinks: Vec::new(),
@@ -261,27 +261,27 @@ impl Media {
         })
     }
 
-    pub fn install(&self, transport: Option<Arc<Transport>>) {
+    pub(crate) fn install(&self, transport: Option<Arc<Transport>>) {
         let dave = self.dave.lock();
         *self.transport.lock() = transport;
         self.refresh(&dave);
     }
 
-    pub fn begin(&self, dave: Dave, transport: Arc<Transport>) {
+    pub(crate) fn begin(&self, dave: Dave, transport: Arc<Transport>) {
         let mut current = self.dave.lock();
         *current = dave;
         *self.transport.lock() = Some(transport);
         self.refresh(&current);
     }
 
-    pub fn with_dave<T>(&self, run: impl FnOnce(&mut Dave) -> T) -> T {
+    pub(crate) fn with_dave<T>(&self, run: impl FnOnce(&mut Dave) -> T) -> T {
         let mut dave = self.dave.lock();
         let output = run(&mut dave);
         self.refresh(&dave);
         output
     }
 
-    pub fn close(&self) {
+    pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
         let sinks = mem::take(&mut *self.sinks.lock());
         for sink in sinks {
@@ -290,11 +290,11 @@ impl Media {
         self.end_receivers(Ended::Disconnected);
     }
 
-    pub fn gate(&self) -> SendMode {
+    pub(crate) fn gate(&self) -> SendMode {
         SendMode::from_byte(self.gate.load(Ordering::Acquire))
     }
 
-    pub fn refresh(&self, dave: &Dave) {
+    pub(crate) fn refresh(&self, dave: &Dave) {
         let mode = if self.transport.lock().is_some() {
             dave.send_mode()
         } else {
@@ -304,20 +304,20 @@ impl Media {
         *self.dave_view.lock() = DaveView::of(dave);
     }
 
-    pub fn dave_info(&self) -> DaveInfo {
+    pub(crate) fn dave_info(&self) -> DaveInfo {
         self.dave_view.lock().info.clone()
     }
 
-    pub fn protocol_version(&self) -> u16 {
+    pub(crate) fn protocol_version(&self) -> u16 {
         self.dave_view.lock().info.protocol_version
     }
 
-    pub fn receive_state(&self) -> (u16, bool) {
+    pub(crate) fn receive_state(&self) -> (u16, bool) {
         let view = self.dave_view.lock();
         (view.info.protocol_version, view.session_built)
     }
 
-    pub fn stalled(&self, direction: Direction, stalled: bool, duration: Duration) {
+    pub(crate) fn stalled(&self, direction: Direction, stalled: bool, duration: Duration) {
         self.inbox.push(Delivery::VoiceStalled {
             guild: self.guild,
             direction,
@@ -337,7 +337,7 @@ struct RtpState {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-pub enum Stall {
+pub(crate) enum Stall {
     #[default]
     Clear,
     Pending(Instant),
@@ -345,7 +345,7 @@ pub enum Stall {
 }
 
 impl Stall {
-    pub fn press(&mut self, now: Instant, after: Duration) -> Option<Duration> {
+    pub(crate) fn press(&mut self, now: Instant, after: Duration) -> Option<Duration> {
         let since = match *self {
             Self::Clear => now,
             Self::Pending(since) => since,
@@ -360,25 +360,25 @@ impl Stall {
         Some(stalled)
     }
 
-    pub fn ease(&mut self) {
+    pub(crate) fn ease(&mut self) {
         if let Self::Pending(_) = self {
             *self = Self::Clear;
         }
     }
 
-    pub fn resume(&mut self, now: Instant) -> Option<Duration> {
+    pub(crate) fn resume(&mut self, now: Instant) -> Option<Duration> {
         match mem::take(self) {
             Self::Reported(since) => Some(now.saturating_duration_since(since)),
             Self::Clear | Self::Pending(_) => None,
         }
     }
 
-    pub fn reported(self) -> bool {
+    pub(crate) fn reported(self) -> bool {
         matches!(self, Self::Reported(_))
     }
 }
 
-pub struct Lane {
+pub(crate) struct Lane {
     media: Arc<Media>,
     sinks: Vec<Arc<Sink>>,
     mixer: Mixer,
@@ -390,7 +390,7 @@ pub struct Lane {
 }
 
 impl Lane {
-    pub fn tick(&mut self, tick: Tick) -> bool {
+    pub(crate) fn tick(&mut self, tick: Tick) -> bool {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }

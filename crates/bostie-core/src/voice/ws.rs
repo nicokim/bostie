@@ -13,7 +13,7 @@ use tracing::debug;
 use super::proto::{self, Frame, ProtoError};
 use super::types::VOICE_GATEWAY_VERSION;
 
-pub const WS_MAX_MESSAGE: usize = 1024 * 1024;
+pub(crate) const WS_MAX_MESSAGE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Timeouts {
@@ -37,7 +37,7 @@ impl Timeouts {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum WsError {
+pub(crate) enum WsError {
     #[error("invalid voice endpoint {0:?}")]
     Endpoint(Box<str>),
     #[error("no connection within {0:?}")]
@@ -53,13 +53,13 @@ pub enum WsError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Close {
+pub(crate) enum Close {
     Final,
     Resumable,
 }
 
 impl Close {
-    pub const fn code(self) -> u16 {
+    pub(crate) const fn code(self) -> u16 {
         match self {
             Self::Final => 1000,
             Self::Resumable => 4000,
@@ -68,13 +68,13 @@ impl Close {
 }
 
 #[derive(Debug)]
-pub enum Received {
+pub(crate) enum Received {
     Frame(Frame),
     Closed(u16),
     Lost(WsError),
 }
 
-pub fn endpoint_url(endpoint: &str) -> Result<Url, WsError> {
+pub(crate) fn endpoint_url(endpoint: &str) -> Result<Url, WsError> {
     let parsed = if endpoint.contains("://") {
         Url::parse(endpoint)
             .ok()
@@ -87,7 +87,7 @@ pub fn endpoint_url(endpoint: &str) -> Result<Url, WsError> {
     Ok(url)
 }
 
-pub struct VoiceSocket {
+pub(crate) struct VoiceSocket {
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     close_timeout: Duration,
     oversized: bool,
@@ -114,11 +114,19 @@ impl VoiceSocket {
         })
     }
 
-    pub async fn send_text(&mut self, payload: Bytes, patience: Duration) -> Result<(), WsError> {
+    pub(crate) async fn send_text(
+        &mut self,
+        payload: Bytes,
+        patience: Duration,
+    ) -> Result<(), WsError> {
         self.send(Message::text(payload), patience).await
     }
 
-    pub async fn send_binary(&mut self, payload: Bytes, patience: Duration) -> Result<(), WsError> {
+    pub(crate) async fn send_binary(
+        &mut self,
+        payload: Bytes,
+        patience: Duration,
+    ) -> Result<(), WsError> {
         self.send(Message::binary(payload), patience).await
     }
 
@@ -129,7 +137,7 @@ impl VoiceSocket {
         Ok(())
     }
 
-    pub async fn receive(&mut self) -> Received {
+    pub(crate) async fn receive(&mut self) -> Received {
         if self.oversized {
             return Received::Lost(WsError::Oversized);
         }
@@ -165,7 +173,7 @@ impl VoiceSocket {
         }
     }
 
-    pub async fn close(mut self, close: Close) {
+    pub(crate) async fn close(mut self, close: Close) {
         let code = close.code();
         let patience = self.close_timeout;
         let closing = async {
@@ -181,23 +189,23 @@ impl VoiceSocket {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SeqAck {
+pub(crate) struct SeqAck {
     last: Option<u64>,
 }
 
 impl SeqAck {
-    pub fn record(&mut self, seq: Option<u64>) {
+    pub(crate) fn record(&mut self, seq: Option<u64>) {
         self.last = seq.or(self.last);
     }
 
-    pub const fn last(self) -> Option<u64> {
+    pub(crate) const fn last(self) -> Option<u64> {
         self.last
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("no heartbeat ACK within {interval:?}")]
-pub struct Zombie {
+pub(crate) struct Zombie {
     pub interval: Duration,
 }
 
@@ -208,14 +216,14 @@ struct Unanswered {
 }
 
 #[derive(Debug, Clone)]
-pub struct Heartbeat {
+pub(crate) struct Heartbeat {
     interval: Duration,
     deadline: Instant,
     unanswered: Option<Unanswered>,
 }
 
 impl Heartbeat {
-    pub fn new(interval: Duration, hello_at: Instant) -> Self {
+    pub(crate) fn new(interval: Duration, hello_at: Instant) -> Self {
         Self {
             interval,
             deadline: hello_at + interval,
@@ -223,15 +231,15 @@ impl Heartbeat {
         }
     }
 
-    pub const fn interval(&self) -> Duration {
+    pub(crate) const fn interval(&self) -> Duration {
         self.interval
     }
 
-    pub const fn deadline(&self) -> Instant {
+    pub(crate) const fn deadline(&self) -> Instant {
         self.deadline
     }
 
-    pub fn beat(&mut self, now: Instant) -> Result<u64, Zombie> {
+    pub(crate) fn beat(&mut self, now: Instant) -> Result<u64, Zombie> {
         if self.unanswered.is_some() {
             return Err(Zombie {
                 interval: self.interval,
@@ -243,7 +251,7 @@ impl Heartbeat {
         Ok(t)
     }
 
-    pub fn ack(&mut self, t: u64, now: Instant) -> Option<Duration> {
+    pub(crate) fn ack(&mut self, t: u64, now: Instant) -> Option<Duration> {
         let answered = self.unanswered.take_if(|beat| beat.t == t)?;
         Some(now.saturating_duration_since(answered.sent_at))
     }

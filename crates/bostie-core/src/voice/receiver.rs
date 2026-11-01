@@ -346,7 +346,7 @@ mod tests {
 
     use super::*;
     use crate::voice::sink::tests::Fixture;
-    use crate::voice::types::{Overflow, ReceiveFormat, ReceiveStall, SILENCE_FRAME};
+    use crate::voice::types::{ReceiveStall, SILENCE_FRAME};
 
     const ALICE: u64 = 1;
     const BOB: u64 = 2;

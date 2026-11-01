@@ -40,7 +40,7 @@ const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const FAILURE_RETRIES: u32 = 2;
 
-pub struct Rest {
+pub(crate) struct Rest {
     client: reqwest::Client,
     limiter: RateLimiter,
     interaction_buckets: Mutex<InteractionBuckets>,
@@ -54,7 +54,7 @@ pub struct Rest {
 }
 
 impl Rest {
-    pub fn new(
+    pub(crate) fn new(
         token: &str,
         api_url: &str,
         global_limit: NonZeroU16,
@@ -100,7 +100,7 @@ impl Rest {
         })
     }
 
-    pub async fn execute(&self, ticket: Ticket, request: RestRequest) -> Delivery {
+    pub(crate) async fn execute(&self, ticket: Ticket, request: RestRequest) -> Delivery {
         let url = request.url(&self.base);
         let mut retries = Retries::new(self.limits);
         loop {

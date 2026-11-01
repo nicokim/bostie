@@ -11,30 +11,30 @@ use super::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp};
 use super::ws::WS_MAX_MESSAGE;
 use crate::ids::{ChannelId, GuildId, UserId};
 
-pub mod op {
-    pub const IDENTIFY: u8 = 0;
-    pub const SELECT_PROTOCOL: u8 = 1;
-    pub const READY: u8 = 2;
-    pub const HEARTBEAT: u8 = 3;
-    pub const SESSION_DESCRIPTION: u8 = 4;
-    pub const SPEAKING: u8 = 5;
-    pub const HEARTBEAT_ACK: u8 = 6;
-    pub const RESUME: u8 = 7;
-    pub const HELLO: u8 = 8;
-    pub const RESUMED: u8 = 9;
-    pub const CLIENTS_CONNECT: u8 = 11;
-    pub const CLIENT_DISCONNECT: u8 = 13;
-    pub const DAVE_PREPARE_TRANSITION: u8 = 21;
-    pub const DAVE_EXECUTE_TRANSITION: u8 = 22;
-    pub const DAVE_TRANSITION_READY: u8 = 23;
-    pub const DAVE_PREPARE_EPOCH: u8 = 24;
-    pub const DAVE_MLS_EXTERNAL_SENDER: u8 = 25;
-    pub const DAVE_MLS_KEY_PACKAGE: u8 = 26;
-    pub const DAVE_MLS_PROPOSALS: u8 = 27;
-    pub const DAVE_MLS_COMMIT_WELCOME: u8 = 28;
-    pub const DAVE_MLS_ANNOUNCE_COMMIT_TRANSITION: u8 = 29;
-    pub const DAVE_MLS_WELCOME: u8 = 30;
-    pub const DAVE_MLS_INVALID_COMMIT_WELCOME: u8 = 31;
+pub(crate) mod op {
+    pub(crate) const IDENTIFY: u8 = 0;
+    pub(crate) const SELECT_PROTOCOL: u8 = 1;
+    pub(crate) const READY: u8 = 2;
+    pub(crate) const HEARTBEAT: u8 = 3;
+    pub(crate) const SESSION_DESCRIPTION: u8 = 4;
+    pub(crate) const SPEAKING: u8 = 5;
+    pub(crate) const HEARTBEAT_ACK: u8 = 6;
+    pub(crate) const RESUME: u8 = 7;
+    pub(crate) const HELLO: u8 = 8;
+    pub(crate) const RESUMED: u8 = 9;
+    pub(crate) const CLIENTS_CONNECT: u8 = 11;
+    pub(crate) const CLIENT_DISCONNECT: u8 = 13;
+    pub(crate) const DAVE_PREPARE_TRANSITION: u8 = 21;
+    pub(crate) const DAVE_EXECUTE_TRANSITION: u8 = 22;
+    pub(crate) const DAVE_TRANSITION_READY: u8 = 23;
+    pub(crate) const DAVE_PREPARE_EPOCH: u8 = 24;
+    pub(crate) const DAVE_MLS_EXTERNAL_SENDER: u8 = 25;
+    pub(crate) const DAVE_MLS_KEY_PACKAGE: u8 = 26;
+    pub(crate) const DAVE_MLS_PROPOSALS: u8 = 27;
+    pub(crate) const DAVE_MLS_COMMIT_WELCOME: u8 = 28;
+    pub(crate) const DAVE_MLS_ANNOUNCE_COMMIT_TRANSITION: u8 = 29;
+    pub(crate) const DAVE_MLS_WELCOME: u8 = 30;
+    pub(crate) const DAVE_MLS_INVALID_COMMIT_WELCOME: u8 = 31;
 }
 
 const MAIN_GATEWAY_VOICE_STATE_UPDATE: u8 = 4;
@@ -53,7 +53,7 @@ static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| {
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ProtoError {
+pub(crate) enum ProtoError {
     #[error("invalid JSON at line {line} column {column}")]
     Json { line: usize, column: usize },
     #[error("missing or invalid `op`")]
@@ -80,7 +80,7 @@ impl From<sonic_rs::Error> for ProtoError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Inbound {
+pub(crate) enum Inbound {
     Hello { interval: Duration },
     Ready(Ready),
     SessionDescription(SessionDescription),
@@ -94,7 +94,7 @@ pub enum Inbound {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ready {
+pub(crate) struct Ready {
     pub ssrc: u32,
     pub ip: IpAddr,
     pub port: u16,
@@ -102,7 +102,7 @@ pub struct Ready {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct SessionDescription {
+pub(crate) struct SessionDescription {
     pub mode: Box<str>,
     pub secret_key: [u8; SECRET_KEY_LEN],
     pub dave_protocol_version: u16,
@@ -118,12 +118,12 @@ impl fmt::Debug for SessionDescription {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Frame {
+pub(crate) struct Frame {
     pub seq: Option<u64>,
     pub inbound: Result<Inbound, ProtoError>,
 }
 
-pub fn parse_text(text: &[u8]) -> Frame {
+pub(crate) fn parse_text(text: &[u8]) -> Frame {
     if text.len() > WS_MAX_MESSAGE {
         return Frame {
             seq: None,
@@ -154,7 +154,7 @@ pub fn parse_text(text: &[u8]) -> Frame {
     }
 }
 
-pub fn parse_binary(message: Bytes) -> Frame {
+pub(crate) fn parse_binary(message: Bytes) -> Frame {
     let seq = message
         .first_chunk::<2>()
         .map(|&seq| u64::from(u16::from_be_bytes(seq)));
@@ -347,7 +347,7 @@ fn heartbeat_interval(value: &LazyValue<'_>) -> Option<Duration> {
     Duration::try_from_secs_f64(millis / 1000.0).ok()
 }
 
-pub fn identify(server: GuildId, user: UserId, session_id: &str, token: &str) -> Bytes {
+pub(crate) fn identify(server: GuildId, user: UserId, session_id: &str, token: &str) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"server_id":"{server}","user_id":"{user}","session_id":{},"token":{},"max_dave_protocol_version":{MAX_DAVE_PROTOCOL_VERSION}}}}}"#,
         op::IDENTIFY,
@@ -356,7 +356,7 @@ pub fn identify(server: GuildId, user: UserId, session_id: &str, token: &str) ->
     ))
 }
 
-pub fn select_protocol(ip: IpAddr, port: u16, mode: &str) -> Bytes {
+pub(crate) fn select_protocol(ip: IpAddr, port: u16, mode: &str) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"protocol":"udp","data":{{"address":"{ip}","port":{port},"mode":{}}}}}}}"#,
         op::SELECT_PROTOCOL,
@@ -364,7 +364,7 @@ pub fn select_protocol(ip: IpAddr, port: u16, mode: &str) -> Bytes {
     ))
 }
 
-pub fn heartbeat(t: u64, seq_ack: Option<u64>) -> Bytes {
+pub(crate) fn heartbeat(t: u64, seq_ack: Option<u64>) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"t":{t},"seq_ack":{}}}}}"#,
         op::HEARTBEAT,
@@ -372,14 +372,19 @@ pub fn heartbeat(t: u64, seq_ack: Option<u64>) -> Bytes {
     ))
 }
 
-pub fn speaking(flags: u8, ssrc: u32) -> Bytes {
+pub(crate) fn speaking(flags: u8, ssrc: u32) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"speaking":{flags},"delay":0,"ssrc":{ssrc}}}}}"#,
         op::SPEAKING,
     ))
 }
 
-pub fn resume(server: GuildId, session_id: &str, token: &str, seq_ack: Option<u64>) -> Bytes {
+pub(crate) fn resume(
+    server: GuildId,
+    session_id: &str,
+    token: &str,
+    seq_ack: Option<u64>,
+) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"server_id":"{server}","session_id":{},"token":{},"seq_ack":{}}}}}"#,
         op::RESUME,
@@ -389,29 +394,29 @@ pub fn resume(server: GuildId, session_id: &str, token: &str, seq_ack: Option<u6
     ))
 }
 
-pub fn transition_ready(transition_id: u16) -> Bytes {
+pub(crate) fn transition_ready(transition_id: u16) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"transition_id":{transition_id}}}}}"#,
         op::DAVE_TRANSITION_READY,
     ))
 }
 
-pub fn invalid_commit_welcome(transition_id: u16) -> Bytes {
+pub(crate) fn invalid_commit_welcome(transition_id: u16) -> Bytes {
     Bytes::from(format!(
         r#"{{"op":{},"d":{{"transition_id":{transition_id}}}}}"#,
         op::DAVE_MLS_INVALID_COMMIT_WELCOME,
     ))
 }
 
-pub fn key_package(key_package: &[u8]) -> Bytes {
+pub(crate) fn key_package(key_package: &[u8]) -> Bytes {
     Bytes::from([&[op::DAVE_MLS_KEY_PACKAGE], key_package].concat())
 }
 
-pub fn commit_welcome(commit_welcome: &[u8]) -> Bytes {
+pub(crate) fn commit_welcome(commit_welcome: &[u8]) -> Bytes {
     Bytes::from([&[op::DAVE_MLS_COMMIT_WELCOME], commit_welcome].concat())
 }
 
-pub fn voice_state_update(
+pub(crate) fn voice_state_update(
     guild: GuildId,
     channel: Option<ChannelId>,
     self_mute: bool,

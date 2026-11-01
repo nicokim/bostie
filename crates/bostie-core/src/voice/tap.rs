@@ -10,8 +10,8 @@ use tracing::debug;
 use crate::gateway::tree;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 
-pub const VOICE_STATE_UPDATE: &str = "VOICE_STATE_UPDATE";
-pub const VOICE_SERVER_UPDATE: &str = "VOICE_SERVER_UPDATE";
+pub(crate) const VOICE_STATE_UPDATE: &str = "VOICE_STATE_UPDATE";
+pub(crate) const VOICE_SERVER_UPDATE: &str = "VOICE_SERVER_UPDATE";
 
 const STATE_KEYS: [&str; 9] = [
     "guild_id",

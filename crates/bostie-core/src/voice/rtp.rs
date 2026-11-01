@@ -1,14 +1,14 @@
 use std::ops::RangeInclusive;
 
-pub const HEADER_LEN: usize = 12;
-pub const PAYLOAD_TYPE: u8 = 120;
+pub(crate) const HEADER_LEN: usize = 12;
+pub(crate) const PAYLOAD_TYPE: u8 = 120;
 
 const VERSION: u8 = 2;
 const FIRST_BYTE: u8 = VERSION << 6;
-pub const PADDING: u8 = 0x20;
-pub const EXTENSION: u8 = 0x10;
-pub const MARKER: u8 = 0x80;
-pub const ONE_BYTE_PROFILE: u16 = 0xBEDE;
+pub(crate) const PADDING: u8 = 0x20;
+pub(crate) const EXTENSION: u8 = 0x10;
+pub(crate) const MARKER: u8 = 0x80;
+pub(crate) const ONE_BYTE_PROFILE: u16 = 0xBEDE;
 const CSRC_COUNT: u8 = 0x0F;
 const PAYLOAD_TYPE_BITS: u8 = 0x7F;
 const RTCP_PAYLOAD_TYPES: RangeInclusive<u8> = 72..=78;
@@ -22,7 +22,7 @@ const ONE_BYTE_STOP: u8 = 15;
 const ONE_BYTE_LENGTH_BITS: u8 = 0x0F;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum RtpError {
+pub(crate) enum RtpError {
     #[error("{len} bytes is shorter than the {needed}-byte RTP header")]
     Truncated { len: usize, needed: usize },
     #[error("RTP version {0}, expected 2")]
@@ -36,13 +36,13 @@ pub enum RtpError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
+pub(crate) enum Kind {
     Rtp,
     Rtcp,
     Other,
 }
 
-pub fn classify(packet: &[u8]) -> Kind {
+pub(crate) fn classify(packet: &[u8]) -> Kind {
     let Some(&[first, second]) = packet.first_chunk::<2>() else {
         return Kind::Other;
     };
@@ -59,7 +59,7 @@ pub fn classify(packet: &[u8]) -> Kind {
     }
 }
 
-pub fn extensions(profile: u16, body: &[u8]) -> Result<Vec<(u8, &[u8])>, RtpError> {
+pub(crate) fn extensions(profile: u16, body: &[u8]) -> Result<Vec<(u8, &[u8])>, RtpError> {
     let one_byte = profile == ONE_BYTE_PROFILE;
     if !one_byte && profile & TWO_BYTE_PROFILE_BITS != TWO_BYTE_PROFILE {
         return Ok(Vec::new());
@@ -93,7 +93,7 @@ pub fn extensions(profile: u16, body: &[u8]) -> Result<Vec<(u8, &[u8])>, RtpErro
     Ok(elements)
 }
 
-pub fn write_header(out: &mut [u8; HEADER_LEN], sequence: u16, timestamp: u32, ssrc: u32) {
+pub(crate) fn write_header(out: &mut [u8; HEADER_LEN], sequence: u16, timestamp: u32, ssrc: u32) {
     let [s0, s1] = sequence.to_be_bytes();
     let [t0, t1, t2, t3] = timestamp.to_be_bytes();
     let [r0, r1, r2, r3] = ssrc.to_be_bytes();
@@ -114,13 +114,13 @@ pub fn write_header(out: &mut [u8; HEADER_LEN], sequence: u16, timestamp: u32, s
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Extension {
+pub(crate) struct Extension {
     pub profile: u16,
     pub words: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Header {
+pub(crate) struct Header {
     pub padding: bool,
     pub marker: bool,
     pub payload_type: u8,
@@ -132,7 +132,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn parse(packet: &[u8]) -> Result<Self, RtpError> {
+    pub(crate) fn parse(packet: &[u8]) -> Result<Self, RtpError> {
         let truncated = |needed| RtpError::Truncated {
             len: packet.len(),
             needed,
@@ -173,7 +173,7 @@ impl Header {
         })
     }
 
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         let preamble = if self.extension.is_some() {
             EXTENSION_PREAMBLE_LEN
         } else {
@@ -182,13 +182,13 @@ impl Header {
         HEADER_LEN + CSRC_LEN * usize::from(self.csrc_count) + preamble
     }
 
-    pub fn extension_body<'a>(&self, body: &'a [u8]) -> &'a [u8] {
+    pub(crate) fn extension_body<'a>(&self, body: &'a [u8]) -> &'a [u8] {
         let words = self.extension.map_or(0, |extension| extension.words);
         body.get(..EXTENSION_WORD_LEN * usize::from(words))
             .unwrap_or_default()
     }
 
-    pub fn payload<'a>(&self, body: &'a [u8]) -> Result<&'a [u8], RtpError> {
+    pub(crate) fn payload<'a>(&self, body: &'a [u8]) -> Result<&'a [u8], RtpError> {
         let rest = match self.extension {
             None => body,
             Some(Extension { words, .. }) => body

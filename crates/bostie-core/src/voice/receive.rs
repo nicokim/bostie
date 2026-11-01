@@ -17,7 +17,7 @@ use bytes::Bytes;
 use tracing::{debug, error};
 
 use self::decrypt::Hold;
-pub use self::intake::Intake;
+pub(crate) use self::intake::Intake;
 use self::output::Subscribers;
 use self::owners::Owners;
 use crate::ids::{GuildId, UserId};
@@ -108,7 +108,7 @@ struct Watchdog {
     heard: bool,
 }
 
-pub struct Reception {
+pub(crate) struct Reception {
     core: Core,
     state: Option<Box<State>>,
     panicked: Throttle,
@@ -147,7 +147,7 @@ impl Reception {
         }
     }
 
-    pub fn tick(&mut self, tick: Tick, deadline: Instant) -> bool {
+    pub(crate) fn tick(&mut self, tick: Tick, deadline: Instant) -> bool {
         self.run(Instant::now(), tick.skipped, deadline)
     }
 

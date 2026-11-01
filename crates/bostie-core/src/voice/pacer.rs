@@ -13,22 +13,22 @@ use crate::error::CoreError;
 use crate::voice::types::FRAME;
 use crate::voice::{nanos, panic_message};
 
-pub const AFTER_MARGIN: Duration = Duration::from_millis(2);
+pub(crate) const AFTER_MARGIN: Duration = Duration::from_millis(2);
 
 const LANES_PER_THREAD: usize = 4;
 const LATE_REANCHOR: Duration = FRAME.saturating_mul(3);
 const WORK_SMOOTHING: u64 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Tick {
+pub(crate) struct Tick {
     pub now: Instant,
     pub skipped: u32,
 }
 
-pub type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;
-pub type AfterFn = Box<dyn FnMut(Tick, Instant) -> bool + Send>;
+pub(crate) type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;
+pub(crate) type AfterFn = Box<dyn FnMut(Tick, Instant) -> bool + Send>;
 
-pub trait Pace: Send + Sync {
+pub(crate) trait Pace: Send + Sync {
     fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<(), CoreError>;
 }
 
@@ -48,7 +48,7 @@ impl Default for PacerTuning {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Seat(Arc<AtomicUsize>);
+pub(crate) struct Seat(Arc<AtomicUsize>);
 
 impl Seat {
     fn take(&self, thread: usize) {
@@ -60,7 +60,7 @@ impl Seat {
     }
 }
 
-pub struct PacerPool {
+pub(crate) struct PacerPool {
     workers: Arc<Mutex<Vec<Worker>>>,
     placement: Placement,
 }
@@ -108,7 +108,7 @@ struct Load {
 }
 
 impl PacerPool {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::tuned(PacerTuning::default())
     }
 

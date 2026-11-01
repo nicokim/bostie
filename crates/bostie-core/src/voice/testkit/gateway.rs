@@ -22,19 +22,19 @@ const UNKNOWN_ENCRYPTION_MODE: u16 = 4016;
 const DAVE_REQUIRED: u16 = 4017;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HelloAt {
+pub(crate) enum HelloAt {
     Connect,
     AfterReady,
 }
 
 #[derive(Debug, Clone)]
-pub enum Outgoing {
+pub(crate) enum Outgoing {
     Json { op: u8, d: Value },
     Binary { op: u8, payload: Bytes },
 }
 
 #[derive(Debug, Clone)]
-pub struct Config {
+pub(crate) struct Config {
     pub server_id: GuildId,
     pub user_id: UserId,
     pub session_id: String,
@@ -74,7 +74,7 @@ impl Default for Config {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClientMessage {
+pub(crate) enum ClientMessage {
     Connected { query: Option<String> },
     Json { op: u64, d: Value },
     Binary { op: u8, payload: Bytes },
@@ -84,7 +84,7 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
-    pub fn op(&self) -> Option<u64> {
+    pub(crate) fn op(&self) -> Option<u64> {
         match self {
             Self::Json { op, .. } => Some(*op),
             Self::Binary { op, .. } => Some(u64::from(*op)),
@@ -103,14 +103,14 @@ enum Control {
     Applied(oneshot::Sender<()>),
 }
 
-pub struct FakeVoiceGateway {
+pub(crate) struct FakeVoiceGateway {
     address: SocketAddr,
     controls: mpsc::UnboundedSender<Control>,
     messages: mpsc::UnboundedReceiver<ClientMessage>,
 }
 
 impl FakeVoiceGateway {
-    pub async fn start(config: Config) -> Self {
+    pub(crate) async fn start(config: Config) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (controls, control_receiver) = mpsc::unbounded_channel();
@@ -132,38 +132,38 @@ impl FakeVoiceGateway {
         }
     }
 
-    pub fn endpoint(&self) -> String {
+    pub(crate) fn endpoint(&self) -> String {
         format!("ws://{}", self.address)
     }
 
-    pub fn send(&self, op: u8, d: Value) {
+    pub(crate) fn send(&self, op: u8, d: Value) {
         self.control(Control::Send(Outgoing::Json { op, d }));
     }
 
-    pub fn send_binary(&self, op: u8, payload: &[u8]) {
+    pub(crate) fn send_binary(&self, op: u8, payload: &[u8]) {
         self.control(Control::Send(Outgoing::Binary {
             op,
             payload: Bytes::copy_from_slice(payload),
         }));
     }
 
-    pub fn send_raw(&self, message: Message) {
+    pub(crate) fn send_raw(&self, message: Message) {
         self.control(Control::SendRaw(message));
     }
 
-    pub fn close(&self, code: u16) {
+    pub(crate) fn close(&self, code: u16) {
         self.control(Control::Close(code));
     }
 
-    pub fn drop_connection(&self) {
+    pub(crate) fn drop_connection(&self) {
         self.control(Control::DropConnection);
     }
 
-    pub async fn hold_acks(&self) {
+    pub(crate) async fn hold_acks(&self) {
         self.apply(Control::HoldAcks).await;
     }
 
-    pub async fn configure(&self, change: impl FnOnce(&mut Config) + Send + 'static) {
+    pub(crate) async fn configure(&self, change: impl FnOnce(&mut Config) + Send + 'static) {
         self.apply(Control::Configure(Box::new(change))).await;
     }
 
@@ -177,7 +177,7 @@ impl FakeVoiceGateway {
             .expect("the fake voice gateway stopped");
     }
 
-    pub async fn next(&mut self) -> ClientMessage {
+    pub(crate) async fn next(&mut self) -> ClientMessage {
         timeout(WAIT, self.messages.recv())
             .await
             .expect("no client message within the wait")

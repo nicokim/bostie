@@ -211,7 +211,6 @@ mod tests {
     use std::io::{ErrorKind, Read};
     use std::sync::Arc;
     use std::task::{Context, Waker};
-    use std::time::Duration;
 
     use super::*;
     use crate::bell;

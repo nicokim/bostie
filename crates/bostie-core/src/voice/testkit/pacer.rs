@@ -6,7 +6,7 @@ use crate::error::CoreError;
 use crate::voice::pacer::{AfterFn, LaneFn, Pace, Tick};
 use crate::voice::types::FRAME;
 
-pub struct ManualPacer(Mutex<Lanes>);
+pub(crate) struct ManualPacer(Mutex<Lanes>);
 
 struct Lanes {
     now: Instant,
@@ -15,7 +15,7 @@ struct Lanes {
 }
 
 impl ManualPacer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(Mutex::new(Lanes {
             now: Instant::now(),
             lanes: Vec::new(),
@@ -23,7 +23,7 @@ impl ManualPacer {
         }))
     }
 
-    pub fn tick(&self, n: u32) {
+    pub(crate) fn tick(&self, n: u32) {
         let mut pacer = self.0.lock();
         for _ in 0..n {
             pacer.now += FRAME;
@@ -37,7 +37,7 @@ impl ManualPacer {
         }
     }
 
-    pub fn lanes(&self) -> usize {
+    pub(crate) fn lanes(&self) -> usize {
         self.0.lock().lanes.len()
     }
 }

@@ -22,16 +22,16 @@ const SENDER_IDENTITY: [u8; 4] = [0x00, 0x01, 0x01, 0x00];
 const PROTOCOL_VERSION_PREFIX: usize = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Signal {
+pub(crate) enum Signal {
     Dave(DaveOp),
     ClientsConnect(Vec<UserId>),
     ClientDisconnect(UserId),
 }
 
-pub type Message = (UserId, Signal);
+pub(crate) type Message = (UserId, Signal);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Corruption {
+pub(crate) enum Corruption {
     Commit,
     Welcome,
 }
@@ -56,7 +56,7 @@ struct Transition {
     ready: BTreeSet<Id>,
 }
 
-pub struct ExternalSenderFake {
+pub(crate) struct ExternalSenderFake {
     provider: OpenMlsRustCrypto,
     signer: SignatureKeyPair,
     external_sender: Bytes,
@@ -78,7 +78,7 @@ pub struct ExternalSenderFake {
 }
 
 impl ExternalSenderFake {
-    pub fn new(channel: ChannelId, protocol_version: u16) -> Self {
+    pub(crate) fn new(channel: ChannelId, protocol_version: u16) -> Self {
         let signer = SignatureKeyPair::new(CIPHERSUITE.signature_algorithm()).unwrap();
         let sender = ExternalSender::new(
             signer.public().into(),
@@ -106,26 +106,26 @@ impl ExternalSenderFake {
         }
     }
 
-    pub fn protocol_version(&self) -> u16 {
+    pub(crate) fn protocol_version(&self) -> u16 {
         self.protocol_version
     }
 
-    pub fn external_sender(&self) -> DaveOp {
+    pub(crate) fn external_sender(&self) -> DaveOp {
         DaveOp::ExternalSender(self.external_sender.clone())
     }
 
-    pub fn members(&self) -> Vec<UserId> {
+    pub(crate) fn members(&self) -> Vec<UserId> {
         self.member_ids().into_iter().map(UserId::from).collect()
     }
 
-    pub fn leaves(&self) -> Vec<(u32, UserId)> {
+    pub(crate) fn leaves(&self) -> Vec<(u32, UserId)> {
         (0..)
             .zip(&self.leaves)
             .filter_map(|(index, leaf)| leaf.map(|id| (index, UserId::from(id))))
             .collect()
     }
 
-    pub fn awaiting(&self) -> Vec<UserId> {
+    pub(crate) fn awaiting(&self) -> Vec<UserId> {
         self.round
             .as_ref()
             .map(|round| {
@@ -139,19 +139,19 @@ impl ExternalSenderFake {
             .unwrap_or_default()
     }
 
-    pub fn has_round(&self) -> bool {
+    pub(crate) fn has_round(&self) -> bool {
         self.round.is_some()
     }
 
-    pub fn join(&mut self, user: UserId) -> Vec<Message> {
+    pub(crate) fn join(&mut self, user: UserId) -> Vec<Message> {
         self.connect(u64::from(user), true)
     }
 
-    pub fn join_unannounced(&mut self, user: UserId) -> Vec<Message> {
+    pub(crate) fn join_unannounced(&mut self, user: UserId) -> Vec<Message> {
         self.connect(u64::from(user), false)
     }
 
-    pub fn leave(&mut self, user: UserId) -> Vec<Message> {
+    pub(crate) fn leave(&mut self, user: UserId) -> Vec<Message> {
         let id = u64::from(user);
         self.connected.remove(&id);
         self.key_packages.remove(&id);
@@ -192,12 +192,12 @@ impl ExternalSenderFake {
         out
     }
 
-    pub fn kick(&mut self, user: UserId) -> Vec<Message> {
+    pub(crate) fn kick(&mut self, user: UserId) -> Vec<Message> {
         self.removals.insert(u64::from(user));
         self.advance()
     }
 
-    pub fn downgrade(&mut self) -> Vec<Message> {
+    pub(crate) fn downgrade(&mut self) -> Vec<Message> {
         let transition_id = self.allocate();
         self.protocol_version = 0;
         self.reset_group();
@@ -224,7 +224,7 @@ impl ExternalSenderFake {
             .collect()
     }
 
-    pub fn upgrade(&mut self) -> Vec<Message> {
+    pub(crate) fn upgrade(&mut self) -> Vec<Message> {
         self.protocol_version = MAX_DAVE_PROTOCOL_VERSION;
         self.reset_group();
         self.key_packages.clear();
@@ -243,11 +243,11 @@ impl ExternalSenderFake {
             .collect()
     }
 
-    pub fn corrupt_next(&mut self, user: UserId, corruption: Corruption) {
+    pub(crate) fn corrupt_next(&mut self, user: UserId, corruption: Corruption) {
         self.corruptions.push((u64::from(user), corruption));
     }
 
-    pub fn revoke(&mut self, user: UserId) -> Vec<Message> {
+    pub(crate) fn revoke(&mut self, user: UserId) -> Vec<Message> {
         let id = u64::from(user);
         let Some(round) = &mut self.round else {
             return Vec::new();
@@ -285,11 +285,11 @@ impl ExternalSenderFake {
         out
     }
 
-    pub fn release_transitions(&mut self) -> Vec<Message> {
+    pub(crate) fn release_transitions(&mut self) -> Vec<Message> {
         mem::take(&mut self.held)
     }
 
-    pub fn receive(&mut self, from: UserId, message: Outbound) -> Vec<Message> {
+    pub(crate) fn receive(&mut self, from: UserId, message: Outbound) -> Vec<Message> {
         let from = u64::from(from);
         match message {
             Outbound::KeyPackage(bytes) => {
@@ -339,7 +339,7 @@ impl ExternalSenderFake {
         }
     }
 
-    pub fn settle(&mut self) -> Vec<Message> {
+    pub(crate) fn settle(&mut self) -> Vec<Message> {
         let Some(round) = self.round.take() else {
             return Vec::new();
         };
@@ -666,7 +666,7 @@ enum Item {
     From(UserId, Outbound),
 }
 
-pub struct Call {
+pub(crate) struct Call {
     pub fake: ExternalSenderFake,
     pub now: Instant,
     pub sent: Vec<(UserId, Outbound)>,
@@ -681,7 +681,7 @@ pub struct Call {
 }
 
 impl Call {
-    pub fn new(channel: ChannelId, protocol_version: u16) -> Self {
+    pub(crate) fn new(channel: ChannelId, protocol_version: u16) -> Self {
         Self {
             fake: ExternalSenderFake::new(channel, protocol_version),
             now: Instant::now(),
@@ -697,42 +697,42 @@ impl Call {
         }
     }
 
-    pub fn join(&mut self, user: UserId) {
+    pub(crate) fn join(&mut self, user: UserId) {
         let messages = self.fake.join(user);
         self.add(user, messages);
     }
 
-    pub fn join_unannounced(&mut self, user: UserId) {
+    pub(crate) fn join_unannounced(&mut self, user: UserId) {
         let messages = self.fake.join_unannounced(user);
         self.add(user, messages);
     }
 
-    pub fn join_remote(&mut self, user: UserId) {
+    pub(crate) fn join_remote(&mut self, user: UserId) {
         self.remote_users.insert(user);
         let messages = self.fake.join(user);
         self.enqueue(messages);
     }
 
-    pub fn leave(&mut self, user: UserId) {
+    pub(crate) fn leave(&mut self, user: UserId) {
         self.clients.remove(&user);
         self.remote_users.remove(&user);
         let messages = self.fake.leave(user);
         self.enqueue(messages);
     }
 
-    pub fn enqueue(&mut self, messages: Vec<Message>) {
+    pub(crate) fn enqueue(&mut self, messages: Vec<Message>) {
         self.queue.extend(messages.into_iter().map(Item::To));
     }
 
-    pub fn deliver(&mut self, user: UserId, op: DaveOp) {
+    pub(crate) fn deliver(&mut self, user: UserId, op: DaveOp) {
         self.queue.push_back(Item::To((user, Signal::Dave(op))));
     }
 
-    pub fn receive(&mut self, from: UserId, message: Outbound) {
+    pub(crate) fn receive(&mut self, from: UserId, message: Outbound) {
         self.queue.push_back(Item::From(from, message));
     }
 
-    pub fn run(&mut self) {
+    pub(crate) fn run(&mut self) {
         loop {
             while let Some(item) = self.queue.pop_front() {
                 self.step(item);
@@ -752,15 +752,15 @@ impl Call {
         }
     }
 
-    pub fn dave(&self, user: UserId) -> &Dave {
+    pub(crate) fn dave(&self, user: UserId) -> &Dave {
         &self.clients[&user]
     }
 
-    pub fn dave_mut(&mut self, user: UserId) -> &mut Dave {
+    pub(crate) fn dave_mut(&mut self, user: UserId) -> &mut Dave {
         self.clients.get_mut(&user).unwrap()
     }
 
-    pub fn speak(&mut self, peer: UserId, opus: &[u8]) -> Vec<u8> {
+    pub(crate) fn speak(&mut self, peer: UserId, opus: &[u8]) -> Vec<u8> {
         let dave = self.dave_mut(peer);
         if dave.send_mode() == SendMode::Plain {
             return opus.to_vec();
@@ -770,7 +770,7 @@ impl Call {
         frame
     }
 
-    pub fn sent_by(&self, user: UserId) -> Vec<Outbound> {
+    pub(crate) fn sent_by(&self, user: UserId) -> Vec<Outbound> {
         self.sent
             .iter()
             .filter(|(from, _)| *from == user)
@@ -778,7 +778,7 @@ impl Call {
             .collect()
     }
 
-    pub fn executed_by(&self, user: UserId) -> Vec<Executed> {
+    pub(crate) fn executed_by(&self, user: UserId) -> Vec<Executed> {
         self.executed
             .iter()
             .filter(|(by, _)| *by == user)

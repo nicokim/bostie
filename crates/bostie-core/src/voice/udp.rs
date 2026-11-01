@@ -9,7 +9,7 @@ use tokio::time::timeout;
 
 use super::rtp::{self, Kind};
 
-pub const DISCOVERY_LEN: usize = 74;
+pub(crate) const DISCOVERY_LEN: usize = 74;
 
 const REQUEST: u16 = 1;
 const RESPONSE: u16 = 2;
@@ -19,7 +19,7 @@ const MAX_DATAGRAM: usize = 2048;
 const DISCOVERY_ATTEMPTS: usize = 3;
 
 #[derive(Debug, thiserror::Error)]
-pub enum DiscoveryError {
+pub(crate) enum DiscoveryError {
     #[error("a {0}-byte datagram is not a {DISCOVERY_LEN}-byte discovery response")]
     Size(usize),
     #[error("discovery packet type {0:#06x} is not a response")]
@@ -45,12 +45,12 @@ pub enum DiscoveryError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Answer {
+pub(crate) struct Answer {
     pub address: SocketAddr,
     pub at: Instant,
 }
 
-pub fn bind(remote: SocketAddr) -> io::Result<(UdpSocket, Arc<std::net::UdpSocket>)> {
+pub(crate) fn bind(remote: SocketAddr) -> io::Result<(UdpSocket, Arc<std::net::UdpSocket>)> {
     let local = match remote.ip() {
         IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
@@ -63,7 +63,7 @@ pub fn bind(remote: SocketAddr) -> io::Result<(UdpSocket, Arc<std::net::UdpSocke
     Ok((UdpSocket::from_std(socket)?, Arc::new(sender)))
 }
 
-pub fn discovery_request(ssrc: u32) -> [u8; DISCOVERY_LEN] {
+pub(crate) fn discovery_request(ssrc: u32) -> [u8; DISCOVERY_LEN] {
     let mut request = [0; DISCOVERY_LEN];
     if let Some(head) = request.first_chunk_mut::<8>() {
         let [t0, t1] = REQUEST.to_be_bytes();
@@ -74,7 +74,7 @@ pub fn discovery_request(ssrc: u32) -> [u8; DISCOVERY_LEN] {
     request
 }
 
-pub fn parse_discovery(packet: &[u8], ssrc: u32) -> Result<SocketAddr, DiscoveryError> {
+pub(crate) fn parse_discovery(packet: &[u8], ssrc: u32) -> Result<SocketAddr, DiscoveryError> {
     let &[t0, t1, l0, l1, s0, s1, s2, s3, address @ .., p0, p1] =
         <&[u8; DISCOVERY_LEN]>::try_from(packet).map_err(|_| DiscoveryError::Size(packet.len()))?;
     let kind = u16::from_be_bytes([t0, t1]);
@@ -104,7 +104,7 @@ pub fn parse_discovery(packet: &[u8], ssrc: u32) -> Result<SocketAddr, Discovery
     Ok(SocketAddr::new(ip, u16::from_be_bytes([p0, p1])))
 }
 
-pub async fn discover(
+pub(crate) async fn discover(
     socket: &UdpSocket,
     answers: &mut watch::Receiver<Option<Answer>>,
     ssrc: u32,
@@ -127,7 +127,7 @@ pub async fn discover(
     Err(DiscoveryError::NoAnswer(peer))
 }
 
-pub async fn receive(
+pub(crate) async fn receive(
     socket: &UdpSocket,
     ssrc: u32,
     answers: &watch::Sender<Option<Answer>>,

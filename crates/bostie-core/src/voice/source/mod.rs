@@ -1,5 +1,5 @@
-pub mod decode;
-pub mod http;
+pub(crate) mod decode;
+pub(crate) mod http;
 
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};

@@ -16,13 +16,13 @@ const ANCHOR_WINDOW: Duration = Duration::from_secs(10);
 const OLDEST: u16 = (RING - 1) as u16;
 const TIMESTAMP_SLACK: u32 = 960;
 
-pub fn to_samples(duration: Duration) -> i64 {
+pub(crate) fn to_samples(duration: Duration) -> i64 {
     let samples = duration.as_nanos().saturating_mul(u128::from(SAMPLE_RATE)) / NANOS_PER_SECOND;
     i64::try_from(samples).unwrap_or(i64::MAX)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Slot {
+pub(crate) struct Slot {
     pub sequence: u16,
     pub timestamp: u32,
     pub samples: u32,
@@ -31,7 +31,7 @@ pub struct Slot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Check {
+pub(crate) enum Check {
     Fresh,
     Duplicate,
     Late,
@@ -40,7 +40,7 @@ pub enum Check {
 }
 
 #[derive(Debug)]
-pub struct Stream {
+pub(crate) struct Stream {
     user: UserId,
     ring: Box<[Option<Slot>; RING]>,
     highest: Option<u16>,
@@ -51,7 +51,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(user: UserId) -> Self {
+    pub(crate) fn new(user: UserId) -> Self {
         Self {
             user,
             ring: Box::new([const { None }; RING]),
@@ -63,15 +63,15 @@ impl Stream {
         }
     }
 
-    pub fn user(&self) -> UserId {
+    pub(crate) fn user(&self) -> UserId {
         self.user
     }
 
-    pub fn last_packet(&self) -> Option<i64> {
+    pub(crate) fn last_packet(&self) -> Option<i64> {
         self.last_packet
     }
 
-    pub fn check(&mut self, sequence: u16) -> Check {
+    pub(crate) fn check(&mut self, sequence: u16) -> Check {
         match self.classify(sequence) {
             Check::Jump => {
                 let restarted = self.probation == Some(sequence);
@@ -86,7 +86,7 @@ impl Stream {
         }
     }
 
-    pub fn insert(&mut self, slot: Slot, check: Check) -> bool {
+    pub(crate) fn insert(&mut self, slot: Slot, check: Check) -> bool {
         if check == Check::Restart && self.classify(slot.sequence) == Check::Jump {
             self.restart();
         }
@@ -109,13 +109,13 @@ impl Stream {
         true
     }
 
-    pub fn due(&self, timestamp: u32) -> Option<i64> {
+    pub(crate) fn due(&self, timestamp: u32) -> Option<i64> {
         self.anchor
             .as_ref()
             .map(|anchor| anchor.mark().due(timestamp))
     }
 
-    pub fn release_before(&mut self, sequence: u16) {
+    pub(crate) fn release_before(&mut self, sequence: u16) {
         for slot in self.ring.iter_mut().flatten() {
             if is_before(slot.sequence, sequence) {
                 slot.payload = None;
@@ -264,7 +264,7 @@ impl Anchor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Release {
+pub(crate) enum Release {
     Packet {
         slot: Slot,
         due: i64,
@@ -283,7 +283,7 @@ pub enum Release {
 }
 
 #[derive(Debug, Clone)]
-pub struct Cursor {
+pub(crate) struct Cursor {
     next: Option<u16>,
     last: Option<(u32, u32)>,
     restarts: u64,
@@ -292,7 +292,7 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    pub fn new(opened: i64) -> Self {
+    pub(crate) fn new(opened: i64) -> Self {
         Self {
             next: None,
             last: None,
@@ -302,11 +302,11 @@ impl Cursor {
         }
     }
 
-    pub fn position(&self) -> Option<u16> {
+    pub(crate) fn position(&self) -> Option<u16> {
         self.next
     }
 
-    pub fn next(
+    pub(crate) fn next(
         &mut self,
         stream: &Stream,
         now: i64,
@@ -341,7 +341,7 @@ impl Cursor {
         })
     }
 
-    pub fn offset(&mut self, due: i64, samples: u32) -> u64 {
+    pub(crate) fn offset(&mut self, due: i64, samples: u32) -> u64 {
         let offset = due.saturating_sub(self.opened).max(self.end);
         self.end = offset.saturating_add(i64::from(samples));
         offset.unsigned_abs()

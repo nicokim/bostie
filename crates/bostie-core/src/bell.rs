@@ -6,14 +6,14 @@ mod platform {
     use std::os::fd::{IntoRawFd, RawFd};
     use std::os::unix::net::UnixStream;
 
-    pub type Stream = UnixStream;
-    pub type RawHandle = RawFd;
+    pub(super) type Stream = UnixStream;
+    pub(super) type RawHandle = RawFd;
 
-    pub fn pair() -> io::Result<(Stream, Stream)> {
+    pub(super) fn pair() -> io::Result<(Stream, Stream)> {
         UnixStream::pair()
     }
 
-    pub fn into_raw(stream: Stream) -> RawHandle {
+    pub(super) fn into_raw(stream: Stream) -> RawHandle {
         stream.into_raw_fd()
     }
 }

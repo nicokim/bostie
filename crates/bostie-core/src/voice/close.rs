@@ -1,7 +1,7 @@
 use super::types::DisconnectReason;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloseAction {
+pub(crate) enum CloseAction {
     Resume,
     Rejoin,
     WaitForGateway(DisconnectReason),
@@ -10,7 +10,7 @@ pub enum CloseAction {
 
 const AUTHENTICATION_FAILED: u16 = 4004;
 
-pub const CLOSE_CODES: &[(u16, CloseAction, &str)] = &[
+pub(crate) const CLOSE_CODES: &[(u16, CloseAction, &str)] = &[
     (
         4001,
         CloseAction::Fatal(DisconnectReason::ProtocolError),
@@ -77,7 +77,7 @@ pub const CLOSE_CODES: &[(u16, CloseAction, &str)] = &[
     ),
 ];
 
-pub fn classify(code: u16) -> (CloseAction, &'static str) {
+pub(crate) fn classify(code: u16) -> (CloseAction, &'static str) {
     if let Some(&(_, action, text)) = CLOSE_CODES.iter().find(|(known, ..)| *known == code) {
         return (action, text);
     }
@@ -88,7 +88,7 @@ pub fn classify(code: u16) -> (CloseAction, &'static str) {
     }
 }
 
-pub fn rejoin_limit_reason(last_code: Option<u16>) -> DisconnectReason {
+pub(crate) fn rejoin_limit_reason(last_code: Option<u16>) -> DisconnectReason {
     if last_code == Some(AUTHENTICATION_FAILED) {
         DisconnectReason::AuthenticationFailed
     } else {

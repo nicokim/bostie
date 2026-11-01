@@ -14,7 +14,7 @@ use crate::voice::udp::DISCOVERY_LEN;
 const POLL: Duration = Duration::from_millis(10);
 const REQUEST_HEAD: [u8; 4] = [0, 1, 0, 70];
 
-pub fn response(ssrc: u32, address: SocketAddr) -> [u8; DISCOVERY_LEN] {
+pub(crate) fn response(ssrc: u32, address: SocketAddr) -> [u8; DISCOVERY_LEN] {
     let mut packet = [0; DISCOVERY_LEN];
     packet[..4].copy_from_slice(&[0, 2, 0, 70]);
     packet[4..8].copy_from_slice(&ssrc.to_be_bytes());
@@ -25,14 +25,14 @@ pub fn response(ssrc: u32, address: SocketAddr) -> [u8; DISCOVERY_LEN] {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Sealing {
+pub(crate) struct Sealing {
     pub extension: Option<Vec<u8>>,
     pub padding: u8,
     pub csrcs: u8,
     pub marker: bool,
 }
 
-pub fn seal(
+pub(crate) fn seal(
     cipher: &Cipher,
     nonce: u32,
     ssrc: u32,
@@ -76,7 +76,7 @@ pub fn seal(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Packet {
+pub(crate) struct Packet {
     pub at: Instant,
     pub key: usize,
     pub header: Header,
@@ -102,7 +102,7 @@ struct Shared {
     stop: AtomicBool,
 }
 
-pub struct Sfu {
+pub(crate) struct Sfu {
     address: SocketAddr,
     socket: UdpSocket,
     shared: Arc<Shared>,
@@ -110,7 +110,7 @@ pub struct Sfu {
 }
 
 impl Sfu {
-    pub fn start() -> Self {
+    pub(crate) fn start() -> Self {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         socket.set_read_timeout(Some(POLL)).unwrap();
         let address = socket.local_addr().unwrap();
@@ -131,11 +131,18 @@ impl Sfu {
         }
     }
 
-    pub fn address(&self) -> SocketAddr {
+    pub(crate) fn address(&self) -> SocketAddr {
         self.address
     }
 
-    pub fn send(&self, ssrc: u32, sequence: u16, timestamp: u32, payload: &[u8], send: Sealing) {
+    pub(crate) fn send(
+        &self,
+        ssrc: u32,
+        sequence: u16,
+        timestamp: u32,
+        payload: &[u8],
+        send: Sealing,
+    ) {
         let packet = {
             let mut state = self.shared.state.lock();
             let nonce = state.nonce;
@@ -146,35 +153,35 @@ impl Sfu {
         self.send_raw(&packet);
     }
 
-    pub fn send_raw(&self, bytes: &[u8]) {
+    pub(crate) fn send_raw(&self, bytes: &[u8]) {
         let client = self.shared.state.lock().client;
         let client = client.expect("send needs a client that sent a discovery request");
         self.socket.send_to(bytes, client).unwrap();
     }
 
-    pub fn key(&self, mode: Mode, key: &[u8; KEY_LEN]) -> usize {
+    pub(crate) fn key(&self, mode: Mode, key: &[u8; KEY_LEN]) -> usize {
         let mut state = self.shared.state.lock();
         state.keys.push(Cipher::new(mode, key));
         state.keys.len() - 1
     }
 
-    pub fn ignore_discoveries(&self, count: usize) {
+    pub(crate) fn ignore_discoveries(&self, count: usize) {
         self.shared.state.lock().unanswered = count;
     }
 
-    pub fn discoveries(&self) -> usize {
+    pub(crate) fn discoveries(&self) -> usize {
         self.shared.state.lock().discoveries
     }
 
-    pub fn rejected(&self) -> usize {
+    pub(crate) fn rejected(&self) -> usize {
         self.shared.state.lock().rejected
     }
 
-    pub fn packets(&self) -> Vec<Packet> {
+    pub(crate) fn packets(&self) -> Vec<Packet> {
         self.shared.state.lock().packets.clone()
     }
 
-    pub fn silence_runs(&self) -> Vec<usize> {
+    pub(crate) fn silence_runs(&self) -> Vec<usize> {
         let state = self.shared.state.lock();
         let mut runs = Vec::new();
         let mut run = 0;
@@ -192,7 +199,7 @@ impl Sfu {
         runs
     }
 
-    pub fn flush(&self, socket: &UdpSocket, timeout: Duration) -> Vec<Packet> {
+    pub(crate) fn flush(&self, socket: &UdpSocket, timeout: Duration) -> Vec<Packet> {
         let rejected = self.rejected();
         socket.send(&[0]).unwrap();
         self.wait(timeout, |state| state.rejected > rejected)
@@ -200,7 +207,7 @@ impl Sfu {
             .clone()
     }
 
-    pub fn wait_packets(&self, count: usize, timeout: Duration) -> Vec<Packet> {
+    pub(crate) fn wait_packets(&self, count: usize, timeout: Duration) -> Vec<Packet> {
         self.wait(timeout, |state| state.packets.len() >= count)
             .packets
             .clone()
@@ -310,7 +317,7 @@ mod tests {
         sfu.key(Mode::Aes256GcmRtpSize, &KEY);
         let mut buffer = [0; 2048];
         let mut discover = || {
-            let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
             socket.connect(sfu.address()).unwrap();
             socket.set_read_timeout(Some(WAIT)).unwrap();
             socket.send(&discovery_request(SSRC)).unwrap();

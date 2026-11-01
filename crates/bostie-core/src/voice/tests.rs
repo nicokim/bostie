@@ -1,11 +1,7 @@
 use std::collections::HashSet;
-use std::mem;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::atomic::AtomicUsize;
 
-use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex as SyncMutex;
 use sonic_rs::{JsonValueTrait, Value, json};
@@ -15,13 +11,9 @@ use tokio_websockets::{ClientBuilder, CloseCode, Message, ServerBuilder};
 
 use super::*;
 use crate::bell::{self, BellReceiver};
-use crate::runtime::Owner;
-use crate::voice::codec::FrameEncoder;
-use crate::voice::connection::ConnectionTuning;
 use crate::voice::crypto::Mode;
 use crate::voice::dave::{Outbound, RECOVERY_LIMIT, SendMode};
 use crate::voice::proto::op;
-use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
 use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
@@ -30,7 +22,7 @@ use crate::voice::testkit::pacer::ManualPacer;
 use crate::voice::testkit::sfu::{Packet, Sealing, Sfu};
 use crate::voice::types::{
     Application, DaveOp, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp, ReceiveFormat,
-    ReceiveOptions, ReceiveStall, ReceiveTuning, SampleFormat, SinkFormat, StallPolicy,
+    ReceiveStall, ReceiveTuning, SampleFormat, SinkFormat, StallPolicy,
 };
 use crate::voice::ws::Timeouts;
 
@@ -408,7 +400,7 @@ impl Harness {
     ) -> Self {
         crate::init_test_tracing();
         let pacer = Arc::new(ManualPacer::new());
-        let pace = pace.unwrap_or_else(|| Arc::clone(&pacer) as Arc<dyn Pace>);
+        let pace = pace.unwrap_or_else(|| Arc::<ManualPacer>::clone(&pacer));
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::new(bell));
         let tap = Arc::new(GatewayTap::new());

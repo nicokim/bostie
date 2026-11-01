@@ -10,10 +10,10 @@ use crate::voice::types::{
     Application, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, PcmFormat, SAMPLE_RATE, SampleFormat,
 };
 
-pub const MAX_PACKET: usize = 1_275;
+pub(crate) const MAX_PACKET: usize = 1_275;
 const MAX_DECODE: u32 = 5_760;
 
-pub fn packet_samples(packet: &[u8]) -> Option<u32> {
+pub(crate) fn packet_samples(packet: &[u8]) -> Option<u32> {
     if !fits_libopus(packet) || !is_well_framed(packet) {
         return None;
     }
@@ -21,7 +21,7 @@ pub fn packet_samples(packet: &[u8]) -> Option<u32> {
     u32::try_from(samples).ok().filter(|&samples| samples > 0)
 }
 
-pub fn is_stereo_20ms(packet: &[u8]) -> bool {
+pub(crate) fn is_stereo_20ms(packet: &[u8]) -> bool {
     fits_libopus(packet)
         && matches!(opus::packet::get_nb_channels(packet), Ok(Channels::Stereo))
         && matches!(
@@ -30,7 +30,7 @@ pub fn is_stereo_20ms(packet: &[u8]) -> bool {
         )
 }
 
-pub fn received_samples(packet: &[u8]) -> Option<u32> {
+pub(crate) fn received_samples(packet: &[u8]) -> Option<u32> {
     packet_samples(packet).filter(|_| packet.iter().any(|&byte| byte != 0))
 }
 
@@ -91,14 +91,14 @@ fn frame_length(bytes: &[u8]) -> Option<(usize, usize)> {
     }
 }
 
-pub struct Encoder {
+pub(crate) struct Encoder {
     opus: opus::Encoder,
     settings: EncoderSettings,
     packet: [u8; MAX_PACKET],
 }
 
 impl Encoder {
-    pub fn new(settings: EncoderSettings) -> Result<Self, CoreError> {
+    pub(crate) fn new(settings: EncoderSettings) -> Result<Self, CoreError> {
         settings.validate()?;
         let application = match settings.application {
             Application::Audio => opus::Application::Audio,
@@ -115,7 +115,7 @@ impl Encoder {
         })
     }
 
-    pub fn set(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
+    pub(crate) fn set(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
         if settings.application != self.settings.application {
             *self = Self::new(settings)?;
             return Ok(());
@@ -126,7 +126,7 @@ impl Encoder {
         Ok(())
     }
 
-    pub fn encode(&mut self, frame: &[f32]) -> Option<&[u8]> {
+    pub(crate) fn encode(&mut self, frame: &[f32]) -> Option<&[u8]> {
         match self.opus.encode_float(frame, &mut self.packet) {
             Ok(length) => self.packet.get(..length),
             Err(error) => {
@@ -136,7 +136,7 @@ impl Encoder {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         if let Err(error) = self.opus.reset_state() {
             tracing::debug!(%error, "opus could not reset the encoder");
         }
@@ -159,16 +159,16 @@ fn rejected(error: opus::Error) -> CoreError {
 
 #[derive(Debug, thiserror::Error)]
 #[error("opus could not decode a packet: {0}")]
-pub struct DecodeError(#[from] opus::Error);
+pub(crate) struct DecodeError(#[from] opus::Error);
 
-pub struct Decoder {
+pub(crate) struct Decoder {
     inner: opus::Decoder,
     rate: u32,
     channels: u8,
 }
 
 impl Decoder {
-    pub fn new(rate: u32, channels: u8) -> Result<Self, CoreError> {
+    pub(crate) fn new(rate: u32, channels: u8) -> Result<Self, CoreError> {
         let layout = match channels {
             1 => Channels::Mono,
             2 => Channels::Stereo,
@@ -188,12 +188,16 @@ impl Decoder {
         })
     }
 
-    pub fn decode(&mut self, packet: &[u8], scratch: &mut Vec<f32>) -> Result<usize, DecodeError> {
+    pub(crate) fn decode(
+        &mut self,
+        packet: &[u8],
+        scratch: &mut Vec<f32>,
+    ) -> Result<usize, DecodeError> {
         let output = self.output(scratch, MAX_DECODE);
         Ok(self.inner.decode_float(packet, output, false)?)
     }
 
-    pub fn conceal(
+    pub(crate) fn conceal(
         &mut self,
         next: Option<&[u8]>,
         samples48: u32,
@@ -205,7 +209,7 @@ impl Decoder {
             .decode_float(next.unwrap_or_default(), output, next.is_some())?)
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         if let Err(error) = self.inner.reset_state() {
             tracing::debug!(%error, "opus could not reset the decoder");
         }
@@ -220,7 +224,7 @@ impl Decoder {
     }
 }
 
-pub fn split(samples: usize, rate: u32, channels: u8) -> impl Iterator<Item = Range<usize>> {
+pub(crate) fn split(samples: usize, rate: u32, channels: u8) -> impl Iterator<Item = Range<usize>> {
     let channels = usize::from(channels);
     let frame = (at_rate(FRAME_SAMPLES, rate) * channels).max(1);
     let total = samples.saturating_mul(channels);
@@ -229,7 +233,7 @@ pub fn split(samples: usize, rate: u32, channels: u8) -> impl Iterator<Item = Ra
         .map(move |start| start..start.saturating_add(frame).min(total))
 }
 
-pub fn write_samples(pcm: &[f32], sample: SampleFormat, out: &mut BytesMut) {
+pub(crate) fn write_samples(pcm: &[f32], sample: SampleFormat, out: &mut BytesMut) {
     match sample {
         SampleFormat::S16Le => write_each(pcm, out, |value| to_s16(value).to_le_bytes()),
         SampleFormat::F32Le => write_each(pcm, out, f32::to_le_bytes),

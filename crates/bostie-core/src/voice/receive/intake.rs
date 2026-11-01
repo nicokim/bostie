@@ -15,7 +15,7 @@ use crate::voice::{Throttle, panic_message};
 
 const SPARE_WINDOWS: usize = 8;
 
-pub struct Intake {
+pub(crate) struct Intake {
     media: Arc<Media>,
     info: Arc<Info>,
     socket: Arc<UdpSocket>,
@@ -26,7 +26,7 @@ pub struct Intake {
 }
 
 impl Intake {
-    pub fn new(
+    pub(crate) fn new(
         media: Arc<Media>,
         info: Arc<Info>,
         socket: Arc<UdpSocket>,
@@ -43,7 +43,7 @@ impl Intake {
         }
     }
 
-    pub fn rtp(&mut self, packet: &mut [u8]) {
+    pub(crate) fn rtp(&mut self, packet: &mut [u8]) {
         if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(|| self.open(packet)))
             && self.panicked.allows(Instant::now())
         {

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::num::NonZeroU16;
 use std::pin::pin;

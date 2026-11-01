@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::future::{self, Future};
+use std::future;
 use std::mem;
 use std::pin::pin;
 use std::sync::Arc;
@@ -67,7 +67,7 @@ impl ConnectionTuning {
 }
 
 #[derive(Debug)]
-pub enum Command {
+pub(crate) enum Command {
     Update {
         channel: ChannelId,
         self_mute: bool,
@@ -80,7 +80,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
+pub(crate) enum Step {
     VoiceEvents,
     Websocket,
     Handshake,
@@ -96,7 +96,7 @@ pub enum Step {
 }
 
 impl Step {
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::VoiceEvents => "voice_events",
             Self::Websocket => "websocket",
@@ -127,7 +127,7 @@ impl Step {
     }
 }
 
-pub struct Info {
+pub(crate) struct Info {
     pub guild: GuildId,
     pub shard: ShardId,
     pub ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
@@ -137,7 +137,7 @@ pub struct Info {
 }
 
 impl Info {
-    pub fn new(guild: GuildId, shard: ShardId) -> Self {
+    pub(crate) fn new(guild: GuildId, shard: ShardId) -> Self {
         Self {
             guild,
             shard,
@@ -148,7 +148,7 @@ impl Info {
         }
     }
 
-    pub fn latency(&self) -> (Option<Duration>, Option<Duration>) {
+    pub(crate) fn latency(&self) -> (Option<Duration>, Option<Duration>) {
         let read = |latency: &AtomicU64| match latency.load(Ordering::Relaxed) {
             UNKNOWN_LATENCY => None,
             nanos => Some(Duration::from_nanos(nanos)),
@@ -156,26 +156,30 @@ impl Info {
         (read(&self.latency_ws), read(&self.latency_udp))
     }
 
-    pub fn set_latency_ws(&self, latency: Duration) {
+    pub(crate) fn set_latency_ws(&self, latency: Duration) {
         self.latency_ws
             .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
     }
 
-    pub fn set_latency_udp(&self, latency: Duration) {
+    pub(crate) fn set_latency_udp(&self, latency: Duration) {
         self.latency_udp
             .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ending {
+pub(crate) struct Ending {
     pub reason: DisconnectReason,
     pub code: Option<u16>,
     pub detail: String,
 }
 
 impl Ending {
-    pub fn new(reason: DisconnectReason, code: Option<u16>, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        reason: DisconnectReason,
+        code: Option<u16>,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             reason,
             code,
@@ -183,7 +187,7 @@ impl Ending {
         }
     }
 
-    pub fn leaves_the_channel(&self) -> bool {
+    pub(crate) fn leaves_the_channel(&self) -> bool {
         !matches!(
             self.reason,
             DisconnectReason::Removed | DisconnectReason::Closed
@@ -192,7 +196,7 @@ impl Ending {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GatewayEvent {
+pub(crate) enum GatewayEvent {
     Removed,
     Moved,
     SessionReplaced,

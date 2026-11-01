@@ -8,7 +8,7 @@ use crate::voice::types::{FRAME_SAMPLES, PcmFormat, SAMPLE_RATE, SampleFormat};
 
 const S16_SCALE: f32 = 32_768.0;
 
-pub struct Converter {
+pub(crate) struct Converter {
     format: PcmFormat,
     leftover: Vec<u8>,
     resampler: Option<Box<Resampling>>,
@@ -25,7 +25,7 @@ struct Resampling {
 }
 
 impl Converter {
-    pub fn new(format: PcmFormat) -> Result<Self, CoreError> {
+    pub(crate) fn new(format: PcmFormat) -> Result<Self, CoreError> {
         format.validate()?;
         let resampler = if format.rate == SAMPLE_RATE {
             None
@@ -39,11 +39,11 @@ impl Converter {
         })
     }
 
-    pub fn format(&self) -> PcmFormat {
+    pub(crate) fn format(&self) -> PcmFormat {
         self.format
     }
 
-    pub fn push(&mut self, data: &[u8], out: &mut Vec<f32>) {
+    pub(crate) fn push(&mut self, data: &[u8], out: &mut Vec<f32>) {
         let frame_bytes = self.frame_bytes();
         let mut data = data;
         if !self.leftover.is_empty() {
@@ -66,11 +66,11 @@ impl Converter {
             .extend_from_slice(data.get(whole..).unwrap_or_default());
     }
 
-    pub fn push_f32(&mut self, samples: &[f32], out: &mut Vec<f32>) {
+    pub(crate) fn push_f32(&mut self, samples: &[f32], out: &mut Vec<f32>) {
         self.accept(samples.iter().copied().map(finite), out);
     }
 
-    pub fn flush(&mut self, out: &mut Vec<f32>) {
+    pub(crate) fn flush(&mut self, out: &mut Vec<f32>) {
         self.leftover.clear();
         let mono = self.is_mono();
         if let Some(resampler) = &mut self.resampler {
@@ -78,7 +78,7 @@ impl Converter {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.leftover.clear();
         if let Some(resampler) = &mut self.resampler {
             resampler.reset();

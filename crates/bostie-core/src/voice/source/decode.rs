@@ -27,14 +27,14 @@ use crate::voice::types::{CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, Sa
 
 const MINUS_3_DB: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
-pub enum Input {
+pub(crate) enum Input {
     File(PathBuf),
     Bytes { data: Bytes, hint: Option<String> },
     Url(Box<HttpMedia>),
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum DecodeError {
+pub(crate) enum DecodeError {
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
@@ -47,13 +47,13 @@ pub enum DecodeError {
     Unplayable(String),
 }
 
-pub enum Step {
+pub(crate) enum Step {
     Chunk { data: Bytes, frames: u64 },
     Skipped,
     Ended,
 }
 
-pub struct Decoder {
+pub(crate) struct Decoder {
     format: Option<Box<dyn FormatReader>>,
     hint: Hint,
     track: u32,
@@ -85,7 +85,7 @@ struct Downmix {
 }
 
 impl Decoder {
-    pub fn open(input: Input) -> Result<Self, DecodeError> {
+    pub(crate) fn open(input: Input) -> Result<Self, DecodeError> {
         let mut hint = Hint::new();
         let mut described = None;
         let (media, seekable): (Box<dyn MediaSource>, bool) = match input {
@@ -149,11 +149,11 @@ impl Decoder {
         Ok(decoder)
     }
 
-    pub fn info(&self) -> SourceInfo {
+    pub(crate) fn info(&self) -> SourceInfo {
         self.info
     }
 
-    pub fn step(&mut self) -> Result<Step, DecodeError> {
+    pub(crate) fn step(&mut self) -> Result<Step, DecodeError> {
         if self.finished {
             return Ok(Step::Ended);
         }
@@ -199,7 +199,7 @@ impl Decoder {
         Ok(step)
     }
 
-    pub fn seek(&mut self, position: Duration) -> Result<(), DecodeError> {
+    pub(crate) fn seek(&mut self, position: Duration) -> Result<(), DecodeError> {
         let time = Time::try_from_nanos_u128(position.as_nanos())
             .ok_or_else(|| DecodeError::Unplayable(format!("cannot seek to {position:?}")))?;
         self.finished = false;

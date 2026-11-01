@@ -21,7 +21,7 @@ use crate::voice::types::{
 };
 use crate::voice::{Throttle, panic_message};
 
-pub const DAVEY_VERSION: &str = "0.2.0-beta.1";
+pub(crate) const DAVEY_VERSION: &str = "0.2.0-beta.1";
 
 const MARKER: [u8; 2] = [0xFA, 0xFA];
 const VERIFICATION_CODE_DIGITS: u32 = 45;
@@ -34,7 +34,7 @@ const _: () = {
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Outbound {
+pub(crate) enum Outbound {
     KeyPackage(Vec<u8>),
     CommitWelcome(Vec<u8>),
     TransitionReady(u16),
@@ -42,7 +42,7 @@ pub enum Outbound {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Executed {
+pub(crate) struct Executed {
     pub protocol_version: u16,
     pub epoch: Option<u64>,
     pub transition_id: u16,
@@ -60,7 +60,7 @@ const RECOVERY_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum SendMode {
+pub(crate) enum SendMode {
     Plain = 0,
     Encrypt = 1,
     Hold = 2,
@@ -68,7 +68,7 @@ pub enum SendMode {
 }
 
 impl SendMode {
-    pub const fn from_byte(byte: u8) -> Self {
+    pub(crate) const fn from_byte(byte: u8) -> Self {
         match byte {
             0 => Self::Plain,
             1 => Self::Encrypt,
@@ -79,10 +79,10 @@ impl SendMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EncryptFailure;
+pub(crate) struct EncryptFailure;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DecryptFailure {
+pub(crate) enum DecryptFailure {
     NoDecryptor,
     Unencrypted,
     Failed,
@@ -122,7 +122,7 @@ enum Failure {
 }
 
 #[derive(Debug)]
-pub struct Dave {
+pub(crate) struct Dave {
     user: UserId,
     channel: ChannelId,
     version: NonZeroU16,
@@ -165,7 +165,7 @@ impl Dave {
         }
     }
 
-    pub fn start(
+    pub(crate) fn start(
         &mut self,
         protocol_version: u16,
         out: &mut Vec<Outbound>,
@@ -180,17 +180,17 @@ impl Dave {
         }
     }
 
-    pub fn clients_connect(&mut self, users: &[UserId]) {
+    pub(crate) fn clients_connect(&mut self, users: &[UserId]) {
         let own = self.user;
         self.members
             .extend(users.iter().copied().filter(|&user| user != own));
     }
 
-    pub fn client_disconnect(&mut self, user: UserId) {
+    pub(crate) fn client_disconnect(&mut self, user: UserId) {
         self.members.remove(&user);
     }
 
-    pub fn handle(
+    pub(crate) fn handle(
         &mut self,
         op: DaveOp,
         now: Instant,
@@ -235,7 +235,7 @@ impl Dave {
         }
     }
 
-    pub fn send_mode(&self) -> SendMode {
+    pub(crate) fn send_mode(&self) -> SendMode {
         if self.protocol_version == 0 {
             SendMode::Plain
         } else if self.members.is_empty() {
@@ -247,7 +247,11 @@ impl Dave {
         }
     }
 
-    pub fn encrypt(&mut self, frame: &[u8], out: &mut Vec<u8>) -> Result<(), EncryptFailure> {
+    pub(crate) fn encrypt(
+        &mut self,
+        frame: &[u8],
+        out: &mut Vec<u8>,
+    ) -> Result<(), EncryptFailure> {
         if frame == SILENCE_FRAME {
             return Err(EncryptFailure);
         }
@@ -259,7 +263,7 @@ impl Dave {
             .map_err(|_| EncryptFailure)
     }
 
-    pub fn receive(
+    pub(crate) fn receive(
         &mut self,
         user: UserId,
         frame: &[u8],
@@ -281,7 +285,7 @@ impl Dave {
         decrypted.map(|_| ())
     }
 
-    pub fn decrypt(
+    pub(crate) fn decrypt(
         &mut self,
         user: UserId,
         frame: &[u8],
@@ -307,11 +311,11 @@ impl Dave {
         }
     }
 
-    pub fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
 
-    pub fn settling(&self, now: Instant) -> bool {
+    pub(crate) fn settling(&self, now: Instant) -> bool {
         self.recovering
             || !self.pending.is_empty()
             || self
@@ -319,7 +323,7 @@ impl Dave {
                 .is_none_or(|at| now.saturating_duration_since(at) < self.dave_grace)
     }
 
-    pub fn receive_recovery(
+    pub(crate) fn receive_recovery(
         &mut self,
         now: Instant,
         out: &mut Vec<Outbound>,
@@ -336,7 +340,7 @@ impl Dave {
         Ok(true)
     }
 
-    pub fn info(&self) -> DaveInfo {
+    pub(crate) fn info(&self) -> DaveInfo {
         DaveInfo {
             protocol_version: self.protocol_version,
             epoch: self.epoch(),
@@ -349,7 +353,7 @@ impl Dave {
         }
     }
 
-    pub fn fingerprint_pair(&self, user: UserId) -> Result<[Vec<u8>; 2], DaveError> {
+    pub(crate) fn fingerprint_pair(&self, user: UserId) -> Result<[Vec<u8>; 2], DaveError> {
         let session = self
             .session
             .as_ref()
@@ -749,11 +753,11 @@ fn panicked(call: MlsCall, payload: &(dyn Any + Send)) {
     );
 }
 
-pub fn has_marker(frame: &[u8]) -> bool {
+pub(crate) fn has_marker(frame: &[u8]) -> bool {
     frame.ends_with(&MARKER)
 }
 
-pub fn verification_code(fingerprints: [Vec<u8>; 2]) -> Result<String, DaveError> {
+pub(crate) fn verification_code(fingerprints: [Vec<u8>; 2]) -> Result<String, DaveError> {
     let pairwise = davey::pairwise_fingerprints_internal(fingerprints)
         .map_err(|error| DaveError::Verification(error.into()))?;
     davey::generate_displayable_code(&pairwise, VERIFICATION_CODE_DIGITS, VERIFICATION_CODE_GROUP)

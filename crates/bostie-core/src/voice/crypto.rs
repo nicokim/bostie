@@ -7,24 +7,24 @@ use chacha20poly1305::XChaCha20Poly1305;
 
 use super::rtp::{Header, RtpError};
 
-pub const KEY_LEN: usize = 32;
-pub const TAG_LEN: usize = 16;
-pub const NONCE_LEN: usize = 4;
+pub(crate) const KEY_LEN: usize = 32;
+pub(crate) const TAG_LEN: usize = 16;
+pub(crate) const NONCE_LEN: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
+pub(crate) enum Mode {
     Aes256GcmRtpSize,
     XChaCha20Poly1305RtpSize,
 }
 
 impl Mode {
-    pub fn choose<S: AsRef<str>>(offered: &[S]) -> Option<Self> {
+    pub(crate) fn choose<S: AsRef<str>>(offered: &[S]) -> Option<Self> {
         [Self::Aes256GcmRtpSize, Self::XChaCha20Poly1305RtpSize]
             .into_iter()
             .find(|mode| offered.iter().any(|name| name.as_ref() == mode.as_str()))
     }
 
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Aes256GcmRtpSize => "aead_aes256_gcm_rtpsize",
             Self::XChaCha20Poly1305RtpSize => "aead_xchacha20_poly1305_rtpsize",
@@ -33,7 +33,7 @@ impl Mode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum CryptoError {
+pub(crate) enum CryptoError {
     #[error("malformed RTP packet: {0}")]
     Rtp(#[from] RtpError),
     #[error("a {0}-byte packet is too short for its header, tag and nonce")]
@@ -45,7 +45,7 @@ pub enum CryptoError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Opened<'a> {
+pub(crate) struct Opened<'a> {
     pub header: Header,
     pub nonce: [u8; NONCE_LEN],
     pub payload: &'a [u8],
@@ -53,7 +53,7 @@ pub struct Opened<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReplayWindow {
+pub(crate) struct ReplayWindow {
     window: u32,
     capacity: u64,
     highest: Option<u32>,
@@ -61,7 +61,7 @@ pub struct ReplayWindow {
 }
 
 impl ReplayWindow {
-    pub fn new(bits: u32) -> Self {
+    pub(crate) fn new(bits: u32) -> Self {
         let words = bits.div_ceil(u64::BITS).next_power_of_two();
         Self {
             window: bits,
@@ -71,7 +71,7 @@ impl ReplayWindow {
         }
     }
 
-    pub fn accept(&mut self, nonce: u32) -> bool {
+    pub(crate) fn accept(&mut self, nonce: u32) -> bool {
         let Some(highest) = self.highest else {
             self.highest = Some(nonce);
             return self.mark(nonce);
@@ -122,7 +122,7 @@ impl ReplayWindow {
     }
 }
 
-pub struct Cipher(Aead);
+pub(crate) struct Cipher(Aead);
 
 enum Aead {
     Aes256Gcm(Box<Aes256Gcm>),
@@ -138,7 +138,7 @@ impl fmt::Debug for Cipher {
 }
 
 impl Cipher {
-    pub fn new(mode: Mode, key: &[u8; KEY_LEN]) -> Self {
+    pub(crate) fn new(mode: Mode, key: &[u8; KEY_LEN]) -> Self {
         let key = Array::from(*key);
         Self(match mode {
             Mode::Aes256GcmRtpSize => Aead::Aes256Gcm(Box::new(Aes256Gcm::new(&key))),
@@ -146,14 +146,14 @@ impl Cipher {
         })
     }
 
-    pub const fn mode(&self) -> Mode {
+    pub(crate) const fn mode(&self) -> Mode {
         match self.0 {
             Aead::Aes256Gcm(_) => Mode::Aes256GcmRtpSize,
             Aead::XChaCha20Poly1305(_) => Mode::XChaCha20Poly1305RtpSize,
         }
     }
 
-    pub fn seal(
+    pub(crate) fn seal(
         &self,
         nonce: u32,
         header: &[u8],
@@ -181,7 +181,7 @@ impl Cipher {
         Ok(())
     }
 
-    pub fn open<'a>(&self, packet: &'a mut [u8]) -> Result<Opened<'a>, CryptoError> {
+    pub(crate) fn open<'a>(&self, packet: &'a mut [u8]) -> Result<Opened<'a>, CryptoError> {
         let header = Header::parse(packet)?;
         let too_short = CryptoError::TooShort(packet.len());
         let (sealed, nonce) = packet

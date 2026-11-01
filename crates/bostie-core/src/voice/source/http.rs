@@ -48,7 +48,7 @@ impl Http {
     }
 }
 
-pub struct HttpMedia {
+pub(crate) struct HttpMedia {
     runtime: Handle,
     client: reqwest::Client,
     piece: usize,
@@ -73,7 +73,11 @@ struct Head {
 }
 
 impl HttpMedia {
-    pub fn new(http: &Http, url: &str, headers: &[(String, String)]) -> Result<Self, CoreError> {
+    pub(crate) fn new(
+        http: &Http,
+        url: &str,
+        headers: &[(String, String)],
+    ) -> Result<Self, CoreError> {
         let url = Url::parse(url)
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https") && url.has_host())
@@ -104,7 +108,7 @@ impl HttpMedia {
         })
     }
 
-    pub fn connect(&mut self) -> io::Result<()> {
+    pub(crate) fn connect(&mut self) -> io::Result<()> {
         let head = self.request()?;
         self.length = head.length;
         self.ranges = head.ranges;
@@ -112,11 +116,11 @@ impl HttpMedia {
         Ok(())
     }
 
-    pub fn content_type(&self) -> Option<&str> {
+    pub(crate) fn content_type(&self) -> Option<&str> {
         self.content_type.as_deref()
     }
 
-    pub fn extension(&self) -> Option<&str> {
+    pub(crate) fn extension(&self) -> Option<&str> {
         let name = self.url.path_segments()?.next_back()?;
         name.rsplit_once('.').map(|(_, extension)| extension)
     }

@@ -1,4 +1,4 @@
-use std::future::{self, Future};
+use std::future;
 use std::mem;
 use std::net::SocketAddr;
 use std::pin::Pin;

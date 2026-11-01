@@ -245,7 +245,6 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::sync::mpsc;
     use std::thread;
-    use std::time::Duration;
 
     use super::*;
     use crate::voice::types::{Application, ConnectRequest, EncoderSettings, SourceSpec};

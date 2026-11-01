@@ -12,7 +12,7 @@ use crate::voice::types::{
     CHANNELS, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, SAMPLE_RATE, SinkFormat, StallPolicy,
 };
 
-pub struct Mixer {
+pub(crate) struct Mixer {
     settings: EncoderSettings,
     encoder: Option<Encoder>,
     soft_clip: SoftClip,
@@ -35,7 +35,7 @@ struct Strip {
 }
 
 impl Mixer {
-    pub fn new(settings: EncoderSettings) -> Result<Self, CoreError> {
+    pub(crate) fn new(settings: EncoderSettings) -> Result<Self, CoreError> {
         settings.validate()?;
         Ok(Self {
             settings,
@@ -49,7 +49,7 @@ impl Mixer {
         })
     }
 
-    pub fn set_encoder(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
+    pub(crate) fn set_encoder(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
         match &mut self.encoder {
             Some(encoder) => encoder.set(settings)?,
             None => settings.validate()?,
@@ -58,7 +58,7 @@ impl Mixer {
         Ok(())
     }
 
-    pub fn retain(&mut self, sinks: &[Arc<Sink>]) {
+    pub(crate) fn retain(&mut self, sinks: &[Arc<Sink>]) {
         let live = |id: Handle| sinks.iter().any(|sink| sink.id() == id);
         self.strips.retain(|&id, _| live(id));
         if self.passing.is_some_and(|id| !live(id)) {
@@ -66,7 +66,7 @@ impl Mixer {
         }
     }
 
-    pub fn hold(&mut self, sinks: &[Arc<Sink>]) {
+    pub(crate) fn hold(&mut self, sinks: &[Arc<Sink>]) {
         for sink in sinks {
             if sink.options().stall == StallPolicy::Drop
                 && let Some(strip) = self.strips.get_mut(&sink.id())
@@ -78,7 +78,7 @@ impl Mixer {
         }
     }
 
-    pub fn discard(&mut self, sinks: &[Arc<Sink>]) {
+    pub(crate) fn discard(&mut self, sinks: &[Arc<Sink>]) {
         for sink in sinks {
             let strip = self.strip(sink);
             if strip.gather(sink) && sink.options().format == SinkFormat::Opus {
@@ -88,7 +88,7 @@ impl Mixer {
         }
     }
 
-    pub fn mix(&mut self, sinks: &[Arc<Sink>]) -> Option<&[u8]> {
+    pub(crate) fn mix(&mut self, sinks: &[Arc<Sink>]) -> Option<&[u8]> {
         let mut live = 0;
         let mut solo = None;
         for sink in sinks {
@@ -128,7 +128,7 @@ impl Mixer {
         self.encode()
     }
 
-    pub fn silence(&mut self) -> Option<&[u8]> {
+    pub(crate) fn silence(&mut self) -> Option<&[u8]> {
         self.sum.fill(0.0);
         self.encode()
     }
