@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use bostie_core::voice::Voice;
-use bostie_core::voice::types::{ConnectRequest, DisconnectReason, ReceiveOptions, SourceSpec};
+use bostie_core::voice::types::{
+    Application, ConnectRequest, DisconnectReason, Overflow, ReceiveOptions, ReceiveStall,
+    SampleFormat, SourceSpec, StallPolicy,
+};
 use bostie_core::{
     ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
     RestRequest, ShardId, Ticket, UserId, describe,
@@ -17,7 +20,9 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString};
 
-use crate::voice::{NativeReceiver, NativeSink, NativeSource, speaking_parts};
+use crate::voice::{
+    Choice, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, speaking_parts,
+};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -126,7 +131,7 @@ impl NativeCore {
         timeout: f64,
         server_change_delay: f64,
         bitrate: u32,
-        application: &str,
+        application: Choice<Application>,
         fec: bool,
         packet_loss: u8,
         complexity: u8,
@@ -141,7 +146,7 @@ impl NativeCore {
             self_deaf,
             timeout: seconds("timeout", timeout)?,
             server_change_delay: seconds("server_change_delay", server_change_delay)?,
-            encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
+            encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity),
             speaking,
         };
         Ok(self.voice()?.connect(&request)?)
@@ -175,12 +180,12 @@ impl NativeCore {
         &self,
         guild_id: u64,
         bitrate: u32,
-        application: &str,
+        application: Choice<Application>,
         fec: bool,
         packet_loss: u8,
         complexity: u8,
     ) -> Result<()> {
-        let settings = voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?;
+        let settings = voice::encoder_settings(bitrate, application, fec, packet_loss, complexity);
         Ok(self
             .voice()?
             .set_encoder(GuildId::from(guild_id), settings)?)
@@ -218,13 +223,13 @@ impl NativeCore {
     fn voice_sink(
         &self,
         guild_id: u64,
-        kind: &str,
+        kind: Choice<SinkKind>,
         rate: u32,
         channels: u8,
-        sample: &str,
+        sample: Choice<SampleFormat>,
         buffer: f64,
         volume: f32,
-        stall: &str,
+        stall: Choice<StallPolicy>,
     ) -> Result<NativeSink> {
         let options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
         Ok(self
@@ -256,10 +261,10 @@ impl NativeCore {
     fn voice_receive(
         &self,
         guild_id: u64,
-        kind: &str,
+        kind: Choice<ReceiveKind>,
         rate: u32,
         channels: u8,
-        sample: &str,
+        sample: Choice<SampleFormat>,
         users: Option<Vec<u64>>,
         exclude: Vec<u64>,
         include_self: bool,
@@ -267,8 +272,8 @@ impl NativeCore {
         jitter: f64,
         markers: bool,
         mix: bool,
-        overflow: &str,
-        stall: &str,
+        overflow: Choice<Overflow>,
+        stall: Choice<ReceiveStall>,
     ) -> Result<NativeReceiver> {
         let options = ReceiveOptions {
             format: voice::receive_format(kind, rate, channels, sample, mix)?,
@@ -278,8 +283,8 @@ impl NativeCore {
             buffer: seconds("buffer", buffer)?,
             jitter: seconds("jitter", jitter)?,
             markers,
-            overflow: voice::overflow(overflow)?,
-            stall: voice::receive_stall(stall)?,
+            overflow: overflow.0,
+            stall: stall.0,
         };
         Ok(self
             .voice()?

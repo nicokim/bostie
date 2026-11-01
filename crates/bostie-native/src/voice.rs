@@ -172,9 +172,9 @@ impl NativeOpusEncoder {
     fn new(
         rate: u32,
         channels: u8,
-        sample: &str,
+        sample: Choice<SampleFormat>,
         bitrate: u32,
-        application: &str,
+        application: Choice<Application>,
         fec: bool,
         packet_loss: u8,
         complexity: u8,
@@ -182,9 +182,9 @@ impl NativeOpusEncoder {
         let format = PcmFormat {
             rate,
             channels,
-            sample: sample_format(sample)?,
+            sample: sample.0,
         };
-        let settings = encoder_settings(bitrate, application, fec, packet_loss, complexity)?;
+        let settings = encoder_settings(bitrate, application, fec, packet_loss, complexity);
         let encoder = FrameEncoder::new(format, settings)?;
         Ok(Self(Mutex::new(encoder)))
     }
@@ -218,99 +218,148 @@ pub(crate) fn versions() -> HashMap<&'static str, String> {
     bostie_core::versions().into_iter().collect()
 }
 
+pub(crate) struct Choice<T>(pub(crate) T);
+
+pub(crate) trait Choices: Copy + 'static {
+    const OPTION: &'static str;
+    const NAMES: &'static [(&'static str, Self)];
+}
+
+impl<T: Choices> FromPyObject<'_, '_> for Choice<T> {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        let name = <&str>::extract(obj)?;
+        T::NAMES
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|&(_, value)| Self(value))
+            .ok_or_else(|| unknown(T::OPTION, name).into())
+    }
+}
+
+impl Choices for Application {
+    const OPTION: &'static str = "application";
+    const NAMES: &'static [(&'static str, Self)] = &[
+        ("audio", Self::Audio),
+        ("voip", Self::Voip),
+        ("lowdelay", Self::LowDelay),
+    ];
+}
+
+impl Choices for SampleFormat {
+    const OPTION: &'static str = "sample";
+    const NAMES: &'static [(&'static str, Self)] =
+        &[("s16le", Self::S16Le), ("f32le", Self::F32Le)];
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SinkKind {
+    Pcm,
+    Opus,
+}
+
+impl Choices for SinkKind {
+    const OPTION: &'static str = "kind";
+    const NAMES: &'static [(&'static str, Self)] = &[("pcm", Self::Pcm), ("opus", Self::Opus)];
+}
+
+impl Choices for StallPolicy {
+    const OPTION: &'static str = "stall";
+    const NAMES: &'static [(&'static str, Self)] = &[("hold", Self::Hold), ("drop", Self::Drop)];
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ReceiveKind {
+    Pcm,
+    Opus,
+    Packets,
+}
+
+impl Choices for ReceiveKind {
+    const OPTION: &'static str = "kind";
+    const NAMES: &'static [(&'static str, Self)] = &[
+        ("pcm", Self::Pcm),
+        ("opus", Self::Opus),
+        ("packets", Self::Packets),
+    ];
+}
+
+impl Choices for Overflow {
+    const OPTION: &'static str = "overflow";
+    const NAMES: &'static [(&'static str, Self)] = &[
+        ("drop_oldest", Self::DropOldest),
+        ("drop_newest", Self::DropNewest),
+    ];
+}
+
+impl Choices for ReceiveStall {
+    const OPTION: &'static str = "stall";
+    const NAMES: &'static [(&'static str, Self)] = &[("wait", Self::Wait), ("end", Self::End)];
+}
+
 pub(crate) fn encoder_settings(
     bitrate: u32,
-    application: &str,
+    application: Choice<Application>,
     fec: bool,
     packet_loss: u8,
     complexity: u8,
-) -> Result<EncoderSettings> {
-    let application = match application {
-        "audio" => Application::Audio,
-        "voip" => Application::Voip,
-        "lowdelay" => Application::LowDelay,
-        other => return Err(unknown("application", other)),
-    };
-    Ok(EncoderSettings {
+) -> EncoderSettings {
+    EncoderSettings {
         bitrate,
-        application,
+        application: application.0,
         fec,
         packet_loss,
         complexity,
-    })
+    }
 }
 
 pub(crate) fn sink_options(
-    kind: &str,
+    kind: Choice<SinkKind>,
     rate: u32,
     channels: u8,
-    sample: &str,
+    sample: Choice<SampleFormat>,
     buffer: f64,
     volume: f32,
-    stall: &str,
+    stall: Choice<StallPolicy>,
 ) -> Result<SinkOptions> {
-    let format = match kind {
-        "pcm" => SinkFormat::Pcm(PcmFormat {
+    let format = match kind.0 {
+        SinkKind::Pcm => SinkFormat::Pcm(PcmFormat {
             rate,
             channels,
-            sample: sample_format(sample)?,
+            sample: sample.0,
         }),
-        "opus" => SinkFormat::Opus,
-        other => return Err(unknown("kind", other)),
-    };
-    let stall = match stall {
-        "hold" => StallPolicy::Hold,
-        "drop" => StallPolicy::Drop,
-        other => return Err(unknown("stall", other)),
+        SinkKind::Opus => SinkFormat::Opus,
     };
     Ok(SinkOptions {
         format,
         buffer: seconds("buffer", buffer)?,
         volume,
-        stall,
+        stall: stall.0,
     })
 }
 
 pub(crate) fn receive_format(
-    kind: &str,
+    kind: Choice<ReceiveKind>,
     rate: u32,
     channels: u8,
-    sample: &str,
+    sample: Choice<SampleFormat>,
     mix: bool,
 ) -> Result<ReceiveFormat> {
-    let pcm = || -> Result<PcmFormat> {
-        Ok(PcmFormat {
-            rate,
-            channels,
-            sample: sample_format(sample)?,
-        })
+    let pcm = PcmFormat {
+        rate,
+        channels,
+        sample: sample.0,
     };
-    Ok(match (kind, mix) {
-        ("pcm", false) => ReceiveFormat::Pcm(pcm()?),
-        ("pcm", true) => ReceiveFormat::Mixed(pcm()?),
-        ("opus", false) => ReceiveFormat::Opus,
-        ("packets", false) => ReceiveFormat::Packets,
-        ("opus" | "packets", true) => {
+    Ok(match (kind.0, mix) {
+        (ReceiveKind::Pcm, false) => ReceiveFormat::Pcm(pcm),
+        (ReceiveKind::Pcm, true) => ReceiveFormat::Mixed(pcm),
+        (ReceiveKind::Opus, false) => ReceiveFormat::Opus,
+        (ReceiveKind::Packets, false) => ReceiveFormat::Packets,
+        (ReceiveKind::Opus | ReceiveKind::Packets, true) => {
             return Err(CoreError::InvalidRequest("mix=True needs a PCM format".to_owned()).into());
         }
-        (other, _) => return Err(unknown("kind", other)),
     })
-}
-
-pub(crate) fn overflow(overflow: &str) -> Result<Overflow> {
-    match overflow {
-        "drop_oldest" => Ok(Overflow::DropOldest),
-        "drop_newest" => Ok(Overflow::DropNewest),
-        other => Err(unknown("overflow", other)),
-    }
-}
-
-pub(crate) fn receive_stall(stall: &str) -> Result<ReceiveStall> {
-    match stall {
-        "wait" => Ok(ReceiveStall::Wait),
-        "end" => Ok(ReceiveStall::End),
-        other => Err(unknown("stall", other)),
-    }
 }
 
 pub(crate) fn users(ids: Vec<u64>) -> HashSet<UserId> {
@@ -402,14 +451,6 @@ pub(crate) fn speaking_parts(speaking: Speaking) -> (bool, f64) {
 
 fn age(now: Instant, at: Instant) -> f64 {
     now.saturating_duration_since(at).as_secs_f64()
-}
-
-fn sample_format(sample: &str) -> Result<SampleFormat> {
-    match sample {
-        "s16le" => Ok(SampleFormat::S16Le),
-        "f32le" => Ok(SampleFormat::F32Le),
-        other => Err(unknown("sample", other)),
-    }
 }
 
 fn unknown(name: &str, value: &str) -> Error {
