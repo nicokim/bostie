@@ -10,8 +10,6 @@ use super::rtp::{Header, RtpError};
 pub const KEY_LEN: usize = 32;
 pub const TAG_LEN: usize = 16;
 pub const NONCE_LEN: usize = 4;
-#[cfg(test)]
-pub const OVERHEAD: usize = TAG_LEN + NONCE_LEN;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -235,6 +233,8 @@ mod tests {
     use super::*;
     use crate::voice::rtp::tests::header_bytes;
     use crate::voice::rtp::{Extension, HEADER_LEN, write_header};
+
+    const OVERHEAD: usize = TAG_LEN + NONCE_LEN;
 
     const KEY: [u8; KEY_LEN] = {
         let mut key = [0; KEY_LEN];

@@ -115,11 +115,6 @@ impl Encoder {
         })
     }
 
-    #[cfg(test)]
-    pub fn settings(&self) -> EncoderSettings {
-        self.settings
-    }
-
     pub fn set(&mut self, settings: EncoderSettings) -> Result<(), CoreError> {
         if settings.application != self.settings.application {
             *self = Self::new(settings)?;
@@ -399,7 +394,7 @@ pub(crate) mod tests {
             opus::Application::LowDelay
         );
         assert_eq!(encoder.opus.get_bitrate().unwrap(), Bitrate::Bits(128_000));
-        assert_eq!(encoder.settings().application, Application::LowDelay);
+        assert_eq!(encoder.settings.application, Application::LowDelay);
     }
 
     #[test]
@@ -424,7 +419,7 @@ pub(crate) mod tests {
                 })
                 .is_err()
         );
-        assert_eq!(encoder.settings().bitrate, 32_000);
+        assert_eq!(encoder.settings.bitrate, 32_000);
     }
 
     #[test]

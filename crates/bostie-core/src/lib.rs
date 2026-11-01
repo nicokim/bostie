@@ -183,12 +183,6 @@ impl Core {
         Ok(self.inbox.drain())
     }
 
-    #[cfg(test)]
-    pub fn inflight(&self) -> Result<usize, CoreError> {
-        self.owner.check()?;
-        Ok(self.tasks.lock().running.len())
-    }
-
     pub fn close(&self) -> Result<(), CoreError> {
         self.owner.check()?;
         self.shut_down();
@@ -341,7 +335,7 @@ mod tests {
         assert_eq!(*got, ticket);
         assert_eq!(*status, 201);
         assert_eq!(&body[..], b"hello");
-        assert_eq!(core.inflight().unwrap(), 0);
+        assert_eq!(core.tasks.lock().running.len(), 0);
     }
 
     #[test]
@@ -364,7 +358,7 @@ mod tests {
         core.cancel(ticket).unwrap();
 
         on_disconnect.recv_timeout(Duration::from_secs(10)).unwrap();
-        assert_eq!(core.inflight().unwrap(), 0);
+        assert_eq!(core.tasks.lock().running.len(), 0);
         receiver.stream().set_nonblocking(true).unwrap();
         assert!(receiver.stream().read(&mut [0; 1]).is_err());
         assert!(core.drain().unwrap().is_empty());
