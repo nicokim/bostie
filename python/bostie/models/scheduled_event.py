@@ -8,34 +8,35 @@ from bostie.enums import (
     ScheduledEventStatus,
     Weekday,
 )
-from bostie.models.base import Model
+from bostie.models.base import Builder, Model
+from bostie.models.guild import Member
 from bostie.models.user import User
 
 
-class ScheduledEventEntityMetadata(Model, kw_only=True):
+class ScheduledEventEntityMetadata(Builder, kw_only=True):
     location: str | None = None
 
 
-class RecurrenceRuleNWeekday(Model, kw_only=True):
+class RecurrenceRuleNWeekday(Builder, kw_only=True):
     """A weekday in the n-th week of a month."""
 
     n: int
     day: Weekday
 
 
-class RecurrenceRule(Model, kw_only=True):
-    """How often a scheduled event recurs."""
+class RecurrenceRule(Builder, kw_only=True):
+    """How often an event recurs; only Discord sets `end`, `by_year_day` and `count`."""
 
     start: datetime
-    end: datetime | None
+    end: datetime | None = None
     frequency: RecurrenceFrequency
     interval: int
-    by_weekday: tuple[Weekday, ...] | None
-    by_n_weekday: tuple[RecurrenceRuleNWeekday, ...] | None
-    by_month: tuple[Month, ...] | None
-    by_month_day: tuple[int, ...] | None
-    by_year_day: tuple[int, ...] | None
-    count: int | None
+    by_weekday: tuple[Weekday, ...] | None = None
+    by_n_weekday: tuple[RecurrenceRuleNWeekday, ...] | None = None
+    by_month: tuple[Month, ...] | None = None
+    by_month_day: tuple[int, ...] | None = None
+    by_year_day: tuple[int, ...] | None = None
+    count: int | None = None
 
 
 class ScheduledEvent(Model, kw_only=True):
@@ -58,3 +59,11 @@ class ScheduledEvent(Model, kw_only=True):
     user_count: int | None = None
     image: str | None = None
     recurrence_rule: RecurrenceRule | None
+
+
+class ScheduledEventUser(Model, kw_only=True):
+    """A user subscribed to a scheduled event, with their member if asked for."""
+
+    guild_scheduled_event_id: int
+    user: User
+    member: Member | None = None

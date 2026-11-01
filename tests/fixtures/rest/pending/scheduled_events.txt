@@ -1,6 +1,0 @@
-POST /guilds/{guild_id}/scheduled-events scheduled_events.create reason
-DELETE /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.delete
-PATCH /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.edit reason
-GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.fetch
-GET /guilds/{guild_id}/scheduled-events scheduled_events.list
-GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/users scheduled_events.list_users

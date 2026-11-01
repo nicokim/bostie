@@ -140,6 +140,7 @@ from bostie.models.scheduled_event import (
     RecurrenceRuleNWeekday,
     ScheduledEvent,
     ScheduledEventEntityMetadata,
+    ScheduledEventUser,
 )
 from bostie.models.user import (
     AvatarDecorationData,
@@ -242,6 +243,7 @@ __all__ = [
     "RoleSelect",
     "ScheduledEvent",
     "ScheduledEventEntityMetadata",
+    "ScheduledEventUser",
     "Section",
     "SelectDefaultValue",
     "SelectOption",
