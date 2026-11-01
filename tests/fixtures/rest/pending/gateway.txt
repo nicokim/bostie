@@ -1,2 +1,0 @@
-GET /gateway gateway.fetch
-GET /gateway/bot gateway.fetch_bot

@@ -1,5 +1,0 @@
-PATCH /applications/@me application.edit
-GET /applications/@me application.fetch
-GET /applications/{application_id}/activity-instances/{instance_id} application.fetch_activity_instance
-GET /applications/{application_id}/role-connections/metadata application.list_role_connection_metadata
-PUT /applications/{application_id}/role-connections/metadata application.update_role_connection_metadata

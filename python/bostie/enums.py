@@ -266,6 +266,33 @@ class ApplicationIntegrationType(DiscordIntEnum):
     USER_INSTALL = 1
 
 
+class ApplicationEventWebhookStatus(DiscordIntEnum):
+    DISABLED = 1
+    ENABLED = 2
+    DISABLED_BY_DISCORD = 3
+
+
+class ApplicationRoleConnectionMetadataType(DiscordIntEnum):
+    INTEGER_LESS_THAN_OR_EQUAL = 1
+    INTEGER_GREATER_THAN_OR_EQUAL = 2
+    INTEGER_EQUAL = 3
+    INTEGER_NOT_EQUAL = 4
+    DATETIME_LESS_THAN_OR_EQUAL = 5
+    DATETIME_GREATER_THAN_OR_EQUAL = 6
+    BOOLEAN_EQUAL = 7
+    BOOLEAN_NOT_EQUAL = 8
+
+
+class MembershipState(DiscordIntEnum):
+    INVITED = 1
+    ACCEPTED = 2
+
+
+class ActivityLocationKind(DiscordStrEnum):
+    GUILD_CHANNEL = "gc"
+    PRIVATE_CHANNEL = "pc"
+
+
 class AutoModerationTriggerType(DiscordIntEnum):
     KEYWORD = 1
     SPAM = 3
