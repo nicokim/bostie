@@ -86,11 +86,16 @@ impl HttpMedia {
             })?;
         let mut map = HeaderMap::with_capacity(headers.len());
         for (name, value) in headers {
-            let header = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|_| CoreError::InvalidRequest(format!("invalid header name {name:?}")))?;
-            let mut value = HeaderValue::from_str(value).map_err(|_| {
-                CoreError::InvalidRequest(format!("the value of header {name:?} is invalid"))
-            })?;
+            let Ok(header) = HeaderName::from_bytes(name.as_bytes()) else {
+                return Err(CoreError::InvalidRequest(format!(
+                    "invalid header name {name:?}"
+                )));
+            };
+            let Ok(mut value) = HeaderValue::from_str(value) else {
+                return Err(CoreError::InvalidRequest(format!(
+                    "the value of header {name:?} is invalid"
+                )));
+            };
             value.set_sensitive(true);
             map.append(header, value);
         }
@@ -146,9 +151,10 @@ impl HttpMedia {
             sender,
             self.piece,
         ));
-        let head = head
-            .blocking_recv()
-            .map_err(|_| io::Error::other("the HTTP request stopped"))??;
+        let Ok(head) = head.blocking_recv() else {
+            return Err(io::Error::other("the HTTP request stopped"));
+        };
+        let head = head?;
         self.body = Some(Body {
             pieces,
             current: Bytes::new(),

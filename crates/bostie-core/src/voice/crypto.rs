@@ -167,15 +167,17 @@ impl Cipher {
         let (aad, body) = out
             .split_at_mut_checked(header.len())
             .ok_or(CryptoError::Seal)?;
-        let tag = match &self.0 {
+        let sealed = match &self.0 {
             Aead::Aes256Gcm(aead) => {
                 aead.encrypt_inout_detached(&full_nonce(counter).into(), aad, body.into())
             }
             Aead::XChaCha20Poly1305(aead) => {
                 aead.encrypt_inout_detached(&full_nonce(counter).into(), aad, body.into())
             }
-        }
-        .map_err(|_| CryptoError::Seal)?;
+        };
+        let Ok(tag) = sealed else {
+            return Err(CryptoError::Seal);
+        };
         out.extend_from_slice(&tag);
         out.extend_from_slice(&counter);
         Ok(())
@@ -193,7 +195,7 @@ impl Cipher {
         let (aad, body) = sealed
             .split_at_mut_checked(header.size())
             .ok_or(too_short)?;
-        match &self.0 {
+        let opened = match &self.0 {
             Aead::Aes256Gcm(aead) => aead.decrypt_inout_detached(
                 &full_nonce(nonce).into(),
                 aad,
@@ -206,8 +208,10 @@ impl Cipher {
                 (&mut *body).into(),
                 &tag,
             ),
+        };
+        if opened.is_err() {
+            return Err(CryptoError::Authentication);
         }
-        .map_err(|_| CryptoError::Authentication)?;
         let body: &'a [u8] = body;
         Ok(Opened {
             header,

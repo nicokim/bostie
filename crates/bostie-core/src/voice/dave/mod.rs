@@ -258,9 +258,10 @@ impl Dave {
         let Some(session) = &mut self.session else {
             return Err(EncryptFailure);
         };
-        session
-            .encrypt_into(MediaType::AUDIO, Codec::OPUS, frame, out)
-            .map_err(|_| EncryptFailure)
+        let Ok(()) = session.encrypt_into(MediaType::AUDIO, Codec::OPUS, frame, out) else {
+            return Err(EncryptFailure);
+        };
+        Ok(())
     }
 
     pub(crate) fn receive(

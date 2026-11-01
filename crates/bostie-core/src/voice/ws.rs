@@ -99,14 +99,16 @@ impl VoiceSocket {
         connector: &Connector,
         timeouts: Timeouts,
     ) -> Result<Self, WsError> {
-        let builder = ClientBuilder::new()
-            .uri(url.as_str())
-            .map_err(|_| WsError::Endpoint(url.as_str().into()))?
+        let Ok(builder) = ClientBuilder::new().uri(url.as_str()) else {
+            return Err(WsError::Endpoint(url.as_str().into()));
+        };
+        let builder = builder
             .connector(connector)
             .limits(Limits::default().max_payload_len(Some(WS_MAX_MESSAGE)));
-        let (stream, _) = timeout(timeouts.connect, builder.connect())
-            .await
-            .map_err(|_| WsError::ConnectTimeout(timeouts.connect))??;
+        let Ok(connected) = timeout(timeouts.connect, builder.connect()).await else {
+            return Err(WsError::ConnectTimeout(timeouts.connect));
+        };
+        let (stream, _) = connected?;
         Ok(Self {
             stream,
             close_timeout: timeouts.close,
@@ -131,10 +133,10 @@ impl VoiceSocket {
     }
 
     async fn send(&mut self, message: Message, patience: Duration) -> Result<(), WsError> {
-        timeout(patience, self.stream.send(message))
-            .await
-            .map_err(|_| WsError::WriteTimeout(patience))??;
-        Ok(())
+        let Ok(sent) = timeout(patience, self.stream.send(message)).await else {
+            return Err(WsError::WriteTimeout(patience));
+        };
+        Ok(sent?)
     }
 
     pub(crate) async fn receive(&mut self) -> Received {

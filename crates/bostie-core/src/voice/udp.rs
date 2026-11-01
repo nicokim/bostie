@@ -75,8 +75,11 @@ pub(crate) fn discovery_request(ssrc: u32) -> [u8; DISCOVERY_LEN] {
 }
 
 pub(crate) fn parse_discovery(packet: &[u8], ssrc: u32) -> Result<SocketAddr, DiscoveryError> {
-    let &[t0, t1, l0, l1, s0, s1, s2, s3, address @ .., p0, p1] =
-        <&[u8; DISCOVERY_LEN]>::try_from(packet).map_err(|_| DiscoveryError::Size(packet.len()))?;
+    let Ok(&[t0, t1, l0, l1, s0, s1, s2, s3, address @ .., p0, p1]) =
+        <&[u8; DISCOVERY_LEN]>::try_from(packet)
+    else {
+        return Err(DiscoveryError::Size(packet.len()));
+    };
     let kind = u16::from_be_bytes([t0, t1]);
     if kind != RESPONSE {
         return Err(DiscoveryError::Type(kind));

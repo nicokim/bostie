@@ -74,9 +74,11 @@ impl Rest {
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https"))
             .ok_or_else(|| CoreError::InvalidRequest(format!("invalid api url {api_url:?}")))?;
-        let mut token = HeaderValue::try_from(format!("Bot {token}")).map_err(|_| {
-            CoreError::InvalidRequest("the token contains invalid characters".to_owned())
-        })?;
+        let Ok(mut token) = HeaderValue::try_from(format!("Bot {token}")) else {
+            return Err(CoreError::InvalidRequest(
+                "the token contains invalid characters".to_owned(),
+            ));
+        };
         token.set_sensitive(true);
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
