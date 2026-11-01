@@ -159,17 +159,17 @@ class VoiceCore(Protocol):
 
 
 class ConnectOptions(TypedDict, total=False):
-    """Settings for one connect() call; each overrides the bot's voice.Defaults."""
+    """Settings for one connect() call; each overrides voice.Defaults unless None."""
 
-    self_deaf: bool
-    self_mute: bool
-    timeout: float
-    server_change_delay: float
-    encoder: EncoderSettings
-    speaking_flags: SpeakingFlags
-    stage: StageRole
-    speech_hangover: float
-    speech_activity: bool
+    self_deaf: bool | None
+    self_mute: bool | None
+    timeout: float | None
+    server_change_delay: float | None
+    encoder: EncoderSettings | None
+    speaking_flags: SpeakingFlags | None
+    stage: StageRole | None
+    speech_hangover: float | None
+    speech_activity: bool | None
 
 
 class _HasCore(Protocol):
