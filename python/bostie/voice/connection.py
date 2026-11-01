@@ -41,7 +41,7 @@ from bostie.voice.events import (
 from bostie.voice.formats import (
     PCM,
     Defaults,
-    Encoder,
+    EncoderSettings,
     Format,
     Latency,
     Opus,
@@ -326,7 +326,7 @@ class VoiceManager:
         self_mute: bool | None = None,
         timeout: float | None = None,
         server_change_delay: float | None = None,
-        encoder: Encoder | None = None,
+        encoder: EncoderSettings | None = None,
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
         speech_hangover: float | None = None,
@@ -616,11 +616,11 @@ class VoiceConnection:
         return self._dave
 
     @property
-    def encoder(self) -> Encoder:
+    def encoder(self) -> EncoderSettings:
         return self._encoder
 
     @encoder.setter
-    def encoder(self, encoder: Encoder) -> None:
+    def encoder(self, encoder: EncoderSettings) -> None:
         self._check_live()
         self._apply_encoder(encoder)
         self._encoder = encoder
@@ -1177,7 +1177,7 @@ class VoiceConnection:
         self._core().voice_update(self.guild_id, channel_id, self_mute, self_deaf)
         self._requested = (self_mute, self_deaf)
 
-    def _apply_encoder(self, encoder: Encoder) -> None:
+    def _apply_encoder(self, encoder: EncoderSettings) -> None:
         self._core().voice_encoder(
             self.guild_id,
             bitrate=self._bitrate(encoder),
@@ -1187,7 +1187,7 @@ class VoiceConnection:
             complexity=encoder.complexity,
         )
 
-    def _bitrate(self, encoder: Encoder) -> int:
+    def _bitrate(self, encoder: EncoderSettings) -> int:
         return encoder.bitrate or self._channel_bitrate or DEFAULT_BITRATE
 
     def _audio_started(self) -> None:
@@ -1277,7 +1277,7 @@ class ContextVoice:
         self_mute: bool | None = None,
         timeout: float | None = None,
         server_change_delay: float | None = None,
-        encoder: Encoder | None = None,
+        encoder: EncoderSettings | None = None,
         speaking_flags: SpeakingFlags | None = None,
         stage: StageRole | None = None,
         speech_hangover: float | None = None,

@@ -1,11 +1,11 @@
 from collections.abc import Buffer
 
 from bostie import _native
-from bostie.voice.formats import PCM, Encoder
+from bostie.voice.formats import PCM, EncoderSettings
 
 DEFAULT_BITRATE = 64_000
 DEFAULT_PCM = PCM()
-DEFAULT_ENCODER = Encoder()
+DEFAULT_ENCODER = EncoderSettings()
 
 
 class OpusEncoder:
@@ -15,7 +15,7 @@ class OpusEncoder:
     """
 
     def __init__(
-        self, format: PCM = DEFAULT_PCM, *, encoder: Encoder = DEFAULT_ENCODER
+        self, format: PCM = DEFAULT_PCM, *, encoder: EncoderSettings = DEFAULT_ENCODER
     ) -> None:
         self._native = _native.OpusEncoder(
             rate=format.rate,

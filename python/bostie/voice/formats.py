@@ -61,7 +61,7 @@ type ReceiveFormat = PCM | Opus | Packets
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Encoder:
+class EncoderSettings:
     """Opus encoder settings; `bitrate=None` follows the channel."""
 
     bitrate: int | None = None
@@ -99,7 +99,7 @@ class Defaults:
     self_mute: bool = False
     timeout: float = 10.0
     server_change_delay: float = 0.0
-    encoder: Encoder = Encoder()
+    encoder: EncoderSettings = EncoderSettings()
     speaking_flags: SpeakingFlags = SpeakingFlags.MICROPHONE
     stage: Literal["listen", "request", "speak"] = "listen"
     sink_buffer: float = 0.2

@@ -23,7 +23,7 @@ from bostie.errors import (
 )
 from bostie.voice.encoder import OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop
-from bostie.voice.formats import PCM, SAMPLE_RATE, Encoder, Format, Opus
+from bostie.voice.formats import PCM, SAMPLE_RATE, EncoderSettings, Format, Opus
 from bostie.voice.frames import Frame
 
 if TYPE_CHECKING:
@@ -595,7 +595,7 @@ async def broadcast(
     source: "Source",
     connections: Iterable["VoiceConnection"],
     *,
-    encoder: Encoder | None = None,
+    encoder: EncoderSettings | None = None,
     stall: Literal["hold", "drop"] = "drop",
 ) -> None:
     """Play one source on every given connection, encoding PCM once.
@@ -613,7 +613,9 @@ async def broadcast(
             for vc in targets
             if vc.state is not State.DISCONNECTED
         ]
-        settings = Encoder(bitrate=BROADCAST_BITRATE) if encoder is None else encoder
+        settings = (
+            EncoderSettings(bitrate=BROADCAST_BITRATE) if encoder is None else encoder
+        )
         format = source.format
         opus = (
             OpusEncoder(format, encoder=settings) if isinstance(format, PCM) else None

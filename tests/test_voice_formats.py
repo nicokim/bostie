@@ -73,7 +73,7 @@ def test_encoder_checks_its_bounds(
     settings: dict[str, Any], outcome: AbstractContextManager[object]
 ) -> None:
     with outcome:
-        voice.Encoder(**settings)
+        voice.EncoderSettings(**settings)
 
 
 @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ def test_formats_default_to_the_documented_values() -> None:
     defaults = voice.Defaults()
 
     assert voice.PCM() == voice.PCM(48_000, 2, "s16le")
-    assert defaults.encoder == voice.Encoder(
+    assert defaults.encoder == voice.EncoderSettings(
         bitrate=None, application="audio", fec=True, packet_loss=0.1, complexity=10
     )
     assert defaults.speaking_flags is SpeakingFlags.MICROPHONE

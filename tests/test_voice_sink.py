@@ -366,7 +366,7 @@ def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
         encoder_module, "_native", SimpleNamespace(OpusEncoder=NativeEncoder)
     )
     encoder = voice.OpusEncoder(voice.PCM(24_000, 1))
-    voice.OpusEncoder(encoder=voice.Encoder(bitrate=96_000, packet_loss=0.25))
+    voice.OpusEncoder(encoder=voice.EncoderSettings(bitrate=96_000, packet_loss=0.25))
     assert created == [
         {
             "rate": 24_000,

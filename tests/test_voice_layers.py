@@ -18,7 +18,7 @@ from bostie.errors import (
 )
 from bostie.voice import layers
 from bostie.voice.events import SpeechStart, SpeechStop
-from bostie.voice.formats import PCM, Encoder, Format, Opus, ReceiveFormat
+from bostie.voice.formats import PCM, EncoderSettings, Format, Opus, ReceiveFormat
 from bostie.voice.frames import Frame
 from bostie.voice.layers import (
     EndReason,
@@ -314,9 +314,9 @@ class FakeSource:
 
 
 class FakeEncoder:
-    made: ClassVar[list[tuple[PCM, Encoder]]] = []
+    made: ClassVar[list[tuple[PCM, EncoderSettings]]] = []
 
-    def __init__(self, format: PCM, *, encoder: Encoder) -> None:
+    def __init__(self, format: PCM, *, encoder: EncoderSettings) -> None:
         self.made.append((format, encoder))
 
     def encode(self, data: Buffer) -> list[bytes]:
@@ -932,8 +932,8 @@ def test_broadcast_encodes_pcm_once_for_every_connection(
         await layers.broadcast(cast(Any, source), cast(Any, connections))
         expected = [b"opus-" + chunk for chunk in frames("s", 3)] + [b"opus-tail"]
         assert [vc.sinks[0].sent for vc in connections] == [expected] * 2
-        assert FakeEncoder.made == [(pcm, Encoder(bitrate=64_000))]
-        voip = Encoder(application="voip")
+        assert FakeEncoder.made == [(pcm, EncoderSettings(bitrate=64_000))]
+        voip = EncoderSettings(application="voip")
         await layers.broadcast(
             cast(Any, FakeSource(clock, "t", 1, format=pcm)),
             cast(Any, connections),

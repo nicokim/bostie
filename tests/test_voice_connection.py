@@ -42,7 +42,9 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
             bot,
             self_mute=True,
             server_change_delay=0.5,
-            encoder=voice.Encoder(bitrate=50_000, packet_loss=0.25, complexity=7),
+            encoder=voice.EncoderSettings(
+                bitrate=50_000, packet_loss=0.25, complexity=7
+            ),
             speaking_flags=SpeakingFlags.SOUNDSHARE,
         )
         assert bot.calls("voice_connect") == [
@@ -69,7 +71,9 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
     run(
         scenario,
         defaults=voice.Defaults(
-            self_deaf=True, timeout=15.0, encoder=voice.Encoder(application="voip")
+            self_deaf=True,
+            timeout=15.0,
+            encoder=voice.EncoderSettings(application="voip"),
         ),
     )
 
@@ -462,7 +466,7 @@ async def reconnect(vc: voice.VoiceConnection) -> None:
 
 @after_the_end("encoder")
 async def set_encoder(vc: voice.VoiceConnection) -> None:
-    vc.encoder = voice.Encoder(bitrate=96_000)
+    vc.encoder = voice.EncoderSettings(bitrate=96_000)
 
 
 @after_the_end("speaking_flags")
@@ -538,8 +542,10 @@ def test_stats_ignore_unknown_counters_and_count_missing_ones_as_zero() -> None:
 def test_assigning_an_encoder_applies_it_with_the_channels_bitrate() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        vc.encoder = voice.Encoder(application="voip", packet_loss=0.0, complexity=5)
-        assert vc.encoder == voice.Encoder(
+        vc.encoder = voice.EncoderSettings(
+            application="voip", packet_loss=0.0, complexity=5
+        )
+        assert vc.encoder == voice.EncoderSettings(
             application="voip", packet_loss=0.0, complexity=5
         )
         assert bot.calls("voice_encoder") == [
@@ -566,7 +572,7 @@ def test_a_move_reapplies_the_new_channels_bitrate_only_when_following_it() -> N
             bot,
             NO_BITRATE,
             guild_id=OTHER_GUILD_ID,
-            encoder=voice.Encoder(bitrate=50_000),
+            encoder=voice.EncoderSettings(bitrate=50_000),
         )
         bot.deliver(("voice_clients", GUILD_ID, [USER_ID]))
         bot.deliver(ready())
