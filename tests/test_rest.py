@@ -238,3 +238,21 @@ def test_a_listing_refuses_unknown_and_mutually_exclusive_cursors() -> None:
             assert len(fake.requests) == sent
 
     run(scenario)
+
+
+def test_options_send_none_as_null_leave_out_the_rest_and_inline_files() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            fake.fail("PATCH", "/users/@me", 200, fake.bot_user)
+            users = bot.rest.users
+            me = await users.edit_current(avatar=None, banner=File("b.PNG", b"PNG"))
+            assert fake.requests[-1].json == {
+                "avatar": None,
+                "banner": "data:image/png;base64,UE5H",
+            }
+            assert me.id == int(fake.bot_user["id"])
+            with pytest.raises(ValueError, match="must end in one of"):
+                await users.edit_current(banner=File("b.bmp", b"BM"))
+
+    run(scenario)

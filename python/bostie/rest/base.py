@@ -1,13 +1,27 @@
+import base64
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import datetime
+from pathlib import PurePath
 from typing import Any
 
 from bostie.cache import Cache
+from bostie.file import File
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
+from bostie.models.base import check_keys
 from bostie.models.message import PartialMessage, in_guild
 
 CURSORS = ("before", "after", "around")
+DATA_URI_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+}
 
 
 class Group:
@@ -23,6 +37,24 @@ class Group:
     def _in_guild[M: PartialMessage](self, message: M) -> M:
         channel = self._cache.channel(message.channel_id)
         return in_guild(message, None if channel is None else channel.guild_id)
+
+
+def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, object]:
+    """`options` checked against the TypedDict `shape`, with each File as a data URI."""
+    check_keys(options, shape.__required_keys__ | shape.__optional_keys__, "options")
+    return {
+        name: _data_uri(value) if isinstance(value, File) else value
+        for name, value in options.items()
+    }
+
+
+def _data_uri(file: File) -> str:
+    kind = DATA_URI_TYPES.get(PurePath(file.name).suffix.lower())
+    if kind is None:
+        raise ValueError(
+            f"{file.name!r} must end in one of {', '.join(DATA_URI_TYPES)}"
+        )
+    return f"data:{kind};base64,{base64.b64encode(file.data).decode()}"
 
 
 def paginate[P, I](
