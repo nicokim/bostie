@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
 from bostie._aio import spawn
 from bostie.enums import State
@@ -44,7 +44,6 @@ log = logging.getLogger("bostie.voice")
 
 SILENCE = b"\xf8\xff\xfe"
 SILENCE_SAMPLES = 960
-TICK = 0.02
 PAGE_SAMPLES = SAMPLE_RATE
 MAX_SEGMENTS = 255
 MAX_PACKET = MAX_SEGMENTS * 255 - 1
@@ -863,13 +862,19 @@ class Recorder:
 
     async def stop(self) -> dict[int, Path]:
         """Stop recording, finish every file and return them by user id."""
-        await asyncio.wait({self._task}, timeout=self._rx.jitter + TICK)
+        await self._rx.mark()
         if not self._stopping.done():
             self._stopping.set_result(None)
         await asyncio.wait({self._task})
         if self._error is not None:
             raise self._error
         return dict(self._files)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.stop()
 
     async def _record(self) -> None:
         try:

@@ -982,6 +982,8 @@ class FakeReceiver:
         self.mix = mix
         self.jitter = jitter
         self.items: deque[Received] = deque()
+        self.buffered: list[Received] = []
+        self.marks: list[asyncio.Future[bool]] = []
         self.closed_reason: ClosedReason | None = None
         self.arrival: asyncio.Future[None] | None = None
 
@@ -989,8 +991,31 @@ class FakeReceiver:
         self.items.extend(items)
         self.wake()
 
+    def hear(self, *items: Received) -> None:
+        self.buffered.extend(items)
+
+    def release(self) -> None:
+        self.feed(*self.buffered)
+        self.buffered.clear()
+        self.settle_marks(True)
+
+    def mark(self) -> asyncio.Future[bool]:
+        future = asyncio.get_running_loop().create_future()
+        self.marks.append(future)
+        if self.closed_reason is not None:
+            self.settle_marks(False)
+        elif not self.buffered:
+            self.settle_marks(True)
+        return future
+
+    def settle_marks(self, passed: bool) -> None:
+        for future in self.marks:
+            future.set_result(passed)
+        self.marks.clear()
+
     def end(self, reason: ClosedReason) -> None:
         self.closed_reason = self.closed_reason or reason
+        self.settle_marks(False)
         self.wake()
 
     def close(self) -> None:
@@ -1212,11 +1237,11 @@ def test_a_recorder_writes_ogg_opus_pages_into_its_path_template(
 ) -> None:
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
-        recorder = Recorder(cast(Any, vc), tmp_path / "{guild_id}" / "{user_id}.opus")
-        vc.rx.feed(Frame(42, 42, 0, 0, STEP, 0.0, b"\xfc\xff\xfe", False))
-        files = await recorder.stop()
+        template = tmp_path / "{guild_id}" / "{user_id}.opus"
+        async with Recorder(cast(Any, vc), template) as recorder:
+            vc.rx.feed(Frame(42, 42, 0, 0, STEP, 0.0, b"\xfc\xff\xfe", False))
         path = tmp_path / "7" / "42.opus"
-        assert files == recorder.files == {42: path}
+        assert recorder.files == {42: path}
         assert path.read_bytes() == OGG_FIXTURE
         assert vc.opened == [
             (
@@ -1290,17 +1315,20 @@ def test_a_recorder_refuses_a_path_that_cannot_hold_one_ogg_file_per_user(
     assert vc.opened == []
 
 
-def test_stopping_a_recorder_writes_what_was_still_queued(tmp_path: Path) -> None:
+def test_stop_waits_for_the_audio_still_in_the_jitter_buffer(tmp_path: Path) -> None:
     async def scenario(clock: Clock) -> None:
         vc = RecordingConnection()
         recorder = Recorder(cast(Any, vc), tmp_path / "{user_id}.ogg", align=False)
         await settle()
         vc.rx.feed(*(opus(index) for index in range(5)))
+        vc.rx.hear(opus(5))
         stopping = asyncio.create_task(recorder.stop())
         await settle()
-        vc.rx.feed(opus(5))
+        waited = not stopping.done()
+        vc.rx.release()
         await stopping
         packets, _ = read_ogg(tmp_path / "42.ogg")
+        assert waited
         assert packets == [bytes([index]) * 3 for index in range(6)]
 
     run(scenario)

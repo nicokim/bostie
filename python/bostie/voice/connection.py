@@ -368,9 +368,9 @@ class VoiceManager:
                 if target is not None:
                     target._wake()
             case ("voice_marker", handle, marker, played):
-                sink = self._handles.get(handle)
-                if isinstance(sink, Sink):
-                    sink._marked(marker, played)
+                target = self._handles.get(handle)
+                if isinstance(target, Sink | Receiver):
+                    target._marked(marker, played)
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:

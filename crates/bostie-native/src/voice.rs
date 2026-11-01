@@ -162,6 +162,10 @@ impl NativeReceiver {
         Ok(self.0.clear()?)
     }
 
+    fn mark(&self) -> Result<u64> {
+        Ok(self.0.mark()?)
+    }
+
     fn stats(&self) -> Result<(u64, u64, u64)> {
         let ReceiverStats {
             delivered,

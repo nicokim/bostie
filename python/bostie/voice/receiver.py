@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import time
 from collections import deque
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, Self, cast
 
@@ -27,6 +28,7 @@ class NativeReceiver(Protocol):
     def read(self, limit: int) -> "list[ReceivedItem] | None": ...
     def queued(self) -> float: ...
     def clear(self) -> None: ...
+    def mark(self) -> int: ...
     def stats(self) -> tuple[int, int, int]: ...
     def closed_reason(self) -> "ClosedReasonName | None": ...
     def close(self) -> None: ...
@@ -75,6 +77,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         self._handle = native.id
         self._items: deque[tuple[float, Item]] = deque()
         self._woken = Wake()
+        self._marks: dict[int, asyncio.Future[bool]] = {}
         self._stats = ReceiverStats(0, 0, 0)
         self._closed_reason: ClosedReason | None = None
 
@@ -112,6 +115,15 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         if not self.closed:
             self._items.clear()
             self._native.clear()
+
+    def mark(self) -> Awaitable[bool]:
+        """True once all audio heard so far is queued; False if the receiver ends."""
+        future = asyncio.get_running_loop().create_future()
+        if self.closed or self._connection.state is State.DISCONNECTED:
+            future.set_result(False)
+        else:
+            self._marks[self._native.mark()] = future
+        return future
 
     def close(self) -> None:
         """Stop receiving and discard what is queued."""
@@ -176,10 +188,19 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
 
     def _release(self) -> None:
         self._wake()
+        for future in self._marks.values():
+            if not future.done():
+                future.set_result(False)
+        self._marks.clear()
         self._connection._forget_receiver(self)
 
     def _wake(self) -> None:
         self._woken.set()
+
+    def _marked(self, id: int, passed: bool) -> None:
+        future = self._marks.pop(id, None)
+        if future is not None and not future.done():
+            future.set_result(passed)
 
     def _read_stats(self) -> ReceiverStats:
         return ReceiverStats(*self._native.stats())

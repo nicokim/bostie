@@ -235,6 +235,7 @@ class FakeReceiver:
         self.lag = 0.0
         self.clears = 0
         self.counters = (0, 0, 0)
+        self.marks = 0
         self.closed = False
 
     @property
@@ -257,6 +258,11 @@ class FakeReceiver:
         self._check()
         self.items.clear()
         self.clears += 1
+
+    def mark(self) -> int:
+        self._check()
+        self.marks += 1
+        return self.marks
 
     def stats(self) -> tuple[int, int, int]:
         self._check()

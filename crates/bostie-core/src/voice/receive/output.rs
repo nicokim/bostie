@@ -227,15 +227,13 @@ impl Subscribers {
             let Some(subscriber) = self.open.get_mut(handle) else {
                 continue;
             };
-            if deferred || subscriber.out.format == ReceiveFormat::Packets {
-                continue;
+            let packets = subscriber.out.format == ReceiveFormat::Packets;
+            if !packets && !deferred {
+                deferred = !subscriber.play(streams, &self.keys, &mut context, at.deadline);
             }
-            deferred = !subscriber.play(streams, &self.keys, &mut context, at.deadline);
+            subscriber.flush(at.now, packets || !deferred);
         }
         let heard = context.heard;
-        for subscriber in self.open.values_mut() {
-            subscriber.flush(at.now);
-        }
         for (key, feed) in streams.iter_mut() {
             let mut oldest: Option<u16> = None;
             let mut waiting = false;
@@ -320,7 +318,7 @@ impl Subscriber {
         }
     }
 
-    fn flush(&mut self, now: Instant) {
+    fn flush(&mut self, now: Instant, released: bool) {
         let out = &mut self.out;
         if out.lost > 0 {
             self.receiver.add_lost(mem::take(&mut out.lost));
@@ -337,6 +335,9 @@ impl Subscriber {
         out.peak
             .shrink(out.items.capacity(), |to| out.items.shrink_to(to));
         out.peak.advance();
+        if released {
+            self.receiver.pass(now);
+        }
     }
 
     fn play(

@@ -11,7 +11,7 @@ use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
 use crate::voice::peak::Peak;
-use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
+use crate::voice::types::{Overflow, ReceiveFormat, ReceiveOptions, Speaking};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
@@ -86,6 +86,8 @@ struct Queue {
     wake_armed: bool,
     ended: Option<Ended>,
     stats: ReceiverStats,
+    marks: VecDeque<(u64, Instant)>,
+    next_mark: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +159,36 @@ impl Receiver {
         Ok(self.queue.lock().stats)
     }
 
+    pub fn mark(&self) -> Result<u64, CoreError> {
+        self.owner.check()?;
+        let mut queue = self.queue.lock();
+        if queue.ended == Some(Ended::Closed) {
+            return Err(CoreError::HandleClosed(self.id));
+        }
+        let id = queue.next_mark;
+        queue.next_mark += 1;
+        if queue.ended.is_some() {
+            self.resolve(id, false);
+        } else {
+            queue.marks.push_back((id, Instant::now()));
+        }
+        Ok(id)
+    }
+
+    pub fn pass(&self, now: Instant) {
+        let lag = match self.options.format {
+            ReceiveFormat::Packets => Duration::ZERO,
+            _ => self.options.jitter,
+        };
+        let mut queue = self.queue.lock();
+        while let Some(&(id, at)) = queue.marks.front()
+            && now.saturating_duration_since(at) >= lag
+        {
+            queue.marks.pop_front();
+            self.resolve(id, true);
+        }
+    }
+
     pub fn ended(&self) -> Option<Ended> {
         self.queue.lock().ended
     }
@@ -172,6 +204,7 @@ impl Receiver {
         let mut queue = self.queue.lock();
         queue.discard();
         queue.ended = Some(Ended::Closed);
+        self.abandon_marks(&mut queue);
         self.wake(&mut queue);
     }
 
@@ -179,6 +212,7 @@ impl Receiver {
         let mut queue = self.queue.lock();
         if queue.ended.is_none() {
             queue.ended = Some(why);
+            self.abandon_marks(&mut queue);
             self.wake(&mut queue);
         }
     }
@@ -214,6 +248,20 @@ impl Receiver {
 
     pub fn add_dropped(&self, frames: u64) {
         self.queue.lock().stats.dropped += frames;
+    }
+
+    fn abandon_marks(&self, queue: &mut Queue) {
+        for (id, _) in queue.marks.drain(..) {
+            self.resolve(id, false);
+        }
+    }
+
+    fn resolve(&self, mark: u64, passed: bool) {
+        self.inbox.push(Delivery::VoiceMarker {
+            handle: self.id,
+            marker: mark,
+            played: passed,
+        });
     }
 
     fn wake(&self, queue: &mut Queue) {

@@ -259,6 +259,18 @@ def test_a_cancelled_wait_loses_no_item() -> None:
     run(scenario)
 
 
+def test_a_receiver_mark_resolves_on_delivery_or_false_when_it_ends() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        rx, native = await open_receiver(bot)
+        passed, pending = rx.mark(), rx.mark()
+        bot.deliver(("voice_marker", native.id, 1, True))
+        assert await passed
+        bot.deliver(disconnected("removed"))
+        assert (await pending, await rx.mark()) == (False, False)
+
+    run(scenario)
+
+
 def test_get_nowait_raises_empty_then_receiver_closed_once_drained() -> None:
     async def scenario(bot: FakeBot) -> None:
         rx, native = await open_receiver(bot)

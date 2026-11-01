@@ -19,7 +19,7 @@ use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
 use crate::voice::types::{
-    Application, DaveOp, EncoderSettings, FRAME, Overflow, PcmFormat, ReceiveFormat,
+    Application, DaveOp, EncoderSettings, FRAME, MAX_JITTER, Overflow, PcmFormat, ReceiveFormat,
     ReceiveOptions, ReceiveStall, SampleFormat,
 };
 
@@ -1477,6 +1477,52 @@ fn release_and_decode_stop_at_the_deadline_and_resume_next_tick() {
 
     assert!(deferred.is_empty());
     assert_eq!(senders(&read(&receiver)), [Some(ALICE); 3]);
+}
+
+#[test]
+fn a_mark_passes_once_the_audio_heard_before_it_left_the_jitter_buffer() {
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(ReceiveOptions {
+        jitter: MAX_JITTER,
+        ..options(ReceiveFormat::Opus)
+    });
+    let heard = Instant::now();
+    let packet = &opus(1, 0.3)[0];
+    rig.media.arrive(Arrival {
+        at: heard,
+        ..rig.arrival(ALICE_SSRC, 0, packet)
+    });
+    let first = receiver.mark().unwrap();
+    let marked = Instant::now();
+    let marks = |rig: &Rig| -> Vec<(u64, bool)> {
+        rig.fixture
+            .inbox
+            .drain()
+            .into_iter()
+            .filter_map(|delivery| match delivery {
+                Delivery::VoiceMarker { marker, played, .. } => Some((marker, played)),
+                _ => None,
+            })
+            .collect()
+    };
+
+    rig.now = heard + MAX_JITTER - Duration::from_millis(1);
+    rig.tick();
+    let early = (read(&receiver).len(), marks(&rig));
+    rig.now = marked + MAX_JITTER;
+    rig.run(0, rig.reception.core.epoch);
+    let deferred = (read(&receiver).len(), marks(&rig));
+    rig.step();
+    let released = (read(&receiver).len(), marks(&rig));
+    let second = receiver.mark().unwrap();
+    receiver.end(Ended::Disconnected);
+    let third = receiver.mark().unwrap();
+
+    assert_eq!(early, (0, Vec::new()));
+    assert_eq!(deferred, (0, Vec::new()));
+    assert_eq!(released, (1, vec![(first, true)]));
+    assert_eq!(marks(&rig), [(second, false), (third, false)]);
 }
 
 #[test]
