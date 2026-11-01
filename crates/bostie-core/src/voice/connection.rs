@@ -216,6 +216,32 @@ struct Seen {
     main: u64,
 }
 
+struct SelfState {
+    shard: ShardId,
+    self_mute: bool,
+    self_deaf: bool,
+    target: ChannelId,
+    requested: Option<ChannelId>,
+    reported: Option<[bool; 4]>,
+    deaf: bool,
+    joined: bool,
+}
+
+struct Servers {
+    used: u64,
+    settled: u64,
+    moved: bool,
+    change_delay: Duration,
+}
+
+#[derive(Default)]
+struct Failures {
+    rejoins: u32,
+    resumes: u32,
+    code: Option<u16>,
+    last: Option<String>,
+}
+
 pub(super) struct Connection {
     pub(super) shared: Arc<Shared>,
     pub(super) guild: GuildId,
@@ -231,27 +257,14 @@ pub(super) struct Connection {
     pub(super) deadline: Option<Instant>,
     pub(super) fresh: bool,
     pub(super) tuning: ConnectionTuning,
-    shard: ShardId,
-    self_mute: bool,
-    self_deaf: bool,
-    target: ChannelId,
-    requested: Option<ChannelId>,
-    reported: Option<[bool; 4]>,
-    deaf: bool,
+    me: SelfState,
+    servers: Servers,
+    failures: Failures,
+    seen: Seen,
     status: VoiceStatus,
     step: Step,
     timeout: Duration,
-    server_change_delay: Duration,
-    server_moved: bool,
-    seen: Seen,
-    server_used: u64,
-    server_settled: u64,
-    rejoins: u32,
-    resume_attempts: u32,
-    last_code: Option<u16>,
-    last_failure: Option<String>,
     connected: bool,
-    joined: bool,
 }
 
 pub(super) struct Inputs {
@@ -288,27 +301,28 @@ impl Connection {
             deadline: Some(Instant::now() + request.timeout),
             fresh: false,
             tuning,
-            shard: request.shard,
-            self_mute: request.self_mute,
-            self_deaf: request.self_deaf,
-            target: request.channel,
-            requested: Some(request.channel),
-            reported: None,
-            deaf: false,
+            me: SelfState {
+                shard: request.shard,
+                self_mute: request.self_mute,
+                self_deaf: request.self_deaf,
+                target: request.channel,
+                requested: Some(request.channel),
+                reported: None,
+                deaf: false,
+                joined: false,
+            },
+            servers: Servers {
+                used: 0,
+                settled: 0,
+                moved: false,
+                change_delay: request.server_change_delay,
+            },
+            failures: Failures::default(),
+            seen,
             status: VoiceStatus::Connecting,
             step: Step::VoiceEvents,
             timeout: request.timeout,
-            server_change_delay: request.server_change_delay,
-            server_moved: false,
-            seen,
-            server_used: 0,
-            server_settled: 0,
-            rejoins: 0,
-            resume_attempts: 0,
-            last_code: None,
-            last_failure: None,
             connected: false,
-            joined: false,
         }
     }
 
@@ -341,8 +355,8 @@ impl Connection {
     pub(super) fn became_ready(&mut self) {
         self.deadline = None;
         self.connected = true;
-        self.last_failure = None;
-        self.server_settled = self.server_used;
+        self.failures.last = None;
+        self.servers.settled = self.servers.used;
         if let Some(voice) = &mut self.voice {
             voice.resumable = true;
         }
@@ -351,8 +365,8 @@ impl Connection {
     }
 
     pub(super) fn stable(&mut self) {
-        self.rejoins = 0;
-        self.resume_attempts = 0;
+        self.failures.rejoins = 0;
+        self.failures.resumes = 0;
     }
 
     pub(super) fn is_ready(&self) -> bool {
@@ -365,7 +379,7 @@ impl Connection {
             .state
             .as_ref()
             .and_then(|state| state.channel)
-            .unwrap_or(self.target)
+            .unwrap_or(self.me.target)
     }
 
     pub(super) fn push(&self, delivery: Delivery) {
@@ -386,9 +400,9 @@ impl Connection {
                 self_mute,
                 self_deaf,
             }) => {
-                self.requested = Some(channel);
-                self.self_mute = self_mute;
-                self.self_deaf = self_deaf;
+                self.me.requested = Some(channel);
+                self.me.self_mute = self_mute;
+                self.me.self_deaf = self_deaf;
                 None
             }
         }
@@ -401,11 +415,11 @@ impl Connection {
             if let Some(state) = snapshot
                 .state
                 .as_ref()
-                .filter(|state| self.joined || state.channel.is_some())
+                .filter(|state| self.me.joined || state.channel.is_some())
             {
-                self.joined = true;
+                self.me.joined = true;
                 let flags = [state.self_mute, state.self_deaf, state.mute, state.suppress];
-                if self.reported.replace(flags) != Some(flags) {
+                if self.me.reported.replace(flags) != Some(flags) {
                     self.push(Delivery::VoiceSelf {
                         guild: self.guild,
                         self_mute: state.self_mute,
@@ -414,7 +428,7 @@ impl Connection {
                         suppress: state.suppress,
                     });
                 }
-                if mem::replace(&mut self.deaf, state.deaf) != state.deaf {
+                if mem::replace(&mut self.me.deaf, state.deaf) != state.deaf {
                     self.push(Delivery::VoiceDeaf {
                         guild: self.guild,
                         deaf: state.deaf,
@@ -422,16 +436,16 @@ impl Connection {
                 }
                 match state.channel {
                     None => return Some(GatewayEvent::Removed),
-                    Some(channel) if channel != self.target => {
-                        let from = mem::replace(&mut self.target, channel);
+                    Some(channel) if channel != self.me.target => {
+                        let from = mem::replace(&mut self.me.target, channel);
                         self.media.end_receivers(Ended::Moved);
                         self.push(Delivery::VoiceMoved {
                             guild: self.guild,
                             from,
                             to: channel,
-                            by_us: self.requested == Some(channel),
+                            by_us: self.me.requested == Some(channel),
                         });
-                        if !(self.fresh && self.server_used > self.server_settled) {
+                        if !(self.fresh && self.servers.used > self.servers.settled) {
                             return Some(GatewayEvent::Moved);
                         }
                     }
@@ -524,7 +538,7 @@ impl Connection {
 
     fn offered_server(&self) -> Option<(Credentials, u64)> {
         let snapshot = self.gateway.borrow();
-        if snapshot.server_seq <= self.server_used {
+        if snapshot.server_seq <= self.servers.used {
             return None;
         }
         let server = snapshot.server.as_ref()?;
@@ -532,7 +546,7 @@ impl Connection {
         let state = snapshot
             .state
             .as_ref()
-            .filter(|state| state.channel == Some(self.target))?;
+            .filter(|state| state.channel == Some(self.me.target))?;
         let credentials = Credentials {
             session_id: state.session_id.clone(),
             token: server.token.clone(),
@@ -543,15 +557,15 @@ impl Connection {
 
     fn take_server(&mut self) -> Option<Credentials> {
         let (credentials, seq) = self.offered_server()?;
-        self.server_used = seq;
+        self.servers.used = seq;
         self.seen.server = self.seen.server.max(seq);
         Some(credentials)
     }
 
     async fn wait(&mut self) -> Next {
         loop {
-            if self.server_moved && self.offered_server().is_some() {
-                self.server_moved = false;
+            if self.servers.moved && self.offered_server().is_some() {
+                self.servers.moved = false;
                 match self.let_the_call_move().await {
                     Ok(()) => {}
                     Err(SessionEnd::Gateway(event)) => match self.on_event(event).await {
@@ -578,7 +592,7 @@ impl Connection {
     async fn let_the_call_move(&mut self) -> Result<(), SessionEnd> {
         let paused = self.deadline.take();
         let started = Instant::now();
-        let waited = self.interruptible(sleep(self.server_change_delay)).await;
+        let waited = self.interruptible(sleep(self.servers.change_delay)).await;
         self.deadline = paused.map(|deadline| deadline + started.elapsed());
         waited
     }
@@ -592,9 +606,9 @@ impl Connection {
         };
         match end {
             SessionEnd::Closed(code) => {
-                self.last_code = Some(code);
+                self.failures.code = Some(code);
                 let (action, text) = close::classify(code);
-                self.last_failure = Some(format!("closed with {code}: {text}"));
+                self.failures.last = Some(format!("closed with {code}: {text}"));
                 match action {
                     CloseAction::Resume => fallback,
                     CloseAction::Rejoin => Next::Rejoin,
@@ -603,20 +617,20 @@ impl Connection {
                 }
             }
             SessionEnd::Lost(text) => {
-                self.last_failure = Some(text);
+                self.failures.last = Some(text);
                 fallback
             }
             SessionEnd::Zombie => {
-                self.last_failure = Some("no heartbeat ACK".to_owned());
+                self.failures.last = Some("no heartbeat ACK".to_owned());
                 fallback
             }
             SessionEnd::Reconnect => fallback,
             SessionEnd::Invalid(text) | SessionEnd::Failed(text) => {
-                self.last_failure = Some(text);
+                self.failures.last = Some(text);
                 Next::Rejoin
             }
             SessionEnd::NonceExhausted => {
-                self.last_failure = Some("the transport nonce is about to wrap".to_owned());
+                self.failures.last = Some("the transport nonce is about to wrap".to_owned());
                 Next::Rejoin
             }
             SessionEnd::Gateway(event) => Next::Event(event),
@@ -640,12 +654,12 @@ impl Connection {
     }
 
     async fn resume(&mut self) -> Next {
-        if self.resume_attempts >= RESUME_ATTEMPTS {
+        if self.failures.resumes >= RESUME_ATTEMPTS {
             return Next::Rejoin;
         }
-        let delay = self.tuning.backoff(self.resume_attempts);
-        self.resume_attempts += 1;
-        let cause = self.last_failure.clone().unwrap_or_default();
+        let delay = self.tuning.backoff(self.failures.resumes);
+        self.failures.resumes += 1;
+        let cause = self.failures.last.clone().unwrap_or_default();
         self.set_status(VoiceStatus::Resuming, &cause);
         if let Err(end) = self.interruptible(sleep(delay)).await {
             return self.after(end);
@@ -669,19 +683,20 @@ impl Connection {
     }
 
     async fn rejoin(&mut self) -> Next {
-        if self.rejoins >= REJOIN_LIMIT {
-            let reason = close::rejoin_limit_reason(self.last_code);
+        let failures = &mut self.failures;
+        if failures.rejoins >= REJOIN_LIMIT {
+            let reason = close::rejoin_limit_reason(failures.code);
             let detail = format!(
                 "the voice connection failed {} times in a row: {}",
                 REJOIN_LIMIT + 1,
-                self.last_failure.as_deref().unwrap_or("no reason given")
+                failures.last.as_deref().unwrap_or("no reason given")
             );
-            return Next::End(Ending::new(reason, self.last_code, detail));
+            return Next::End(Ending::new(reason, failures.code, detail));
         }
-        self.rejoins += 1;
+        failures.rejoins += 1;
         self.drop_session();
         self.reconnecting(Step::Rejoining);
-        match self.send_voice_state(Some(self.target)).await {
+        match self.send_voice_state(Some(self.me.target)).await {
             Ok(()) => Next::Wait,
             Err(end) => self.after(end),
         }
@@ -716,8 +731,8 @@ impl Connection {
             GatewayEvent::ServerUnavailable => Step::ServerUnavailable,
             GatewayEvent::SessionReplaced => Step::SessionReplaced,
         };
-        self.server_moved = self.connected
-            && !self.server_change_delay.is_zero()
+        self.servers.moved = self.connected
+            && !self.servers.change_delay.is_zero()
             && matches!(
                 event,
                 GatewayEvent::ServerChanged | GatewayEvent::ServerUnavailable
@@ -725,7 +740,7 @@ impl Connection {
         self.drop_session();
         self.reconnecting(step);
         if event == GatewayEvent::SessionReplaced
-            && let Err(end) = self.send_voice_state(Some(self.target)).await
+            && let Err(end) = self.send_voice_state(Some(self.me.target)).await
         {
             return self.after(end);
         }
@@ -733,11 +748,11 @@ impl Connection {
     }
 
     async fn send_voice_state(&mut self, channel: Option<ChannelId>) -> Result<(), SessionEnd> {
-        let payload =
-            proto::voice_state_update(self.guild, channel, self.self_mute, self.self_deaf);
+        let me = &self.me;
+        let payload = proto::voice_state_update(self.guild, channel, me.self_mute, me.self_deaf);
         let mut failures = 0;
         loop {
-            match (self.shared.send)(self.shard, payload.clone()) {
+            match (self.shared.send)(self.me.shard, payload.clone()) {
                 Ok(()) => return Ok(()),
                 Err(error) => {
                     debug!(%error, guild = %self.guild, "the voice state update was not queued");
@@ -750,7 +765,7 @@ impl Connection {
     }
 
     fn timed_out(&self) -> Ending {
-        let why = match &self.last_failure {
+        let why = match &self.failures.last {
             Some(failure) => failure.clone(),
             None if self.step.waits_for_gateway() => self.missing_events().to_owned(),
             None => format!("no progress within {:?}", self.timeout),
@@ -767,8 +782,8 @@ impl Connection {
         let state = snapshot
             .state
             .as_ref()
-            .is_some_and(|state| state.channel == Some(self.target));
-        let server = snapshot.server_seq > self.server_used
+            .is_some_and(|state| state.channel == Some(self.me.target));
+        let server = snapshot.server_seq > self.servers.used
             && snapshot
                 .server
                 .as_ref()
