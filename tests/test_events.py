@@ -31,7 +31,7 @@ from bostie.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from bostie.models import Builder, Guild, Member, Model
+from bostie.models import Builder, Channel, Guild, Member, Model
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
 
@@ -71,7 +71,7 @@ def decode[E: Event](event: type[E], name: str, shard_id: int = 0) -> E:
 def decode_ids_only(struct: type[msgspec.Struct], **fields: Any) -> Any:
     payload: dict[str, Any] = {"id": "1", "name": "n", "seq": 1} | fields
     if any(
-        field.required and field.name == "type"
+        field.required and (field.name == "type" or field.type is Channel)
         for field in msgspec.structs.fields(struct)
     ):
         payload["type"] = 1
@@ -272,7 +272,7 @@ def test_message_and_reaction_events() -> None:
         "1335173295636611073/1564609610244030465"
     )
     assert created.message.member is not None
-    assert created.message.member.user is None
+    assert created.message.member.user == created.message.author
     assert deleted.id == created.message.id
     assert reaction.emoji is not None
     assert reaction.emoji.animated is True

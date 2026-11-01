@@ -345,7 +345,7 @@ def test_mentions_and_display_names() -> None:
     member = decode(Member, payload("rest/member.json"))
     user = decode(User, payload("rest/user.json"))
     role = decode(Role, b'{"id": "42"}')
-    channel = decode(Channel, b'{"id": "7"}')
+    channel = decode(Channel, b'{"id": "7", "type": 0}')
 
     assert user.mention == "<@308882807193731073>"
     assert member.mention == "<@820774541721731073>"

@@ -107,20 +107,16 @@ def components(value: Any, inside: bool = False) -> Iterator[dict[str, Any]]:
             yield from components(item, inside)
 
 
-def fields(
-    value: Any, path: str = "$", component: bool = False
-) -> Iterator[tuple[str, dict[str, Any], str]]:
+def fields(value: Any, path: str = "$") -> Iterator[tuple[str, dict[str, Any], str]]:
     if isinstance(value, dict):
         for key, item in value.items():
             where = f"{path}.{key}"
-            is_union_tag = component and key == "type"
-            skipped = is_union_tag or key == "id"
-            if not (skipped or is_snowflake_map(value)):
+            if not (key in ("id", "type") or is_snowflake_map(value)):
                 yield where, value, key
-            yield from fields(item, where, key == "components")
+            yield from fields(item, where)
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            yield from fields(item, f"{path}[{index}]", component)
+            yield from fields(item, f"{path}[{index}]")
 
 
 def walk(value: object) -> Iterator[object]:
@@ -149,13 +145,16 @@ def failures(
     decoder: Decoder,
     mutate: Callable[[dict[str, Any], str], None],
     *,
-    arrays: bool,
+    collections: bool,
 ) -> list[str]:
     document = load(path)
     failed = []
     for where, container, key in list(fields(document)):
         original = container[key]
-        if isinstance(original, list) and not arrays:
+        collection = isinstance(original, list) or (
+            isinstance(original, dict) and is_snowflake_map(original)
+        )
+        if collection and not collections:
             continue
         mutate(container, key)
         try:
@@ -240,15 +239,17 @@ def test_unknown_components_keep_their_raw_json() -> None:
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
-def test_null_is_accepted_in_every_field_except_ids_and_arrays(
+def test_null_is_accepted_in_every_field_but_ids_types_and_collections(
     path: Path, decoder: Decoder
 ) -> None:
-    assert failures(path, decoder, set_null, arrays=False) == []
+    assert failures(path, decoder, set_null, collections=False) == []
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
-def test_every_field_except_ids_may_be_missing(path: Path, decoder: Decoder) -> None:
-    assert failures(path, decoder, delete, arrays=True) == []
+def test_every_field_but_ids_and_types_may_be_missing(
+    path: Path, decoder: Decoder
+) -> None:
+    assert failures(path, decoder, delete, collections=True) == []
 
 
 def test_a_dispatch_with_a_changed_field_type_is_skipped_with_one_warning(

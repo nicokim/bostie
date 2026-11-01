@@ -61,7 +61,7 @@ class Attachment(Model, kw_only=True):
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
-        return resolved.attachments.get(id) if resolved.attachments else None
+        return resolved.attachments.get(id)
 
 
 class EmbedField(Builder, kw_only=True):
@@ -187,7 +187,7 @@ class Message(Model, kw_only=True):
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Message | None":
-        return resolved.messages.get(id) if resolved.messages else None
+        return resolved.messages.get(id)
 
 
 def in_guild(message: Message, guild_id: int | None) -> Message:

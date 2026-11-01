@@ -31,4 +31,4 @@ class User(Model, kw_only=True):
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":
-        return resolved.users.get(id) if resolved.users else None
+        return resolved.users.get(id)

@@ -226,6 +226,8 @@ class _MessageEvent(Event, kw_only=True):
     def decode(cls, shard_id: int, data: bytes) -> Self:
         message = decode(Message, data)
         in_guild(message, message.guild_id)
+        if message.member is not None and message.member.user is None:
+            msgspec.structs.force_setattr(message.member, "user", message.author)
         return cls(shard_id=shard_id, raw_json=data, message=message)
 
 

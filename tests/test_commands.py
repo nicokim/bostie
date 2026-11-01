@@ -12,7 +12,7 @@ from bostie.commands import (
     Range,
     autocomplete_choices,
 )
-from bostie.enums import OptionType, Permissions
+from bostie.enums import ChannelType, OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
@@ -521,7 +521,7 @@ def test_bind_converts_every_option_type() -> None:
         users={1: User(id=1)},
         members={1: Member()},
         roles={2: Role(id=2)},
-        channels={3: Channel(id=3)},
+        channels={3: Channel(id=3, type=ChannelType.GUILD_VOICE)},
         attachments={4: Attachment(id=4)},
     )
     given = [
@@ -551,7 +551,7 @@ def test_bind_converts_every_option_type() -> None:
         "user": User(id=1),
         "member": Member(user=User(id=1)),
         "role": Role(id=2),
-        "channel": Channel(id=3),
+        "channel": Channel(id=3, type=ChannelType.GUILD_VOICE),
         "file": Attachment(id=4),
         "who": Role(id=2),
         "unit": Unit.IMPERIAL,

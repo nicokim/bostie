@@ -40,7 +40,7 @@ class Channel(Model, kw_only=True):
     """Any channel, thread included."""
 
     id: int
-    type: ChannelType | None = None
+    type: ChannelType
     guild_id: int | None = None
     position: int | None = None
     permission_overwrites: tuple[Overwrite, ...] = ()
@@ -83,4 +83,4 @@ class Channel(Model, kw_only=True):
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Channel | None":
-        return resolved.channels.get(id) if resolved.channels else None
+        return resolved.channels.get(id)

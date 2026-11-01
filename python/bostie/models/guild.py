@@ -49,11 +49,11 @@ class Role(Model, kw_only=True):
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Role | None":
-        return resolved.roles.get(id) if resolved.roles else None
+        return resolved.roles.get(id)
 
 
 class Member(Model, kw_only=True):
-    """A user's membership in a guild; members attached to messages lack `user`."""
+    """A user's membership in a guild."""
 
     user: User | None = None
     nick: str | None = None

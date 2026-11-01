@@ -29,17 +29,17 @@ class InteractionDataOption(Model, kw_only=True):
 class Resolved(Model, kw_only=True):
     """The users, members, roles, channels, messages and files an interaction names."""
 
-    users: dict[int, User] | None = None
-    members: dict[int, Member] | None = None
-    roles: dict[int, Role] | None = None
-    channels: dict[int, Channel] | None = None
-    messages: dict[int, Message] | None = None
-    attachments: dict[int, Attachment] | None = None
+    users: dict[int, User] = msgspec.field(default_factory=dict)
+    members: dict[int, Member] = msgspec.field(default_factory=dict)
+    roles: dict[int, Role] = msgspec.field(default_factory=dict)
+    channels: dict[int, Channel] = msgspec.field(default_factory=dict)
+    messages: dict[int, Message] = msgspec.field(default_factory=dict)
+    attachments: dict[int, Attachment] = msgspec.field(default_factory=dict)
 
     def member(self, id: int) -> Member | None:
         """The member with this id, with its user filled in."""
-        member = self.members.get(id) if self.members else None
-        user = self.users.get(id) if self.users else None
+        member = self.members.get(id)
+        user = self.users.get(id)
         if member is None or user is None:
             return member
         return msgspec.structs.replace(member, user=user)
