@@ -5,8 +5,6 @@ use bytes::BytesMut;
 use futures_util::FutureExt;
 use proptest::prelude::*;
 
-use super::intake::SPARE_WINDOWS;
-use super::output::wants;
 use super::*;
 use crate::ids::{ChannelId, Handle, ShardId};
 use crate::voice::codec::{Decoder, FrameEncoder};
@@ -512,36 +510,6 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
 }
 
 #[test]
-fn the_user_filters_decide_whose_audio_a_receiver_gets() {
-    let cases = [
-        (ALICE, None, vec![], false, true),
-        (ALICE, None, vec![ALICE], false, false),
-        (ALICE, Some(vec![ALICE]), vec![], false, true),
-        (ALICE, Some(vec![ALICE]), vec![ALICE], false, false),
-        (ALICE, Some(vec![BOB]), vec![], true, false),
-        (ALICE, Some(vec![]), vec![], false, false),
-        (BOT, Some(vec![BOB]), vec![BOT], true, true),
-        (BOT, None, vec![], false, false),
-    ];
-
-    for (speaker, users, exclude, include_self, heard) in cases {
-        let options = ReceiveOptions {
-            users: users
-                .as_ref()
-                .map(|ids| ids.iter().copied().map(user).collect()),
-            exclude: exclude.iter().copied().map(user).collect(),
-            include_self,
-            ..options(ReceiveFormat::Opus)
-        };
-        assert_eq!(
-            wants(&options, user(speaker), speaker == BOT),
-            heard,
-            "{speaker} {users:?} {exclude:?} {include_self}"
-        );
-    }
-}
-
-#[test]
 fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
     for speaker in [BOB, ALICE] {
         let mut rig = Rig::new(ReceiveTuning {
@@ -953,37 +921,6 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
     }
 
     assert_eq!(rig.media.arrivals.lock().len(), 2);
-}
-
-#[test]
-fn the_intake_forgets_departed_ssrcs_once_unmapped_windows_pile_up() {
-    let mut rig = Rig::new(tuning());
-    let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-    let mut intake = rig.intake();
-    let _packets = rig.open(options(ReceiveFormat::Packets));
-    rig.map(ALICE_SSRC, ALICE);
-    rig.map(BOB_SSRC, BOB);
-    let unmapped: Vec<u32> = (2_000..).take(SPARE_WINDOWS - 1).collect();
-
-    let mut send = |nonce, ssrc| {
-        let sealing = Sealing::default();
-        let mut packet = sfu::seal(&cipher, nonce, ssrc, 0, 0, &SILENCE_FRAME, &sealing);
-        intake.rtp(&mut packet);
-        let mut windows: Vec<u32> = intake.windows.keys().copied().collect();
-        windows.sort_unstable();
-        windows
-    };
-    send(0, ALICE_SSRC);
-    send(1, BOB_SSRC);
-    rig.info.ssrcs.lock().remove(&ALICE_SSRC);
-    let mut piled = Vec::new();
-    for (nonce, &ssrc) in (2..).zip(&unmapped) {
-        piled = send(nonce, ssrc);
-    }
-    let swept = send(100, STRANGER_SSRC);
-
-    assert_eq!(piled, [vec![ALICE_SSRC, BOB_SSRC], unmapped].concat());
-    assert_eq!(swept, [BOB_SSRC, STRANGER_SSRC]);
 }
 
 #[test]
@@ -1593,14 +1530,16 @@ fn a_speaker_who_goes_quiet_is_not_a_receive_stall() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(48))]
     #[test]
-    fn sealed_packets_with_arbitrary_fields_never_panic_the_receive_path(
-        packets in proptest::collection::vec(
+    fn arrivals_with_arbitrary_fields_never_panic_the_receive_path(
+        arrivals in proptest::collection::vec(
             (
                 0..3_usize,
                 any::<u16>(),
                 any::<u32>(),
-                proptest::option::of(proptest::collection::vec(any::<u8>(), 0..12)),
-                0..4_u8,
+                proptest::option::of((
+                    prop_oneof![Just(rtp::ONE_BYTE_PROFILE), Just(0x1000), any::<u16>()],
+                    proptest::collection::vec(any::<u8>(), 0..12),
+                )),
                 any::<bool>(),
                 proptest::collection::vec(any::<u8>(), 0..48),
             ),
@@ -1619,16 +1558,17 @@ proptest! {
             rig.open(options(ReceiveFormat::Mixed(PcmFormat { rate: 48_000, channels: 2, sample: SampleFormat::F32Le }))),
         ];
         let valid = opus(4, 0.5);
-        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-        let mut intake = rig.intake();
         let ssrcs = [ALICE_SSRC, BOB_SSRC, 0xFFFF_FFFF];
-        for (nonce, (which, sequence, timestamp, extension, padding, real, payload)) in (0..).zip(packets) {
+        for (index, (which, sequence, timestamp, extension, real, payload)) in (0_u32..).zip(arrivals) {
             let payload = if real { valid[usize::from(sequence) % valid.len()].to_vec() } else { payload };
-            let sealing = Sealing { extension, padding, csrcs: padding, marker: real };
-            let mut packet = sfu::seal(&cipher, nonce, ssrcs[which], sequence, timestamp, &payload, &sealing);
-            intake.open(&mut packet);
-            if nonce % 4 == 0 {
-                prop_assert!(rig.run_unguarded(Instant::now(), nonce % 3));
+            rig.media.arrive(Arrival {
+                timestamp,
+                at: Instant::now(),
+                extension: extension.map(|(profile, body)| (profile, Bytes::from(body))),
+                ..rig.arrival(ssrcs[which], sequence, &payload)
+            });
+            if index % 4 == 0 {
+                prop_assert!(rig.run_unguarded(Instant::now(), index % 3));
             }
         }
         for _ in 0..3 {

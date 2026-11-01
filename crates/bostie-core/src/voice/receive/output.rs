@@ -780,7 +780,7 @@ fn decoder(track: &mut Track, format: PcmFormat) -> &mut Option<Decoder> {
     &mut track.decoder
 }
 
-pub(super) fn wants(options: &ReceiveOptions, user: UserId, own: bool) -> bool {
+fn wants(options: &ReceiveOptions, user: UserId, own: bool) -> bool {
     if own {
         return options.include_self;
     }
@@ -822,5 +822,54 @@ fn speech_item(epoch: Instant, user: UserId, edge: Edge, offset: Option<u64>) ->
         speaking,
         offset,
         at,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::voice::types::{Overflow, ReceiveStall};
+
+    const ALICE: u64 = 1;
+    const BOB: u64 = 2;
+    const BOT: u64 = 100;
+
+    fn users(ids: &[u64]) -> HashSet<UserId> {
+        ids.iter().copied().map(UserId::from).collect()
+    }
+
+    #[test]
+    fn the_user_filters_decide_whose_audio_a_receiver_gets() {
+        let cases = [
+            (ALICE, None, vec![], false, true),
+            (ALICE, None, vec![ALICE], false, false),
+            (ALICE, Some(vec![ALICE]), vec![], false, true),
+            (ALICE, Some(vec![ALICE]), vec![ALICE], false, false),
+            (ALICE, Some(vec![BOB]), vec![], true, false),
+            (ALICE, Some(vec![]), vec![], false, false),
+            (BOT, Some(vec![BOB]), vec![BOT], true, true),
+            (BOT, None, vec![], false, false),
+        ];
+
+        for (speaker, only, exclude, include_self, heard) in cases {
+            let options = ReceiveOptions {
+                format: ReceiveFormat::Opus,
+                users: only.as_deref().map(users),
+                exclude: users(&exclude),
+                include_self,
+                buffer: Duration::ZERO,
+                jitter: Duration::ZERO,
+                markers: false,
+                overflow: Overflow::DropOldest,
+                stall: ReceiveStall::Wait,
+            };
+            assert_eq!(
+                wants(&options, UserId::from(speaker), speaker == BOT),
+                heard,
+                "{speaker} {only:?} {exclude:?} {include_self}"
+            );
+        }
     }
 }
