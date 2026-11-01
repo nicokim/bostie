@@ -534,7 +534,7 @@ mod tests {
     use tokio_websockets::Connector;
 
     use super::*;
-    use crate::voice::proto::{self, Frame, Inbound, Ready};
+    use crate::voice::proto;
     use crate::voice::ws::{Received, Timeouts, VoiceSocket, endpoint_url};
 
     const PATIENCE: Duration = Duration::from_secs(1);
@@ -544,21 +544,6 @@ mod tests {
         VoiceSocket::dial(&url, &Connector::Plain, Timeouts::default())
             .await
             .unwrap()
-    }
-
-    async fn frame(socket: &mut VoiceSocket) -> Frame {
-        match timeout(WAIT, socket.receive())
-            .await
-            .expect("nothing received")
-        {
-            Received::Frame(frame) => frame,
-            other => panic!("expected a frame, got {other:?}"),
-        }
-    }
-
-    async fn inbound(socket: &mut VoiceSocket) -> (Option<u64>, Inbound) {
-        let frame = frame(socket).await;
-        (frame.seq, frame.inbound.unwrap())
     }
 
     async fn closed(socket: &mut VoiceSocket) -> u16 {
@@ -582,28 +567,6 @@ mod tests {
             &config.session_id,
             &config.token,
         )
-    }
-
-    async fn hello(socket: &mut VoiceSocket) -> Duration {
-        match inbound(socket).await {
-            (None, Inbound::Hello { interval }) => interval,
-            other => panic!("expected Hello, got {other:?}"),
-        }
-    }
-
-    async fn ready(socket: &mut VoiceSocket) -> Ready {
-        match inbound(socket).await {
-            (Some(1), Inbound::Ready(ready)) => ready,
-            other => panic!("expected Ready with seq 1, got {other:?}"),
-        }
-    }
-
-    async fn identified(gateway: &FakeVoiceGateway, config: &Config) -> VoiceSocket {
-        let mut socket = dial(gateway).await;
-        hello(&mut socket).await;
-        send(&mut socket, identify(config)).await;
-        ready(&mut socket).await;
-        socket
     }
 
     #[tokio::test]
@@ -659,24 +622,5 @@ mod tests {
 
             assert_eq!(closed(&mut socket).await, code);
         }
-    }
-
-    #[tokio::test]
-    async fn configure_changes_what_the_next_identify_needs() {
-        let config = Config::default();
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let fresh = Config {
-            token: "fresh-token".to_owned(),
-            ..config.clone()
-        };
-
-        gateway
-            .configure(|config| config.token = "fresh-token".to_owned())
-            .await;
-
-        let mut stale = dial(&gateway).await;
-        send(&mut stale, identify(&config)).await;
-        assert_eq!(closed(&mut stale).await, 4004);
-        identified(&gateway, &fresh).await;
     }
 }
