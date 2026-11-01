@@ -14,7 +14,7 @@ from bostie.commands import Choice, Command, Group, Option, Range
 from bostie.enums import Permissions
 from bostie.errors import BadRequest, CommandSyncError
 from bostie.http import HTTPClient
-from bostie.models import Attachment, Channel, Role, User
+from bostie.models import Attachment, PartialChannel, Role, User
 from bostie.router import Router
 from bostie.sync import SyncResult, sync_commands
 
@@ -51,7 +51,9 @@ async def kit_all(
     ratio: Annotated[Range[float, 0.0, 1.0] | None, "A fraction"] = None,
     loud: Annotated[bool | None, "Announce the result"] = None,
     target: Annotated[User | None, "A user"] = None,
-    where: Annotated[Channel | None, "A channel", Option(channel_types=[2, 0])] = None,
+    where: Annotated[
+        PartialChannel | None, "A channel", Option(channel_types=[2, 0])
+    ] = None,
     role: Annotated[Role | None, "A role"] = None,
     who: Annotated[User | Role | None, "A user or role"] = None,
     file: Annotated[Attachment | None, "An attachment"] = None,

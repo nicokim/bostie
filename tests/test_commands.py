@@ -18,9 +18,9 @@ from bostie.enums import OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
-    Channel,
     InteractionDataOption,
     Member,
+    PartialChannel,
     Resolved,
     Role,
     User,
@@ -89,7 +89,7 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (User, option(6)),
         (Member, option(6)),
         (Role, option(8)),
-        (Channel, option(7)),
+        (PartialChannel, option(7)),
         (Attachment, option(11)),
         (User | Role, option(9)),
         (Member | Role, option(9)),
@@ -134,7 +134,7 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (Annotated[int, "How many"], option(4, description="How many")),
         (Annotated[str, Option(autocomplete=suggest)], option(3, autocomplete=True)),
         (
-            Annotated[Channel, Option(channel_types=[0, 2])],
+            Annotated[PartialChannel, Option(channel_types=[0, 2])],
             option(7, channel_types=[0, 2]),
         ),
         (
@@ -509,7 +509,7 @@ def kitchen_sink() -> Command:
         user: User,
         member: Member,
         role: Role,
-        channel: Channel,
+        channel: PartialChannel,
         file: Attachment,
         who: User | Role,
         unit: Unit,

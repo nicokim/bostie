@@ -82,7 +82,7 @@ A few things the example takes for granted:
 - Commands sync on startup, and only when they changed. With `dev_guilds`, they sync to those guilds only.
 - A handler that has not answered after 2.5 s is deferred for you.
 - Every handler and listener runs in its own task, which starts at once: its code up to the first `await` runs before the next event is handled.
-- Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `Channel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
+- Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `PartialChannel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.

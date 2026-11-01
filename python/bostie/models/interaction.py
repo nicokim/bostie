@@ -10,7 +10,7 @@ from bostie.enums import (
     Permissions,
 )
 from bostie.models.base import Model, permissions_from
-from bostie.models.channel import Channel
+from bostie.models.channel import PartialChannel
 from bostie.models.guild import Member, PartialMember, Role
 from bostie.models.message import Attachment, Message, PartialMessage, in_guild
 from bostie.models.user import User
@@ -32,7 +32,7 @@ class Resolved(Model, kw_only=True):
     users: dict[int, User] = msgspec.field(default_factory=dict)
     members: dict[int, PartialMember] = msgspec.field(default_factory=dict)
     roles: dict[int, Role] = msgspec.field(default_factory=dict)
-    channels: dict[int, Channel] = msgspec.field(default_factory=dict)
+    channels: dict[int, PartialChannel] = msgspec.field(default_factory=dict)
     messages: dict[int, PartialMessage] = msgspec.field(default_factory=dict)
     attachments: dict[int, Attachment] = msgspec.field(default_factory=dict)
 
@@ -79,7 +79,7 @@ class Interaction(Model, kw_only=True):
     type: InteractionType | None = None
     data: InteractionData | None = None
     guild_id: int | None = None
-    channel: Channel | None = None
+    channel: PartialChannel | None = None
     channel_id: int | None = None
     member: Member | None = None
     user: User | None = None

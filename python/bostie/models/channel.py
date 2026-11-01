@@ -14,51 +14,44 @@ class Overwrite(Model, kw_only=True):
     """A permission overwrite for a role or a member."""
 
     id: int
-    type: OverwriteType | None = None
-    _allow: str | None = msgspec.field(default=None, name="allow")
-    _deny: str | None = msgspec.field(default=None, name="deny")
+    type: OverwriteType
+    _allow: str = msgspec.field(name="allow")
+    _deny: str = msgspec.field(name="deny")
 
     @property
-    def allow(self) -> Permissions | None:
-        return permissions_from(self._allow)
+    def allow(self) -> Permissions:
+        return Permissions(int(self._allow))
 
     @property
-    def deny(self) -> Permissions | None:
-        return permissions_from(self._deny)
+    def deny(self) -> Permissions:
+        return Permissions(int(self._deny))
 
 
 class ThreadMetadata(Model, kw_only=True):
-    archived: bool | None = None
-    auto_archive_duration: int | None = None
-    archive_timestamp: datetime | None = None
-    locked: bool | None = None
+    archived: bool
+    auto_archive_duration: int
+    archive_timestamp: datetime
+    locked: bool
     invitable: bool | None = None
     create_timestamp: datetime | None = None
 
 
-class Channel(Model, kw_only=True):
-    """Any channel, thread included."""
+class PartialChannel(Model, kw_only=True):
+    """A channel as an interaction carries it, with the user's permissions in it."""
 
     id: int
     type: ChannelType
     guild_id: int | None = None
     position: int | None = None
-    permission_overwrites: tuple[Overwrite, ...] = ()
     name: str | None = None
     topic: str | None = None
-    nsfw: bool | None = None
+    nsfw: bool = False
     last_message_id: int | None = None
-    bitrate: int | None = None
-    user_limit: int | None = None
     rate_limit_per_user: int | None = None
     parent_id: int | None = None
-    owner_id: int | None = None
     last_pin_timestamp: datetime | None = None
-    rtc_region: str | None = None
-    message_count: int | None = None
-    member_count: int | None = None
     thread_metadata: ThreadMetadata | None = None
-    flags: ChannelFlags | None = None
+    flags: ChannelFlags = ChannelFlags(0)
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     _app_permissions: str | None = msgspec.field(default=None, name="app_permissions")
 
@@ -75,12 +68,24 @@ class Channel(Model, kw_only=True):
     @property
     def obfuscated(self) -> bool:
         """Whether Discord hid this channel's details because the bot cannot view it."""
-        return bool((self.flags or 0) & ChannelFlags.CHANNEL_OBFUSCATED)
+        return ChannelFlags.CHANNEL_OBFUSCATED in self.flags
 
     @property
     def mention(self) -> str:
         return f"<#{self.id}>"
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "Channel | None":
+    def from_resolved(cls, resolved: "Resolved", id: int) -> "PartialChannel | None":
         return resolved.channels.get(id)
+
+
+class Channel(PartialChannel, kw_only=True):
+    """Any channel, thread included."""
+
+    permission_overwrites: tuple[Overwrite, ...] = ()
+    bitrate: int | None = None
+    user_limit: int | None = None
+    owner_id: int | None = None
+    rtc_region: str | None = None
+    message_count: int | None = None
+    member_count: int | None = None

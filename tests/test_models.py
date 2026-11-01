@@ -9,6 +9,7 @@ import pytest
 from bostie import ui
 from bostie.enums import (
     ButtonStyle,
+    ChannelFlags,
     ChannelType,
     ComponentType,
     MessageFlags,
@@ -35,6 +36,7 @@ from bostie.models import (
     Member,
     Message,
     Model,
+    PartialChannel,
     Role,
     Section,
     Separator,
@@ -263,7 +265,7 @@ def test_resolved_options_convert_to_their_models() -> None:
     member = Member.from_resolved(resolved, 820774541721731073)
     user = User.from_resolved(resolved, 308882807193731073)
     role = Role.from_resolved(resolved, 1335174302269571073)
-    channel = Channel.from_resolved(resolved, 1335173547294851073)
+    channel = PartialChannel.from_resolved(resolved, 1335173547294851073)
     attachment = Attachment.from_resolved(resolved, 1564609863064092673)
 
     assert member is not None
@@ -333,7 +335,7 @@ def test_component_and_autocomplete_data() -> None:
 
 def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:
     obfuscated = decode(Channel, payload("events/CHANNEL_UPDATE.obfuscated.json"))
-    named_like_it = msgspec.structs.replace(obfuscated, flags=None)
+    named_like_it = msgspec.structs.replace(obfuscated, flags=ChannelFlags(0))
 
     assert obfuscated.obfuscated
     assert not named_like_it.obfuscated

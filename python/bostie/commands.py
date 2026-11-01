@@ -26,9 +26,9 @@ from bostie.enums import CommandType, InteractionContextType, OptionType, Permis
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
-    Channel,
     InteractionDataOption,
     Member,
+    PartialChannel,
     Resolved,
     Role,
     User,
@@ -62,7 +62,7 @@ type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
 type OptionModel = (
-    type[User] | type[Member] | type[Role] | type[Channel] | type[Attachment]
+    type[User] | type[Member] | type[Role] | type[PartialChannel] | type[Attachment]
 )
 type Scope = Literal["global", "guild"]
 
@@ -114,7 +114,7 @@ OPTION_MODELS: dict[OptionModel, OptionType] = {
     User: OptionType.USER,
     Member: OptionType.USER,
     Role: OptionType.ROLE,
-    Channel: OptionType.CHANNEL,
+    PartialChannel: OptionType.CHANNEL,
     Attachment: OptionType.ATTACHMENT,
 }
 

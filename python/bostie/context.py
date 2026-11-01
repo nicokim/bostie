@@ -22,13 +22,13 @@ from bostie.errors import (
 from bostie.file import File
 from bostie.models import (
     AllowedMentions,
-    Channel,
     EditParts,
     Interaction,
     InteractionDataOption,
     Member,
     Message,
     MessageParts,
+    PartialChannel,
     User,
     build_message,
     decode,
@@ -111,7 +111,7 @@ class _InteractionContext:
         return self.interaction.channel_id
 
     @property
-    def channel(self) -> Channel | None:
+    def channel(self) -> PartialChannel | None:
         return self.interaction.channel
 
     @property

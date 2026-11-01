@@ -1,5 +1,5 @@
 from bostie.models.base import Builder, Model, decode
-from bostie.models.channel import Channel, Overwrite, ThreadMetadata
+from bostie.models.channel import Channel, Overwrite, PartialChannel, ThreadMetadata
 from bostie.models.components import (
     ActionRow,
     Button,
@@ -94,6 +94,7 @@ __all__ = [
     "MessageReference",
     "Model",
     "Overwrite",
+    "PartialChannel",
     "PartialEmoji",
     "PartialMember",
     "PartialMessage",
