@@ -4,6 +4,7 @@ from collections.abc import Buffer, Generator, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, Self
 
+from bostie._aio import Wake
 from bostie.errors import BufferFull, SinkClosed
 from bostie.voice.formats import SAMPLE_RATE, Format, Opus
 
@@ -79,7 +80,7 @@ class Sink:
         self._handle = native.id
         self._volume = volume
         self._piece = _piece_bytes(format, buffer)
-        self._room: asyncio.Future[None] | None = None
+        self._room = Wake()
         self._markers: dict[int, asyncio.Future[bool]] = {}
         self._stats = SinkStats(0.0, 0.0, 0, 0, 0.0, 0)
         self._closed = False
@@ -114,7 +115,7 @@ class Sink:
         self._check_open()
         for piece in self._pieces(memoryview(data).cast("B")):
             while not self._native.write(piece):
-                await self._wait_for_room()
+                await self._room.wait()
                 self._check_open()
             self._started()
 
@@ -185,11 +186,6 @@ class Sink:
         step = self._piece
         return (view[start : start + step] for start in range(0, len(view), step))
 
-    async def _wait_for_room(self) -> None:
-        if self._room is None:
-            self._room = asyncio.get_running_loop().create_future()
-        await asyncio.shield(self._room)
-
     def _started(self) -> None:
         if not self._playing:
             self._playing = True
@@ -200,9 +196,7 @@ class Sink:
         return Marker(id, position / SAMPLE_RATE, future)
 
     def _wake(self) -> None:
-        room, self._room = self._room, None
-        if room is not None and not room.done():
-            room.set_result(None)
+        self._room.set()
 
     def _marked(self, id: int, played: bool) -> None:
         future = self._markers.pop(id, None)

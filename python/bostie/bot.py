@@ -14,6 +14,7 @@ from typing import Any, cast
 import msgspec
 
 from bostie import sync
+from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.cache import Cache
 from bostie.commands import (
@@ -508,7 +509,7 @@ class Bot(Router):
             if not waiter.future.done():
                 _resolve(waiter, event)
         for listener in self.listeners.get(event.NAME, ()):
-            self._spawn(_run_listener(listener, event, event.NAME))
+            spawn(self._tasks, _run_listener(listener, event, event.NAME), eager=True)
 
     def _dispatch(
         self, shard_id: int, seq: int, name: str, data: bytes, received: float
@@ -566,7 +567,7 @@ class Bot(Router):
                 else cast("type[Event]", listener.event)
             )
             if payload is not None:
-                self._spawn(_run_listener(listener, payload, name))
+                spawn(self._tasks, _run_listener(listener, payload, name), eager=True)
 
     def _route(self, interaction: Interaction, received: float) -> None:
         anchor = received
@@ -593,7 +594,7 @@ class Bot(Router):
                 interaction.id,
                 delay,
             )
-        self._spawn(handler)
+        spawn(self._tasks, handler, eager=True)
 
     def _handler(
         self, interaction: Interaction, received: float
@@ -743,14 +744,6 @@ class Bot(Router):
             await _answer_failure(ctx)
         except Exception:
             log.exception("answering interaction %d failed", ctx.interaction.id)
-
-    def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
-        task = asyncio.Task(
-            coroutine, loop=asyncio.get_running_loop(), eager_start=True
-        )
-        if not task.done():
-            self._tasks.add(task)
-            task.add_done_callback(self._tasks.discard)
 
 
 def _resolve_token(token: str | None) -> str:

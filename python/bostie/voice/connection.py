@@ -2,13 +2,14 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable, Coroutine, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
 
 from bostie import _native
+from bostie._aio import spawn
 from bostie.cache import Cache
 from bostie.enums import (
     ChannelType,
@@ -496,11 +497,6 @@ class VoiceManager:
                 "self_deaf": self_deaf,
             },
         )
-
-    def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
-        task = asyncio.get_running_loop().create_task(coroutine)
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
 
 
 class VoiceConnection:
@@ -1022,7 +1018,7 @@ class VoiceConnection:
                     )
                 )
                 self._changed()
-                self.manager._spawn(self._follow(new))
+                spawn(self.manager._tasks, self._follow(new))
             case ("voice_dave", _, version, epoch, transition):
                 self._emit(
                     DaveTransition(

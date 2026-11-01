@@ -8,6 +8,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Literal, Protocol, Self
 from urllib.parse import urlsplit
 
+from bostie._aio import Wake
 from bostie.errors import SourceError
 from bostie.voice.formats import PCM, SAMPLE_RATE, Format, Opus
 
@@ -90,7 +91,7 @@ class _DecodedSource(Source):
         self._native: NativeSource | None = None
         self._manager: VoiceManager | None = None
         self._chunks: deque[bytes] = deque()
-        self._woken: asyncio.Future[None] | None = None
+        self._woken = Wake()
         self._closed = False
 
     @abstractmethod
@@ -107,7 +108,7 @@ class _DecodedSource(Source):
             if (error := native.error()) is not None:
                 await self.aclose()
                 raise SourceError(repr(self), error)
-            await self._wait_for_wake()
+            await self._woken.wait()
             self._check_unused()
         kind, self._duration, self._seekable = info
         self._format = Opus() if kind == "opus" else NATIVE_PCM
@@ -127,7 +128,7 @@ class _DecodedSource(Source):
             if chunks:
                 self._chunks.extend(chunks)
             else:
-                await self._wait_for_wake()
+                await self._woken.wait()
         return self._chunks.popleft()
 
     async def seek(self, position: float) -> None:
@@ -154,15 +155,8 @@ class _DecodedSource(Source):
             raise RuntimeError("open() the source first")
         return self._native
 
-    async def _wait_for_wake(self) -> None:
-        if self._woken is None:
-            self._woken = asyncio.get_running_loop().create_future()
-        await asyncio.shield(self._woken)
-
     def _wake(self) -> None:
-        woken, self._woken = self._woken, None
-        if woken is not None and not woken.done():
-            woken.set_result(None)
+        self._woken.set()
 
 
 class File(_DecodedSource):

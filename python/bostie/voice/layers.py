@@ -6,13 +6,14 @@ import string
 import struct
 import time
 import zlib
-from collections.abc import AsyncIterator, Coroutine, Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal
 
+from bostie._aio import spawn
 from bostie.enums import State
 from bostie.errors import (
     Empty,
@@ -432,9 +433,7 @@ class _Player:
                 self._busy = None
             entry.exhausted = True
         entry.end = sink.mark()
-        task = asyncio.create_task(self._finish(entry, entry.end))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        spawn(self._tasks, self._finish(entry, entry.end))
 
     async def _sink_for(self, format: Format) -> "Sink":
         if self._sink is not None and format == self._format:
@@ -477,7 +476,7 @@ class _Player:
             self._entries[0].kept.clear()
         may_start_next = reason in (EndReason.FINISHED, EndReason.ERROR)
         entry.done.set_result(TrackEnd(entry.track, reason, error, may_start_next))
-        _spawn(self._tasks, self._release(entry, blocker))
+        spawn(self._tasks, self._release(entry, blocker), eager=True)
 
     async def _release(self, entry: _Entry, blocker: asyncio.Task[None] | None) -> None:
         if blocker is not None:
@@ -976,12 +975,3 @@ def _append(file: BinaryIO, pages: bytes) -> None:
 def _close(file: BinaryIO, pages: bytes) -> None:
     with file:
         file.write(pages)
-
-
-def _spawn(
-    tasks: set[asyncio.Task[None]], coroutine: Coroutine[Any, Any, None]
-) -> None:
-    task = asyncio.Task(coroutine, loop=asyncio.get_running_loop(), eager_start=True)
-    if not task.done():
-        tasks.add(task)
-        task.add_done_callback(tasks.discard)

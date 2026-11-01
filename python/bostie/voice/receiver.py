@@ -5,6 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, Self, cast
 
+from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
 from bostie.errors import Empty, ReceiverClosed
 from bostie.voice.events import SpeechStart, SpeechStop
@@ -73,7 +74,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         self._native = native
         self._handle = native.id
         self._items: deque[tuple[float, Item]] = deque()
-        self._woken: asyncio.Future[None] | None = None
+        self._woken = Wake()
         self._stats = ReceiverStats(0, 0, 0)
         self._closed_reason: ClosedReason | None = None
 
@@ -138,7 +139,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
             if read == READ_LIMIT:
                 await asyncio.sleep(0)
             elif not read and not self.closed:
-                await self._wait_for_wake()
+                await self._woken.wait()
         return cast(T, self._items.popleft()[1])
 
     async def __aenter__(self) -> Self:
@@ -177,15 +178,8 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         self._wake()
         self._connection._forget_receiver(self)
 
-    async def _wait_for_wake(self) -> None:
-        if self._woken is None:
-            self._woken = asyncio.get_running_loop().create_future()
-        await asyncio.shield(self._woken)
-
     def _wake(self) -> None:
-        woken, self._woken = self._woken, None
-        if woken is not None and not woken.done():
-            woken.set_result(None)
+        self._woken.set()
 
     def _read_stats(self) -> ReceiverStats:
         raw = self._native.stats()
