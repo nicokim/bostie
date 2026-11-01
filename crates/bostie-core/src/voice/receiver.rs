@@ -264,9 +264,8 @@ impl Queue {
 
     fn shrink(&mut self) {
         self.peak.observe(self.items.len());
-        if let Some(target) = self.peak.excess(self.items.capacity()) {
-            self.items.shrink_to(target);
-        }
+        self.peak
+            .shrink(self.items.capacity(), |to| self.items.shrink_to(to));
         self.peak.advance();
     }
 

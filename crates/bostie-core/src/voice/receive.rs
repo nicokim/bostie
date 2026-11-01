@@ -203,9 +203,11 @@ impl Peak {
         }
     }
 
-    pub(super) fn excess(&self, capacity: usize) -> Option<usize> {
+    pub(super) fn shrink(&self, capacity: usize, shrink_to: impl FnOnce(usize)) {
         let largest = self.current.max(self.previous);
-        (capacity > largest.saturating_mul(4)).then(|| largest.saturating_mul(2))
+        if capacity > largest.saturating_mul(4) {
+            shrink_to(largest.saturating_mul(2));
+        }
     }
 }
 
@@ -1191,9 +1193,8 @@ impl State {
             if !out.items.is_empty() {
                 subscriber.receiver.push(out.items.drain(..), now);
             }
-            if let Some(target) = out.peak.excess(out.items.capacity()) {
-                out.items.shrink_to(target);
-            }
+            out.peak
+                .shrink(out.items.capacity(), |to| out.items.shrink_to(to));
             out.peak.advance();
         }
         for (key, feed) in &mut self.streams {
@@ -1355,29 +1356,17 @@ impl State {
     fn shrink_buffers(&mut self) {
         self.peak.observe(self.held.len());
         self.peak.observe(self.waiting.len());
-        if let Some(target) = self.peak.excess(self.arrivals.capacity()) {
-            self.arrivals.shrink_to(target);
-        }
-        if let Some(target) = self.peak.excess(self.batch.capacity()) {
-            self.batch.shrink_to(target);
-        }
-        if let Some(target) = self.peak.excess(self.work.capacity()) {
-            self.work.shrink_to(target);
-        }
-        if let Some(target) = self.peak.excess(self.retried.capacity()) {
-            self.retried.shrink_to(target);
-        }
-        if let Some(target) = self.peak.excess(self.held.capacity()) {
-            self.held.shrink_to(target);
-        }
-        if let Some(target) = self.peak.excess(self.waiting.capacity()) {
-            self.waiting.shrink_to(target);
-        }
+        let peak = &self.peak;
+        peak.shrink(self.arrivals.capacity(), |to| self.arrivals.shrink_to(to));
+        peak.shrink(self.batch.capacity(), |to| self.batch.shrink_to(to));
+        peak.shrink(self.work.capacity(), |to| self.work.shrink_to(to));
+        peak.shrink(self.retried.capacity(), |to| self.retried.shrink_to(to));
+        peak.shrink(self.held.capacity(), |to| self.held.shrink_to(to));
+        peak.shrink(self.waiting.capacity(), |to| self.waiting.shrink_to(to));
         self.peak.advance();
         self.streams_peak.observe(self.streams.len());
-        if let Some(target) = self.streams_peak.excess(self.streams.capacity()) {
-            self.streams.shrink_to(target);
-        }
+        self.streams_peak
+            .shrink(self.streams.capacity(), |to| self.streams.shrink_to(to));
         self.streams_peak.advance();
     }
 }
