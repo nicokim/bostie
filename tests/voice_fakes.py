@@ -541,9 +541,6 @@ class FakeBot:
             tuple[type[Event], Callable[[Any], bool] | None, asyncio.Future[Event]]
         ] = []
 
-    def _shard_for(self, guild_id: int) -> int:
-        return 0
-
     def _emit(self, event: VoiceEvent) -> None:
         self.events.append(event)
 

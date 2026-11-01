@@ -20,7 +20,7 @@ from bostie.enums import (
 )
 from bostie.errors import NotFound, NotInVoice, VoiceConnectError, VoiceNotConnected
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
-from bostie.gateway import GatewayClient
+from bostie.gateway import SHARD, GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import Channel, User
 from bostie.voice import layers
@@ -182,7 +182,6 @@ class VoiceHost(Protocol):
     async def wait_for[E: Event](
         self, event: type[E], *, check: Callable[[E], bool] | None = None
     ) -> E: ...
-    def _shard_for(self, guild_id: int) -> int: ...
     def _emit(self, event: VoiceEvent) -> None: ...
 
 
@@ -937,7 +936,7 @@ class VoiceConnection:
             self._core().voice_connect(
                 self.guild_id,
                 self._channel_id,
-                shard_id=self.manager._bot._shard_for(self.guild_id),
+                shard_id=SHARD,
                 user_id=user_id,
                 self_mute=settings.self_mute,
                 self_deaf=settings.self_deaf,

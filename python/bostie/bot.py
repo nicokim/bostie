@@ -513,9 +513,6 @@ class Bot(Router):
         for listener in self.listeners.get(event.NAME, ()):
             self._spawn(_run_listener(listener, event, event.NAME))
 
-    def _shard_for(self, guild_id: int) -> int:
-        return 0
-
     def _dispatch(
         self, shard_id: int, seq: int, name: str, data: bytes, received: float
     ) -> None:
