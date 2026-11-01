@@ -124,6 +124,11 @@ from bostie.models.moderation import (
     AutoModerationTriggerMetadata,
 )
 from bostie.models.monetization import Entitlement, Subscription
+from bostie.models.onboarding import (
+    GuildOnboarding,
+    OnboardingPrompt,
+    OnboardingPromptOption,
+)
 from bostie.models.presence import (
     Activity,
     ActivityAssets,
@@ -142,6 +147,7 @@ from bostie.models.scheduled_event import (
     ScheduledEventEntityMetadata,
     ScheduledEventUser,
 )
+from bostie.models.template import GuildTemplate
 from bostie.models.user import (
     AvatarDecorationData,
     Collectibles,
@@ -200,7 +206,9 @@ __all__ = [
     "FileComponent",
     "Guild",
     "GuildCommandPermissions",
+    "GuildOnboarding",
     "GuildPreview",
+    "GuildTemplate",
     "GuildWidget",
     "GuildWidgetChannel",
     "GuildWidgetMember",
@@ -222,6 +230,8 @@ __all__ = [
     "ModalSubmitInteraction",
     "Model",
     "Nameplate",
+    "OnboardingPrompt",
+    "OnboardingPromptOption",
     "Overwrite",
     "PartialApplication",
     "PartialChannel",

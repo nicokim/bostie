@@ -26,7 +26,9 @@ from bostie.models import (
     ComponentInteraction,
     CurrentUserGuild,
     Guild,
+    GuildOnboarding,
     GuildPreview,
+    GuildTemplate,
     GuildWidget,
     GuildWidgetSettings,
     IncidentsData,
@@ -53,7 +55,9 @@ REST_MODELS: dict[str, type[Model]] = {
     "audit_log_page": AuditLogPage,
     "ban": Ban,
     "current_user_guild": CurrentUserGuild,
+    "guild_onboarding": GuildOnboarding,
     "guild_preview": GuildPreview,
+    "guild_template": GuildTemplate,
     "guild_widget": GuildWidget,
     "guild_widget_settings": GuildWidgetSettings,
     "incidents_data": IncidentsData,
@@ -85,6 +89,7 @@ ENUM_KEYS = {
     "target_type",
     "expire_behavior",
     "channel_type",
+    "mode",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

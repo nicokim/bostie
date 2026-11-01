@@ -461,6 +461,16 @@ class IntegrationExpireBehavior(DiscordIntEnum):
     KICK = 1
 
 
+class OnboardingMode(DiscordIntEnum):
+    ONBOARDING_DEFAULT = 0
+    ONBOARDING_ADVANCED = 1
+
+
+class OnboardingPromptType(DiscordIntEnum):
+    MULTIPLE_CHOICE = 0
+    DROPDOWN = 1
+
+
 class InviteTargetType(DiscordIntEnum):
     STREAM = 1
     EMBEDDED_APPLICATION = 2
