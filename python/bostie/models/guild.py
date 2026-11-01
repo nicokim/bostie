@@ -95,6 +95,10 @@ class Member(PartialMember, kw_only=True):
         return resolved.member(id)
 
 
+def with_user(member: PartialMember, user: User) -> Member:
+    return Member(user=user, **msgspec.structs.asdict(member))
+
+
 class Guild(Model, kw_only=True):
     """The header of a guild, without its channels, roles or members."""
 

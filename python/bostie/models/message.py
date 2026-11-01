@@ -21,7 +21,7 @@ from bostie.models.components import (
     UnknownComponent,
     decode_components,
 )
-from bostie.models.guild import PartialMember
+from bostie.models.guild import Member, PartialMember, with_user
 from bostie.models.user import PartialUser, User
 
 if TYPE_CHECKING:
@@ -205,6 +205,11 @@ class Message(_Message, kw_only=True):
     """A message in a channel, sent by a user or a bot."""
 
     author: User
+
+    @property
+    def author_member(self) -> Member | None:
+        """The author as a guild member, when the message carries its member."""
+        return None if self.member is None else with_user(self.member, self.author)
 
 
 class WebhookMessage(_Message, kw_only=True):

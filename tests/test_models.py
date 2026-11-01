@@ -373,6 +373,15 @@ def test_mentions_and_display_names() -> None:
     assert msgspec.structs.replace(member, nick="Lin").display_name == "Lin"
 
 
+def test_a_messages_author_member_joins_its_member_and_author() -> None:
+    message = decode(Message, payload("events/MESSAGE_CREATE.json"))
+    member = message.author_member
+
+    assert member is not None and message.member is not None
+    assert (member.user, member.flags) == (message.author, message.member.flags)
+    assert msgspec.structs.replace(message, member=None).author_member is None
+
+
 def test_build_message_sets_only_the_given_parts() -> None:
     assert build_message("hello") == ({"content": "hello"}, ())
     assert build_message(components=[], embeds=[]) == (

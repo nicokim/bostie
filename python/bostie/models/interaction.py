@@ -13,7 +13,7 @@ from bostie.enums import (
 )
 from bostie.models.base import Model, decode, decoder
 from bostie.models.channel import PartialChannel
-from bostie.models.guild import Member, PartialMember, Role
+from bostie.models.guild import Member, PartialMember, Role, with_user
 from bostie.models.message import (
     Attachment,
     Message,
@@ -50,7 +50,7 @@ class Resolved(Model, kw_only=True):
         user = self.users.get(id)
         if member is None or user is None:
             return None
-        return Member(user=user, **msgspec.structs.asdict(member))
+        return with_user(member, user)
 
 
 class CommandData(Model, kw_only=True):
