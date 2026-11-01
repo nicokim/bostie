@@ -491,12 +491,12 @@ pub(crate) mod tests {
     #[test]
     fn every_pcm_source_yields_48_khz_stereo_f32_at_the_original_pitch() {
         let mut harness = Harness::new();
-        for name in [
-            "tone.ogg",
-            "tone.flac",
-            "tone-s16.wav",
-            "tone-f32.wav",
-            "tone.mp3",
+        for (name, stereo) in [
+            ("tone.ogg", true),
+            ("tone.flac", false),
+            ("tone-s16.wav", false),
+            ("tone-f32.wav", false),
+            ("tone.mp3", false),
         ] {
             let source = harness.file(name);
 
@@ -508,9 +508,19 @@ pub(crate) mod tests {
             assert_eq!(info.duration, Some(Duration::from_secs(1)), "{name}");
             assert_eq!(error, None, "{name}");
             assert_eq!(samples.len(), 48_000 * 2, "{name}");
-            let middle = &left(&samples)[4_800..43_200];
-            let hz = pitch(middle);
+            let (frames, _) = samples.as_chunks::<2>();
+            let (left, right): (Vec<f32>, Vec<f32>) = frames[4_800..43_200]
+                .iter()
+                .map(|[left, right]| (left, right))
+                .unzip();
+            let hz = pitch(&left);
             assert!((hz - 1_000.0).abs() < 5.0, "{name}: {hz} Hz");
+            if stereo {
+                let hz = pitch(&right);
+                assert!((hz - 50.0).abs() < 2.5, "{name}: {hz} Hz on the right");
+            } else {
+                assert_eq!(left, right, "{name}");
+            }
         }
     }
 
@@ -529,25 +539,6 @@ pub(crate) mod tests {
         assert_eq!(error, None);
         let hz = pitch(&left(&samples)[4_800..43_200]);
         assert!((hz - 1_000.0).abs() < 5.0, "{hz} Hz");
-    }
-
-    #[test]
-    fn mono_sources_play_the_same_samples_on_both_channels() {
-        let mut harness = Harness::new();
-        for name in ["tone.flac", "tone-f32.wav", "tone.mp3"] {
-            let source = harness.file(name);
-
-            let (chunks, _) = read_to_end(&source);
-
-            assert!(
-                samples(&chunks)
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .all(|[left, right]| left == right),
-                "{name}"
-            );
-        }
     }
 
     #[test]
