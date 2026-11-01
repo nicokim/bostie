@@ -355,7 +355,8 @@ class _Player:
             return
         following = self._entries.index(current) + 1
         if following < len(self._entries) and not self._entries[following].opened:
-            self._opening(self._entries[following])
+            upcoming = self._entries[following]
+            upcoming.opening = self._opening(upcoming)
 
     def _opening(self, entry: _Entry) -> asyncio.Task[Exception | None]:
         if entry.opening is None:
