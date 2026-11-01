@@ -75,6 +75,10 @@ class Resumed(Event, kw_only=True):
     NAME = "RESUMED"
 
 
+class _Availability(msgspec.Struct):
+    unavailable: bool = False
+
+
 class _GuildCreatePayload(Guild, kw_only=True):
     channels: tuple[Channel, ...]
     threads: tuple[Channel, ...]
@@ -115,9 +119,9 @@ class GuildCreate(Event, kw_only=True):
         try:
             payload: _GuildCreatePayload = decoder(_GuildCreatePayload).decode(data)
         except msgspec.ValidationError:
-            unavailable: UnavailableGuild = decoder(UnavailableGuild).decode(data)
-            if not unavailable.unavailable:
+            if not decoder(_Availability).decode(data).unavailable:
                 raise
+            unavailable: UnavailableGuild = decoder(UnavailableGuild).decode(data)
             return cls(shard_id=shard_id, raw_json=data, guild=unavailable)
         return cls(
             shard_id=shard_id,

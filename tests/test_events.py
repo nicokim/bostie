@@ -191,6 +191,14 @@ def test_unavailable_guild_create_is_only_a_marker() -> None:
     assert event.members == ()
 
 
+def test_a_broken_guild_create_names_its_own_missing_field() -> None:
+    document = json.loads((EVENT_FIXTURES / "GUILD_CREATE.json").read_bytes())
+    del document["unavailable"]
+
+    with pytest.raises(msgspec.ValidationError, match="`name`"):
+        GuildCreate.decode(0, msgspec.json.encode(without(document, "name")))
+
+
 def test_guild_delete_reads_the_guild_id_from_id() -> None:
     outage = decode(GuildDelete, "GUILD_DELETE")
     left = decode(GuildDelete, "GUILD_DELETE.left")

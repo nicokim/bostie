@@ -66,6 +66,7 @@ MISSING = re.compile(
 )
 NULL = re.compile(r"got `null`(?: - at `\$(?P<at>.*)`)?$")
 SNOWFLAKE_KEY = re.compile(r"\.\d+(?=\.|\[|$)")
+SHAPE_KEYS = {("GUILD_CREATE.unavailable", "$.unavailable")}
 
 type Decoder = Callable[[bytes], object]
 
@@ -180,7 +181,7 @@ def failures(
         collection = isinstance(original, list) or (
             isinstance(original, dict) and is_snowflake_map(original)
         )
-        if collection and not collections:
+        if (collection and not collections) or (path.stem, where) in SHAPE_KEYS:
             continue
         mutate(container, key)
         try:
