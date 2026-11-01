@@ -789,58 +789,96 @@ fn a_failure_streak_asks_for_one_recovery_and_a_success_resets_it() {
 }
 
 #[test]
-fn lost_packets_become_lost_frames_and_longer_gaps_are_skipped() {
-    for format in [ReceiveFormat::Opus, pcm(16_000, 1, SampleFormat::S16Le)] {
+fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
+    let gaps: [&[u16]; 12] = [
+        &[0],
+        &[1],
+        &[],
+        &[3],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[10],
+        &[11],
+    ];
+    let swapped: [&[u16]; 12] = [
+        &[0],
+        &[1],
+        &[3],
+        &[2],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    ];
+    let skipped = [
+        (0, false),
+        (960, false),
+        (1_920, true),
+        (2_880, false),
+        (9_600, false),
+        (10_560, false),
+    ];
+    let in_order = [(0, false), (960, false), (1_920, false), (2_880, false)];
+    let pcm16k = pcm(16_000, 1, SampleFormat::S16Le);
+    let cases = [
+        (ReceiveFormat::Opus, Duration::ZERO, gaps, &skipped[..], 7),
+        (pcm16k, Duration::ZERO, gaps, &skipped[..], 7),
+        (ReceiveFormat::Opus, FRAME * 2, swapped, &in_order[..], 0),
+    ];
+    for (format, jitter, schedule, expected, lost) in cases {
         let mut rig = Rig::new(tuning());
         rig.map(ALICE_SSRC, ALICE);
-        let receiver = rig.open(options(format));
+        let receiver = rig.open(ReceiveOptions {
+            jitter,
+            ..options(format)
+        });
         let packets = opus(12, 0.3);
-        for (sequence, packet) in (0..).zip(&packets) {
-            if [0, 1, 3, 10, 11].contains(&sequence) {
-                rig.send(ALICE_SSRC, sequence, packet);
+        for sequences in schedule {
+            for &sequence in sequences {
+                rig.send(ALICE_SSRC, sequence, &packets[usize::from(sequence)]);
             }
             rig.step();
         }
 
         let items = read(&receiver);
-        let played: Vec<(Option<u32>, bool)> = heard(&items)
+        let played: Vec<(u32, bool)> = heard(&items)
             .into_iter()
             .map(|item| match item {
                 Heard::Frame {
-                    timestamp, lost, ..
+                    timestamp: Some(timestamp),
+                    lost,
+                    ..
                 } => (timestamp, lost),
                 other => panic!("{other:?}"),
             })
             .collect();
         let lengths: Vec<usize> = data(&items).iter().map(Bytes::len).collect();
-        assert_eq!(
-            played,
-            [
-                (Some(0), false),
-                (Some(960), false),
-                (Some(1_920), true),
-                (Some(2_880), false),
-                (Some(9_600), false),
-                (Some(10_560), false),
-            ],
-            "{format:?}"
-        );
-        assert_eq!(receiver.stats().unwrap()[2], ("lost", 7), "{format:?}");
-        match format {
-            ReceiveFormat::Opus => assert_eq!(lengths[2], 0),
-            _ => {
-                assert!(lengths.iter().all(|&length| length == 640));
-                let mut fresh = Decoder::new(16_000, 1).unwrap();
-                let mut scratch = Vec::new();
-                let samples = fresh.decode(&packets[10], &mut scratch).unwrap();
-                let mut after_the_skip = BytesMut::new();
-                codec::write_samples(
-                    &scratch[..samples],
-                    SampleFormat::S16Le,
-                    &mut after_the_skip,
-                );
-                assert_eq!(data(&items)[4], after_the_skip.freeze());
-            }
+        assert_eq!(played, expected, "{format:?} {jitter:?}");
+        assert_eq!(receiver.stats().unwrap()[2], ("lost", lost), "{format:?}");
+        if format == pcm16k {
+            assert!(lengths.iter().all(|&length| length == 640));
+            let mut fresh = Decoder::new(16_000, 1).unwrap();
+            let mut scratch = Vec::new();
+            let samples = fresh.decode(&packets[10], &mut scratch).unwrap();
+            let mut after_the_skip = BytesMut::new();
+            codec::write_samples(
+                &scratch[..samples],
+                SampleFormat::S16Le,
+                &mut after_the_skip,
+            );
+            assert_eq!(data(&items)[4], after_the_skip.freeze());
+        } else {
+            let silent: Vec<bool> = lengths.iter().map(|&length| length == 0).collect();
+            let concealed: Vec<bool> = expected.iter().map(|&(_, lost)| lost).collect();
+            assert_eq!(silent, concealed);
         }
     }
 }
@@ -1275,7 +1313,11 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
 
 #[test]
 fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
-    let formats = [pcm(16_000, 1, SampleFormat::S16Le), ReceiveFormat::Packets];
+    let formats = [
+        pcm(16_000, 1, SampleFormat::S16Le),
+        ReceiveFormat::Opus,
+        ReceiveFormat::Packets,
+    ];
     let slips = [Duration::ZERO, Duration::from_millis(50)];
     for (format, slip) in formats.into_iter().flat_map(|f| slips.map(|s| (f, s))) {
         let mut rig = Rig::new(tuning());
@@ -1287,7 +1329,8 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
             jitter: Duration::from_millis(200),
             ..options(format)
         });
-        let packets = opus(9, 0.3);
+        let mut packets = opus(9, 0.3);
+        packets.push(Bytes::from_static(&SILENCE_FRAME));
         for (sequence, packet) in (0..).zip(&packets) {
             rig.now += slip;
             rig.send(ALICE_SSRC, sequence, packet);
@@ -1300,7 +1343,7 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
         let items = read(&receiver);
         let heard = heard(&items);
         assert!(rig.speech().is_empty(), "{format:?} {slip:?}");
-        assert_eq!(heard.len(), 11, "{format:?} {slip:?}");
+        assert_eq!(heard.len(), 12, "{format:?} {slip:?}");
         if format == ReceiveFormat::Packets {
             assert_eq!(
                 heard[0],
@@ -1310,19 +1353,19 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
                 }
             );
             assert_eq!(
-                heard[10],
+                heard[11],
                 Heard::Speech {
                     speaking: false,
                     offset: None
                 }
             );
             assert!(
-                heard[1..10]
+                heard[1..11]
                     .iter()
                     .all(|item| matches!(item, Heard::Packet { .. }))
             );
         } else {
-            let offsets: Vec<u64> = heard[1..10]
+            let offsets: Vec<u64> = heard[1..11]
                 .iter()
                 .map(|item| match item {
                     Heard::Frame { offset, .. } => *offset,
@@ -1337,14 +1380,16 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
                 }
             );
             assert_eq!(
-                heard[10],
+                heard[11],
                 Heard::Speech {
                     speaking: false,
                     offset: Some(offsets[8] + 960)
                 }
             );
             assert!(offsets.windows(2).all(|pair| pair[1] == pair[0] + 960));
-            assert!(data(&items).iter().all(|frame| frame.len() == 640));
+            if format != ReceiveFormat::Opus {
+                assert!(data(&items).iter().all(|frame| frame.len() == 640));
+            }
         }
     }
 }
