@@ -254,6 +254,14 @@ class VoiceState(Model, kw_only=True):
     request_to_speak_timestamp: datetime | None
 
 
+class VoiceRegion(Model, kw_only=True):
+    id: str
+    name: str
+    optimal: bool
+    deprecated: bool
+    custom: bool
+
+
 class IntegrationAccount(Model, kw_only=True):
     id: str
     name: str

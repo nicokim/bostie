@@ -36,6 +36,7 @@ from bostie.models import (
     UnknownComponent,
     User,
     VanityURL,
+    VoiceRegion,
     WelcomeScreen,
     decode,
 )
@@ -54,6 +55,7 @@ REST_MODELS: dict[str, type[Model]] = {
     "guild_widget_settings": GuildWidgetSettings,
     "incidents_data": IncidentsData,
     "vanity_url": VanityURL,
+    "voice_region": VoiceRegion,
     "welcome_screen": WelcomeScreen,
 }
 ENUM_KEYS = {
