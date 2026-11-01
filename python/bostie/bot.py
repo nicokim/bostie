@@ -34,12 +34,13 @@ from bostie.context import (
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents, Status
-from bostie.errors import StateError, TransportError
+from bostie.errors import MemberRequestRateLimited, StateError, TransportError
 from bostie.events import (
     EVENTS,
     Event,
     GatewayRateLimited,
     InteractionCreate,
+    MembersChunk,
     RawEvent,
     Ready,
     Resumed,
@@ -47,9 +48,15 @@ from bostie.events import (
     decode_event,
 )
 from bostie.gateway import (
+    MEMBER_REQUEST,
+    MEMBER_REQUEST_TIMEOUT,
     PRESENCE_OPTIONS,
+    REQUEST_GUILD_MEMBERS,
     GatewayClient,
+    MemberRequest,
     PresenceOptions,
+    RequestedMembers,
+    member_request,
     presence_fields,
 )
 from bostie.http import HTTPClient
@@ -97,6 +104,7 @@ DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
+type MemberAnswer = MembersChunk | GatewayRateLimited
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +195,7 @@ class Bot(Router):
         self._tasks: set[asyncio.Task[None]] = set()
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
+        self._member_requests: dict[str, asyncio.Queue[MemberAnswer]] = {}
 
     @property
     @override
@@ -335,6 +344,42 @@ class Bot(Router):
         if self._gateway is not None:
             self._gateway._update_presence(self._presence)
 
+    async def request_members(
+        self, guild_id: int, **options: Unpack[MemberRequest]
+    ) -> RequestedMembers:
+        """Ask the gateway for members of a guild and gather every chunk of the answer.
+
+        Without `query` or `user_ids` it asks for every member. `timeout` bounds the
+        wait for each chunk, 30 s by default, and raises TimeoutError when it ends.
+        """
+        check_keys(options, MEMBER_REQUEST, "member request options")
+        request = member_request(guild_id, options, self._intents)
+        gateway = self.gateway
+        answers: asyncio.Queue[MemberAnswer] = asyncio.Queue()
+        chunks: list[MembersChunk] = []
+        self._member_requests[request["nonce"]] = answers
+        self._refresh_filter()
+        try:
+            gateway.send(REQUEST_GUILD_MEMBERS, request)
+            while not chunks or len(chunks) < chunks[-1].chunk_count:
+                async with asyncio.timeout(
+                    options.get("timeout", MEMBER_REQUEST_TIMEOUT)
+                ):
+                    answer = await answers.get()
+                if isinstance(answer, GatewayRateLimited):
+                    raise MemberRequestRateLimited(answer.retry_after)
+                chunks.append(answer)
+        finally:
+            del self._member_requests[request["nonce"]]
+            self._refresh_filter()
+        return RequestedMembers(
+            members=tuple(member for chunk in chunks for member in chunk.members),
+            presences=tuple(
+                presence for chunk in chunks for presence in chunk.presences
+            ),
+            not_found=tuple(user_id for chunk in chunks for user_id in chunk.not_found),
+        )
+
     async def sync_commands(self) -> list[sync.SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""
         if self.application_id is None:
@@ -481,6 +526,8 @@ class Bot(Router):
         names = {*self.listeners, *self._waiters, GatewayRateLimited.NAME} - LOCAL_NAMES
         if RAW_EVENT_NAME in names:
             return None
+        if self._member_requests:
+            names.add(MembersChunk.NAME)
         if self._caching:
             names |= Cache.NAMES
         if (
@@ -568,6 +615,7 @@ class Bot(Router):
     ) -> None:
         dispatch = _Dispatch(shard_id, seq, name, data)
         self._follow_session(dispatch)
+        self._answer_member_request(dispatch)
         if self._caching and name in Cache.NAMES:
             cached = dispatch.event(EVENTS[name])
             if cached is not None:
@@ -611,14 +659,26 @@ class Bot(Router):
             update = dispatch.event(UserUpdate)
             if update is not None:
                 self.user = update.user
+
+    def _answer_member_request(self, dispatch: _Dispatch) -> None:
+        answer: MemberAnswer | None = None
+        nonce: str | None = None
+        if dispatch.name == MembersChunk.NAME:
+            answer = dispatch.event(MembersChunk)
+            nonce = None if answer is None else answer.nonce
         elif dispatch.name == GatewayRateLimited.NAME:
-            limit = dispatch.event(GatewayRateLimited)
-            if limit is not None:
-                log.warning(
-                    "the gateway rate limited opcode %s; retry after %s s",
-                    limit.opcode,
-                    limit.retry_after,
-                )
+            answer = dispatch.event(GatewayRateLimited)
+            meta = None if answer is None else answer.meta
+            nonce = None if meta is None else meta.nonce
+        answers = None if nonce is None else self._member_requests.get(nonce)
+        if answers is not None and answer is not None:
+            answers.put_nowait(answer)
+        elif isinstance(answer, GatewayRateLimited):
+            log.warning(
+                "the gateway rate limited opcode %s; retry after %s s",
+                answer.opcode,
+                answer.retry_after,
+            )
 
     def _route(self, interaction: Interaction, received: float, shard_id: int) -> None:
         anchor = received

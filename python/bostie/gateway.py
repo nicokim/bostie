@@ -1,26 +1,32 @@
 import asyncio
 import contextlib
 import logging
+import secrets
 import sys
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
 
 from bostie._bridge import Bridge, StatusDelivery
 from bostie.activity import ActivityDict
-from bostie.enums import Status
+from bostie.enums import Intents, Status
 from bostie.errors import (
     BostieError,
     GatewayClosed,
     InvalidToken,
+    MissingIntent,
     PrivilegedIntentsRequired,
     ShardingRequired,
     StateError,
 )
+from bostie.models import Member, Presence
 from bostie.models.base import encoder
 
 CLOSE_TIMEOUT = 2.0
 PRESENCE_UPDATE = 3
+REQUEST_GUILD_MEMBERS = 8
+MEMBER_REQUEST_TIMEOUT = 30.0
 BUG_CLOSE_CODES = frozenset({4001, 4002, 4005, 4008})
 AUTHENTICATION_FAILED = 4004
 CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
@@ -55,6 +61,56 @@ def presence_fields(options: PresenceOptions) -> dict[str, Any]:
     if "afk" in options:
         fields["afk"] = options["afk"]
     return fields
+
+
+class MemberRequest(TypedDict, total=False):
+    """What `bot.request_members()` asks for: `query` and `limit`, or `user_ids`."""
+
+    query: str
+    limit: int
+    user_ids: Iterable[int]
+    presences: bool
+    timeout: float
+
+
+MEMBER_REQUEST = MemberRequest.__optional_keys__
+
+
+@dataclass(frozen=True, slots=True)
+class RequestedMembers:
+    """The answer to `bot.request_members()`; `not_found` holds unknown user ids."""
+
+    members: tuple[Member, ...]
+    presences: tuple[Presence, ...]
+    not_found: tuple[int, ...]
+
+
+def member_request(
+    guild_id: int, options: MemberRequest, intents: Intents
+) -> dict[str, Any]:
+    presences = options.get("presences", False)
+    if presences and not intents & Intents.GUILD_PRESENCES:
+        raise MissingIntent(
+            "presences need Intents.GUILD_PRESENCES; add it to Bot(intents=...)"
+        )
+    request: dict[str, Any] = {
+        "guild_id": str(guild_id),
+        "presences": presences,
+        "nonce": secrets.token_hex(16),
+    }
+    if "user_ids" in options:
+        if "query" in options or "limit" in options:
+            raise ValueError("pass user_ids, or query and limit, not both")
+        request["user_ids"] = [str(user_id) for user_id in options["user_ids"]]
+        return request
+    request["query"] = options.get("query", "")
+    request["limit"] = options.get("limit", 0)
+    if not request["query"] and not intents & Intents.GUILD_MEMBERS:
+        raise MissingIntent(
+            "requesting every member needs Intents.GUILD_MEMBERS; "
+            "add it to Bot(intents=...)"
+        )
+    return request
 
 
 class Shard:

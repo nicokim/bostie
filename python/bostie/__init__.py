@@ -72,6 +72,7 @@ from bostie.errors import (
     InteractionNotAnswered,
     InteractionResponded,
     InvalidToken,
+    MemberRequestRateLimited,
     MissingIntent,
     NotFound,
     OptionConversionError,
@@ -87,6 +88,7 @@ from bostie.errors import (
     UnexpectedResponse,
 )
 from bostie.file import File
+from bostie.gateway import RequestedMembers
 from bostie.models import (
     ActionRow,
     Activity,
@@ -291,6 +293,7 @@ __all__ = [
     "MediaGalleryItem",
     "Member",
     "MemberFlags",
+    "MemberRequestRateLimited",
     "MentionableSelect",
     "Message",
     "MessageFlags",
@@ -329,6 +332,7 @@ __all__ = [
     "RecurrenceRuleNWeekday",
     "RequestBudgetExhausted",
     "RequestGuildMembersRateLimit",
+    "RequestedMembers",
     "Resolved",
     "Role",
     "RoleColors",

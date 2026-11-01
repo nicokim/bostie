@@ -20,6 +20,16 @@ class MissingIntent(BostieError, ValueError):
     """A feature needs an intent the bot did not ask for."""
 
 
+class MemberRequestRateLimited(BostieError):
+    """Discord refused a member request; another may follow after `retry_after` s."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__(
+            f"the member request was rate limited; retry after {retry_after} s"
+        )
+        self.retry_after = retry_after
+
+
 class StartupError(BostieError, OSError):
     """bostie could not set up a system resource it needs."""
 

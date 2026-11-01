@@ -26,7 +26,9 @@ from bostie import (
     Intents,
     InvalidToken,
     Member,
+    MemberRequestRateLimited,
     Message,
+    MissingIntent,
     ModalContext,
     ModalSubmitInteraction,
     NotFound,
@@ -49,6 +51,7 @@ from bostie.events import (
     GuildCreate,
     InteractionCreate,
     MemberJoin,
+    MembersChunk,
     MessageCreate,
     MessageDelete,
     RawEvent,
@@ -1113,6 +1116,103 @@ def test_gateway_rate_limits_and_latency_reach_the_bot(
     run(scenario, heartbeat_interval=50)
 
     assert levels(caplog, "bostie.bot") == [logging.WARNING]
+
+
+def test_request_members_gathers_every_chunk_with_its_nonce() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(
+            api_url=fake.api_url, intents=Intents.DEFAULT | Intents.GUILD_PRESENCES
+        )
+        heard: list[int] = []
+
+        @bot.listen
+        async def on_chunk(event: MembersChunk) -> None:
+            heard.append(event.chunk_index)
+
+        async with running(bot, fake):
+            requested = asyncio.ensure_future(
+                bot.request_members(1, user_ids=[2, 3], presences=True)
+            )
+            request = await sent_op(fake, 8)
+            chunk = payloads.fixture("events/GUILD_MEMBERS_CHUNK") | {"chunk_count": 2}
+            for index, nonce in [
+                (0, "other"),
+                (0, request["nonce"]),
+                (1, request["nonce"]),
+            ]:
+                await fake.dispatch(
+                    "GUILD_MEMBERS_CHUNK",
+                    chunk | {"chunk_index": index, "nonce": nonce},
+                )
+            members = await requested
+
+        assert request == {
+            "guild_id": "1",
+            "presences": True,
+            "nonce": request["nonce"],
+            "user_ids": ["2", "3"],
+        }
+        assert (len(members.members), len(members.presences)) == (4, 4)
+        assert members.not_found == (1_562_134_550_937_731_073,) * 2
+        assert heard == [0, 0, 1]
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        ({}, MissingIntent, "GUILD_MEMBERS"),
+        ({"query": "ad", "limit": 5, "presences": True}, MissingIntent, "PRESENCES"),
+        ({"user_ids": [2], "limit": 5}, ValueError, "not both"),
+    ],
+)
+def test_request_members_checks_intents_and_options_before_sending(
+    options: dict[str, Any], error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
+        asyncio.run(Bot().request_members(1, **options))
+
+
+def test_a_rate_limited_member_request_raises_with_its_retry_after(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, intents=Intents.DEFAULT | Intents.GUILD_MEMBERS)
+        async with running(bot, fake):
+            requested = asyncio.ensure_future(bot.request_members(1))
+            request = await sent_op(fake, 8)
+            limit = payloads.fixture("events/RATE_LIMITED")
+            limit["meta"]["nonce"] = request["nonce"]
+            await fake.dispatch("RATE_LIMITED", limit)
+            with pytest.raises(MemberRequestRateLimited) as raised:
+                await requested
+
+        assert raised.value.retry_after == limit["retry_after"]
+        assert (request["query"], request["limit"]) == ("", 0)
+
+    run(scenario)
+
+    assert levels(caplog, "bostie.bot") == []
+
+
+def test_a_member_request_whose_chunks_stop_raises_timeout_error() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            requested = asyncio.ensure_future(
+                bot.request_members(1, query="ad", limit=5, timeout=0.1)
+            )
+            request = await sent_op(fake, 8)
+            chunk = payloads.fixture("events/GUILD_MEMBERS_CHUNK")
+            await fake.dispatch(
+                "GUILD_MEMBERS_CHUNK",
+                chunk | {"chunk_count": 2, "nonce": request["nonce"]},
+            )
+            with pytest.raises(TimeoutError):
+                await requested
+
+    run(scenario)
 
 
 def test_close_sends_1000_and_cancels_running_listeners(
