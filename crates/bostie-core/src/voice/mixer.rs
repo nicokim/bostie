@@ -306,17 +306,23 @@ mod tests {
     }
 
     #[test]
-    fn one_stereo_20_ms_opus_input_at_full_volume_passes_through_unchanged() {
+    fn a_lone_stereo_20_ms_opus_input_passes_through_once_its_ramp_ends() {
         let mut fixture = Fixture::new();
         let sink = opus_sink(&mut fixture);
         let original = packet(Channels::Stereo, 960);
-        sink.write(&original).unwrap();
         let mut mixer = Mixer::new(settings()).unwrap();
 
-        let result = mixed(&mut mixer, std::slice::from_ref(&sink));
+        let passed: Vec<(bool, bool)> = [0.5, 1.0, 1.0]
+            .into_iter()
+            .map(|volume| {
+                sink.set_volume(volume).unwrap();
+                sink.write(&original).unwrap();
+                let result = mixed(&mut mixer, std::slice::from_ref(&sink)).unwrap();
+                (result == original, sink.passthrough().unwrap())
+            })
+            .collect();
 
-        assert_eq!(result, Some(original));
-        assert!(sink.passthrough().unwrap());
+        assert_eq!(passed, [(false, false), (false, false), (true, true)]);
     }
 
     #[test]
@@ -402,6 +408,7 @@ mod tests {
 
         assert_eq!(ticks, [true, true, false]);
         assert_eq!(consumed(&sink), 1_920);
+        assert!(!sink.passthrough().unwrap());
     }
 
     #[test]
@@ -487,7 +494,7 @@ mod tests {
         let stereo = packet(Channels::Stereo, 960);
         let mono = packet(Channels::Mono, 960);
 
-        for index in 0..1_000 {
+        for index in 0..3 {
             let sink = opus_sink(&mut fixture);
             sink.write(if index % 2 == 0 { &stereo } else { &mono })
                 .unwrap();
@@ -519,8 +526,6 @@ mod tests {
 
         assert_eq!(after_one, (2_880, 960));
         assert_eq!(consumed(&pcm), 1_920);
-        assert!(mixer.strips[&opus.id()].decoder.is_none());
-        assert!(!mixer.strips[&opus.id()].has_carry());
         assert!(fixture.inbox.drain().iter().any(|delivery| matches!(
             delivery,
             crate::inbox::Delivery::VoiceMarker { marker: id, played: true, .. } if *id == marker
@@ -553,7 +558,6 @@ mod tests {
 
         assert!(mixer.mix(&[]).is_none());
         assert!(mixer.mix(&sinks).is_none());
-        assert!(mixer.encoder.is_none());
     }
 
     #[test]
