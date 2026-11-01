@@ -715,7 +715,7 @@ def test_a_format_change_drains_the_sink_and_opens_a_new_one() -> None:
     run(scenario)
 
 
-def test_a_track_that_fails_to_open_ends_with_an_error_and_the_queue_goes_on() -> None:
+def test_a_track_that_fails_to_open_ends_in_error_and_the_queue_goes_on() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
         q = queue(vc)
@@ -1283,7 +1283,7 @@ def test_a_recorder_writes_ogg_opus_pages_into_its_path_template(
     ],
     ids=["aligned", "speech-only"],
 )
-def test_a_recorder_fills_the_start_and_every_gap_with_silence_only_when_aligned(
+def test_a_recorder_pads_the_start_and_gaps_with_silence_only_when_aligned(
     tmp_path: Path, align: bool, expected: tuple[list[bytes], list[int]]
 ) -> None:
     async def scenario(clock: Clock) -> None:

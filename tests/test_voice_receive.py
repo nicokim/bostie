@@ -222,7 +222,7 @@ def test_iteration_ends_after_the_queued_items_with_the_reason(
     run(scenario)
 
 
-def test_leaving_the_block_closes_and_ends_a_waiting_iteration_without_a_read() -> None:
+def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         native: FakeReceiver | None = None
@@ -319,7 +319,7 @@ def test_queued_counts_from_queueing_and_clear_and_close_drop_the_items() -> Non
         (["receive", "close", "server_deafen"], []),
     ],
 )
-def test_a_moderator_deafen_warns_once_per_receive_or_deafening_a_self_deafen_never(
+def test_a_moderator_deafen_warns_once_per_receive_and_a_self_deafen_never(
     caplog: pytest.LogCaptureFixture, steps: list[str], warnings: list[str]
 ) -> None:
     async def scenario(bot: FakeBot) -> None:
@@ -342,7 +342,7 @@ def test_a_moderator_deafen_warns_once_per_receive_or_deafening_a_self_deafen_ne
     assert [record.getMessage() for record in caplog.records] == warnings
 
 
-def test_speech_updates_speaking_before_its_event_and_a_disconnect_stops_it(
+def test_speech_updates_speaking_before_its_event_and_disconnect_stops_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario(bot: FakeBot) -> None:

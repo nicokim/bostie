@@ -141,7 +141,7 @@ def test_any_c_contiguous_buffer_is_accepted_without_tobytes() -> None:
     run(scenario)
 
 
-def test_write_nowait_raises_buffer_full_and_otherwise_writes_the_whole_chunk() -> None:
+def test_write_nowait_writes_the_whole_chunk_or_raises_buffer_full() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, native = await open_sink(bot, buffer=0.2)
         sink.write_nowait(bytes(SECOND))
@@ -183,7 +183,7 @@ def test_a_native_runtime_error_is_left_as_it_is() -> None:
     run(scenario)
 
 
-def test_the_end_of_the_connection_closes_its_sinks_and_frees_their_waiters() -> None:
+def test_ending_the_connection_closes_its_sinks_and_frees_their_waiters() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, _ = await open_sink(bot, buffer=0.2)
         await sink.write(bytes(int(SECOND * 0.2)))
@@ -229,9 +229,7 @@ def test_drain_flushes_and_returns_whether_everything_played() -> None:
     run(scenario)
 
 
-def test_markers_report_their_position_in_seconds_and_survive_a_cancelled_wait() -> (
-    None
-):
+def test_markers_report_seconds_and_survive_a_cancelled_wait() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, native = await open_sink(bot, buffer=1.0)
         await sink.write(bytes(SECOND // 4))

@@ -145,7 +145,7 @@ def test_a_rate_limit_longer_than_bostie_waits_raises_rate_limited(
         ),
     ],
 )
-def test_a_rejected_interaction_or_webhook_token_keeps_discords_status_and_code(
+def test_a_rejected_interaction_or_webhook_token_keeps_the_status_and_code(
     route: str, params: dict[str, Any]
 ) -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:

@@ -134,7 +134,7 @@ async def opus_packets(bot: Bot, path: Path) -> list[bytes]:
         await source.aclose()
 
 
-def test_connect_joins_with_the_bot_defaults_and_closing_the_bot_leaves_first() -> None:
+def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake, voice=voice.Defaults(self_deaf=True)) as bot:
             vc = await bot.voice.connect(VOICE_ID)

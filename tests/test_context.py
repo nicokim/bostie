@@ -673,7 +673,7 @@ def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
     run_bot(scenario)
 
 
-def test_answers_send_their_files_and_edits_keep_only_the_listed_attachments() -> None:
+def test_answers_send_files_and_edits_keep_only_the_listed_attachments() -> None:
     files = [File("new.png", b"png")]
     kept = 1564609863064092673
 

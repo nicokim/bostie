@@ -156,7 +156,7 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
     return bot
 
 
-def test_autosync_puts_only_changed_commands_and_an_explicit_sync_always_puts() -> None:
+def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         route = f"/applications/{fake.application_id}/commands"
         presence: dict[str, Any] = {
@@ -344,7 +344,7 @@ def test_a_handler_that_starts_late_logs_a_warning(
     assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
 
-def test_only_slash_interactions_run_a_command_and_unanswered_ones_are_logged(
+def test_only_slash_interactions_run_commands_and_unanswered_are_logged(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
@@ -499,7 +499,7 @@ def test_listeners_see_the_cache_already_updated() -> None:
     run(scenario)
 
 
-def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache_setting(
+def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     filters: list[list[str] | None] = []

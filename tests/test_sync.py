@@ -143,7 +143,7 @@ def test_explicit_sync_puts_ours_then_other_types_verbatim() -> None:
     run(scenario)
 
 
-def test_pass_through_commands_drop_deprecated_keys_and_keep_their_settings() -> None:
+def test_pass_through_commands_drop_deprecated_keys_and_keep_settings() -> None:
     deprecated: dict[str, dict[str, Any]] = {
         "User Info": {
             "dm_permission": False,

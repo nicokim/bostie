@@ -171,7 +171,7 @@ def handle_deliveries(core: _native.Core, handle: int) -> "list[_native.Delivery
     ]
 
 
-def test_a_sink_queues_until_its_buffer_is_full_and_clearing_resolves_its_marker(
+def test_a_sink_queues_up_to_its_buffer_and_a_clear_resolves_its_marker(
     connected: _native.Core,
 ) -> None:
     sink = pcm_sink(connected)
@@ -257,7 +257,7 @@ def test_a_connection_reports_latency_and_dave(connected: _native.Core) -> None:
     assert connected.voice_dave(GUILD) == (0, None, None)
 
 
-def test_a_receiver_on_a_connection_that_is_not_ready_waits_until_it_is_closed(
+def test_a_receiver_on_a_connection_not_yet_ready_waits_until_closed(
     connected: _native.Core,
 ) -> None:
     rx = receiver(connected)

@@ -441,9 +441,7 @@ def test_build_message_keeps_listed_attachments_before_new_files() -> None:
     assert "attachments" not in build_message("text only")[0]
 
 
-def test_v2_components_set_their_flag_clear_old_content_and_refuse_new_content() -> (
-    None
-):
+def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:
     received = UnknownComponent(type=17, raw=msgspec.Raw(b'{"type":17}'))
     legacy_row = ui.row(ui.button("Go", custom_id="go"))
 
