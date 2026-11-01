@@ -911,7 +911,7 @@ impl State {
         self.hear(&item, samples);
         item.fresh = false;
         if self.waiting.len() >= self.tuning.arrivals && self.waiting.pop_front().is_some() {
-            bump(&self.media.receive.undecryptable);
+            bump(&self.media.receive.arrivals_dropped);
         }
         self.waiting.push_back(item);
     }
@@ -2677,7 +2677,7 @@ mod tests {
 
     #[test]
     fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
-        let packets = opus(3, 0.3);
+        let packets = opus(4, 0.3);
         let per_user = ReceiveTuning {
             hold_packets: 2,
             ..tuning()
@@ -2692,21 +2692,33 @@ mod tests {
                 per_user,
                 vec![vec![(BOB, 0), (ALICE, 0), (ALICE, 1), (ALICE, 2)]],
                 vec![(BOB, 0), (ALICE, 1), (ALICE, 2)],
+                "undecryptable",
             ),
             (
                 "in total",
                 in_total,
                 vec![vec![(BOB, 0), (ALICE, 0), (ALICE, 1)], vec![(ALICE, 2)]],
                 vec![(ALICE, 0), (ALICE, 1), (ALICE, 2)],
+                "undecryptable",
+            ),
+            (
+                "waiting behind a busy lock",
+                in_total,
+                (0..4).map(|sequence| vec![(ALICE, sequence)]).collect(),
+                vec![(ALICE, 1), (ALICE, 2), (ALICE, 3)],
+                "arrivals_dropped",
             ),
         ];
-        for (bound, tuning, ticks, kept) in rows {
+        let counters = ["undecryptable", "arrivals_dropped"];
+        for (bound, tuning, ticks, kept, counted_in) in rows {
             let mut rig = Rig::new(tuning);
             let mut call = rig.group(&[ALICE]);
             rig.map(ALICE_SSRC, ALICE);
             rig.map(BOB_SSRC, BOB);
             let receiver = rig.open(options(ReceiveFormat::Opus));
             join_behind_the_bot(&mut call, BOB);
+            let media = Arc::clone(&rig.media);
+            let busy = (counted_in == "arrivals_dropped").then(|| media.dave.lock());
             for tick in ticks {
                 for (speaker, sequence) in tick {
                     let ssrc = if speaker == ALICE {
@@ -2719,7 +2731,8 @@ mod tests {
                 }
                 rig.step();
             }
-            let dropped = rig.counter("undecryptable");
+            drop(busy);
+            let dropped = counters.map(|name| rig.counter(name));
             rig.deliver(&mut call);
             rig.step();
 
@@ -2735,7 +2748,8 @@ mod tests {
                 .collect();
             expected.sort();
             assert_eq!(heard, expected, "{bound}");
-            assert_eq!(dropped, 1, "{bound}");
+            let counted = counters.map(|name| u64::from(name == counted_in));
+            assert_eq!(dropped, counted, "{bound}");
         }
     }
 
