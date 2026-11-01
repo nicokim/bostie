@@ -26,6 +26,7 @@ use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
 use crate::voice::testkit::mls::{Call, Signal};
+use crate::voice::testkit::pacer::ManualPacer;
 use crate::voice::testkit::sfu::{Packet, Sealing, Sfu};
 use crate::voice::types::{
     Application, DaveOp, Direction, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp,
@@ -375,6 +376,7 @@ type State = (VoiceStatus, Option<DisconnectReason>, Option<u16>, String);
 
 struct Harness {
     voice: Voice,
+    pacer: Arc<ManualPacer>,
     inbox: Arc<Inbox>,
     _bell: BellReceiver,
     tap: Arc<GatewayTap>,
@@ -391,17 +393,23 @@ impl Harness {
     }
 
     async fn with(change: impl FnOnce(&mut Config)) -> Self {
-        Self::build(change, PacerPool::manual(), tuning()).await
+        Self::build(change, None, tuning()).await
     }
 
     async fn tuned(change: impl FnOnce(&mut ConnectionTuning)) -> Self {
         let mut tuning = tuning();
         change(&mut tuning.connection);
-        Self::build(|_| {}, PacerPool::manual(), tuning).await
+        Self::build(|_| {}, None, tuning).await
     }
 
-    async fn build(change: impl FnOnce(&mut Config), pacer: PacerPool, tuning: Tuning) -> Self {
+    async fn build(
+        change: impl FnOnce(&mut Config),
+        pace: Option<Arc<dyn Pace>>,
+        tuning: Tuning,
+    ) -> Self {
         crate::init_test_tracing();
+        let pacer = Arc::new(ManualPacer::new());
+        let pace = pace.unwrap_or_else(|| Arc::clone(&pacer) as Arc<dyn Pace>);
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::new(bell));
         let tap = Arc::new(GatewayTap::new());
@@ -415,12 +423,13 @@ impl Harness {
             Arc::clone(&inbox),
             Arc::clone(&tap),
             send,
-            pacer,
+            pace,
             tuning,
         )
         .unwrap();
         Self {
             voice,
+            pacer,
             inbox,
             _bell: receiver,
             tap,
@@ -605,7 +614,7 @@ impl Harness {
     }
 
     fn tick(&self, n: u32) {
-        self.voice.shared.pacer.tick(n);
+        self.pacer.tick(n);
     }
 
     fn media(&self) -> Arc<Media> {
@@ -1630,7 +1639,7 @@ async fn closing_the_core_ends_without_a_leave_and_drops_the_lane() {
     assert_eq!(reason, DisconnectReason::Closed);
     assert_eq!(harness.leaves(), 0);
     assert!(sink.is_closed());
-    assert_eq!(harness.voice.shared.pacer.lanes(), 0);
+    assert_eq!(harness.pacer.lanes(), 0);
     assert!(matches!(
         harness.voice.connect(&harness.request()),
         Err(CoreError::Closed)
@@ -2524,8 +2533,8 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
     harness
         .pump(&mut call, |_, _| on_parked.try_recv().is_ok())
         .await;
-    let shared = Arc::clone(&harness.voice.shared);
-    let ticking = tokio::task::spawn_blocking(move || shared.pacer.tick(5));
+    let pacer = Arc::clone(&harness.pacer);
+    let ticking = tokio::task::spawn_blocking(move || pacer.tick(5));
     timeout(WAIT, ticking)
         .await
         .expect("the ticks waited for the DAVE call")
@@ -2543,7 +2552,7 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn real_pacer_threads_send_on_a_20_ms_clock() {
-    let mut harness = Harness::build(|_| {}, PacerPool::new(), tuning()).await;
+    let mut harness = Harness::build(|_| {}, Some(Arc::new(PacerPool::new())), tuning()).await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
     let written = std::time::Instant::now();
@@ -2950,12 +2959,7 @@ async fn a_peer_that_never_decrypts_triggers_a_recovery_and_a_receive_stall() {
         dave_grace: Duration::ZERO,
         ..ReceiveTuning::default()
     };
-    let mut harness = Harness::build(
-        |config| config.dave_protocol_version = 1,
-        PacerPool::manual(),
-        tuning,
-    )
-    .await;
+    let mut harness = Harness::build(|config| config.dave_protocol_version = 1, None, tuning).await;
     let _call = harness.talking_with(&[LATE_PEER]).await;
     harness.speaking(LATE_PEER, 55).await;
     let _receiver = harness.receiver(receiving(ReceiveFormat::Opus));

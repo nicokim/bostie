@@ -44,7 +44,7 @@ pub use self::codec::FrameEncoder;
 use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
-use self::pacer::PacerPool;
+use self::pacer::{Pace, PacerPool};
 use self::receive::Reception;
 pub use self::receiver::{Ended, Item, ReceiveRead, Receiver};
 pub use self::sink::Sink;
@@ -93,7 +93,7 @@ struct Shared {
     tap: Arc<GatewayTap>,
     send: GatewaySend,
     connector: Connector,
-    pacer: PacerPool,
+    pacer: Arc<dyn Pace>,
     http: Http,
     tuning: Tuning,
     next_handle: AtomicU64,
@@ -122,7 +122,7 @@ impl Voice {
             inbox,
             tap,
             send,
-            PacerPool::new(),
+            Arc::new(PacerPool::new()),
             Tuning::default(),
         )
     }
@@ -132,7 +132,7 @@ impl Voice {
         inbox: Arc<Inbox>,
         tap: Arc<GatewayTap>,
         send: GatewaySend,
-        pacer: PacerPool,
+        pacer: Arc<dyn Pace>,
         tuning: Tuning,
     ) -> Result<Self, CoreError> {
         Ok(Self {

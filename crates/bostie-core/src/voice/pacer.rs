@@ -28,6 +28,10 @@ pub struct Tick {
 pub type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;
 pub type AfterFn = Box<dyn FnMut(Tick, Instant) -> bool + Send>;
 
+pub trait Pace: Send + Sync {
+    fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<(), CoreError>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PacerTuning {
     pub(crate) rebalance_above: Duration,
@@ -47,11 +51,6 @@ impl Default for PacerTuning {
 pub struct Seat(Arc<AtomicUsize>);
 
 impl Seat {
-    #[cfg(test)]
-    pub fn thread(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
-    }
-
     fn take(&self, thread: usize) {
         self.0.store(thread, Ordering::Relaxed);
     }
@@ -62,14 +61,8 @@ impl Seat {
 }
 
 pub struct PacerPool {
-    mode: Mode,
+    workers: Arc<Mutex<Vec<Worker>>>,
     placement: Placement,
-}
-
-enum Mode {
-    Threads(Arc<Mutex<Vec<Worker>>>),
-    #[cfg(test)]
-    Manual(Box<Mutex<Manual>>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,14 +107,6 @@ struct Load {
     after_ewma: AtomicU64,
 }
 
-#[cfg(test)]
-struct Manual {
-    lanes: Vec<(Seat, LaneFn)>,
-    afters: Vec<After>,
-    now: Instant,
-    load: Load,
-}
-
 impl PacerPool {
     pub fn new() -> Self {
         Self::tuned(PacerTuning::default())
@@ -129,7 +114,7 @@ impl PacerPool {
 
     fn tuned(tuning: PacerTuning) -> Self {
         Self {
-            mode: Mode::Threads(Arc::new(Mutex::new(Vec::new()))),
+            workers: Arc::new(Mutex::new(Vec::new())),
             placement: Placement {
                 epoch: Instant::now(),
                 tuning,
@@ -137,100 +122,25 @@ impl PacerPool {
         }
     }
 
-    #[cfg(test)]
-    pub fn manual() -> Self {
-        Self {
-            mode: Mode::Manual(Box::new(Mutex::new(Manual {
-                lanes: Vec::new(),
-                afters: Vec::new(),
-                now: Instant::now(),
-                load: Load::default(),
-            }))),
-            placement: Placement {
-                epoch: Instant::now(),
-                tuning: PacerTuning::default(),
-            },
-        }
-    }
-
-    #[cfg(test)]
-    pub fn tick(&self, n: u32) {
-        for _ in 0..n {
-            self.tick_skipping(0);
-        }
-    }
-
-    #[cfg(test)]
-    pub fn tick_skipping(&self, skipped: u32) {
-        let Mode::Manual(manual) = &self.mode else {
-            return;
-        };
-        let mut manual = manual.lock();
-        let Manual {
-            lanes,
-            afters,
-            now,
-            load,
-        } = &mut *manual;
-        *now += FRAME.saturating_mul(skipped.saturating_add(1));
-        let tick = Tick { now: *now, skipped };
-        run_lanes(lanes, tick);
-        let start = Instant::now();
-        run_afters(afters, tick, start + FRAME, &Wall, start);
-        load.lanes.store(lanes.len(), Ordering::Relaxed);
-    }
-
-    #[cfg(test)]
-    pub fn assign(&self, lane: LaneFn) -> Result<usize, CoreError> {
-        self.place(Assignment::new(lane, None))
-            .map(|seat| seat.thread())
-    }
-
-    pub fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<Seat, CoreError> {
-        self.place(Assignment::new(lane, Some(after)))
-    }
-
     fn place(&self, assignment: Assignment) -> Result<Seat, CoreError> {
         let seat = assignment.seat.clone();
-        match &self.mode {
-            Mode::Threads(pool) => {
-                let mut workers = pool.lock();
-                let index = self.placement.place(&workers);
-                deliver(pool, &mut workers, index, assignment, self.placement)
-                    .map_err(|(error, _)| error)?;
-            }
-            #[cfg(test)]
-            Mode::Manual(manual) => {
-                let mut manual = manual.lock();
-                let Manual {
-                    lanes,
-                    afters,
-                    load,
-                    ..
-                } = &mut *manual;
-                assignment.join(lanes, afters);
-                load.lanes.fetch_add(1, Ordering::Relaxed);
-            }
-        }
+        let mut workers = self.workers.lock();
+        let index = self.placement.place(&workers);
+        deliver(
+            &self.workers,
+            &mut workers,
+            index,
+            assignment,
+            self.placement,
+        )
+        .map_err(|(error, _)| error)?;
         Ok(seat)
     }
+}
 
-    #[cfg(test)]
-    pub fn lanes(&self) -> usize {
-        self.threads().iter().sum()
-    }
-
-    #[cfg(test)]
-    pub fn threads(&self) -> Vec<usize> {
-        match &self.mode {
-            Mode::Threads(workers) => workers
-                .lock()
-                .iter()
-                .map(|worker| worker.load.lanes())
-                .collect(),
-            #[cfg(test)]
-            Mode::Manual(manual) => vec![manual.lock().load.lanes()],
-        }
+impl Pace for PacerPool {
+    fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<(), CoreError> {
+        self.place(Assignment::new(lane, Some(after))).map(drop)
     }
 }
 
@@ -686,6 +596,26 @@ mod tests {
         (lane, receiver)
     }
 
+    fn assign(pool: &PacerPool, lane: LaneFn) -> usize {
+        thread(&pool.place(Assignment::new(lane, None)).unwrap())
+    }
+
+    fn thread(seat: &Seat) -> usize {
+        seat.0.load(Ordering::Relaxed)
+    }
+
+    fn threads(pool: &PacerPool) -> Vec<usize> {
+        pool.workers
+            .lock()
+            .iter()
+            .map(|worker| worker.load.lanes())
+            .collect()
+    }
+
+    fn lanes(pool: &PacerPool) -> usize {
+        threads(pool).iter().sum()
+    }
+
     fn take(receiver: &Receiver<(Tick, Instant)>, count: usize) -> Vec<(Tick, Instant)> {
         (0..count)
             .map(|_| receiver.recv_timeout(PATIENCE).unwrap())
@@ -756,27 +686,27 @@ mod tests {
         let pool = PacerPool::new();
         let mut receivers = Vec::new();
 
-        let threads: Vec<usize> = (0..=LANES_PER_THREAD)
+        let placed: Vec<usize> = (0..=LANES_PER_THREAD)
             .map(|_| {
                 let (lane, receiver) = recorder();
-                let thread = pool.assign(lane).unwrap();
+                let thread = assign(&pool, lane);
                 take(&receiver, 1);
                 receivers.push(receiver);
                 thread
             })
             .collect();
 
-        assert_eq!(threads, [vec![0; LANES_PER_THREAD], vec![1]].concat());
-        assert_eq!(pool.threads().len(), 2);
-        assert_eq!(pool.lanes(), LANES_PER_THREAD + 1);
+        assert_eq!(placed, [vec![0; LANES_PER_THREAD], vec![1]].concat());
+        assert_eq!(threads(&pool).len(), 2);
+        assert_eq!(lanes(&pool), LANES_PER_THREAD + 1);
     }
 
     #[test]
     fn a_lane_that_returns_false_leaves() {
         let pool = PacerPool::new();
-        pool.assign(Box::new(|_| false)).unwrap();
+        assign(&pool, Box::new(|_| false));
 
-        wait_until(|| pool.lanes() == 0);
+        wait_until(|| lanes(&pool) == 0);
     }
 
     #[test]
@@ -798,13 +728,13 @@ mod tests {
             assert!(calls < 2, "lane failure");
             true
         });
-        assert_eq!(pool.assign(neighbour).unwrap(), 0);
-        assert_eq!(pool.assign(panicking).unwrap(), 0);
+        assert_eq!(assign(&pool, neighbour), 0);
+        assert_eq!(assign(&pool, panicking), 0);
 
         wait_until(|| dropped.load(Ordering::Relaxed));
         take(&ticks, 5);
 
-        assert_eq!(pool.lanes(), 1);
+        assert_eq!(lanes(&pool), 1);
     }
 
     #[test]
@@ -898,13 +828,11 @@ mod tests {
     fn dropping_the_pool_ends_its_idle_threads() {
         let pool = PacerPool::new();
         for _ in 0..=LANES_PER_THREAD {
-            pool.assign(Box::new(|_| false)).unwrap();
+            assign(&pool, Box::new(|_| false));
         }
-        wait_until(|| pool.lanes() == 0);
-        let Mode::Threads(workers) = &pool.mode else {
-            unreachable!()
-        };
-        let loads: Vec<_> = workers
+        wait_until(|| lanes(&pool) == 0);
+        let loads: Vec<_> = pool
+            .workers
             .lock()
             .iter()
             .map(|worker| Arc::downgrade(&worker.load))
@@ -919,40 +847,11 @@ mod tests {
     fn a_thread_with_lanes_outlives_the_pool_until_its_lanes_leave() {
         let pool = PacerPool::new();
         let (lane, ticks) = recorder();
-        pool.assign(lane).unwrap();
+        assign(&pool, lane);
 
         drop(pool);
         take(&ticks, 3);
         drop(ticks);
-    }
-
-    #[test]
-    fn the_manual_pool_calls_each_lane_once_per_tick_on_a_synthetic_clock() {
-        let pool = PacerPool::manual();
-        let (first, first_ticks) = recorder();
-        let (second, second_ticks) = recorder();
-        let mut calls = 0;
-        let leaving: LaneFn = Box::new(move |_| {
-            calls += 1;
-            calls < 2
-        });
-        let panicking: LaneFn = Box::new(|_| panic!("lane failure"));
-        for lane in [first, second, leaving, panicking] {
-            assert_eq!(pool.assign(lane).unwrap(), 0);
-        }
-
-        pool.tick(5);
-        pool.tick_skipping(3);
-
-        let first: Vec<Tick> = first_ticks.try_iter().map(|(tick, _)| tick).collect();
-        assert_eq!(first.len(), 6);
-        assert_eq!(second_ticks.try_iter().count(), 6);
-        for pair in first[..5].windows(2) {
-            assert_eq!(pair[1].now - pair[0].now, FRAME);
-        }
-        assert_eq!(first[5].now - first[4].now, FRAME * 4);
-        assert_eq!(first[5].skipped, 3);
-        assert_eq!(pool.lanes(), 2);
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -1141,12 +1040,12 @@ mod tests {
                     thread::sleep(receive_work);
                     after_calls.send((connection, None, thread_name())).is_ok()
                 });
-                pool.assign_pair(lane, after).unwrap()
+                pool.place(Assignment::new(lane, Some(after))).unwrap()
             })
             .collect();
 
-        wait_until(|| seats[0].thread() != seats[1].thread());
-        let moved = usize::from(seats[1].thread() == 1);
+        wait_until(|| thread(&seats[0]) != thread(&seats[1]));
+        let moved = usize::from(thread(&seats[1]) == 1);
         let mut moved_calls: Vec<(Option<u32>, String)> = Vec::new();
         while moved_calls
             .iter()
@@ -1169,14 +1068,14 @@ mod tests {
         );
         let sent: Vec<u32> = moved_calls.iter().filter_map(|(sent, _)| *sent).collect();
         assert!(sent.iter().copied().eq(1..=sent.len() as u32), "{sent:?}");
-        assert_eq!(pool.threads(), [1, 1]);
+        assert_eq!(threads(&pool), [1, 1]);
     }
 
     #[test]
     fn the_clock_ticks_100_times_in_2_seconds_with_a_small_p99_lateness() {
         let pool = PacerPool::new();
         let (lane, ticks) = recorder();
-        pool.assign(lane).unwrap();
+        assign(&pool, lane);
         let (_, start) = ticks.recv_timeout(PATIENCE).unwrap();
         let end = start + Duration::from_secs(2);
 
