@@ -29,6 +29,7 @@ FRIEND_ID = 1_100_000_000_000_000_001
 SILENCE = b"\xf8\xff\xfe"
 SILENT_TAIL = [SILENCE] * 5
 FRAMES_PER_SECOND = 50
+LOST_FROM, LOST_UNTIL = 20, 22
 SAMPLES_PER_FRAME = 960
 TWENTY_MS_CONFIGS = frozenset({3, 7, 11, 13, 15, 19, 23, 27, 31})
 MAX_OPUS_FRAME = 1275
@@ -190,6 +191,22 @@ def test_a_second_of_pcm_plays_as_fifty_opus_packets_and_five_silent_ones() -> N
     run(scenario)
 
 
+def test_an_opus_sinks_stats_reach_python_field_by_field() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            packets = voice.OpusEncoder().encode(tone(0.2))
+            async with vc.sink(voice.Opus(), buffer=1.0) as out:
+                for packet in packets:
+                    out.write_nowait(packet)
+                await played(fake)
+                stats = out.stats()
+
+            assert stats == voice.SinkStats(0.2, 0.2, 1, 0, 0.0, len(packets))
+
+    run(scenario)
+
+
 def test_receive_a_spoken_second_from_the_fake() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
@@ -197,18 +214,26 @@ def test_receive_a_spoken_second_from_the_fake() -> None:
             encoder = voice.OpusEncoder()
             spoken = encoder.encode(tone(1.0)) + encoder.flush()
 
-            async def listen() -> list[Heard]:
+            async def listen() -> tuple[list[Heard], voice.ReceiverStats]:
                 heard: list[Heard] = []
                 async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
                     await fake.speaking(FRIEND_ID, 4321, 1)
-                    await fake.send_audio(FRIEND_ID, 4321, spoken)
+                    await fake.send_audio(FRIEND_ID, 4321, spoken[:LOST_FROM])
+                    await fake.send_audio(
+                        FRIEND_ID,
+                        4321,
+                        spoken[LOST_UNTIL:],
+                        sequence=LOST_UNTIL,
+                        timestamp=LOST_UNTIL * SAMPLES_PER_FRAME,
+                    )
                     async for item in rx:
                         heard.append(item)
                         if isinstance(item, voice.SpeechStop):
-                            return heard
-                return heard
+                            break
+                    assert await rx.mark()
+                    return heard, rx.stats()
 
-            start, stop, heard = await asyncio.gather(
+            start, stop, (heard, stats) = await asyncio.gather(
                 bot.wait_for(voice.SpeechStart),
                 bot.wait_for(voice.SpeechStop),
                 listen(),
@@ -221,10 +246,14 @@ def test_receive_a_spoken_second_from_the_fake() -> None:
                 voice.SpeechStop,
             ]
             assert all(
-                (frame.user_id, frame.ssrc, len(frame.data), frame.lost)
-                == (FRIEND_ID, 4321, 640, False)
+                (frame.user_id, frame.ssrc, len(frame.data)) == (FRIEND_ID, 4321, 640)
                 for frame in frames
             )
+            lost = LOST_UNTIL - LOST_FROM
+            assert [index for index, frame in enumerate(frames) if frame.lost] == list(
+                range(LOST_FROM, LOST_UNTIL)
+            )
+            assert stats == voice.ReceiverStats(FRAMES_PER_SECOND, 0, lost)
             assert all(
                 after.offset - before.offset == SAMPLES_PER_FRAME
                 for before, after in itertools.pairwise(frames)
