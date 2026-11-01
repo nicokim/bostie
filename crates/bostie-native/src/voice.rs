@@ -31,7 +31,7 @@ impl NativeSink {
 
     fn write(&self, py: Python<'_>, data: PyBuffer<u8>) -> Result<bool> {
         let data = data.to_vec(py)?;
-        Ok(self.0.write(&data)?)
+        Ok(py.detach(|| self.0.write(&data))?)
     }
 
     fn mark(&self) -> Result<(u64, u64)> {
@@ -192,7 +192,7 @@ impl NativeOpusEncoder {
 
     fn encode<'py>(&self, py: Python<'py>, data: PyBuffer<u8>) -> Result<Vec<Bound<'py, PyBytes>>> {
         let data = data.to_vec(py)?;
-        let packets = self.encoder().encode(&data);
+        let packets = py.detach(|| self.encoder().encode(&data));
         Ok(packets
             .iter()
             .map(|packet| PyBytes::new(py, packet))
