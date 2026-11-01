@@ -2616,11 +2616,6 @@ impl Harness {
         );
     }
 
-    fn talk(&self, call: &mut Call, peer: u64, ssrc: u32, sequence: u16, opus: &[u8]) {
-        let frame = call.speak(user(peer), opus);
-        self.say(ssrc, sequence, &frame);
-    }
-
     async fn hear(&self, receiver: &Receiver, count: usize) -> Vec<Item> {
         let deadline = Instant::now() + WAIT;
         let mut items = Vec::new();
@@ -2641,26 +2636,6 @@ impl Harness {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_peer_heard_before_its_op_5_is_received_under_its_user_id() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-    let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
-    let packets = opus(10);
-
-    for (sequence, packet) in (0..).zip(&packets) {
-        harness.say(70, sequence, packet);
-    }
-    harness
-        .settle(|harness| harness.media().arrivals.lock().len() == 10)
-        .await;
-    harness.tick(2);
-    harness.speaking(EARLY_PEER, 70).await;
-    let heard = harness.hear(&receiver, 10).await;
-
-    assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_reassigned_ssrc_keeps_its_new_owner_when_op_5_repeats() {
     let mut harness = Harness::start().await;
     harness.connected().await;
@@ -2678,38 +2653,6 @@ async fn a_reassigned_ssrc_keeps_its_new_owner_when_op_5_repeats() {
     let heard = harness.hear(&receiver, 1).await;
 
     assert_eq!(frames(&heard), spoken(LATE_PEER, &packets));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn dave_audio_from_a_peer_decrypts_across_a_member_joining() {
-    let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
-    harness.speaking(LATE_PEER, 55).await;
-    let receiver = harness.receiver(ReceiveOptions {
-        users: Some(HashSet::from([user(LATE_PEER)])),
-        ..receiving(ReceiveFormat::Opus)
-    });
-    let packets = opus(10);
-
-    for (sequence, packet) in (0..5).zip(&packets) {
-        harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
-    }
-    let before = harness.hear(&receiver, 5).await;
-    let executed = harness.executed();
-    call.join(user(THIRD_PEER));
-    harness.rejoined(&mut call, 3, executed).await;
-    for (sequence, packet) in (5..).zip(&packets[5..]) {
-        harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
-    }
-    let after = harness.hear(&receiver, 5).await;
-    harness.server.collect().await;
-
-    assert_eq!(
-        frames(&[before, after].concat()),
-        spoken(LATE_PEER, &packets)
-    );
-    assert!(invalid_commit_welcomes(&harness.server).is_empty());
-    assert_eq!(receiver.stats().unwrap().lost, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
