@@ -1,14 +1,28 @@
+import msgspec
+
 from bostie.enums import (
     ActivityLocationKind,
     ApplicationEventWebhookStatus,
+    ApplicationFlags,
     ApplicationIntegrationType,
     ApplicationRoleConnectionMetadataType,
     MembershipState,
     Permissions,
 )
 from bostie.models.base import Builder, Model
-from bostie.models.interaction import PartialApplication
 from bostie.models.user import PartialUser, User
+
+
+class PartialApplication(Model, kw_only=True):
+    id: int
+    _flags: int = msgspec.field(default=0, name="flags")
+    _flags_new: str | None = msgspec.field(default=None, name="flags_new")
+
+    @property
+    def flags(self) -> ApplicationFlags:
+        return ApplicationFlags(
+            self._flags if self._flags_new is None else int(self._flags_new)
+        )
 
 
 class InstallParams(Builder, kw_only=True):

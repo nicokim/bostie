@@ -19,7 +19,7 @@ from bostie.models.presence import Presence
 from bostie.models.user import User
 
 if TYPE_CHECKING:
-    from bostie.models.interaction import Resolved
+    from bostie.models.message import Resolved
 
 
 class Overwrite(Model, kw_only=True):

@@ -22,7 +22,7 @@ from bostie.models.expressions import Emoji, Sticker
 from bostie.models.user import AvatarDecorationData, Collectibles, User
 
 if TYPE_CHECKING:
-    from bostie.models.interaction import Resolved
+    from bostie.models.message import Resolved
 
 
 class RoleColors(Builder, kw_only=True):

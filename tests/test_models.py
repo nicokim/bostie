@@ -8,13 +8,16 @@ import pytest
 
 from bostie import ui
 from bostie.enums import (
+    ApplicationIntegrationType,
     ButtonStyle,
     ChannelFlags,
     ChannelType,
     ComponentType,
     ExplicitContentFilterLevel,
     GuildFeature,
+    MessageActivityType,
     MessageFlags,
+    MessageReferenceType,
     MessageType,
     MFALevel,
     OptionType,
@@ -31,15 +34,19 @@ from bostie.models import (
     Channel,
     ChannelSelect,
     CommandInteraction,
+    CommandInteractionMetadata,
     ComponentInteraction,
+    ComponentInteractionMetadata,
     Container,
     Embed,
     EmbedField,
     FileComponent,
     Guild,
+    InteractionMetadata,
     MediaGallery,
     Member,
     Message,
+    ModalInteractionMetadata,
     ModalSubmitInteraction,
     Model,
     PartialChannel,
@@ -63,7 +70,7 @@ from bostie.models import (
     decode,
     decode_interaction,
 )
-from bostie.models.message import message_body
+from bostie.models.message import decode_interaction_metadata, message_body
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
 MESSAGE = json.loads((FIXTURES / "events" / "MESSAGE_CREATE.json").read_bytes())
@@ -173,6 +180,78 @@ def test_rich_message() -> None:
         "https://discord.com/channels/1335172792320131073/"
         "1335173295636611073/1564609632612253697"
     )
+
+
+def test_a_forward_carries_the_forwarded_message_as_a_snapshot() -> None:
+    message = decode(Message, payload("events/MESSAGE_CREATE.forward.json"))
+
+    (snapshot,) = message.message_snapshots
+    forwarded = snapshot.message
+
+    assert message.message_reference is not None
+    assert message.message_reference.type is MessageReferenceType.FORWARD
+    assert forwarded.content.startswith("Release notes are out")
+    assert forwarded.attachments[0].filename == "SPOILER_notes.txt"
+    assert forwarded.mention_roles == (1335174302269571073,)
+    assert forwarded.sticker_items[0].name == "lyre wave"
+    assert forwarded.components == ()
+
+
+def test_interaction_metadata_decodes_by_type_and_keeps_unknown_types() -> None:
+    document = json.loads(payload("events/MESSAGE_CREATE.interaction.json"))
+    shared = document["interaction_metadata"]["triggering_interaction_metadata"]
+    run = {**shared, "type": 2, "target_message_id": "42"}
+
+    modal = decode(Message, msgspec.json.encode(document)).interaction_metadata
+    command = decode_interaction_metadata(msgspec.json.encode(run))
+    future = decode_interaction_metadata(msgspec.json.encode(run | {"type": 9}))
+
+    assert isinstance(modal, ModalInteractionMetadata)
+    assert modal.user.id == 820774541721731073
+    assert modal.authorizing_integration_owners == {
+        ApplicationIntegrationType.GUILD_INSTALL: 1335172792320131073
+    }
+    component = modal.triggering_interaction_metadata
+    assert isinstance(component, ComponentInteractionMetadata)
+    assert component.interacted_message_id == 1564615190094217217
+    assert isinstance(command, CommandInteractionMetadata)
+    assert command.target_message_id == 42
+    assert type(future) is InteractionMetadata
+    assert decode(Message, payload("rest/message.json")).interaction_metadata is None
+
+
+def test_the_rarer_message_parts_decode_into_their_models() -> None:
+    parts = {
+        "application_id": "1329027298099331073",
+        "activity": {"type": 1, "party_id": "lobby:7"},
+        "application": {"id": "1329027298099331073", "name": "Lyre Hero"},
+        "mention_channels": [
+            {"id": "7", "guild_id": "8", "type": 0, "name": "news"},
+        ],
+        "role_subscription_data": {
+            "role_subscription_listing_id": "9",
+            "tier_name": "Gold",
+            "total_months_subscribed": 3,
+            "is_renewal": True,
+        },
+        "resolved": {"roles": {"1335174302269571073": ROLE}},
+        "call": {"participants": ["820774541721731073"], "ended_timestamp": None},
+    }
+
+    message = decode(Message, msgspec.json.encode(MESSAGE | parts))
+
+    assert message.application_id == 1329027298099331073
+    assert message.activity is not None
+    assert message.activity.type is MessageActivityType.JOIN
+    assert message.application is not None
+    assert message.application.id == 1329027298099331073
+    assert message.mention_channels[0].type is ChannelType.GUILD_TEXT
+    assert message.role_subscription_data is not None
+    assert message.role_subscription_data.is_renewal
+    assert message.resolved is not None
+    assert message.resolved.roles[1335174302269571073].name == ROLE["name"]
+    assert message.call is not None
+    assert message.call.participants == (820774541721731073,)
 
 
 def test_components_decode_known_types_and_keep_unknown_ones() -> None:

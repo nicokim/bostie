@@ -276,6 +276,13 @@ class ReactionType(DiscordIntEnum):
     BURST = 1
 
 
+class MessageActivityType(DiscordIntEnum):
+    JOIN = 1
+    SPECTATE = 2
+    LISTEN = 3
+    JOIN_REQUEST = 5
+
+
 class MessageReferenceType(DiscordIntEnum):
     DEFAULT = 0
     FORWARD = 1

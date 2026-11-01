@@ -4,7 +4,7 @@ from bostie.enums import UserFlags
 from bostie.models.base import Model
 
 if TYPE_CHECKING:
-    from bostie.models.interaction import Resolved
+    from bostie.models.message import Resolved
 
 
 class PartialUser(Model, kw_only=True):

@@ -3,7 +3,6 @@ from typing import cast
 import msgspec
 
 from bostie.enums import (
-    ApplicationFlags,
     ApplicationIntegrationType,
     ChannelType,
     CommandPermissionType,
@@ -18,14 +17,12 @@ from bostie.enums import (
 from bostie.models.base import Builder, Model, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.components import SubmittedComponent, decode_submitted
-from bostie.models.guild import Member, PartialMember, Role, with_user
+from bostie.models.guild import Member
 from bostie.models.message import (
     NULL,
-    Attachment,
     Message,
-    PartialMessage,
+    Resolved,
     WebhookMessage,
-    message_model,
     nested_message,
 )
 from bostie.models.user import User
@@ -39,38 +36,6 @@ class InteractionDataOption(Model, kw_only=True):
     value: str | int | float | bool | None = None
     options: tuple["InteractionDataOption", ...] = ()
     focused: bool = False
-
-
-class Resolved(Model, kw_only=True):
-    """The users, members, roles, channels, messages and files an interaction names."""
-
-    users: dict[int, User] = {}
-    members: dict[int, PartialMember] = {}
-    roles: dict[int, Role] = {}
-    channels: dict[int, PartialChannel] = {}
-    _messages: dict[int, msgspec.Raw] = msgspec.field(default={}, name="messages")
-    attachments: dict[int, Attachment] = {}
-
-    @property
-    def messages(self) -> dict[int, PartialMessage]:
-        """The messages by id, decoded on each access."""
-        return {
-            id: decoder(PartialMessage).decode(raw)
-            for id, raw in self._messages.items()
-        }
-
-    def member(self, id: int) -> Member | None:
-        """The member with this id, with its user."""
-        member = self.members.get(id)
-        user = self.users.get(id)
-        if member is None or user is None:
-            return None
-        return with_user(member, user)
-
-    def message(self, id: int) -> Message | WebhookMessage | None:
-        """The whole message with this id, as a message command's target carries it."""
-        raw = self._messages.get(id)
-        return None if raw is None else decoder(message_model(raw)).decode(raw)
 
 
 class CommandData(Model, kw_only=True):
@@ -92,18 +57,6 @@ class ComponentData(Model, kw_only=True):
     component_type: ComponentType
     values: tuple[str, ...] = ()
     resolved: Resolved = msgspec.field(default_factory=Resolved)
-
-
-class PartialApplication(Model, kw_only=True):
-    id: int
-    _flags: int = msgspec.field(default=0, name="flags")
-    _flags_new: str | None = msgspec.field(default=None, name="flags_new")
-
-    @property
-    def flags(self) -> ApplicationFlags:
-        return ApplicationFlags(
-            self._flags if self._flags_new is None else int(self._flags_new)
-        )
 
 
 class ApplicationCommandOptionChoice(Builder, kw_only=True):

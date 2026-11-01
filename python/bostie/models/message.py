@@ -1,14 +1,17 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, override
+from typing import Any, Literal, Self, TypedDict, Unpack, override
 
 import msgspec
 
 from bostie.enums import (
+    ApplicationIntegrationType,
     AttachmentFlags,
     BaseTheme,
     ChannelType,
     ComponentType,
+    InteractionType,
+    MessageActivityType,
     MessageFlags,
     MessageReferenceType,
     MessageType,
@@ -16,19 +19,17 @@ from bostie.enums import (
     StickerFormatType,
 )
 from bostie.file import File
+from bostie.models.application import PartialApplication
 from bostie.models.base import Builder, Model, check_keys, decode, decoder
-from bostie.models.channel import Channel, ThreadMember
+from bostie.models.channel import Channel, PartialChannel, ThreadMember
 from bostie.models.components import (
     Component,
     PartialEmoji,
     UnknownComponent,
     decode_components,
 )
-from bostie.models.guild import Member, PartialMember, with_user
+from bostie.models.guild import Member, PartialMember, Role, with_user
 from bostie.models.user import PartialUser, User
-
-if TYPE_CHECKING:
-    from bostie.models.interaction import Resolved
 
 type MentionType = Literal["roles", "users", "everyone"]
 
@@ -67,6 +68,38 @@ class Attachment(Model, kw_only=True):
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
         return resolved.attachments.get(id)
+
+
+class Resolved(Model, kw_only=True):
+    """The users, members, roles, channels, messages and files an interaction names."""
+
+    users: dict[int, User] = {}
+    members: dict[int, PartialMember] = {}
+    roles: dict[int, Role] = {}
+    channels: dict[int, PartialChannel] = {}
+    _messages: dict[int, msgspec.Raw] = msgspec.field(default={}, name="messages")
+    attachments: dict[int, Attachment] = {}
+
+    @property
+    def messages(self) -> "dict[int, PartialMessage]":
+        """The messages by id, decoded on each access."""
+        return {
+            id: decoder(PartialMessage).decode(raw)
+            for id, raw in self._messages.items()
+        }
+
+    def member(self, id: int) -> Member | None:
+        """The member with this id, with its user."""
+        member = self.members.get(id)
+        user = self.users.get(id)
+        if member is None or user is None:
+            return None
+        return with_user(member, user)
+
+    def message(self, id: int) -> "Message | WebhookMessage | None":
+        """The whole message with this id, as a message command's target carries it."""
+        raw = self._messages.get(id)
+        return None if raw is None else decoder(message_model(raw)).decode(raw)
 
 
 class EmbedField(Builder, kw_only=True):
@@ -208,6 +241,114 @@ class AllowedMentions(Builder, kw_only=True):
     replied_user: bool | None = None
 
 
+class MessageActivity(Model, kw_only=True):
+    """The Rich Presence invite a message carries."""
+
+    type: MessageActivityType
+    party_id: str | None = None
+
+
+class ChannelMention(Model, kw_only=True):
+    """A channel mentioned in a crossposted message."""
+
+    id: int
+    guild_id: int
+    type: ChannelType
+    name: str
+
+
+class RoleSubscriptionData(Model, kw_only=True):
+    """The role subscription purchase or renewal a message announces."""
+
+    role_subscription_listing_id: int
+    tier_name: str
+    total_months_subscribed: int
+    is_renewal: bool
+
+
+class MessageCall(Model, kw_only=True):
+    """The call in a private channel a message announces."""
+
+    participants: tuple[int, ...]
+    ended_timestamp: datetime | None = None
+
+
+class InteractionMetadata(Model, kw_only=True):
+    """The interaction a message answers; its type picks the subclass."""
+
+    id: int
+    type: InteractionType
+    user: User
+    authorizing_integration_owners: dict[ApplicationIntegrationType, int]
+    original_response_message_id: int | None = None
+
+
+class CommandInteractionMetadata(InteractionMetadata, kw_only=True):
+    """A command run; the target is set for user and message commands."""
+
+    target_user: User | None = None
+    target_message_id: int | None = None
+
+
+class ComponentInteractionMetadata(InteractionMetadata, kw_only=True):
+    interacted_message_id: int
+
+
+class ModalInteractionMetadata(InteractionMetadata, kw_only=True):
+    _triggering_interaction_metadata: msgspec.Raw = msgspec.field(
+        name="triggering_interaction_metadata"
+    )
+
+    @property
+    def triggering_interaction_metadata(self) -> InteractionMetadata:
+        """The command or component that opened the modal, decoded on each access."""
+        return decode_interaction_metadata(self._triggering_interaction_metadata)
+
+
+INTERACTION_METADATA: dict[int, type[InteractionMetadata]] = {
+    InteractionType.APPLICATION_COMMAND: CommandInteractionMetadata,
+    InteractionType.MESSAGE_COMPONENT: ComponentInteractionMetadata,
+    InteractionType.MODAL_SUBMIT: ModalInteractionMetadata,
+}
+
+
+class _Typed(msgspec.Struct, gc=False):
+    type: int | None = None
+
+
+def decode_interaction_metadata(data: bytes) -> InteractionMetadata:
+    kind = decoder(_Typed).decode(data).type
+    model = INTERACTION_METADATA.get(kind or 0, InteractionMetadata)
+    metadata: InteractionMetadata = decoder(model).decode(data)
+    return metadata
+
+
+class SnapshotMessage(Model, kw_only=True):
+    """The fields of a forwarded message that its snapshot keeps."""
+
+    type: MessageType
+    content: str
+    embeds: tuple[Embed, ...]
+    attachments: tuple[Attachment, ...]
+    timestamp: datetime
+    edited_timestamp: datetime | None
+    flags: MessageFlags = MessageFlags(0)
+    mentions: tuple[User, ...]
+    mention_roles: tuple[int, ...]
+    sticker_items: tuple[StickerItem, ...] = ()
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
+
+    @property
+    def components(self) -> tuple[Component, ...]:
+        return decode_components(self._components)
+
+
+class MessageSnapshot(Model, kw_only=True):
+    """A forwarded message, as it was when it was forwarded."""
+
+    message: SnapshotMessage
+
+
 class PartialMessage(Model, kw_only=True):
     """A message as an interaction resolves it, with only some of its fields."""
 
@@ -264,6 +405,24 @@ class _Message(PartialMessage, kw_only=True):
     type: MessageType
     poll: Poll | None = None
     shared_client_theme: SharedClientTheme | None = None
+    mention_channels: tuple[ChannelMention, ...] = ()
+    activity: MessageActivity | None = None
+    application: PartialApplication | None = None
+    application_id: int | None = None
+    message_snapshots: tuple[MessageSnapshot, ...] = ()
+    _interaction_metadata: msgspec.Raw = msgspec.field(
+        default=NULL, name="interaction_metadata"
+    )
+    role_subscription_data: RoleSubscriptionData | None = None
+    resolved: Resolved | None = None
+    call: MessageCall | None = None
+
+    @property
+    def interaction_metadata(self) -> InteractionMetadata | None:
+        """The interaction this message answers, decoded on each access."""
+        if self._interaction_metadata == NULL:
+            return None
+        return decode_interaction_metadata(self._interaction_metadata)
 
     @classmethod
     @override

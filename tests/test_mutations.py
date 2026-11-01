@@ -124,6 +124,7 @@ MISSING = re.compile(
 NULL = re.compile(r"got `null`(?: - at `\$(?P<at>.*)`)?$")
 SNOWFLAKE_KEY = re.compile(r"\.\d+(?=\.|\[|$)")
 SHAPE_KEYS = {("GUILD_CREATE.unavailable", "$.unavailable")}
+LAZY_KEYS = ("message", "triggering_interaction_metadata")
 
 type Decoder = Callable[[bytes], object]
 
@@ -260,7 +261,7 @@ def refused_by_its_model(error: msgspec.ValidationError, where: str) -> bool:
     if missing := MISSING.match(str(error)):
         return where.endswith(f"{missing['at'] or ''}.{missing['key']}")
     if null := NULL.search(str(error)):
-        return where.endswith(null["at"] or "message")
+        return where.endswith(null["at"] or LAZY_KEYS)
     return False
 
 

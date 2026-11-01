@@ -11,10 +11,10 @@ from bostie.enums import (
     TargetUsersJobStatus,
     VerificationLevel,
 )
+from bostie.models.application import PartialApplication
 from bostie.models.base import Model, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.guild import RoleColors
-from bostie.models.interaction import PartialApplication
 from bostie.models.scheduled_event import ScheduledEvent
 from bostie.models.user import User
 
