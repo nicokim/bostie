@@ -99,10 +99,16 @@ class Router:
     ) -> Callable[[EventHandler[E]], EventHandler[E]]: ...
 
     @overload
+    def listen[A: AnyEvent, B: AnyEvent](
+        self, first: type[A], second: type[B], /
+    ) -> Callable[[EventHandler[A | B]], EventHandler[A | B]]: ...
+
+    @overload
     def listen[L: ListenerCallback](
         self,
         first: type[AnyEvent],
         second: type[AnyEvent],
+        third: type[AnyEvent],
         /,
         *more: type[AnyEvent],
     ) -> Callable[[L], L]: ...
