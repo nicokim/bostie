@@ -1397,6 +1397,30 @@ async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_session_replaced_during_the_change_delay_waits_for_new_server() {
+    let mut harness = Harness::start().await;
+    harness
+        .voice
+        .connect(&ConnectRequest {
+            server_change_delay: Duration::from_secs(3_600),
+            ..harness.request()
+        })
+        .unwrap();
+    harness.announce().await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Reconnecting).await;
+
+    harness.tap.session_started(ShardId::from(SHARD));
+    harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
+    harness.announce().await;
+    harness.server.expect_op(op::IDENTIFY).await;
+    let identify = harness.server.expect_op(op::IDENTIFY).await;
+
+    assert_eq!(identify["token"].as_str(), Some("token-3"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_endpointless_server_holds_media_until_the_next_one() {
     let mut harness = Harness::start().await;
     harness.connected().await;

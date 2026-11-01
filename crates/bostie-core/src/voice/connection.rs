@@ -738,10 +738,11 @@ impl Connection {
             );
         self.drop_session();
         self.reconnecting(step);
-        if event == GatewayEvent::SessionReplaced
-            && let Err(end) = self.send_voice_state(Some(self.me.target)).await
-        {
-            return self.after(end);
+        if event == GatewayEvent::SessionReplaced {
+            self.servers.used = self.gateway.borrow().server_seq;
+            if let Err(end) = self.send_voice_state(Some(self.me.target)).await {
+                return self.after(end);
+            }
         }
         Next::Wait
     }
