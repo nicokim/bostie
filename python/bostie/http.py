@@ -176,8 +176,8 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
             error.message,
             error.errors,
             body,
-            error.retry_after,
-            error.is_global,
+            retry_after=error.retry_after,
+            is_global=error.is_global,
         )
     exception = (
         ServerError if status >= 500 else STATUS_ERRORS.get(status, HTTPException)

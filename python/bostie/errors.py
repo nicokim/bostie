@@ -65,6 +65,7 @@ class RateLimited(HTTPException):
         message: str,
         errors: dict[str, Any],
         body: bytes,
+        *,
         retry_after: float | None,
         is_global: bool,
     ) -> None:
