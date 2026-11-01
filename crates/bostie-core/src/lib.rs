@@ -455,7 +455,8 @@ mod tests {
 
         assert_eq!(versions["bostie"], env!("CARGO_PKG_VERSION"));
         assert!(versions["libopus"].starts_with("1."), "{versions:?}");
-        assert_eq!(versions["davey"], voice::dave::DAVEY_VERSION);
+        let pin = format!("davey = \"={}\"", versions["davey"]);
+        assert!(include_str!("../../../Cargo.toml").contains(&pin), "{pin}");
         assert_eq!(versions["dave_protocol"], "1");
         assert_eq!(versions.len(), 4);
     }
