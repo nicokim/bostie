@@ -76,8 +76,6 @@ pub enum Command {
     Speaking(u8),
     Disconnect,
     Reconnect,
-    #[cfg(test)]
-    Panic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,8 +395,6 @@ impl Connection {
                 self.self_deaf = self_deaf;
                 None
             }
-            #[cfg(test)]
-            Some(Command::Panic) => injected_panic(),
         }
     }
 
@@ -798,11 +794,6 @@ pub(super) async fn until(deadline: Option<Instant>) {
         Some(deadline) => sleep_until(deadline).await,
         None => future::pending().await,
     }
-}
-
-#[cfg(test)]
-fn injected_panic() -> ! {
-    panic!("injected connection panic")
 }
 
 #[cfg(test)]

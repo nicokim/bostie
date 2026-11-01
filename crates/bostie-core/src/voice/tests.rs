@@ -1934,14 +1934,28 @@ async fn a_stopped_lane_ends_its_connection_and_spares_the_others() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_panicking_connection_task_is_ended_by_its_supervisor() {
     let mut harness = Harness::start().await;
-    harness.connected().await;
+    harness.connect();
+    let (info, media) = harness
+        .voice
+        .with_connection(guild(), |handle| {
+            (Arc::clone(&handle.info), Arc::clone(&handle.media))
+        })
+        .unwrap();
+    let task: JoinHandle<Ending> = tokio::spawn(async { panic!("boom") });
 
-    harness.voice.command(guild(), Command::Panic).unwrap();
+    supervise(
+        task,
+        Arc::clone(&harness.voice.shared),
+        info,
+        Arc::clone(&media),
+    )
+    .await;
     let (reason, _, detail) = harness.ended().await;
 
     assert_eq!(reason, DisconnectReason::ProtocolError);
-    assert_eq!(detail, "internal error: injected connection panic");
+    assert_eq!(detail, "internal error: boom");
     assert_eq!(harness.leaves(), 1);
+    assert!(media.closed.load(Ordering::Acquire));
     assert!(matches!(
         harness.voice.dave(guild()),
         Err(CoreError::UnknownVoice(_))
