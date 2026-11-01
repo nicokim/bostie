@@ -33,6 +33,7 @@ from bostie import (
     PrivilegedIntentsRequired,
     Range,
     Router,
+    WebhookMessage,
     ui,
 )
 from bostie.commands import CommandSettings
@@ -443,7 +444,7 @@ def test_a_handler_that_closes_the_bot_finishes_the_shutdown() -> None:
 def test_listeners_the_cache_and_wait_for_see_gateway_events() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        messages: asyncio.Queue[Message] = asyncio.Queue()
+        messages: asyncio.Queue[Message | WebhookMessage] = asyncio.Queue()
 
         @bot.listen
         async def on_message(event: MessageCreate) -> None:
@@ -1014,7 +1015,7 @@ def test_close_sends_1000_and_cancels_running_listeners(
 def test_a_zstd_compressed_gateway_delivers_events() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        messages: asyncio.Queue[Message] = asyncio.Queue()
+        messages: asyncio.Queue[Message | WebhookMessage] = asyncio.Queue()
 
         @bot.listen
         async def on_message(event: MessageCreate) -> None:
@@ -1035,7 +1036,7 @@ def test_a_failing_dispatch_is_logged_once_and_the_next_event_arrives(
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        messages: asyncio.Queue[Message] = asyncio.Queue()
+        messages: asyncio.Queue[Message | WebhookMessage] = asyncio.Queue()
         apply = bot.cache.apply
 
         def apply_or_fail(event: Any) -> None:

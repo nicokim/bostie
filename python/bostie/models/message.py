@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack
 
 import msgspec
 
@@ -13,7 +13,7 @@ from bostie.enums import (
     StickerFormatType,
 )
 from bostie.file import File
-from bostie.models.base import Builder, Model, decoder
+from bostie.models.base import Builder, Model, decode, decoder
 from bostie.models.channel import Channel
 from bostie.models.components import (
     Component,
@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
 
 type MentionType = Literal["roles", "users", "everyone"]
+
+NULL = msgspec.Raw(b"null")
 
 V2_COMPONENT_TYPES = frozenset(
     {
@@ -156,7 +158,9 @@ class PartialMessage(Model, kw_only=True):
     webhook_id: int | None = None
     flags: MessageFlags = MessageFlags(0)
     message_reference: MessageReference | None = None
-    referenced_message: "Message | None" = None
+    referenced_message_json: msgspec.Raw = msgspec.field(
+        default=NULL, name="referenced_message"
+    )
     thread: Channel | None = None
     components_json: tuple[msgspec.Raw, ...] = msgspec.field(
         default=(), name="components"
@@ -169,6 +173,13 @@ class PartialMessage(Model, kw_only=True):
         return decode_components(self.components_json)
 
     @property
+    def referenced_message(self) -> "Message | WebhookMessage | None":
+        """The message this one replies to, decoded on each access."""
+        if self.referenced_message_json == NULL:
+            return None
+        return nested_message(self.referenced_message_json, self.guild_id)
+
+    @property
     def jump_url(self) -> str:
         guild = self.guild_id or "@me"
         return f"https://discord.com/channels/{guild}/{self.channel_id}/{self.id}"
@@ -178,11 +189,7 @@ class PartialMessage(Model, kw_only=True):
         return resolved.messages.get(id)
 
 
-class Message(PartialMessage, kw_only=True):
-    """A message in a channel."""
-
-    author_json: msgspec.Raw = msgspec.field(name="author")
-    _author: PartialUser | None = msgspec.field(default=None, name="__bostie_author__")
+class _Message(PartialMessage, kw_only=True):
     content: str
     timestamp: datetime
     edited_timestamp: datetime | None
@@ -195,23 +202,41 @@ class Message(PartialMessage, kw_only=True):
     pinned: bool
     type: MessageType
 
-    def __post_init__(self) -> None:
-        model = User if self.webhook_id is None else PartialUser
-        msgspec.structs.force_setattr(
-            self, "_author", decoder(model).decode(self.author_json)
-        )
 
-    @property
-    def author(self) -> PartialUser:
-        """The sender: a `User`, or a `PartialUser` when a webhook sent it."""
-        return cast(PartialUser, self._author)
+class Message(_Message, kw_only=True):
+    """A message in a channel, sent by a user or a bot."""
+
+    author: User
+
+
+class WebhookMessage(_Message, kw_only=True):
+    """A message a webhook sent, interaction responses included."""
+
+    author: PartialUser
+
+
+class _MessageKind(msgspec.Struct, gc=False):
+    webhook_id: int | None = None
+
+
+def message_model(data: bytes) -> type[Message] | type[WebhookMessage]:
+    kind = decoder(_MessageKind).decode(data)
+    return Message if kind.webhook_id is None else WebhookMessage
+
+
+def decode_message(data: bytes) -> Message | WebhookMessage:
+    """Decode a message into `Message`, or `WebhookMessage` when a webhook sent it."""
+    return decode(message_model(data), data)
+
+
+def nested_message(data: bytes, guild_id: int | None) -> Message | WebhookMessage:
+    message: Message | WebhookMessage = decoder(message_model(data)).decode(data)
+    return in_guild(message, guild_id)
 
 
 def in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:
     if message.guild_id is None:
         msgspec.structs.force_setattr(message, "guild_id", guild_id)
-    if message.referenced_message is not None:
-        in_guild(message.referenced_message, message.guild_id)
     return message
 
 

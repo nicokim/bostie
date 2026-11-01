@@ -109,6 +109,7 @@ from bostie.models import (
     User,
     UserSelect,
     VoiceState,
+    WebhookMessage,
 )
 from bostie.router import Router
 from bostie.sync import SyncResult
@@ -225,6 +226,7 @@ __all__ = [
     "UserSelect",
     "VerificationLevel",
     "VoiceState",
+    "WebhookMessage",
     "ui",
     "voice",
 ]

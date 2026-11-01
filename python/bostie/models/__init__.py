@@ -63,7 +63,9 @@ from bostie.models.message import (
     PartialMessage,
     Reaction,
     StickerItem,
+    WebhookMessage,
     build_message,
+    decode_message,
 )
 from bostie.models.user import PartialUser, User
 
@@ -130,8 +132,10 @@ __all__ = [
     "User",
     "UserSelect",
     "VoiceState",
+    "WebhookMessage",
     "build_message",
     "decode",
     "decode_components",
     "decode_interaction",
+    "decode_message",
 ]

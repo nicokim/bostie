@@ -14,7 +14,13 @@ from bostie.enums import (
 from bostie.models.base import Model, decode
 from bostie.models.channel import PartialChannel
 from bostie.models.guild import Member, PartialMember, Role
-from bostie.models.message import Attachment, Message, PartialMessage, in_guild
+from bostie.models.message import (
+    Attachment,
+    Message,
+    PartialMessage,
+    WebhookMessage,
+    nested_message,
+)
 from bostie.models.user import User
 
 
@@ -126,11 +132,12 @@ class ComponentInteraction(_Interaction, kw_only=True):
     """A button press or a select menu pick."""
 
     data: ComponentData
-    message: Message
+    message_json: msgspec.Raw = msgspec.field(name="message")
 
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        in_guild(self.message, self.guild_id)
+    @property
+    def message(self) -> Message | WebhookMessage:
+        """The message the component is on, decoded on each access."""
+        return nested_message(self.message_json, self.guild_id)
 
 
 class UnknownInteraction(Model, kw_only=True):

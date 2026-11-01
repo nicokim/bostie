@@ -657,18 +657,23 @@ class FakeDiscord(VoiceGateway):
     ) -> Json | None:
         match kind:
             case 4:
-                return self._new_message(interaction["channel_id"], data)
+                return self._interaction_message(interaction, data)
             case 5:
                 loading = {"flags": LOADING | data.get("flags", 0)}
-                return self._new_message(interaction["channel_id"], loading)
+                return self._interaction_message(interaction, loading)
             case 6 | 7:
                 message: Json = interaction["message"]
                 return message | _message_fields(data)
         return None
 
-    def _new_message(self, channel_id: str, body: Json) -> Json:
+    def _interaction_message(self, interaction: Json, body: Json) -> Json:
+        return self._new_message(
+            interaction["channel_id"], body, webhook_id=str(self.application_id)
+        )
+
+    def _new_message(self, channel_id: str, body: Json, **fields: Any) -> Json:
         message = payloads.message(
-            channel_id=channel_id, author=self.bot_user, content=""
+            channel_id=channel_id, author=self.bot_user, content="", **fields
         )
         return {
             key: value
@@ -686,7 +691,7 @@ class FakeDiscord(VoiceGateway):
         if messages is None:
             return _error(404, 10015, "Unknown Webhook")
         interaction = self._interactions[request.match_info["interaction_token"]]
-        message = self._new_message(interaction["channel_id"], request[RECORD].json)
+        message = self._interaction_message(interaction, request[RECORD].json)
         messages[message["id"]] = message
         return _json(message)
 

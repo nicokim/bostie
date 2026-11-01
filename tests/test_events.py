@@ -32,15 +32,18 @@ from bostie.events import (
     TypingStart,
     VoiceServerUpdate,
     VoiceStateUpdate,
+    decode_event,
 )
 from bostie.models import (
     CommandInteraction,
     Guild,
     Member,
+    Message,
     Model,
     PartialUser,
     UnavailableGuild,
     User,
+    WebhookMessage,
 )
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
@@ -269,12 +272,23 @@ def test_a_webhook_messages_author_needs_only_the_webhooks_identity() -> None:
 
     webhook = MessageCreate.decode(
         0, msgspec.json.encode(document | {"author": identity})
-    )
-    user = decode(MessageCreate, "MESSAGE_CREATE")
+    ).message
+    user = decode(MessageCreate, "MESSAGE_CREATE").message
 
-    assert type(webhook.message.author) is PartialUser
-    assert webhook.message.author.display_name == "Release notes"
-    assert type(user.message.author) is User
+    assert (type(webhook), type(webhook.author)) == (WebhookMessage, PartialUser)
+    assert webhook.author.display_name == "Release notes"
+    assert (type(user), type(user.author)) == (Message, User)
+
+
+def test_a_malformed_nested_message_fails_on_access_and_its_event_arrives() -> None:
+    document = json.loads((EVENT_FIXTURES / "MESSAGE_CREATE.rich.json").read_bytes())
+    del document["referenced_message"]["content"]
+
+    event = decode_event(MessageCreate, 0, msgspec.json.encode(document))
+
+    assert event is not None
+    with pytest.raises(msgspec.ValidationError, match="content"):
+        _ = event.message.referenced_message
 
 
 def test_typing_start_reads_the_unix_timestamp_and_the_member() -> None:

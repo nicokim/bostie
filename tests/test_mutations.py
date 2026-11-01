@@ -21,10 +21,12 @@ from bostie.models import (
     ActionRow,
     Channel,
     CommandInteraction,
+    ComponentInteraction,
     Guild,
     Member,
     Message,
     Model,
+    PartialMessage,
     UnknownComponent,
     User,
     decode,
@@ -141,8 +143,12 @@ def fields(value: Any, path: str = "$") -> Iterator[tuple[str, dict[str, Any], s
 
 def walk(value: object) -> Iterator[object]:
     yield value
-    if isinstance(value, Message | ActionRow):
+    if isinstance(value, PartialMessage | ActionRow):
         yield from walk(value.components)
+    if isinstance(value, PartialMessage):
+        yield from walk(value.referenced_message)
+    if isinstance(value, ComponentInteraction):
+        yield from walk(value.message)
     if isinstance(value, GuildCreate):
         yield from walk(value.members)
     if isinstance(value, msgspec.Struct):
@@ -193,7 +199,7 @@ def refused_by_its_model(error: msgspec.ValidationError, where: str) -> bool:
     if missing := MISSING.match(str(error)):
         return where.endswith(f"{missing['at'] or ''}.{missing['key']}")
     if null := NULL.search(str(error)):
-        return where.endswith(null["at"] or ".author")
+        return where.endswith(null["at"] or "message")
     return False
 
 
@@ -248,7 +254,7 @@ def test_unknown_component_types_become_unknown_components(
 
     decoded = decode_all(decoder, document)
 
-    for message in [value for value in decoded if isinstance(value, Message)]:
+    for message in [value for value in decoded if isinstance(value, PartialMessage)]:
         assert all(
             isinstance(component, UnknownComponent) and component.type == 99
             for component in message.components

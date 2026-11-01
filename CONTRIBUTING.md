@@ -54,6 +54,7 @@ Models are typed as Discord's documentation describes each field. Discord also a
 
 - A field the docs mark required has no default, and is `T | None` if the docs mark it nullable. A field the docs mark optional (`?`) has a default: `()` for a list, an empty flag set for flags, `False` for a boolean whose absence means false, and `None` otherwise. Fields of a builder, a model you can also send, stay `None` when Discord fills in their default, so a decoded builder is sent back as it came.
 - Where the docs send a partial object, the field takes a partial model such as `PartialMember`, `PartialChannel` or `UnavailableGuild` instead of the full model with optional fields.
+- Where one payload comes in two shapes, a decode function reads the field that tells them apart first and picks the model: `decode_interaction` reads `type`, and `decode_message` reads `webhook_id` to choose between `Message` and `WebhookMessage`. msgspec can't nest such a choice, so a nested message (`referenced_message`, a component interaction's `message`) stays raw JSON, like `components`, and its property decodes it on access. A broken one then fails only where it is read, not the whole event.
 - Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values. Unknown components become `UnknownComponent` and unknown interaction types `UnknownInteraction`.
 - `decoder()` in `python/bostie/models/base.py` runs msgspec in lax mode. Snowflake strings become `int` and unix timestamps become `datetime` without a converter.
 

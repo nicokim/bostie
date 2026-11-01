@@ -58,8 +58,10 @@ from bostie.models import (
     Message,
     MessageParts,
     User,
+    WebhookMessage,
     build_message,
     decode,
+    decode_message,
 )
 from bostie.models.message import in_guild
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
@@ -305,7 +307,7 @@ class Bot(Router):
         message_id: int,
         content: str | None = None,
         **parts: Unpack[EditParts],
-    ) -> Message:
+    ) -> Message | WebhookMessage:
         """Edit a message; only the parts passed change.
 
         With `files` or `attachments`, only the listed `attachments` stay.
@@ -320,7 +322,7 @@ class Bot(Router):
             channel_id=channel_id,
             message_id=message_id,
         )
-        return in_guild(decode(Message, data), self._guild_of(channel_id))
+        return in_guild(decode_message(data), self._guild_of(channel_id))
 
     async def delete_message(
         self, channel_id: int, message_id: int, *, reason: str | None = None
@@ -333,14 +335,16 @@ class Bot(Router):
             message_id=message_id,
         )
 
-    async def fetch_message(self, channel_id: int, message_id: int) -> Message:
+    async def fetch_message(
+        self, channel_id: int, message_id: int
+    ) -> Message | WebhookMessage:
         data = await self.http._request(
             "GET",
             "/channels/{channel_id}/messages/{message_id}",
             channel_id=channel_id,
             message_id=message_id,
         )
-        return in_guild(decode(Message, data), self._guild_of(channel_id))
+        return in_guild(decode_message(data), self._guild_of(channel_id))
 
     async def fetch_channel(self, channel_id: int) -> Channel:
         data = await self.http._request(

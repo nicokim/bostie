@@ -22,7 +22,7 @@ You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs
 
 - Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
 - Bots keep working when Discord adds things. Unknown fields, enum values, components and interaction types never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
-- Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as an option's member is a `PartialMember`, not a `Member` with holes.
+- Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as an option's member is a `PartialMember`, not a `Member` with holes. A message a webhook sent, interaction responses included, is a `WebhookMessage` whose `author` is a `PartialUser`; any other is a `Message` with a full `User`.
 - The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
 
 ## Example

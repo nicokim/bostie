@@ -18,10 +18,11 @@ from bostie.models import (
     UnavailableGuild,
     User,
     VoiceState,
+    WebhookMessage,
 )
 from bostie.models.base import decode, decoder, redacted_repr, shown_fields
 from bostie.models.interaction import decode_interaction
-from bostie.models.message import in_guild
+from bostie.models.message import decode_message
 
 logger = logging.getLogger("bostie.events")
 
@@ -223,13 +224,11 @@ class RoleDelete(Event, kw_only=True):
 class _MessageEvent(Event, kw_only=True):
     INTENTS = Intents.GUILD_MESSAGES | Intents.DIRECT_MESSAGES
 
-    message: Message
+    message: Message | WebhookMessage
 
     @classmethod
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        message = decode(Message, data)
-        in_guild(message, message.guild_id)
-        return cls(shard_id=shard_id, raw_json=data, message=message)
+        return cls(shard_id=shard_id, raw_json=data, message=decode_message(data))
 
 
 class MessageCreate(_MessageEvent, kw_only=True):
