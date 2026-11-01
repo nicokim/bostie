@@ -32,6 +32,7 @@ from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT, SHARD, GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import Channel, User, VoiceState, decode
+from bostie.models.base import check_keys
 from bostie.voice import layers
 from bostie.voice.encoder import DEFAULT_BITRATE, percent
 from bostie.voice.events import (
@@ -189,6 +190,10 @@ class ConnectOptions(ExternalConnectOptions, total=False):
     speech_activity: bool
 
 
+CONNECT_OPTIONS = ConnectOptions.__optional_keys__
+EXTERNAL_CONNECT_OPTIONS = ExternalConnectOptions.__optional_keys__
+
+
 class _HasCore(Protocol):
     @property
     def core(self) -> VoiceCore: ...
@@ -276,7 +281,7 @@ class VoiceManager:
         only the options given.
         """
         user = self._running_user("bot.voice.connect()")
-        settings = self._settings(**options)
+        settings = self._settings(options, CONNECT_OPTIONS)
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
         if vc is not None:
@@ -308,7 +313,7 @@ class VoiceManager:
             raise RuntimeError(
                 f"bostie already runs a voice connection in guild {guild_id}"
             )
-        settings = self._settings(**options)
+        settings = self._settings(options, EXTERNAL_CONNECT_OPTIONS)
         loop = asyncio.get_running_loop()
         state = asyncio.Task(
             self._bot.wait_for(
@@ -394,7 +399,10 @@ class VoiceManager:
             raise RuntimeError("voice needs a running bot")
         return bridge.core
 
-    def _settings(self, **options: Unpack[ConnectOptions]) -> Defaults:
+    def _settings(
+        self, options: ExternalConnectOptions, allowed: frozenset[str]
+    ) -> Defaults:
+        check_keys(options, allowed, "options")
         return replace(self.defaults, **options)
 
     async def _voice_channel(self, channel_id: int) -> tuple[int, Channel]:
@@ -1178,6 +1186,7 @@ class ContextVoice:
 
     async def connect(self, **options: Unpack[ConnectOptions]) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
+        check_keys(options, CONNECT_OPTIONS, "options")
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
         try:

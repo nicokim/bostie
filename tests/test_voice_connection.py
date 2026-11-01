@@ -3,6 +3,7 @@ import logging
 import threading
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 import msgspec
 import pytest
@@ -93,10 +94,31 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
     )
 
 
-def test_invalid_connect_options_raise_before_anything_is_sent() -> None:
+@pytest.mark.parametrize(
+    ("call", "option", "error"),
+    [
+        ("connect", "timeout", ValueError),
+        ("connect", "jitter", TypeError),
+        ("connect", "sink_buffer", TypeError),
+        ("connect_external", "encoder", TypeError),
+        ("context", "overflow", TypeError),
+    ],
+)
+def test_invalid_connect_options_raise_before_anything_is_sent(
+    call: str, option: str, error: type[Exception]
+) -> None:
+    options: dict[str, Any] = {option: 0.0}
+
     async def scenario(bot: FakeBot) -> None:
-        with pytest.raises(ValueError, match="timeout"):
-            await bot.voice.connect(VOICE, timeout=0.0)
+        attempts: dict[str, Callable[[], Awaitable[object]]] = {
+            "connect": lambda: bot.voice.connect(VOICE, **options),
+            "connect_external": lambda: bot.voice.connect_external(
+                GUILD_ID, VOICE, **options
+            ),
+            "context": lambda: context_voice(bot).connect(**options),
+        }
+        with pytest.raises(error, match=option):
+            await attempts[call]()
         assert (bot.core.sent, bot.rest.requests) == ([], [])
 
     run(scenario)

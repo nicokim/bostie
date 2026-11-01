@@ -13,7 +13,7 @@ from bostie.enums import (
     StickerFormatType,
 )
 from bostie.file import File
-from bostie.models.base import Builder, Model, decode, decoder
+from bostie.models.base import Builder, Model, check_keys, decode, decoder
 from bostie.models.channel import Channel
 from bostie.models.components import (
     Component,
@@ -269,9 +269,7 @@ def build_message(
     V2 components set IS_COMPONENTS_V2 and clear content and embeds, and with `files`
     or `attachments` an edit keeps only the listed `attachments`.
     """
-    unknown = parts.keys() - EDIT_PARTS
-    if unknown:
-        raise TypeError(f"unexpected message parts: {', '.join(sorted(unknown))}")
+    check_keys(parts, EDIT_PARTS, "message parts")
     embeds = parts.get("embeds")
     components = parts.get("components")
     files = parts.get("files", ())

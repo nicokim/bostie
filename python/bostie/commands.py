@@ -35,6 +35,7 @@ from bostie.models import (
     Role,
     User,
 )
+from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
     from typing import Annotated as Range
@@ -324,8 +325,10 @@ class Command(_Node):
         parent: "Group | None" = None,
         **settings: Unpack[CommandSettings],
     ) -> None:
-        _check_settings(
-            settings, COMMAND_SETTINGS if parent is None else SUBCOMMAND_SETTINGS
+        check_keys(
+            settings,
+            COMMAND_SETTINGS if parent is None else SUBCOMMAND_SETTINGS,
+            "settings",
         )
         try:
             super().__init__(
@@ -400,7 +403,7 @@ class Group(_Node):
         parent: "Group | None" = None,
         **settings: Unpack[GroupSettings],
     ) -> None:
-        _check_settings(settings, GROUP_SETTINGS)
+        check_keys(settings, GROUP_SETTINGS, "settings")
         try:
             super().__init__(
                 name, description, router=router, parent=parent, settings=settings
@@ -737,12 +740,6 @@ def _check_description(description: str) -> None:
         raise CommandDefinitionError(
             f"description {description!r} must be 1-100 characters long"
         )
-
-
-def _check_settings(settings: Mapping[str, object], allowed: frozenset[str]) -> None:
-    unknown = settings.keys() - allowed
-    if unknown:
-        raise TypeError(f"unexpected settings: {', '.join(sorted(unknown))}")
 
 
 def _command_description(callback: CommandCallback, description: str | None) -> str:

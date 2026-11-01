@@ -76,5 +76,11 @@ def decode[M: Model](model: type[M], data: bytes) -> M:
     return value
 
 
+def check_keys(given: Mapping[str, object], allowed: frozenset[str], what: str) -> None:
+    unknown = given.keys() - allowed
+    if unknown:
+        raise TypeError(f"unexpected {what}: {', '.join(sorted(unknown))}")
+
+
 def permissions_from(wire: str | None) -> Permissions | None:
     return None if wire is None else Permissions(int(wire))
