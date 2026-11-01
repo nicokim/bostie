@@ -2,8 +2,6 @@ from collections.abc import AsyncIterator
 from functools import partial
 from typing import TypedDict, Unpack
 
-import msgspec
-
 from bostie.models import (
     EditParts,
     Message,
@@ -13,9 +11,9 @@ from bostie.models import (
     decode,
     decode_message,
 )
-from bostie.models.base import check_keys, decoder
+from bostie.models.base import check_keys
 from bostie.models.message import MESSAGE_PARTS, message_body
-from bostie.rest.base import Group, paginate, wire
+from bostie.rest.base import Group, each, paginate, wire
 
 
 class MessageList(TypedDict, total=False):
@@ -107,7 +105,7 @@ class Messages(Group):
             self._http,
             "/channels/{channel_id}/messages",
             wire(options, MessageList),
-            decode=self._messages,
+            decode=each(self._message),
             items=tuple,
             cursor=lambda message: message.id,
             page_size=100,
@@ -120,6 +118,5 @@ class Messages(Group):
             for message in (reversed(page) if forward else page)
         )
 
-    def _messages(self, data: bytes) -> tuple[Message | WebhookMessage, ...]:
-        raws = decoder(tuple[msgspec.Raw, ...]).decode(data)
-        return tuple(self._in_guild(decode_message(bytes(raw))) for raw in raws)
+    def _message(self, data: bytes) -> Message | WebhookMessage:
+        return self._in_guild(decode_message(data))

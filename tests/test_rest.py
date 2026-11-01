@@ -217,7 +217,9 @@ def test_a_listing_walks_pages_from_its_cursor_up_to_its_limit(
             for ids in pages:
                 fake.fail("GET", route, 200, history(channel_id, ids))
             listed = bot.rest.messages.list(channel_id, **options)
-            assert [message.id async for message in listed] == list(walked)
+            assert [(message.id, message.raw["id"]) async for message in listed] == [
+                (id, str(id)) for id in walked
+            ]
             assert [request.query for request in fake.requests[-len(pages) :]] == (
                 queries
             )

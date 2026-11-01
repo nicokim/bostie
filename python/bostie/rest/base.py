@@ -4,11 +4,13 @@ from datetime import datetime
 from pathlib import PurePath
 from typing import Any
 
+import msgspec
+
 from bostie.cache import Cache
 from bostie.file import File
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
-from bostie.models.base import check_keys
+from bostie.models.base import check_keys, decoder
 from bostie.models.message import PartialMessage, in_guild
 
 CURSORS = ("before", "after", "around")
@@ -37,6 +39,16 @@ class Group:
     def _in_guild[M: PartialMessage](self, message: M) -> M:
         channel = self._cache.channel(message.channel_id)
         return in_guild(message, None if channel is None else channel.guild_id)
+
+
+def each[T](decode: Callable[[bytes], T]) -> Callable[[bytes], tuple[T, ...]]:
+    """A decoder of JSON arrays that hands each element to `decode` as its own JSON."""
+
+    def decode_each(data: bytes) -> tuple[T, ...]:
+        raws = decoder(tuple[msgspec.Raw, ...]).decode(data)
+        return tuple(decode(bytes(raw)) for raw in raws)
+
+    return decode_each
 
 
 def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, object]:
