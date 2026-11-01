@@ -27,8 +27,8 @@ class User(Model, kw_only=True):
         return f"<@{self.id}>"
 
     @property
-    def display_name(self) -> str | None:
-        return self.global_name or self.username
+    def display_name(self) -> str:
+        return self.global_name or self.username or ""
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":

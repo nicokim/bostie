@@ -303,6 +303,7 @@ def test_mentions_and_display_names() -> None:
     assert role.mention == "<@&42>"
     assert channel.mention == "<#7>"
     assert user.display_name == "Ada"
+    assert decode(User, b'{"id": "1"}').display_name == ""
     assert member.display_name == "linus"
     assert msgspec.structs.replace(member, nick="Lin").display_name == "Lin"
 
