@@ -35,8 +35,8 @@ uv run typos
 uv run deptry python
 uv run actionlint
 uv run zizmor --offline .github
-! git grep -nE '^\s*#|\s#\s' -- '*.py' '*.pyi' ':!crates/bostie-core/src/voice/testdata/vectors.py'
-! git grep -nE '^\s*(//|/\*)|\s//\s' -- 'crates/*.rs'
+! git grep -nE '^\s*#|\s#([^[:alnum:]]|$)' -- '*.py' '*.pyi' ':!crates/bostie-core/src/voice/testdata/vectors.py'
+! git grep -nE '(^|\s)(//|/\*)' -- 'crates/*.rs'
 ```
 
 `cargo fmt --all` and `uv run ruff format` fix the formatting. ruff leaves long strings and docstrings alone, though, so `ruff check` can still report E501. ruff runs every rule but the few `pyproject.toml` turns off, mypy runs in strict mode on the tests as well as the library, and pyright checks the library in strict mode. The two `git grep` lines fail on any comment in code, `# noqa` and `# type: ignore` included: fix what the checker found, or, where a rule is wrong for a whole file, add a per-file ignore with its reason in `pyproject.toml`. If you change `crates/bostie-native`, update `python/bostie/_native.pyi` to match or stubtest fails.

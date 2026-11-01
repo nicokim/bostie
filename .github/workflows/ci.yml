@@ -34,7 +34,7 @@ jobs:
       - name: No comments in Rust
         if: runner.os == 'Linux'
         run: |
-          ! git grep -nE '^\s*(//|/\*)|\s//\s' -- 'crates/*.rs'
+          ! git grep -nE '(^|\s)(//|/\*)' -- 'crates/*.rs'
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test -p bostie-core --locked
 
@@ -61,7 +61,7 @@ jobs:
       - run: uv run zizmor --offline .github
       - name: No comments in Python
         run: |
-          ! git grep -nE '^\s*#|\s#\s' -- '*.py' '*.pyi' ':!crates/bostie-core/src/voice/testdata/vectors.py'
+          ! git grep -nE '^\s*#|\s#([^[:alnum:]]|$)' -- '*.py' '*.pyi' ':!crates/bostie-core/src/voice/testdata/vectors.py'
 
   notices:
     runs-on: ubuntu-latest
