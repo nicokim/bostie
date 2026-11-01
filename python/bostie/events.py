@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Self, dataclass_transform
 
 import msgspec
 
-from bostie.enums import Intents
+from bostie.enums import ChannelType, Intents
 from bostie.models import (
     Channel,
     Guild,
@@ -183,8 +183,14 @@ class ThreadUpdate(_ChannelEvent, kw_only=True):
     NAME = "THREAD_UPDATE"
 
 
-class ThreadDelete(_ChannelEvent, kw_only=True):
+class ThreadDelete(Event, kw_only=True):
     NAME = "THREAD_DELETE"
+    INTENTS = Intents.GUILDS
+
+    id: int
+    guild_id: int
+    parent_id: int | None
+    type: ChannelType
 
 
 class ThreadListSync(Event, kw_only=True):

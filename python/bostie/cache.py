@@ -113,8 +113,10 @@ class Cache:
                 self._remove_guild(event.guild_id)
             case ChannelCreate() | ChannelUpdate() | ThreadCreate() | ThreadUpdate():
                 self._store_channel(event.channel)
-            case ChannelDelete() | ThreadDelete():
+            case ChannelDelete():
                 self._remove_channel(event.channel.id)
+            case ThreadDelete():
+                self._remove_channel(event.id)
             case ThreadListSync() if event.guild_id in self._guilds:
                 parents = None if event.channel_ids is None else set(event.channel_ids)
                 self._drop_threads(event.guild_id, parents)

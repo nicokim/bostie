@@ -10,7 +10,7 @@ import pytest
 from fakediscord import FakeDiscord, run, running
 
 from bostie import Bot, events
-from bostie.enums import ApplicationFlags, MemberFlags
+from bostie.enums import ApplicationFlags, ChannelType, MemberFlags
 from bostie.events import (
     EVENTS,
     ChannelUpdate,
@@ -28,6 +28,7 @@ from bostie.events import (
     ReactionAdd,
     Ready,
     ThreadCreate,
+    ThreadDelete,
     ThreadListSync,
     TypingStart,
     VoiceServerUpdate,
@@ -232,6 +233,17 @@ def test_ready() -> None:
     assert event.application.flags == 9084928
     assert ApplicationFlags.APPLICATION_COMMAND_BADGE in event.application.flags
     assert event.session_id == "70374e9c7263b9d5e16c4f418ff85dc1"
+
+
+def test_thread_delete_carries_only_the_ids_and_the_type() -> None:
+    event = decode(ThreadDelete, "THREAD_DELETE")
+
+    assert (event.id, event.guild_id, event.parent_id, event.type) == (
+        1564617159475331073,
+        1335172792320131073,
+        1382046656102531073,
+        ChannelType.PUBLIC_THREAD,
+    )
 
 
 def test_thread_list_sync_tells_channel_scope_from_guild_scope() -> None:
