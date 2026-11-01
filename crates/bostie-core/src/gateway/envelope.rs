@@ -9,8 +9,11 @@ use crate::error::CoreError;
 const MAX_COMMAND_BYTES: usize = 4096;
 const IDENTIFY_PREFIX: &[u8] = br#"{"op":2,"d":"#;
 
-static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&["op", "s", "t"]));
-static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&["session_id", "resume_gateway_url"]));
+const ENVELOPE_KEYS: [&str; 3] = ["op", "s", "t"];
+const READY_KEYS: [&str; 2] = ["session_id", "resume_gateway_url"];
+
+static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&ENVELOPE_KEYS));
+static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&READY_KEYS));
 
 pub(crate) fn tree(keys: &[&str]) -> PointerTree {
     let mut tree = PointerTree::new();
@@ -59,9 +62,9 @@ impl Frame {
         frame: &[u8],
         wanted: impl FnOnce(&str) -> bool,
     ) -> Result<Self, EnvelopeError> {
-        let mut fields = sonic_rs::get_many(frame, &ENVELOPE)?.into_iter();
-        let mut field = || fields.next().flatten();
-        let (op, seq, name) = (field(), field(), field());
+        let [op, seq, name] =
+            <[_; ENVELOPE_KEYS.len()]>::try_from(sonic_rs::get_many(frame, &ENVELOPE)?)
+                .unwrap_or_default();
         let op = op
             .and_then(|op| op.as_u64())
             .ok_or(EnvelopeError::Field("op"))?;
@@ -117,11 +120,12 @@ pub(crate) struct ReadySession {
 }
 
 pub(crate) fn ready_session(data: &[u8]) -> Option<ReadySession> {
-    let fields = sonic_rs::get_many(data, &READY).ok()?;
-    let mut fields = fields.iter().map(|field| field.as_ref()?.as_str());
-    let id = fields.next().flatten()?.to_owned();
-    let resume_url = fields.next().flatten()?.to_owned();
-    Some(ReadySession { id, resume_url })
+    let [id, resume_url] =
+        <[_; READY_KEYS.len()]>::try_from(sonic_rs::get_many(data, &READY).ok()?).ok()?;
+    Some(ReadySession {
+        id: id?.as_str()?.to_owned(),
+        resume_url: resume_url?.as_str()?.to_owned(),
+    })
 }
 
 pub(crate) fn identify_frame(payload: &[u8]) -> Result<Bytes, CoreError> {

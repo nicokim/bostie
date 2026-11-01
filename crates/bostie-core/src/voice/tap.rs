@@ -13,21 +13,21 @@ use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 pub const VOICE_STATE_UPDATE: &str = "VOICE_STATE_UPDATE";
 pub const VOICE_SERVER_UPDATE: &str = "VOICE_SERVER_UPDATE";
 
-static STATE_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| {
-    tree(&[
-        "guild_id",
-        "user_id",
-        "channel_id",
-        "session_id",
-        "self_mute",
-        "self_deaf",
-        "mute",
-        "deaf",
-        "suppress",
-    ])
-});
-static SERVER_FIELDS: LazyLock<PointerTree> =
-    LazyLock::new(|| tree(&["guild_id", "token", "endpoint"]));
+const STATE_KEYS: [&str; 9] = [
+    "guild_id",
+    "user_id",
+    "channel_id",
+    "session_id",
+    "self_mute",
+    "self_deaf",
+    "mute",
+    "deaf",
+    "suppress",
+];
+const SERVER_KEYS: [&str; 3] = ["guild_id", "token", "endpoint"];
+
+static STATE_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| tree(&STATE_KEYS));
+static SERVER_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| tree(&SERVER_KEYS));
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
@@ -146,10 +146,17 @@ impl GatewayTap {
             debug!("ignoring an unreadable VOICE_STATE_UPDATE");
             return;
         };
-        let mut fields = fields.into_iter();
-        let mut next = || fields.next().flatten();
-        let (guild, user, channel, session_id) = (next(), next(), next(), next());
-        let (self_mute, self_deaf, mute, deaf, suppress) = (next(), next(), next(), next(), next());
+        let [
+            guild,
+            user,
+            channel,
+            session_id,
+            self_mute,
+            self_deaf,
+            mute,
+            deaf,
+            suppress,
+        ] = <[_; STATE_KEYS.len()]>::try_from(fields).unwrap_or_default();
         let (Some(guild), Some(user), Some(session_id)) = (
             guild.as_ref().and_then(snowflake).map(GuildId::from),
             user.as_ref().and_then(snowflake).map(UserId::from),
@@ -191,9 +198,8 @@ impl GatewayTap {
             debug!("ignoring an unreadable VOICE_SERVER_UPDATE");
             return;
         };
-        let mut fields = fields.into_iter();
-        let mut next = || fields.next().flatten();
-        let (guild, token, endpoint) = (next(), next(), next());
+        let [guild, token, endpoint] =
+            <[_; SERVER_KEYS.len()]>::try_from(fields).unwrap_or_default();
         let (Some(guild), Some(token)) = (
             guild.as_ref().and_then(snowflake).map(GuildId::from),
             token.as_ref().and_then(|value| value.as_str()),
