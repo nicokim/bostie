@@ -16,10 +16,10 @@ use davey::{Codec, DaveSession, MediaType, ProposalsOperationType};
 use tracing::{debug, error, warn};
 
 use crate::ids::{ChannelId, UserId};
-use crate::voice::panic_message;
 use crate::voice::types::{
     DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, ReceiveTuning, SILENCE_FRAME,
 };
+use crate::voice::{Throttle, panic_message};
 
 pub const DAVEY_VERSION: &str = "0.2.0-beta.1";
 
@@ -156,6 +156,7 @@ pub struct Dave {
     settled: Option<Instant>,
     generation: u64,
     counters: DaveCounters,
+    decrypt_panicked: Throttle,
     #[cfg(test)]
     fault: Option<(MlsCall, Fault)>,
 }
@@ -180,6 +181,7 @@ impl Dave {
             settled: None,
             generation: 0,
             counters: DaveCounters::default(),
+            decrypt_panicked: Throttle::default(),
             #[cfg(test)]
             fault: None,
         }
@@ -317,10 +319,8 @@ impl Dave {
             Ok(result) => result.map_err(|error| decrypt_failure(&error)),
             Err(payload) => {
                 self.counters.decrypt_panics += 1;
-                let panics = self.counters.decrypt_panics;
-                if panics.is_power_of_two() {
+                if self.decrypt_panicked.allows(Instant::now()) {
                     error!(
-                        panics,
                         panic = panic_message(payload.as_ref()),
                         "a DAVE decrypt panicked"
                     );

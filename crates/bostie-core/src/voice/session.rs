@@ -14,6 +14,7 @@ use tokio::task::{AbortHandle, spawn_blocking};
 use tokio::time::Instant;
 use tracing::{debug, warn};
 
+use super::Throttle;
 use super::connection::{Command, Connection, GatewayEvent, Step, until};
 use super::crypto::{Cipher, Mode};
 use super::dave::{Dave, Outbound, SendMode};
@@ -25,8 +26,6 @@ use super::udp::{self, Answer, DiscoveryError};
 use super::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
 use crate::error::describe;
 use crate::inbox::Delivery;
-
-const LOG_EVERY: Duration = Duration::from_secs(1);
 
 pub(super) struct Credentials {
     pub session_id: Box<str>,
@@ -197,21 +196,6 @@ impl Keepalive {
     }
 }
 
-#[derive(Debug, Default)]
-struct RateLimit {
-    last: Option<Instant>,
-}
-
-impl RateLimit {
-    fn allows(&mut self, now: Instant) -> bool {
-        if self.last.is_some_and(|last| now < last + LOG_EVERY) {
-            return false;
-        }
-        self.last = Some(now);
-        true
-    }
-}
-
 struct Session<'c> {
     conn: &'c mut Connection,
     socket: VoiceSocket,
@@ -224,8 +208,8 @@ struct Session<'c> {
     speaking: Coalescer,
     keepalive: Option<Keepalive>,
     stable: bool,
-    unknown: RateLimit,
-    invalid: RateLimit,
+    unknown: Throttle,
+    invalid: Throttle,
 }
 
 impl<'c> Session<'c> {
@@ -243,8 +227,8 @@ impl<'c> Session<'c> {
             speaking,
             keepalive: None,
             stable: false,
-            unknown: RateLimit::default(),
-            invalid: RateLimit::default(),
+            unknown: Throttle::default(),
+            invalid: Throttle::default(),
         }
     }
 
@@ -360,7 +344,7 @@ impl<'c> Session<'c> {
             return Err(SessionEnd::Invalid(format!("invalid frame: {error}")));
         }
         bump(&self.conn.media.counters.invalid_frames);
-        if self.invalid.allows(Instant::now()) {
+        if self.invalid.allows(Instant::now().into_std()) {
             warn!(%error, guild = %self.conn.guild, "skipping an invalid voice frame");
         }
         Ok(())
@@ -430,7 +414,7 @@ impl<'c> Session<'c> {
                 self.on_call(inbound).await
             }
             Inbound::Other { op } => {
-                if self.unknown.allows(Instant::now()) {
+                if self.unknown.allows(Instant::now().into_std()) {
                     debug!(op, guild = %self.conn.guild, "ignoring an unknown voice opcode");
                 }
                 Ok(())
@@ -853,15 +837,5 @@ mod tests {
         coalescer.sent(start + window);
         assert_eq!(coalescer.due, None);
         assert!(coalescer.request(start + window * 3));
-    }
-
-    #[test]
-    fn a_rate_limit_lets_one_message_through_per_second() {
-        let start = Instant::now();
-        let mut limit = RateLimit::default();
-
-        assert!(limit.allows(start));
-        assert!(!limit.allows(start + LOG_EVERY / 2));
-        assert!(limit.allows(start + LOG_EVERY));
     }
 }

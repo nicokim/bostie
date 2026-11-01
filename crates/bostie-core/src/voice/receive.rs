@@ -22,7 +22,6 @@ use crate::voice::crypto::ReplayWindow;
 use crate::voice::dave::{self, Dave, DecryptFailure};
 use crate::voice::media::{Arrival, Media, Transport, bump};
 use crate::voice::pacer::Tick;
-use crate::voice::panic_message;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, is_before, to_samples};
 use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
@@ -31,6 +30,7 @@ use crate::voice::types::{
     Direction, FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, ReceiveTuning,
     SAMPLE_RATE, SILENCE_FRAME,
 };
+use crate::voice::{Throttle, panic_message};
 
 const FRAME_48K: u32 = FRAME_SAMPLES as u32;
 const FRAME_OFFSETS: u64 = FRAME_SAMPLES as u64;
@@ -40,7 +40,6 @@ const PEAK_TICKS: u32 = 24;
 const PAYLOAD_CHUNK: usize = 8 * 1024;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 const MIX_SLACK: Duration = Duration::from_millis(100);
-const WARN_EVERY: Duration = Duration::from_secs(1);
 const RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 const RECOVERIES_PER_USER: u8 = 2;
 const SPARE_WINDOWS: usize = 8;
@@ -54,6 +53,7 @@ pub struct Intake {
     transport: Option<Arc<Transport>>,
     windows: HashMap<u32, ReplayWindow>,
     replay_window: u32,
+    panicked: Throttle,
 }
 
 impl Intake {
@@ -70,12 +70,19 @@ impl Intake {
             transport: None,
             windows: HashMap::new(),
             replay_window,
+            panicked: Throttle::default(),
         }
     }
 
     pub fn rtp(&mut self, packet: &mut [u8]) {
-        if panic::catch_unwind(AssertUnwindSafe(|| self.open(packet))).is_err() {
+        if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(|| self.open(packet))) {
             bump(&self.media.receive.rx_panics);
+            if self.panicked.allows(Instant::now()) {
+                error!(
+                    panic = panic_message(payload.as_ref()),
+                    "opening a received voice packet panicked and it was dropped"
+                );
+            }
         }
     }
 
@@ -279,7 +286,7 @@ pub struct Reception {
     tuning: ReceiveTuning,
     epoch: Instant,
     state: Option<Box<State>>,
-    panicked: Option<Instant>,
+    panicked: Throttle,
 }
 
 struct State {
@@ -321,7 +328,7 @@ struct State {
     forget_at: Option<i64>,
     member_count: usize,
     undecryptable: u64,
-    warned: Option<Instant>,
+    warned: Throttle,
     next_feed: u64,
     turn: usize,
 }
@@ -340,7 +347,7 @@ impl Reception {
             tuning,
             epoch: Instant::now(),
             state: None,
-            panicked: None,
+            panicked: Throttle::default(),
         }
     }
 
@@ -368,11 +375,7 @@ impl Reception {
             Ok(alive) => alive,
             Err(payload) => {
                 bump(&self.media.receive.rx_panics);
-                if self
-                    .panicked
-                    .is_none_or(|at| now.saturating_duration_since(at) >= WARN_EVERY)
-                {
-                    self.panicked = Some(now);
+                if self.panicked.allows(now) {
                     error!(
                         panic = panic_message(payload.as_ref()),
                         "the voice receive phase panicked and starts over"
@@ -435,7 +438,7 @@ impl State {
             forget_at: None,
             member_count: 0,
             undecryptable: 0,
-            warned: None,
+            warned: Throttle::default(),
             next_feed: 0,
             turn: 0,
         }
@@ -1300,17 +1303,13 @@ impl State {
 
     fn warn_undecryptable(&mut self, now: Instant) {
         let dropped = self.media.receive.undecryptable.load(Ordering::Relaxed);
-        let quiet = self
-            .warned
-            .is_none_or(|at| now.saturating_duration_since(at) >= WARN_EVERY);
-        if dropped > self.undecryptable && quiet {
+        if dropped > self.undecryptable && self.warned.allows(now) {
             warn!(
                 guild = %self.media.guild(),
                 dropped = dropped.saturating_sub(self.undecryptable),
                 "dropped received voice frames that could not be decrypted"
             );
             self.undecryptable = dropped;
-            self.warned = Some(now);
         }
     }
 

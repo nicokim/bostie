@@ -3101,3 +3101,13 @@ async fn the_speech_hangover_is_checked_against_its_bounds() {
         Duration::from_millis(350)
     );
 }
+
+#[test]
+fn a_throttle_lets_one_message_through_per_second() {
+    let start = std::time::Instant::now();
+    let mut throttle = Throttle::default();
+
+    assert!(throttle.allows(start));
+    assert!(!throttle.allows(start + LOG_EVERY / 2));
+    assert!(throttle.allows(start + LOG_EVERY));
+}

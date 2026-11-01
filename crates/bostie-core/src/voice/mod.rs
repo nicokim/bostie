@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use parking_lot::Mutex;
@@ -63,6 +63,7 @@ use crate::runtime::Owner;
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
 
 const COMMAND_QUEUE: usize = 32;
+const LOG_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Tuning {
@@ -493,6 +494,22 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
         code: ending.code,
         detail: ending.detail.into(),
     });
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Throttle(Option<Instant>);
+
+impl Throttle {
+    pub(crate) fn allows(&mut self, now: Instant) -> bool {
+        if self
+            .0
+            .is_some_and(|last| now.saturating_duration_since(last) < LOG_EVERY)
+        {
+            return false;
+        }
+        self.0 = Some(now);
+        true
+    }
 }
 
 pub(crate) fn nanos(duration: Duration) -> u64 {
