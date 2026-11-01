@@ -63,7 +63,8 @@ from bostie.models import (
     decode,
     decode_message,
 )
-from bostie.models.message import in_guild
+from bostie.models.base import check_keys
+from bostie.models.message import MESSAGE_PARTS, in_guild
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
@@ -290,6 +291,7 @@ class Bot(Router):
         **parts: Unpack[MessageParts],
     ) -> Message:
         """Send a message; `reply_to` takes the id of a message in the same channel."""
+        check_keys(parts, MESSAGE_PARTS, "message parts")
         parts.setdefault("allowed_mentions", self._allowed_mentions)
         body, files = build_message(content, reply_to=reply_to, **parts)
         message = await self.http._decoded(

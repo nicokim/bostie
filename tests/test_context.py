@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
+from functools import partial
 from typing import Annotated, Any
 
 import pytest
@@ -688,6 +689,21 @@ def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
         cleared = {"components": [text], "flags": v2, "content": None, "embeds": []}
         assert filled.json == cleared | {"allowed_mentions": MENTIONS}
         assert update.json["data"] == cleared | {"allowed_mentions": MENTIONS}
+
+    run_bot(scenario)
+
+
+def test_new_messages_refuse_attachments_which_only_edits_take() -> None:
+    parts: dict[str, Any] = {"attachments": [1]}
+
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            for send in (ctx.respond, ctx.followup, partial(on.bot.send_message, 1)):
+                with pytest.raises(TypeError, match="message parts: attachments"):
+                    await send(**parts)
+            await ctx.respond("ok")
+
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_4]
 
     run_bot(scenario)
 

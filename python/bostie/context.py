@@ -39,8 +39,8 @@ from bostie.models import (
     build_message,
     decode_message,
 )
-from bostie.models.base import decoder
-from bostie.models.message import in_guild
+from bostie.models.base import check_keys, decoder
+from bostie.models.message import EDIT_PARTS, MESSAGE_PARTS, in_guild
 from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
@@ -221,7 +221,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         **parts: Unpack[MessageParts],
     ) -> Message | WebhookMessage:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
-        body, files = self._message_body(content, **parts)
+        body, files = self._message_body(content, MESSAGE_PARTS, **parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
@@ -256,7 +256,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._message_body(content, **parts)
+        body, files = self._message_body(content, EDIT_PARTS, **parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
@@ -272,7 +272,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         **parts: Unpack[MessageParts],
     ) -> Message | WebhookMessage:
         """Send another message; right after `defer()` it fills the deferred answer."""
-        body, files = self._message_body(content, **parts)
+        body, files = self._message_body(content, MESSAGE_PARTS, **parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
@@ -366,8 +366,9 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
             )
 
     def _message_body(
-        self, content: str | None, **parts: Unpack[EditParts]
+        self, content: str | None, allowed: frozenset[str], **parts: Unpack[EditParts]
     ) -> tuple[dict[str, Any], Sequence[File]]:
+        check_keys(parts, allowed, "message parts")
         if self._allowed_mentions is not None:
             parts.setdefault("allowed_mentions", self._allowed_mentions)
         return build_message(content, **parts)
@@ -422,7 +423,7 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._message_body(content, **parts)
+        body, files = self._message_body(content, EDIT_PARTS, **parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:

@@ -255,6 +255,7 @@ class EditParts(MessageParts, total=False):
     attachments: Sequence[Attachment | int]
 
 
+MESSAGE_PARTS = MessageParts.__optional_keys__
 EDIT_PARTS = EditParts.__optional_keys__
 
 
