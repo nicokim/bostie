@@ -6,7 +6,6 @@ from types import EllipsisType, UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
-    ClassVar,
     Protocol,
     TypeAliasType,
     Union,
@@ -30,7 +29,8 @@ type ErrorHandler = Callable[[Any, Any], Coroutine[Any, Any, None]]
 
 
 class EventClass(Protocol):
-    NAME: ClassVar[str]
+    @property
+    def NAME(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
