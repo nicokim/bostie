@@ -1329,6 +1329,25 @@ def test_stop_waits_for_the_audio_still_in_the_jitter_buffer(tmp_path: Path) -> 
     run(scenario)
 
 
+def test_stop_finishes_the_files_when_waiting_for_the_audio_gives_up(
+    tmp_path: Path,
+) -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = RecordingConnection()
+        recorder = Recorder(cast("Any", vc), tmp_path / "{user_id}.ogg", align=False)
+        await settle(SETTLE)
+        vc.rx.feed(opus(0))
+        vc.rx.hear(opus(1))
+        stopping = asyncio.create_task(recorder.stop())
+        await settle(SETTLE)
+        vc.rx.settle_marks(False)
+        files = await stopping
+        assert read_ogg(files[42])[0] == [b"\x00" * 3]
+        assert vc.rx.closed_reason is ClosedReason.CLOSED
+
+    run(scenario)
+
+
 def test_a_recorder_raises_its_write_error_from_stop(tmp_path: Path) -> None:
     async def scenario(clock: Clock) -> None:
         (tmp_path / "taken").write_bytes(b"")

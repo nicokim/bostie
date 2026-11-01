@@ -901,7 +901,7 @@ class Recorder:
         return self._rx.stats()
 
     async def stop(self) -> dict[int, Path]:
-        """Stop recording, finish every file and return them by user id."""
+        """Stop once heard audio is queued or the wait gives up; return the files."""
         await self._rx.mark()
         if not self._stopping.done():
             self._stopping.set_result(None)
