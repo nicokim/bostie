@@ -67,7 +67,7 @@ class Attachment(Model, kw_only=True):
 class EmbedField(Builder, kw_only=True):
     name: str
     value: str
-    inline: bool = False
+    inline: bool | None = None
 
 
 class EmbedFooter(Builder, kw_only=True):

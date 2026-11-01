@@ -24,9 +24,7 @@ class _Component(Builder, kw_only=True, tag_field="type"):
 
 
 class ActionRow(_Component, kw_only=True, tag=ComponentType.ACTION_ROW.value):
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
-        default=(), name="components"
-    )
+    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
 
     @property
     def components(self) -> "tuple[Component, ...]":
@@ -34,7 +32,7 @@ class ActionRow(_Component, kw_only=True, tag=ComponentType.ACTION_ROW.value):
 
 
 class Button(_Component, kw_only=True, tag=ComponentType.BUTTON.value):
-    style: ButtonStyle | None = None
+    style: ButtonStyle
     label: str | None = None
     emoji: PartialEmoji | None = None
     custom_id: str | None = None
@@ -44,8 +42,8 @@ class Button(_Component, kw_only=True, tag=ComponentType.BUTTON.value):
 
 
 class SelectOption(Builder, kw_only=True):
-    label: str | None = None
-    value: str | None = None
+    label: str
+    value: str
     description: str | None = None
     emoji: PartialEmoji | None = None
     default: bool | None = None
@@ -58,11 +56,11 @@ class SelectDefaultValue(Builder, kw_only=True):
     """A user, role or channel a select shows as already chosen."""
 
     id: int
-    type: SelectDefaultType | None = None
+    type: SelectDefaultType
 
 
 class _Select(_Component, kw_only=True):
-    custom_id: str | None = None
+    custom_id: str
     placeholder: str | None = None
     min_values: int | None = None
     max_values: int | None = None
@@ -70,7 +68,7 @@ class _Select(_Component, kw_only=True):
 
 
 class StringSelect(_Select, kw_only=True, tag=ComponentType.STRING_SELECT.value):
-    options: tuple[SelectOption, ...] = ()
+    options: tuple[SelectOption, ...]
 
 
 class _EntitySelect(_Select, kw_only=True):
@@ -100,7 +98,7 @@ class ChannelSelect(
 class UnfurledMediaItem(Builder, kw_only=True):
     """An image, video or file shown by a component; only `url` is set when sending."""
 
-    url: str | None = None
+    url: str
     proxy_url: str | None = None
     height: int | None = None
     width: int | None = None
@@ -111,44 +109,42 @@ class UnfurledMediaItem(Builder, kw_only=True):
 class Section(_Component, kw_only=True, tag=ComponentType.SECTION.value):
     """Text components with a button or thumbnail beside them."""
 
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
-        default=(), name="components"
-    )
-    accessory_json: msgspec.Raw = msgspec.field(default=msgspec.Raw(), name="accessory")
+    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
+    accessory_json: msgspec.Raw = msgspec.field(name="accessory")
 
     @property
     def components(self) -> "tuple[Component, ...]":
         return decode_components(self.components_json)
 
     @property
-    def accessory(self) -> "Component | None":
-        return _decode_component(self.accessory_json) if self.accessory_json else None
+    def accessory(self) -> "Component":
+        return _decode_component(self.accessory_json)
 
 
 class TextDisplay(_Component, kw_only=True, tag=ComponentType.TEXT_DISPLAY.value):
-    content: str | None = None
+    content: str
 
 
 class Thumbnail(_Component, kw_only=True, tag=ComponentType.THUMBNAIL.value):
-    media: UnfurledMediaItem | None = None
+    media: UnfurledMediaItem
     description: str | None = None
     spoiler: bool | None = None
 
 
 class MediaGalleryItem(Builder, kw_only=True):
-    media: UnfurledMediaItem | None = None
+    media: UnfurledMediaItem
     description: str | None = None
     spoiler: bool | None = None
 
 
 class MediaGallery(_Component, kw_only=True, tag=ComponentType.MEDIA_GALLERY.value):
-    items: tuple[MediaGalleryItem, ...] = ()
+    items: tuple[MediaGalleryItem, ...]
 
 
 class FileComponent(_Component, kw_only=True, tag=ComponentType.FILE.value):
     """A file attached to the message, shown in its place among the components."""
 
-    file: UnfurledMediaItem | None = None
+    file: UnfurledMediaItem
     spoiler: bool | None = None
     name: str | None = None
     size: int | None = None
@@ -160,9 +156,7 @@ class Separator(_Component, kw_only=True, tag=ComponentType.SEPARATOR.value):
 
 
 class Container(_Component, kw_only=True, tag=ComponentType.CONTAINER.value):
-    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
-        default=(), name="components"
-    )
+    components_json: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
     accent_color: int | None = None
     spoiler: bool | None = None
 

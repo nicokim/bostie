@@ -172,7 +172,6 @@ def test_components_v2_decode_into_their_models() -> None:
     assert heading.content == "# You have encountered a wild coyote!"
     assert isinstance(gallery, MediaGallery)
     (item,) = gallery.items
-    assert item.media is not None
     assert (item.media.width, item.media.content_type) == (1600, "image/webp")
     assert isinstance(separator, Separator)
     assert (separator.divider, separator.spacing) == (True, 2)
@@ -191,7 +190,6 @@ def test_components_v2_decode_into_their_models() -> None:
     )
     assert where.default_values[0].id == 1335173547294851073
     assert isinstance(file, FileComponent)
-    assert file.file is not None
     assert (file.name, file.size, file.file.attachment_id) == (
         "manual.pdf",
         482113,
