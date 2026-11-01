@@ -105,16 +105,6 @@ pub enum Application {
     LowDelay,
 }
 
-impl Application {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Audio => "audio",
-            Self::Voip => "voip",
-            Self::LowDelay => "lowdelay",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EncoderSettings {
     pub bitrate: u32,
@@ -154,15 +144,6 @@ impl EncoderSettings {
 pub enum SampleFormat {
     S16Le,
     F32Le,
-}
-
-impl SampleFormat {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::S16Le => "s16le",
-            Self::F32Le => "f32le",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,28 +186,10 @@ pub enum SinkFormat {
     Opus,
 }
 
-impl SinkFormat {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pcm(_) => "pcm",
-            Self::Opus => "opus",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StallPolicy {
     Hold,
     Drop,
-}
-
-impl StallPolicy {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Hold => "hold",
-            Self::Drop => "drop",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -258,16 +221,6 @@ pub enum ReceiveFormat {
     Pcm(PcmFormat),
     Opus,
     Packets,
-}
-
-impl ReceiveFormat {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pcm(_) => "pcm",
-            Self::Opus => "opus",
-            Self::Packets => "packets",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -604,31 +557,6 @@ mod tests {
         assert_eq!(
             [Direction::Send, Direction::Receive].map(Direction::as_str),
             ["send", "receive"]
-        );
-        assert_eq!(
-            [Application::Audio, Application::Voip, Application::LowDelay].map(Application::as_str),
-            ["audio", "voip", "lowdelay"]
-        );
-        assert_eq!(
-            [SampleFormat::S16Le, SampleFormat::F32Le].map(SampleFormat::as_str),
-            ["s16le", "f32le"]
-        );
-        assert_eq!(
-            [StallPolicy::Hold, StallPolicy::Drop].map(StallPolicy::as_str),
-            ["hold", "drop"]
-        );
-        assert_eq!(
-            [SinkFormat::Pcm(pcm(48_000, 2)), SinkFormat::Opus].map(SinkFormat::as_str),
-            ["pcm", "opus"]
-        );
-        assert_eq!(
-            [
-                ReceiveFormat::Pcm(pcm(16_000, 1)),
-                ReceiveFormat::Opus,
-                ReceiveFormat::Packets
-            ]
-            .map(ReceiveFormat::as_str),
-            ["pcm", "opus", "packets"]
         );
         assert_eq!(
             (Overflow::DropOldest.as_str(), ReceiveStall::Wait.as_str()),
