@@ -146,12 +146,18 @@ impl Media {
         self.inbox.push(delivery);
     }
 
-    pub(crate) fn arrive(&self, arrival: Arrival) {
+    pub(crate) fn arrive(&self, stamped: impl FnOnce(Instant) -> Arrival) {
         let mut arrivals = self.arrivals.lock();
         if arrivals.len() >= self.arrival_limit {
             arrivals.pop_front();
         }
-        arrivals.push_back(arrival);
+        arrivals.push_back(stamped(Instant::now()));
+    }
+
+    pub(crate) fn take_arrivals(&self, into: &mut VecDeque<Arrival>) -> Instant {
+        let mut arrivals = self.arrivals.lock();
+        mem::swap(&mut *arrivals, into);
+        Instant::now()
     }
 
     pub(crate) fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
@@ -560,13 +566,15 @@ fn tee(media: &Media, transport: &Transport, stamp: Option<(u16, u32)>, payload:
     if media.self_receivers.load(Ordering::Relaxed) == 0 {
         return;
     }
-    media.arrive(Arrival {
+    let silence = payload == SILENCE_FRAME;
+    let payload = Some(Bytes::copy_from_slice(payload));
+    media.arrive(|at| Arrival {
         ssrc: transport.ssrc,
         sequence,
         timestamp,
-        at: Instant::now(),
-        payload: Some(Bytes::copy_from_slice(payload)),
-        silence: payload == SILENCE_FRAME,
+        at,
+        payload,
+        silence,
         extension: None,
         own: true,
     });

@@ -60,6 +60,14 @@ impl Owners {
         }
     }
 
+    pub(super) fn oldest(&self) -> Option<Instant> {
+        self.unmapped
+            .values()
+            .flatten()
+            .map(|arrival| arrival.at)
+            .min()
+    }
+
     pub(super) fn has_parked(&self) -> bool {
         !self.unmapped.is_empty()
     }

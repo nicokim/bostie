@@ -62,10 +62,13 @@ impl Hold {
         self.held.is_empty() && self.waiting.is_empty()
     }
 
-    pub(super) fn oldest(&self) -> Option<Instant> {
-        let held = self.held.front().map(|held| held.arrival.at);
-        let waiting = self.waiting.front().map(|item| item.arrival.at);
-        held.into_iter().chain(waiting).min()
+    pub(super) fn oldest(&self, wanted: impl Fn(UserId, bool) -> bool) -> Option<Instant> {
+        let held = self.held.iter().map(|held| (held.user, &held.arrival));
+        let waiting = self.waiting.iter().map(|item| (item.user, &item.arrival));
+        held.chain(waiting)
+            .filter(|(user, arrival)| wanted(*user, arrival.own))
+            .map(|(_, arrival)| arrival.at)
+            .min()
     }
 
     pub(super) fn is_pending(&self, key: Key, sequence: u16) -> bool {
@@ -404,6 +407,35 @@ fn unhold(per_user: &mut HashMap<UserId, usize>, user: UserId) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hold_reports_the_oldest_frame_a_filter_takes_wherever_it_sits() {
+        let (alice, bob) = (UserId::from(1), UserId::from(2));
+        let earlier = Instant::now();
+        let later = earlier + Duration::from_millis(5);
+        let held = |user, at| Held {
+            user,
+            arrival: Arrival {
+                ssrc: 1,
+                sequence: 0,
+                timestamp: 0,
+                at,
+                payload: None,
+                silence: false,
+                extension: None,
+                own: false,
+            },
+            check: Check::Fresh,
+            tried: 0,
+        };
+        let mut hold = Hold::default();
+        hold.held.extend([held(bob, later), held(alice, earlier)]);
+
+        let everyone = hold.oldest(|_, _| true);
+        let only_bob = hold.oldest(|user, _| user == bob);
+
+        assert_eq!((everyone, only_bob), (Some(earlier), Some(later)));
+    }
 
     #[test]
     fn a_recovery_is_asked_only_when_every_condition_holds() {

@@ -59,7 +59,6 @@ impl Intake {
         if !media.speech_activity() && media.open_receivers() == 0 {
             return;
         }
-        let at = Instant::now();
         if self.transport.is_none() {
             let installed = media.transport.lock().clone();
             self.transport =
@@ -94,13 +93,14 @@ impl Intake {
             .extension
             .filter(|_| media.packet_receivers() > 0)
             .map(|extension| (extension.profile, Bytes::copy_from_slice(opened.extension)));
-        media.arrive(Arrival {
+        let silence = opened.payload == SILENCE_FRAME;
+        media.arrive(|at| Arrival {
             ssrc: header.ssrc,
             sequence: header.sequence,
             timestamp: header.timestamp,
             at,
             payload,
-            silence: opened.payload == SILENCE_FRAME,
+            silence,
             extension,
             own: false,
         });

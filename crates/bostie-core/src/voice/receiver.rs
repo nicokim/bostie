@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::mem;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -11,7 +12,7 @@ use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
 use crate::voice::peak::Peak;
-use crate::voice::types::{Overflow, ReceiveFormat, ReceiveOptions, Speaking};
+use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
@@ -75,6 +76,7 @@ pub struct Receiver {
     owner: Owner,
     inbox: Arc<Inbox>,
     opened: Instant,
+    marked: AtomicBool,
     queue: Mutex<Queue>,
 }
 
@@ -106,6 +108,7 @@ impl Receiver {
             owner: Owner::current(),
             inbox,
             opened: Instant::now(),
+            marked: AtomicBool::new(false),
             queue: Mutex::default(),
         })
     }
@@ -169,23 +172,27 @@ impl Receiver {
             self.resolve(id, false);
         } else {
             queue.marks.push_back((id, Instant::now()));
+            self.marked.store(true, Ordering::Relaxed);
         }
         Ok(id)
     }
 
-    pub fn pass(&self, now: Instant, pending: Option<Instant>) {
-        let lag = match self.options.format {
-            ReceiveFormat::Packets => Duration::ZERO,
-            _ => self.options.jitter,
-        };
+    pub fn is_marked(&self) -> bool {
+        self.marked.load(Ordering::Relaxed)
+    }
+
+    pub fn pass(&self, cut: Instant, pending: Option<Instant>, expiry: Option<Instant>) {
         let mut queue = self.queue.lock();
-        while let Some(&(id, at)) = queue.marks.front()
-            && now.saturating_duration_since(at) >= lag
-            && pending.is_none_or(|heard| heard > at)
-        {
+        while let Some(&(id, at)) = queue.marks.front() {
+            let passed = at < cut && pending.is_none_or(|oldest| oldest > at);
+            if !passed && expiry.is_none_or(|expiry| at > expiry) {
+                break;
+            }
             queue.marks.pop_front();
-            self.resolve(id, true);
+            self.resolve(id, passed);
         }
+        self.marked
+            .store(!queue.marks.is_empty(), Ordering::Relaxed);
     }
 
     pub fn ended(&self) -> Option<Ended> {
@@ -253,6 +260,7 @@ impl Receiver {
         for (id, _) in queue.marks.drain(..) {
             self.resolve(id, false);
         }
+        self.marked.store(false, Ordering::Relaxed);
     }
 
     fn resolve(&self, mark: u64, passed: bool) {
@@ -344,7 +352,7 @@ mod tests {
 
     use super::*;
     use crate::voice::sink::tests::Fixture;
-    use crate::voice::types::{ReceiveStall, SILENCE_FRAME};
+    use crate::voice::types::{ReceiveFormat, ReceiveStall, SILENCE_FRAME};
 
     const ALICE: u64 = 1;
     const BOB: u64 = 2;
@@ -398,6 +406,34 @@ mod tests {
             .iter()
             .filter(|delivery| matches!(delivery, Delivery::VoiceWake { .. }))
             .count()
+    }
+
+    fn marks(fixture: &Fixture) -> Vec<(u64, bool)> {
+        fixture
+            .inbox
+            .drain()
+            .into_iter()
+            .filter_map(|delivery| match delivery {
+                Delivery::VoiceMarker { marker, played, .. } => Some((marker, played)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_mark_passes_only_in_a_flush_whose_cut_comes_after_it() {
+        let fixture = Fixture::new();
+        let receiver = open(&fixture, 60_000);
+        let before = Instant::now();
+        let mark = receiver.mark().unwrap();
+        let after = Instant::now() + Duration::from_millis(1);
+
+        receiver.pass(before, None, None);
+        let early = marks(&fixture);
+        receiver.pass(after, None, None);
+
+        assert_eq!(early, []);
+        assert_eq!(marks(&fixture), [(mark, true)]);
     }
 
     #[test]

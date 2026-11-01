@@ -724,11 +724,11 @@ fn the_arrival_queue_drops_the_oldest_beyond_its_bound() {
     );
 
     for sequence in 0..3 {
-        media.arrive(Arrival {
+        media.arrive(|at| Arrival {
             ssrc: SSRC,
             sequence,
             timestamp: 0,
-            at: Instant::now(),
+            at,
             payload: None,
             silence: false,
             extension: None,

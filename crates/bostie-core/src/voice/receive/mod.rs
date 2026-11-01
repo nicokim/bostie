@@ -55,6 +55,8 @@ struct Moment {
     now48: i64,
     hangover: i64,
     deadline: Instant,
+    cut: Instant,
+    skipped: u32,
 }
 
 struct Work {
@@ -210,10 +212,7 @@ impl State {
         }
         self.subscribe();
         let now48 = samples_since(self.core.epoch, now);
-        mem::swap(
-            &mut *self.core.media.arrivals.lock(),
-            &mut self.inflow.arrivals,
-        );
+        let cut = self.core.media.take_arrivals(&mut self.inflow.arrivals);
         self.inflow.peak.observe(self.inflow.arrivals.len());
         if self.inflow.arrivals.is_empty() && self.is_idle(now48) {
             self.shrink_buffers();
@@ -224,6 +223,8 @@ impl State {
             now48,
             hangover: to_samples(self.core.media.speech_hangover()),
             deadline,
+            cut,
+            skipped,
         };
         self.speech.enabled = self.core.media.speech_activity();
         let transport = self.core.media.transport.lock().clone();
@@ -249,9 +250,9 @@ impl State {
             &mut self.streams.feeds,
             &self.core,
             at,
-            skipped,
             transport.is_some(),
-            self.hold.oldest(),
+            &self.owners,
+            &self.hold,
         );
         self.watchdog.heard |= heard;
         let listening = !self.subscribers.is_empty();

@@ -341,6 +341,20 @@ impl Cursor {
         })
     }
 
+    pub(crate) fn backlog(&self, stream: &Stream) -> Option<i64> {
+        let from = match self.next.filter(|_| self.restarts == stream.restarts) {
+            Some(next) => next,
+            None => stream.first_since(self.opened)?.sequence,
+        };
+        stream
+            .ring
+            .iter()
+            .flatten()
+            .filter(|slot| slot.payload.is_some() && !is_before(slot.sequence, from))
+            .map(|slot| slot.at)
+            .min()
+    }
+
     pub(crate) fn offset(&mut self, due: i64, samples: u32) -> u64 {
         let offset = due.saturating_sub(self.opened).max(self.end);
         self.end = offset.saturating_add(i64::from(samples));

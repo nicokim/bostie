@@ -8,6 +8,8 @@ use bytes::{Bytes, BytesMut};
 use opus::{Channels, SoftClip};
 use tracing::debug;
 
+use super::decrypt::Hold;
+use super::owners::Owners;
 use super::{Core, Feed, Key, Moment, instant, samples_since, speaking};
 use crate::ids::{Handle, UserId};
 use crate::voice::codec::{self, Decoder};
@@ -203,14 +205,14 @@ impl Subscribers {
         streams: &mut HashMap<Key, Feed>,
         core: &Core,
         at: Moment,
-        skipped: u32,
         transport: bool,
-        held: Option<Instant>,
+        owners: &Owners,
+        hold: &Hold,
     ) -> bool {
         for subscriber in self.open.values_mut() {
             subscriber.follow(streams);
             if let Form::Mixed(mix) = &mut subscriber.out.form {
-                mix.owe(transport, skipped);
+                mix.owe(transport, at.skipped);
             }
         }
         self.handles.clear();
@@ -234,11 +236,11 @@ impl Subscribers {
             let Some(subscriber) = self.open.get_mut(handle) else {
                 continue;
             };
-            let packets = subscriber.out.is_packets();
-            if !packets && !deferred {
+            if !subscriber.out.is_packets() && !deferred {
                 deferred = !subscriber.play(streams, &self.keys, &mut context, at.deadline);
             }
-            subscriber.flush(at.now, packets || !deferred, held);
+            subscriber.flush(at.now);
+            subscriber.pass_marks(streams, core, at, owners, hold);
         }
         let heard = context.heard;
         for (key, feed) in streams.iter_mut() {
@@ -326,7 +328,7 @@ impl Subscriber {
         }
     }
 
-    fn flush(&mut self, now: Instant, released: bool, held: Option<Instant>) {
+    fn flush(&mut self, now: Instant) {
         let out = &mut self.out;
         if out.lost > 0 {
             self.receiver.add_lost(mem::take(&mut out.lost));
@@ -343,14 +345,40 @@ impl Subscriber {
         out.peak
             .shrink(out.items.capacity(), |to| out.items.shrink_to(to));
         out.peak.advance();
-        if released {
-            let mixing = match &out.form {
-                Form::Mixed(mix) => mix.oldest(),
-                _ => None,
-            };
-            self.receiver
-                .pass(now, held.into_iter().chain(mixing).min());
+    }
+
+    fn pass_marks(
+        &self,
+        streams: &HashMap<Key, Feed>,
+        core: &Core,
+        at: Moment,
+        owners: &Owners,
+        hold: &Hold,
+    ) {
+        if !self.receiver.is_marked() {
+            return;
         }
+        let options = self.receiver.options();
+        let playing = self.tracks.iter().filter_map(|(key, track)| {
+            let feed = streams.get(key)?;
+            let heard = track.cursor.backlog(&feed.stream)?;
+            Some(instant(core.epoch, heard))
+        });
+        let mixing = match &self.out.form {
+            Form::Mixed(mix) => mix.oldest(),
+            _ => None,
+        };
+        let oldest = owners
+            .oldest()
+            .into_iter()
+            .chain(hold.oldest(|user, own| wants(options, user, own)))
+            .chain(playing)
+            .chain(mixing)
+            .min();
+        let slack = options.jitter.saturating_add(MIX_SLACK).saturating_mul(2);
+        let bound = core.tuning.hold.saturating_add(slack);
+        self.receiver
+            .pass(at.cut, oldest, at.now.checked_sub(bound));
     }
 
     fn play(
@@ -744,7 +772,8 @@ impl Mix {
     fn oldest(&self) -> Option<Instant> {
         self.fifos
             .values()
-            .flat_map(|fifo| fifo.frames.iter().map(|&(_, heard)| heard))
+            .flat_map(|fifo| fifo.frames.iter().chain(&fifo.partial))
+            .map(|&(_, heard)| heard)
             .min()
     }
 
@@ -778,7 +807,7 @@ impl Fifo {
         self.starved = false;
         self.samples.extend(pcm);
         let (lost_before, first) = self.partial.take().unwrap_or((false, heard));
-        let mut next = (lost_before || lost, first);
+        let mut next = (lost_before || lost, first.min(heard));
         while self.samples.len() / frame > self.frames.len() {
             self.frames
                 .push_back(mem::replace(&mut next, (false, heard)));
@@ -868,7 +897,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::voice::types::{Overflow, ReceiveStall};
+    use crate::voice::types::{Overflow, ReceiveStall, SampleFormat};
 
     const ALICE: u64 = 1;
     const BOB: u64 = 2;
@@ -876,6 +905,31 @@ mod tests {
 
     fn users(ids: &[u64]) -> HashSet<UserId> {
         ids.iter().copied().map(UserId::from).collect()
+    }
+
+    #[test]
+    fn a_mix_reports_the_oldest_stamp_of_any_pcm_it_still_holds() {
+        let format = PcmFormat {
+            rate: 48_000,
+            channels: 2,
+            sample: SampleFormat::F32Le,
+        };
+        let mut mix = Mix::new(format, Duration::ZERO);
+        let half = vec![0.0; mix.frame.get() / 2];
+        let earliest = Instant::now();
+        let earlier = earliest + Duration::from_millis(5);
+        let later = earlier + Duration::from_millis(5);
+        let mut reordered = Fifo::new(0);
+        reordered.push(&half, false, later, mix.frame);
+        reordered.push(&half, false, earlier, mix.frame);
+        let mut partial = Fifo::new(1);
+        partial.push(&half, false, earliest, mix.frame);
+
+        mix.fifos.insert((1, UserId::from(ALICE)), reordered);
+        let complete = mix.oldest();
+        mix.fifos.insert((2, UserId::from(BOB)), partial);
+
+        assert_eq!((complete, mix.oldest()), (Some(earlier), Some(earliest)));
     }
 
     #[test]

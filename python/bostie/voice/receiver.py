@@ -117,7 +117,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
             self._native.clear()
 
     def mark(self) -> Awaitable[bool]:
-        """True once all audio heard so far is queued; False if the receiver ends."""
+        """True once prior audio is queued or dropped, else False by 1.2s + 2*jitter."""
         future = asyncio.get_running_loop().create_future()
         if self.closed or self._connection.state is State.DISCONNECTED:
             future.set_result(False)
