@@ -270,7 +270,9 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
         (Channel, "Channel; a channel option is a PartialChannel"),
         (PartialUser | None, "PartialUser; a user option is a User or a Member"),
         (Literal["a", 1], "must be all str, all int or all float"),
-        (Literal[True], "must be all str, all int or all float"),
+        pytest.param(
+            Literal[True], "must be all str, all int or all float", id="Literal-bool"
+        ),
         (
             Annotated[Literal["a"], Option(autocomplete=autocomplete)],
             "autocomplete cannot be combined with choices",
@@ -280,8 +282,11 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
             "autocomplete does not apply to BOOLEAN",
         ),
         (Literal[tuple(range(26))], "26 choices"),
-        (Annotated[str, Option(choices=[Choice("x" * 101, "a")])], "choice name"),
-        (Annotated[str, Option(choices=[Choice("", "a")])], "choice name"),
+        (
+            Annotated[str, Option(choices=[Choice("x" * 101, "a")])],
+            "choice name 'x+' must be 1-100",
+        ),
+        (Annotated[str, Option(choices=[Choice("", "a")])], "choice name '' must be"),
         (
             Annotated[str, Option(choices=[Choice("long", "x" * 101)])],
             "longer than 100",
@@ -289,15 +294,19 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
         (Annotated[str, Option(choices=[1])], "int value for a STRING option"),
         (Annotated[Literal["a"], Option(choices=["b"])], "already sets the choices"),
         (Annotated[int, Option(name="Bad")], "not a valid name"),
-        (Annotated[int, "x" * 101], "description"),
-        (Annotated[int, Option(description="")], "description"),
+        (Annotated[int, "x" * 101], "description 'x+' must be 1-100"),
+        (Annotated[int, Option(description="")], "description '' must be"),
         (Range[int, 5, 1], "min_value is greater than max_value"),
         (Range[str, 5, 1], "min_length is greater than max_length"),
         (Range[str, -1, 5], "min_length must be 0-6000"),
         (Range[str, 1, 6001], "max_length must be 1-6000"),
-        (Annotated[str, Option(max_length=0)], "max_length must be 1-6000"),
-        (Range[float, -(2**53) - 1, 0], "within"),
-        (Range[int, 0, 2**53], "within"),
+        pytest.param(
+            Annotated[str, Option(max_length=0)],
+            "max_length must be 1-6000",
+            id="Annotated-max_length 0",
+        ),
+        (Range[float, -(2**53) - 1, 0], "within -9007199254740992..9007199254740992"),
+        (Range[int, 0, 2**53], "within -9007199254740991..9007199254740991"),
         (Range[bool, 0, 1], "min_value does not apply to BOOLEAN"),
         (Annotated[str, Option(min=1)], "min_value does not apply to STRING"),
         (
