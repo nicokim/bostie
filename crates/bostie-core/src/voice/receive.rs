@@ -1447,7 +1447,19 @@ impl Output {
                     feed.trimmed = Some(slot.sequence);
                     bump(&context.media.receive.invalid_payloads);
                 }
-                self.packet(&slot, due, samples, user, ssrc, track, context);
+                let Some(payload) = &slot.payload else {
+                    return;
+                };
+                let header = FrameHeader {
+                    user,
+                    ssrc,
+                    timestamp: slot.timestamp,
+                    due,
+                    at: instant(context.epoch, slot.at),
+                    samples,
+                    lost: false,
+                };
+                self.packet(header, payload, track, context);
             }
             Release::Conceal {
                 count,
@@ -1461,12 +1473,16 @@ impl Output {
                     let fec = (index.saturating_add(1) == count)
                         .then_some(next.payload.as_deref())
                         .flatten();
-                    let lost = Lost {
+                    let header = FrameHeader {
+                        user,
+                        ssrc,
                         timestamp: timestamp.wrapping_add(shift),
                         due: due.saturating_add(i64::from(shift)),
+                        at: context.now,
                         samples,
+                        lost: true,
                     };
-                    self.conceal(lost, fec, user, ssrc, track, context);
+                    self.conceal(header, fec, track, context);
                 }
             }
             Release::Skip { lost } => {
@@ -1478,20 +1494,20 @@ impl Output {
         }
     }
 
-    #[expect(clippy::too_many_arguments)]
     fn packet(
         &mut self,
-        slot: &Slot,
-        due: i64,
-        samples: u32,
-        user: UserId,
-        ssrc: u32,
+        header: FrameHeader,
+        payload: &Bytes,
         track: &mut Track,
         context: &mut Context<'_>,
     ) {
-        let Some(payload) = &slot.payload else {
-            return;
-        };
+        let FrameHeader {
+            user,
+            ssrc,
+            due,
+            samples,
+            ..
+        } = header;
         let mut start = None;
         let speaking = speech::is_speech(payload, false);
         if self.markers {
@@ -1508,15 +1524,6 @@ impl Output {
                 .saturating_sub(due)
                 .max(0);
         }
-        let at = instant(context.epoch, slot.at);
-        let header = FrameHeader {
-            user,
-            ssrc,
-            timestamp: slot.timestamp,
-            due,
-            at,
-            lost: false,
-        };
         let end = match self.format {
             ReceiveFormat::Pcm(format) => {
                 let decoder = decoder(track, format);
@@ -1528,12 +1535,12 @@ impl Output {
                     Some(Err(error)) => {
                         debug!(%error, %user, "a received packet did not decode");
                         bump(&context.media.receive.invalid_payloads);
-                        let lost = Lost {
-                            timestamp: slot.timestamp,
-                            due,
-                            samples,
+                        let lost = FrameHeader {
+                            at: context.now,
+                            lost: true,
+                            ..header
                         };
-                        self.conceal(lost, None, user, ssrc, track, context);
+                        self.conceal(lost, None, track, context);
                         return;
                     }
                     None => return,
@@ -1542,7 +1549,6 @@ impl Output {
                     format,
                     header,
                     decoded,
-                    samples,
                     &mut track.cursor,
                     context,
                     &mut start,
@@ -1557,10 +1563,10 @@ impl Output {
                 self.items.push(Item::Frame {
                     user: Some(user),
                     ssrc: Some(ssrc),
-                    timestamp: Some(slot.timestamp),
+                    timestamp: Some(header.timestamp),
                     offset,
                     samples,
-                    at,
+                    at: header.at,
                     data: payload.clone(),
                     lost: false,
                 });
@@ -1584,27 +1590,17 @@ impl Output {
 
     fn conceal(
         &mut self,
-        lost: Lost,
+        header: FrameHeader,
         fec: Option<&[u8]>,
-        user: UserId,
-        ssrc: u32,
         track: &mut Track,
         context: &mut Context<'_>,
     ) {
-        let header = FrameHeader {
-            user,
-            ssrc,
-            timestamp: lost.timestamp,
-            due: lost.due,
-            at: context.now,
-            lost: true,
-        };
         match self.format {
             ReceiveFormat::Pcm(format) => {
                 let decoder = decoder(track, format);
                 let Some(Ok(decoded)) = decoder
                     .as_mut()
-                    .map(|decoder| decoder.conceal(fec, lost.samples, context.scratch))
+                    .map(|decoder| decoder.conceal(fec, header.samples, context.scratch))
                 else {
                     return;
                 };
@@ -1612,42 +1608,39 @@ impl Output {
                     format,
                     header,
                     decoded,
-                    lost.samples,
                     &mut track.cursor,
                     context,
                     &mut None,
                 );
             }
             ReceiveFormat::Opus => {
-                let offset = track.cursor.offset(lost.due, lost.samples);
+                let offset = track.cursor.offset(header.due, header.samples);
                 self.items.push(Item::Frame {
-                    user: Some(user),
-                    ssrc: Some(ssrc),
-                    timestamp: Some(lost.timestamp),
+                    user: Some(header.user),
+                    ssrc: Some(header.ssrc),
+                    timestamp: Some(header.timestamp),
                     offset,
-                    samples: lost.samples,
-                    at: context.now,
+                    samples: header.samples,
+                    at: header.at,
                     data: Bytes::new(),
-                    lost: true,
+                    lost: header.lost,
                 });
             }
             ReceiveFormat::Packets => {}
         }
     }
 
-    #[expect(clippy::too_many_arguments)]
     fn pcm(
         &mut self,
         format: PcmFormat,
         header: FrameHeader,
         decoded: usize,
-        keep48: u32,
         cursor: &mut Cursor,
         context: &mut Context<'_>,
         start: &mut Option<Edge>,
     ) -> Option<u64> {
         let ratio = SAMPLE_RATE.checked_div(format.rate).unwrap_or(1).max(1);
-        let keep = usize::try_from(keep48.checked_div(ratio).unwrap_or(0)).unwrap_or(0);
+        let keep = usize::try_from(header.samples.checked_div(ratio).unwrap_or(0)).unwrap_or(0);
         let taken = decoded.min(keep);
         let channels = usize::from(format.channels).max(1);
         let mut consumed: u32 = 0;
@@ -1762,14 +1755,8 @@ struct FrameHeader {
     timestamp: u32,
     due: i64,
     at: Instant,
-    lost: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Lost {
-    timestamp: u32,
-    due: i64,
     samples: u32,
+    lost: bool,
 }
 
 impl Mix {
