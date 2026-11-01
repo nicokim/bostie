@@ -179,7 +179,7 @@ async def stop(ctx: Context) -> None:
 - The path must end in `.ogg` or `.opus` and contain `{user_id}`. `{guild_id}` is the only other field. Missing directories are created.
 - With `align=True`, the default, every file starts when the recording started and silence fills every gap, so the files line up when you play them together, to within about 10 ms plus the network's jitter. The bot's own file runs slightly ahead, by the time its packets take to reach Discord. `align=False` keeps only the speech.
 - A recorder's receiver waits longer than a live one: `buffer=30.0` so a slow disk loses nothing, and `jitter=0.3` so late packets still make it in. `users`, `exclude` and `include_self` work as they do for `vc.receive()`.
-- `recorder.stop()` first waits `jitter` for audio still on its way, then writes what is queued, finishes every file and returns them by user id. If writing failed, for example on a full disk, `stop()` raises that error. When the connection ends or the bot is moved, the recorder finishes its files on its own, and `stop()` still returns them. `recorder.files` lists the files written so far, and `recorder.stats()` the receiver's counters.
+- `recorder.stop()` first waits `jitter` for audio still on its way, then writes what is queued, finishes every file and returns them by user id. If writing failed, for example on a full disk, `stop()` raises that error. When the connection ends or the bot is moved, the recorder finishes its files on its own, and `stop()` still returns them. It keeps recording through a reconnect, whatever `receive_stall` says. `recorder.files` lists the files written so far, and `recorder.stats()` the receiver's counters.
 
 ### Stats
 

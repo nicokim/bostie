@@ -1217,6 +1217,7 @@ def test_a_recorder_writes_ogg_opus_pages_into_its_path_template(
                     "include_self": False,
                     "buffer": 30.0,
                     "jitter": 0.3,
+                    "stall": "wait",
                 },
             )
         ]

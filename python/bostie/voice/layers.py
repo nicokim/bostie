@@ -846,6 +846,7 @@ class Recorder:
             include_self=include_self,
             buffer=buffer,
             jitter=jitter,
+            stall="wait",
         )
         self._task = asyncio.create_task(self._record())
 
