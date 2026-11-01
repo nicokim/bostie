@@ -20,7 +20,13 @@ from bostie.enums import (
     SpeakingFlags,
     State,
 )
-from bostie.errors import NotFound, NotInVoice, VoiceConnectError, VoiceNotConnected
+from bostie.errors import (
+    BostieError,
+    NotFound,
+    NotInVoice,
+    VoiceConnectError,
+    VoiceNotConnected,
+)
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT, SHARD, GatewayClient
 from bostie.http import HTTPClient
@@ -1024,7 +1030,7 @@ class VoiceConnection:
             self._channel_bitrate = channel.bitrate
             if self._encoder.bitrate is None:
                 self._apply_encoder(self._encoder)
-        except Exception:
+        except (BostieError, RuntimeError, ValueError):
             log.warning(
                 "could not read channel %d to follow its bitrate",
                 channel_id,
