@@ -86,6 +86,7 @@ class Bridge:
         route: str,
         params: dict[str, str],
         query: list[tuple[str, str]],
+        *,
         body: bytes | None = None,
         content_type: str | None = None,
         reason: str | None = None,

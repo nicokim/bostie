@@ -105,9 +105,9 @@ class HTTPClient:
             route,
             {name: str(value) for name, value in params.items()},
             _query_pairs(query or {}),
-            body,
-            content_type,
-            reason,
+            body=body,
+            content_type=content_type,
+            reason=reason,
         )
         if status >= 400:
             bot_route = not any(token in route for token in TOKEN_PLACEHOLDERS)

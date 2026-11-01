@@ -231,8 +231,8 @@ def test_params_and_query_values_are_sent_as_text(
 ) -> None:
     sent: list[tuple[Any, ...]] = []
 
-    async def record(*request: Any) -> tuple[int, bytes]:
-        sent.append(request)
+    async def record(*request: Any, **options: Any) -> tuple[int, bytes]:
+        sent.append((*request, options))
         return 204, b""
 
     async def main() -> None:
@@ -254,9 +254,7 @@ def test_params_and_query_values_are_sent_as_text(
                 "/guilds/{guild_id}/members",
                 {"guild_id": "123"},
                 [("limit", "5"), ("with_counts", "true"), ("ids", "1"), ("ids", "2")],
-                None,
-                None,
-                "audit",
+                {"body": None, "content_type": None, "reason": "audit"},
             )
         ]
 

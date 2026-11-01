@@ -121,9 +121,9 @@ def test_round_trip_sends_the_route_headers_and_body(run: Runner) -> None:
                 "/channels/{channel_id}/messages",
                 {"channel_id": "7"},
                 [("tts", "true")],
-                b"ping",
-                "text/plain",
-                "spam",
+                body=b"ping",
+                content_type="text/plain",
+                reason="spam",
             )
 
         assert response == (201, b"hello")

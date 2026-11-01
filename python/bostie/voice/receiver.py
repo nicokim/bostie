@@ -194,10 +194,10 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
     def _wake(self) -> None:
         self._woken.set()
 
-    def _marked(self, id: int, passed: bool) -> None:
+    def _marked(self, id: int, *, reached: bool) -> None:
         future = self._marks.pop(id, None)
         if future is not None and not future.done():
-            future.set_result(passed)
+            future.set_result(reached)
 
     def _read_stats(self) -> ReceiverStats:
         return ReceiverStats(*self._native.stats())

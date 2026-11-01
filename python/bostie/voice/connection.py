@@ -120,7 +120,7 @@ class VoiceCore(Protocol):
         speaking: int,
     ) -> None: ...
     def voice_update(
-        self, guild_id: int, channel_id: int, self_mute: bool, self_deaf: bool
+        self, guild_id: int, channel_id: int, *, self_mute: bool, self_deaf: bool
     ) -> None: ...
     def voice_disconnect(self, guild_id: int) -> None: ...
     def voice_reconnect(self, guild_id: int) -> None: ...
@@ -173,7 +173,7 @@ class VoiceCore(Protocol):
     ) -> NativeReceiver: ...
     def voice_speech_hangover(self, guild_id: int, hangover: float) -> None: ...
     def voice_server_change_delay(self, guild_id: int, delay: float) -> None: ...
-    def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
+    def voice_speech_activity(self, guild_id: int, *, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
 
@@ -273,7 +273,9 @@ class ExternalVoice:
 
     async def disconnect(self) -> None:
         """Leave the voice channel."""
-        self._manager._send_voice_state(self._guild_id, None, False, False)
+        self._manager._send_voice_state(
+            self._guild_id, None, self_mute=False, self_deaf=False
+        )
 
 
 class VoiceManager:
@@ -357,13 +359,16 @@ class VoiceManager:
         )
         try:
             self._send_voice_state(
-                guild_id, channel_id, settings.self_mute, settings.self_deaf
+                guild_id,
+                channel_id,
+                self_mute=settings.self_mute,
+                self_deaf=settings.self_deaf,
             )
             async with asyncio.timeout(settings.timeout):
                 return ExternalVoice(await state, await server, self, guild_id)
         except BaseException as error:
             with contextlib.suppress(RuntimeError):
-                self._send_voice_state(guild_id, None, False, False)
+                self._send_voice_state(guild_id, None, self_mute=False, self_deaf=False)
             if isinstance(error, TimeoutError):
                 raise VoiceConnectError(
                     DisconnectReason.TIMEOUT,
@@ -398,7 +403,7 @@ class VoiceManager:
             case ("voice_marker", handle, marker, played):
                 target = self._handles.get(handle)
                 if isinstance(target, Sink | Receiver):
-                    target._marked(marker, played)
+                    target._marked(marker, reached=played)
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:
@@ -435,7 +440,12 @@ class VoiceManager:
         return channel.guild_id, channel
 
     def _send_voice_state(
-        self, guild_id: int, channel_id: int | None, self_mute: bool, self_deaf: bool
+        self,
+        guild_id: int,
+        channel_id: int | None,
+        *,
+        self_mute: bool,
+        self_deaf: bool,
     ) -> None:
         self._bot.gateway.send(
             VOICE_STATE_UPDATE,
@@ -591,7 +601,7 @@ class VoiceConnection:
     @speech_activity.setter
     def speech_activity(self, enabled: bool) -> None:
         self._check_live()
-        self._core().voice_speech_activity(self.guild_id, enabled)
+        self._core().voice_speech_activity(self.guild_id, enabled=enabled)
         self._speech_activity = enabled
 
     def sink(
@@ -778,8 +788,12 @@ class VoiceConnection:
         if guild_id != self.guild_id:
             raise ValueError(f"channel {channel_id} is in another guild")
         self._check_live()
+        mute, deaf = self._requested
         await self._join(
-            channel, *self._requested, options.get("timeout", self._settings.timeout)
+            channel,
+            self_mute=mute,
+            self_deaf=deaf,
+            timeout=options.get("timeout", self._settings.timeout),
         )
 
     async def edit(self, **options: Unpack[EditOptions]) -> None:
@@ -789,8 +803,8 @@ class VoiceConnection:
         mute, deaf = self._requested
         self._update(
             self._channel_id,
-            options.get("self_mute", mute),
-            options.get("self_deaf", deaf),
+            self_mute=options.get("self_mute", mute),
+            self_deaf=options.get("self_deaf", deaf),
         )
 
     async def stage(self, role: StageRole) -> None:
@@ -844,7 +858,9 @@ class VoiceConnection:
                 speaking=int(settings.speaking_flags),
             )
             self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
-            self._core().voice_speech_activity(self.guild_id, settings.speech_activity)
+            self._core().voice_speech_activity(
+                self.guild_id, enabled=settings.speech_activity
+            )
         except BaseException:
             del self.manager._connections[self.guild_id]
             raise
@@ -859,9 +875,9 @@ class VoiceConnection:
         mute, deaf = self._requested
         await self._join(
             channel,
-            options.get("self_mute", mute),
-            options.get("self_deaf", deaf),
-            options.get("timeout", self._settings.timeout),
+            self_mute=options.get("self_mute", mute),
+            self_deaf=options.get("self_deaf", deaf),
+            timeout=options.get("timeout", self._settings.timeout),
         )
         if "encoder" in options:
             self.encoder = options["encoder"]
@@ -879,11 +895,11 @@ class VoiceConnection:
             await self._request_stage(options["stage"])
 
     async def _join(
-        self, channel: Channel, self_mute: bool, self_deaf: bool, timeout: float
+        self, channel: Channel, *, self_mute: bool, self_deaf: bool, timeout: float
     ) -> None:
         moving = channel.id != self._channel_id
         if moving or (self_mute, self_deaf) != self._requested:
-            self._update(channel.id, self_mute, self_deaf)
+            self._update(channel.id, self_mute=self_mute, self_deaf=self_deaf)
         try:
             async with asyncio.timeout(timeout):
                 reached = await self._until(
@@ -1100,8 +1116,10 @@ class VoiceConnection:
             self._core().voice_verification_code, self.guild_id, user_id
         )
 
-    def _update(self, channel_id: int, self_mute: bool, self_deaf: bool) -> None:
-        self._core().voice_update(self.guild_id, channel_id, self_mute, self_deaf)
+    def _update(self, channel_id: int, *, self_mute: bool, self_deaf: bool) -> None:
+        self._core().voice_update(
+            self.guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
+        )
         self._requested = (self_mute, self_deaf)
 
     def _apply_encoder(self, encoder: EncoderSettings) -> None:

@@ -269,7 +269,7 @@ class _ReplyingContext[
             if self.state is ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
             if self.state is ResponseState.PENDING:
-                await self._defer(options.get("ephemeral", self._ephemeral))
+                await self._defer(ephemeral=options.get("ephemeral", self._ephemeral))
 
     async def edit(
         self, content: str | None = None, **parts: Unpack[ReplyEditParts]
@@ -332,9 +332,9 @@ class _ReplyingContext[
             logger.warning("automatic defer of %s failed", self._label, exc_info=True)
 
     async def _defer_automatically(self) -> None:
-        await self._defer(self._ephemeral)
+        await self._defer(ephemeral=self._ephemeral)
 
-    async def _defer(self, ephemeral: bool) -> None:
+    async def _defer(self, *, ephemeral: bool) -> None:
         await self._callback(
             InteractionCallbackType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
             {"flags": MessageFlags.EPHEMERAL} if ephemeral else None,
@@ -348,7 +348,7 @@ class _ReplyingContext[
         flagged = parts.get("ephemeral", self._ephemeral)
         response = await self._callback(
             InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE,
-            _with_ephemeral(body, flagged),
+            _with_ephemeral(body, ephemeral=flagged),
             files,
         )
         self._original_ephemeral = flagged
@@ -359,7 +359,7 @@ class _ReplyingContext[
     ) -> bytes:
         flagged = parts.get("ephemeral", self._ephemeral)
         return await self._webhook(
-            "POST", FOLLOWUP_ROUTE, _with_ephemeral(body, flagged), files
+            "POST", FOLLOWUP_ROUTE, _with_ephemeral(body, ephemeral=flagged), files
         )
 
     async def _edit_original(
@@ -542,7 +542,7 @@ def _command_name(data: CommandData) -> str:
     return " ".join((data.name, *names))
 
 
-def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:
+def _with_ephemeral(body: dict[str, Any], *, ephemeral: bool) -> dict[str, Any]:
     if not ephemeral:
         return body
     return {**body, "flags": body.get("flags", 0) | MessageFlags.EPHEMERAL}

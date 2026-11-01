@@ -244,10 +244,10 @@ def user_select(
         ComponentType.USER_SELECT,
         custom_id,
         _defaults(defaults, "user"),
-        placeholder,
-        min_values,
-        max_values,
-        disabled,
+        placeholder=placeholder,
+        min_values=min_values,
+        max_values=max_values,
+        disabled=disabled,
     )
 
 
@@ -265,10 +265,10 @@ def role_select(
         ComponentType.ROLE_SELECT,
         custom_id,
         _defaults(defaults, "role"),
-        placeholder,
-        min_values,
-        max_values,
-        disabled,
+        placeholder=placeholder,
+        min_values=min_values,
+        max_values=max_values,
+        disabled=disabled,
     )
 
 
@@ -287,10 +287,10 @@ def mentionable_select(
         ComponentType.MENTIONABLE_SELECT,
         custom_id,
         _defaults(default_users, "user") + _defaults(default_roles, "role"),
-        placeholder,
-        min_values,
-        max_values,
-        disabled,
+        placeholder=placeholder,
+        min_values=min_values,
+        max_values=max_values,
+        disabled=disabled,
     )
 
 
@@ -309,10 +309,10 @@ def channel_select(
         ComponentType.CHANNEL_SELECT,
         custom_id,
         _defaults(defaults, "channel"),
-        placeholder,
-        min_values,
-        max_values,
-        disabled,
+        placeholder=placeholder,
+        min_values=min_values,
+        max_values=max_values,
+        disabled=disabled,
     )
     types = list(channel_types)
     if types:
@@ -417,6 +417,7 @@ def _entity_select(
     type: _EntitySelectType,
     custom_id: str,
     defaults: list[SelectDefaultDict],
+    *,
     placeholder: str | None,
     min_values: int,
     max_values: int,

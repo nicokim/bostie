@@ -67,7 +67,9 @@ async def sync_commands(
         _warn(f"{len(commands)} slash commands; Discord allows 100 per scope")
     scopes: list[int | None] = [*guild_ids] or [None]
     return [
-        await _sync_scope(http, application_id, commands, guild_id, always_put)
+        await _sync_scope(
+            http, application_id, commands, guild_id, always_put=always_put
+        )
         for guild_id in scopes
     ]
 
@@ -77,6 +79,7 @@ async def _sync_scope(
     application_id: int,
     commands: Sequence[Command | Group],
     guild_id: int | None,
+    *,
     always_put: bool,
 ) -> SyncResult:
     scope: Scope
