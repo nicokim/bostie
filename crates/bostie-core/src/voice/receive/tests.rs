@@ -8,7 +8,7 @@ use crate::ids::{ChannelId, GuildId, ShardId};
 use crate::voice::codec::FrameEncoder;
 use crate::voice::crypto::{Cipher, Mode};
 use crate::voice::dave::{Outbound, SendMode};
-use crate::voice::receiver::ReceiveRead;
+use crate::voice::receiver::{Ended, ReceiveRead};
 use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
@@ -1033,6 +1033,25 @@ fn the_intake_forgets_departed_ssrcs_once_unmapped_windows_pile_up() {
 
     assert_eq!(piled, [vec![ALICE_SSRC, BOB_SSRC], unmapped].concat());
     assert_eq!(swept, [BOB_SSRC, STRANGER_SSRC]);
+}
+
+#[test]
+fn a_stall_end_receiver_opened_while_reconnecting_ends_at_once() {
+    let mut rig = Rig::new(tuning());
+    let ending = ReceiveOptions {
+        stall: ReceiveStall::End,
+        ..options(ReceiveFormat::Opus)
+    };
+
+    rig.media.set_reconnecting(true);
+    let during = rig.open(ending.clone());
+    let waiting = rig.open(options(ReceiveFormat::Opus));
+    rig.media.set_reconnecting(false);
+    let after = rig.open(ending);
+
+    assert_eq!(during.ended(), Some(Ended::Reconnecting));
+    assert_eq!(waiting.ended(), None);
+    assert_eq!(after.ended(), None);
 }
 
 #[test]

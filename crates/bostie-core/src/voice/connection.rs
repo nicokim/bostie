@@ -352,6 +352,7 @@ impl Connection {
         if let Some(voice) = &mut self.voice {
             voice.resumable = true;
         }
+        self.media.set_reconnecting(false);
         self.set_status(VoiceStatus::Ready, "");
     }
 
@@ -516,7 +517,7 @@ impl Connection {
     fn reconnecting(&mut self, step: Step) {
         self.step = step;
         let status = if self.connected {
-            self.media.reconnecting();
+            self.media.set_reconnecting(true);
             VoiceStatus::Reconnecting
         } else {
             VoiceStatus::Connecting

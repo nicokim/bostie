@@ -135,6 +135,7 @@ pub struct Media {
     pub others: AtomicUsize,
     pub counters: SendCounters,
     pub closed: AtomicBool,
+    reconnecting: AtomicBool,
     pub lost: Notify,
     pub exhausted: Notify,
     pub recover: Notify,
@@ -175,6 +176,7 @@ impl Media {
             others: AtomicUsize::new(0),
             counters: SendCounters::default(),
             closed: AtomicBool::new(false),
+            reconnecting: AtomicBool::new(false),
             lost: Notify::new(),
             exhausted: Notify::new(),
             recover: Notify::new(),
@@ -216,6 +218,12 @@ impl Media {
         if self.closed.load(Ordering::Acquire) {
             return false;
         }
+        if self.reconnecting.load(Ordering::Relaxed)
+            && receiver.options().stall == ReceiveStall::End
+        {
+            receiver.end(Ended::Reconnecting);
+            return true;
+        }
         self.count_receiver(receiver, |count| {
             count.fetch_add(1, Ordering::Relaxed);
         });
@@ -244,10 +252,14 @@ impl Media {
         }
     }
 
-    pub fn reconnecting(&self) {
-        for receiver in self.receivers.lock().iter() {
-            if receiver.options().stall == ReceiveStall::End {
-                receiver.end(Ended::Reconnecting);
+    pub fn set_reconnecting(&self, reconnecting: bool) {
+        let receivers = self.receivers.lock();
+        self.reconnecting.store(reconnecting, Ordering::Relaxed);
+        if reconnecting {
+            for receiver in receivers.iter() {
+                if receiver.options().stall == ReceiveStall::End {
+                    receiver.end(Ended::Reconnecting);
+                }
             }
         }
     }
