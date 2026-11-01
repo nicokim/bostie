@@ -53,8 +53,8 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
             include_self=True,
             buffer=5.0,
             markers=True,
-            overflow="drop_oldest",
-            stall="wait",
+            overflow="drop_newest",
+            stall="end",
         )
         mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.3, mix=True)
         vc.receive(voice.Opus(), users=())
@@ -86,6 +86,8 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
                 "include_self": True,
                 "buffer": 5.0,
                 "markers": True,
+                "overflow": "drop_newest",
+                "stall": "end",
             },
             {
                 **common,

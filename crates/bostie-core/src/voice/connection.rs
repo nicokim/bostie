@@ -528,6 +528,7 @@ impl Connection {
     fn reconnecting(&mut self, step: Step) {
         self.step = step;
         let status = if self.connected {
+            self.media.reconnecting();
             VoiceStatus::Reconnecting
         } else {
             VoiceStatus::Connecting

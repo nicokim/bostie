@@ -104,7 +104,8 @@ def test_encoder_checks_its_bounds(
         ({"jitter": -0.01}, invalid("jitter")),
         ({"jitter": 1.01}, invalid("jitter")),
         ({"jitter": math.nan}, invalid("jitter")),
-        ({"overflow": "drop_newest"}, invalid("overflow")),
+        ({"overflow": "drop_newest", "receive_stall": "end"}, VALID),
+        ({"overflow": "drop_all"}, invalid("overflow")),
         ({"receive_stall": "hold"}, invalid("receive_stall")),
     ],
 )

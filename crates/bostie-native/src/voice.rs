@@ -292,6 +292,7 @@ pub(crate) fn receive_format(
 pub(crate) fn overflow(overflow: &str) -> Result<Overflow> {
     match overflow {
         "drop_oldest" => Ok(Overflow::DropOldest),
+        "drop_newest" => Ok(Overflow::DropNewest),
         other => Err(unknown("overflow", other)),
     }
 }
@@ -299,6 +300,7 @@ pub(crate) fn overflow(overflow: &str) -> Result<Overflow> {
 pub(crate) fn receive_stall(stall: &str) -> Result<ReceiveStall> {
     match stall {
         "wait" => Ok(ReceiveStall::Wait),
+        "end" => Ok(ReceiveStall::End),
         other => Err(unknown("stall", other)),
     }
 }

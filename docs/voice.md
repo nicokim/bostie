@@ -63,10 +63,10 @@ Audio from someone no receiver asked for is never decrypted or decoded, so it co
 
 ### Buffer and jitter
 
-- `buffer` is the longest, in seconds, that audio waits for your code: 2 s by default. When your code falls further behind, the oldest audio is dropped (`overflow="drop_oldest"`) and counted in `rx.stats().dropped`. `rx.queued` says how far behind you are, and `rx.clear()` drops everything queued and carries on live.
+- `buffer` is the longest, in seconds, that audio waits for your code: 2 s by default. When your code falls further behind, the oldest audio is dropped (`overflow="drop_oldest"`), or with `overflow="drop_newest"` the queue is kept and the audio arriving is dropped until your code catches up. Either way it is counted in `rx.stats().dropped`. `rx.queued` says how far behind you are, and `rx.clear()` drops everything queued and carries on live.
 - `jitter` is how long a frame waits for late or out-of-order packets before it comes out: 0.1 s by default, from 0 to 1 s. A smaller value means less delay and more lost frames. `voice.Packets()` has no jitter: packets come out as they arrive.
-- `stall="wait"` keeps the receiver open while the connection reconnects. Nothing comes out meanwhile, and the gap shows in `offset`.
-- `Bot(voice=voice.Defaults(receive_buffer=..., jitter=...))` changes the defaults for every receiver.
+- `stall="wait"` keeps the receiver open while the connection reconnects. Nothing comes out meanwhile, and the gap shows in `offset`. With `stall="end"`, the receiver ends instead, with `voice.ClosedReason.RECONNECTING`, as soon as the connection starts reconnecting. A resume does not end it.
+- `Bot(voice=voice.Defaults(receive_buffer=..., jitter=..., overflow=..., receive_stall=...))` changes the defaults for every receiver.
 
 When audio reaches the bot but nothing comes out of any receiver for 2 s, for example because it cannot be decrypted, `voice.MediaStalled` fires with `direction=voice.Direction.RECEIVE`, and `voice.MediaResumed` fires when audio comes out again.
 
@@ -192,8 +192,9 @@ async def stop(ctx: Context) -> None:
 - `CLOSED`: you closed it, or left the `async with` block. Anything still queued is dropped.
 - `DISCONNECTED`: the connection ended.
 - `MOVED`: the bot was moved to another channel, by `vc.move()` or by a moderator. Read Privacy and consent below before you open a new one there.
+- `RECONNECTING`: the connection started reconnecting and the receiver was opened with `stall="end"`.
 
-After `DISCONNECTED` and `MOVED`, the audio already queued is still yours to read, and then `async for` ends. `rx.get_nowait()` returns the next item without waiting. It raises `voice.Empty` when nothing is queued, and `voice.ReceiverClosed` once the receiver has ended and everything was read.
+After `DISCONNECTED`, `MOVED` and `RECONNECTING`, the audio already queued is still yours to read, and then `async for` ends. `rx.get_nowait()` returns the next item without waiting. It raises `voice.Empty` when nothing is queued, and `voice.ReceiverClosed` once the receiver has ended and everything was read.
 
 A bot that a moderator deafened hears nothing: Discord stops sending it audio until it is undeafened. `vc.deaf` tells you whether that is the case, and bostie logs a warning when you open a receiver then, or when a moderator deafens the bot while a receiver is open. The bot's own deafen (`self_deaf=True`) only shows the icon in the client: Discord keeps sending it audio.
 

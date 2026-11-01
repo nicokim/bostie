@@ -108,8 +108,8 @@ class Defaults:
     speech_activity: bool = True
     receive_buffer: float = 2.0
     jitter: float = 0.1
-    overflow: Literal["drop_oldest"] = "drop_oldest"
-    receive_stall: Literal["wait"] = "wait"
+    overflow: Literal["drop_oldest", "drop_newest"] = "drop_oldest"
+    receive_stall: Literal["wait", "end"] = "wait"
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.timeout) and self.timeout > 0):
@@ -150,11 +150,14 @@ class Defaults:
             raise ValueError(
                 f"jitter must be from 0 to {MAX_JITTER} seconds, got {self.jitter}"
             )
-        if self.overflow != "drop_oldest":
-            raise ValueError(f"overflow must be 'drop_oldest', got {self.overflow!r}")
-        if self.receive_stall != "wait":
+        if self.overflow not in ("drop_oldest", "drop_newest"):
             raise ValueError(
-                f"receive_stall must be 'wait', got {self.receive_stall!r}"
+                "overflow must be 'drop_oldest' or 'drop_newest', "
+                f"got {self.overflow!r}"
+            )
+        if self.receive_stall not in ("wait", "end"):
+            raise ValueError(
+                f"receive_stall must be 'wait' or 'end', got {self.receive_stall!r}"
             )
 
 

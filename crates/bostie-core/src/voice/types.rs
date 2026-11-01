@@ -226,12 +226,14 @@ pub enum ReceiveFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overflow {
     DropOldest,
+    DropNewest,
 }
 
 impl Overflow {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DropOldest => "drop_oldest",
+            Self::DropNewest => "drop_newest",
         }
     }
 }
@@ -239,12 +241,14 @@ impl Overflow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceiveStall {
     Wait,
+    End,
 }
 
 impl ReceiveStall {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Wait => "wait",
+            Self::End => "end",
         }
     }
 }
@@ -559,8 +563,12 @@ mod tests {
             ["send", "receive"]
         );
         assert_eq!(
-            (Overflow::DropOldest.as_str(), ReceiveStall::Wait.as_str()),
-            ("drop_oldest", "wait")
+            [Overflow::DropOldest, Overflow::DropNewest].map(Overflow::as_str),
+            ["drop_oldest", "drop_newest"]
+        );
+        assert_eq!(
+            [ReceiveStall::Wait, ReceiveStall::End].map(ReceiveStall::as_str),
+            ["wait", "end"]
         );
     }
 

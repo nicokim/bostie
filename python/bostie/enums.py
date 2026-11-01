@@ -336,8 +336,9 @@ class Direction(StrEnum):
 
 
 class ClosedReason(StrEnum):
-    """Why a receiver ended: closed by you, the connection ended, or the bot moved."""
+    """Why a receiver ended: you closed it, it disconnected, moved or reconnected."""
 
     CLOSED = "closed"
     DISCONNECTED = "disconnected"
     MOVED = "moved"
+    RECONNECTING = "reconnecting"

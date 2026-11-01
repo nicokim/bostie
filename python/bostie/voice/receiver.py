@@ -57,8 +57,8 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         jitter: float,
         markers: bool,
         mix: bool,
-        overflow: Literal["drop_oldest"],
-        stall: Literal["wait"],
+        overflow: Literal["drop_oldest", "drop_newest"],
+        stall: Literal["wait", "end"],
     ) -> None:
         self.format = format
         self.users = users

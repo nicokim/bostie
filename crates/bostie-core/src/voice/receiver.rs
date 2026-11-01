@@ -11,7 +11,7 @@ use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
 use crate::voice::receive::Peak;
-use crate::voice::types::ReceiveOptions;
+use crate::voice::types::{Overflow, ReceiveOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
@@ -49,6 +49,7 @@ pub enum Ended {
     Closed,
     Disconnected,
     Moved,
+    Reconnecting,
 }
 
 impl Ended {
@@ -57,6 +58,7 @@ impl Ended {
             Self::Closed => "closed",
             Self::Disconnected => "disconnected",
             Self::Moved => "moved",
+            Self::Reconnecting => "reconnecting",
         }
     }
 }
@@ -193,11 +195,19 @@ impl Receiver {
             return;
         }
         let before = queue.items.len();
+        let buffer = self.options.buffer;
+        let full = self.options.overflow == Overflow::DropNewest && queue.is_full(now, buffer);
         for item in items {
-            queue.add(item, now);
+            if full && !matches!(item, Item::Speech { .. }) {
+                queue.stats.dropped += 1;
+            } else {
+                queue.add(item, now);
+            }
         }
         let added = queue.items.len() > before;
-        queue.overflow(now, self.options.buffer);
+        if self.options.overflow == Overflow::DropOldest {
+            queue.overflow(now, buffer);
+        }
         queue.shrink();
         if added {
             self.wake(&mut queue);
@@ -236,11 +246,14 @@ impl Queue {
         self.items.push_back((now, item));
     }
 
-    fn overflow(&mut self, now: Instant, buffer: Duration) {
-        while self
-            .items
+    fn is_full(&self, now: Instant, buffer: Duration) -> bool {
+        self.items
             .front()
             .is_some_and(|(queued, _)| now.saturating_duration_since(*queued) > buffer)
+    }
+
+    fn overflow(&mut self, now: Instant, buffer: Duration) {
+        while self.is_full(now, buffer)
             && let Some((queued, item)) = self.items.pop_front()
         {
             match item {
@@ -444,6 +457,42 @@ mod tests {
         assert_eq!(
             receiver.stats().unwrap(),
             [("delivered", 5), ("dropped", 5), ("lost", 0)]
+        );
+    }
+
+    #[test]
+    fn drop_newest_keeps_the_queued_audio_and_drops_what_arrives_while_full() {
+        let fixture = Fixture::new();
+        let options = ReceiveOptions {
+            overflow: Overflow::DropNewest,
+            ..open(&fixture, 100).options().clone()
+        };
+        let receiver = Receiver::new(Handle::from(1), options, Arc::clone(&fixture.inbox)).unwrap();
+        let start = Instant::now();
+        let at = |millis| start + Duration::from_millis(millis);
+
+        receiver.push([frame(ALICE, 0, start)], at(0));
+        receiver.push([frame(ALICE, 960, start)], at(60));
+        let late = [frame(ALICE, 1_920, start), speech(ALICE, false, start)];
+        receiver.push(late, at(120));
+        let kept = receiver.read(256).unwrap();
+        receiver.push([frame(ALICE, 2_880, start)], at(130));
+
+        assert_eq!(
+            kept,
+            ReceiveRead::Items(vec![
+                (at(0), frame(ALICE, 0, start)),
+                (at(60), frame(ALICE, 960, start)),
+                (at(120), speech(ALICE, false, start)),
+            ])
+        );
+        assert_eq!(
+            receiver.read(256).unwrap(),
+            ReceiveRead::Items(vec![(at(130), frame(ALICE, 2_880, start))])
+        );
+        assert_eq!(
+            receiver.stats().unwrap(),
+            [("delivered", 3), ("dropped", 1), ("lost", 0)]
         );
     }
 

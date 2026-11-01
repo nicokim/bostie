@@ -21,7 +21,8 @@ use crate::voice::receiver::{Ended, Receiver};
 use crate::voice::rtp::{self, HEADER_LEN};
 use crate::voice::sink::Sink;
 use crate::voice::types::{
-    Direction, EncoderSettings, FRAME_SAMPLES, ReceiveFormat, ReceiveTuning, SILENCE_FRAME,
+    Direction, EncoderSettings, FRAME_SAMPLES, ReceiveFormat, ReceiveStall, ReceiveTuning,
+    SILENCE_FRAME,
 };
 
 pub const SILENCE_TAIL: u8 = 5;
@@ -251,6 +252,14 @@ impl Media {
     pub fn end_receivers(&self, why: Ended) {
         for receiver in self.receivers.lock().iter() {
             receiver.end(why);
+        }
+    }
+
+    pub fn reconnecting(&self) {
+        for receiver in self.receivers.lock().iter() {
+            if receiver.options().stall == ReceiveStall::End {
+                receiver.end(Ended::Reconnecting);
+            }
         }
     }
 

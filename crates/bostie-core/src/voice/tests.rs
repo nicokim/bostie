@@ -2901,6 +2901,10 @@ async fn receiving_continues_across_a_resume_and_a_server_change() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let receiver = harness.receiver(receiving(ReceiveFormat::Opus));
+    let ending = harness.receiver(ReceiveOptions {
+        stall: ReceiveStall::End,
+        ..receiving(ReceiveFormat::Opus)
+    });
     let packets = opus(6);
     harness.speaking(EARLY_PEER, 70).await;
     harness.say(70, 0, &packets[0]);
@@ -2913,6 +2917,7 @@ async fn receiving_continues_across_a_resume_and_a_server_change() {
     harness.say(70, 2, &packets[2]);
     harness.say(70, 3, &packets[3]);
     heard.extend(harness.hear(&receiver, 2).await);
+    let open_after_the_resume = ending.ended();
     harness.fresh_server().await;
     harness.until(VoiceStatus::Reconnecting).await;
     harness.until(VoiceStatus::Ready).await;
@@ -2924,6 +2929,8 @@ async fn receiving_continues_across_a_resume_and_a_server_change() {
     assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
     assert_eq!(harness.counter("resumes"), 1);
     assert_eq!(receiver.ended(), None);
+    assert_eq!(open_after_the_resume, None);
+    assert_eq!(ending.ended(), Some(Ended::Reconnecting));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
