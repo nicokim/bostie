@@ -21,7 +21,7 @@ from bostie.models.components import (
     UnknownComponent,
     decode_components,
 )
-from bostie.models.guild import Member
+from bostie.models.guild import PartialMember
 from bostie.models.user import User
 
 if TYPE_CHECKING:
@@ -151,7 +151,7 @@ class Message(Model, kw_only=True):
     channel_id: int | None = None
     guild_id: int | None = None
     author: User | None = None
-    member: Member | None = None
+    member: PartialMember | None = None
     content: str | None = None
     timestamp: datetime | None = None
     edited_timestamp: datetime | None = None

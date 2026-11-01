@@ -74,25 +74,24 @@ class Resumed(Event, kw_only=True):
 
 
 class _GuildCreatePayload(Guild, kw_only=True):
-    channels: tuple[Channel, ...] = ()
-    threads: tuple[Channel, ...] = ()
-    roles: tuple[Role, ...] = ()
-    voice_states: tuple[VoiceState, ...] = ()
-    members_json: msgspec.Raw = msgspec.field(
-        default=msgspec.Raw(b"[]"), name="members"
-    )
-    presences_json: msgspec.Raw = msgspec.field(
-        default=msgspec.Raw(b"[]"), name="presences"
-    )
+    channels: tuple[Channel, ...]
+    threads: tuple[Channel, ...]
+    roles: tuple[Role, ...]
+    voice_states: tuple[VoiceState, ...]
+    members_json: msgspec.Raw = msgspec.field(name="members")
+    presences_json: msgspec.Raw = msgspec.field(name="presences")
 
 
 class GuildCreate(Event, kw_only=True):
-    """A guild became available or the bot joined it. Its children lack `guild_id`."""
+    """A guild became available or the bot joined it. Its children lack `guild_id`.
+
+    During an outage `guild` is an `UnavailableGuild` and the rest is empty.
+    """
 
     NAME = "GUILD_CREATE"
     INTENTS = Intents.GUILDS
 
-    guild: Guild
+    guild: Guild | UnavailableGuild
     channels: tuple[Channel, ...] = ()
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
@@ -114,7 +113,13 @@ class GuildCreate(Event, kw_only=True):
 
     @classmethod
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _GuildCreatePayload = decoder(_GuildCreatePayload).decode(data)
+        try:
+            payload: _GuildCreatePayload = decoder(_GuildCreatePayload).decode(data)
+        except msgspec.ValidationError:
+            unavailable: UnavailableGuild = decoder(UnavailableGuild).decode(data)
+            if not unavailable.unavailable:
+                raise
+            return cls(shard_id=shard_id, raw_json=data, guild=unavailable)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -226,8 +231,6 @@ class _MessageEvent(Event, kw_only=True):
     def decode(cls, shard_id: int, data: bytes) -> Self:
         message = decode(Message, data)
         in_guild(message, message.guild_id)
-        if message.member is not None and message.member.user is None:
-            msgspec.structs.force_setattr(message.member, "user", message.author)
         return cls(shard_id=shard_id, raw_json=data, message=message)
 
 

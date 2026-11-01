@@ -10,7 +10,7 @@ import pytest
 from fakediscord import FakeDiscord, run, running
 
 from bostie import Bot, events
-from bostie.enums import ApplicationFlags
+from bostie.enums import ApplicationFlags, MemberFlags
 from bostie.events import (
     EVENTS,
     ChannelUpdate,
@@ -33,7 +33,7 @@ from bostie.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from bostie.models import Guild, Member, Model
+from bostie.models import Guild, Member, Model, UnavailableGuild
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
 
@@ -169,7 +169,7 @@ def test_guild_create_members_and_presences_decode_on_access() -> None:
 def test_unavailable_guild_create_is_only_a_marker() -> None:
     event = decode(GuildCreate, "GUILD_CREATE.unavailable")
 
-    assert event.guild == Guild(id=1335172792320131073, unavailable=True)
+    assert event.guild == UnavailableGuild(id=1335172792320131073, unavailable=True)
     assert event.channels == ()
     assert event.members == ()
 
@@ -194,7 +194,6 @@ def test_member_events_split_the_guild_id_from_the_member(
 
     assert event.guild_id == 1335172792320131073
     assert type(event.member) is Member
-    assert event.member.user is not None
     assert event.member.id == int(json.loads(event.raw_json)["user"]["id"])
 
 
@@ -247,7 +246,7 @@ def test_message_and_reaction_events() -> None:
         "1335173295636611073/1564609610244030465"
     )
     assert created.message.member is not None
-    assert created.message.member.user == created.message.author
+    assert created.message.member.flags == MemberFlags.COMPLETED_ONBOARDING
     assert deleted.id == created.message.id
     assert reaction.emoji is not None
     assert reaction.emoji.animated is True
@@ -292,16 +291,16 @@ def test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too(
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        typed: set[bytes] = set()
-        raw: dict[int, bytes] = {}
+        typed: set[tuple[str, bytes]] = set()
+        raw: dict[int, tuple[str, bytes]] = {}
 
         @bot.listen(*EVENTS.values())
         async def on_typed(event: Event) -> None:
-            typed.add(event.raw_json)
+            typed.add((event.NAME, event.raw_json))
 
         @bot.listen
         async def on_raw(event: RawEvent) -> None:
-            raw[event.seq] = event.raw_json
+            raw[event.seq] = (event.name, event.raw_json)
 
         async with running(bot, fake):
             seqs = [await fake.dispatch(name, document) for name, document, _ in cases]

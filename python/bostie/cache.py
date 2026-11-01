@@ -101,10 +101,10 @@ class Cache:
             case Ready():
                 self.clear()
                 self.user = event.user
-            case GuildCreate(guild=Guild(unavailable=True)):
-                self._mark_unavailable(event.guild.id)
+            case GuildCreate(guild=Guild() as guild):
+                self._add_guild(event, guild)
             case GuildCreate():
-                self._add_guild(event)
+                self._mark_unavailable(event.guild.id)
             case GuildUpdate():
                 self._update_guild(event.guild)
             case GuildDelete(unavailable=True):
@@ -129,10 +129,10 @@ class Cache:
                 self._guild_roles.get(guild_id, {}).pop(role_id, None)
                 self._roles.pop(role_id, None)
 
-    def _add_guild(self, event: GuildCreate) -> None:
-        guild_id = event.guild.id
+    def _add_guild(self, event: GuildCreate, guild: Guild) -> None:
+        guild_id = guild.id
         self._remove_guild(guild_id)
-        self._guilds[guild_id] = event.guild
+        self._guilds[guild_id] = guild
         self._guild_channels[guild_id] = {}
         self._guild_roles[guild_id] = {}
         for channel in (*event.channels, *event.threads):

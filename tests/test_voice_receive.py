@@ -16,6 +16,7 @@ from voice_fakes import (
     connected,
     disconnected,
     ready,
+    rest_voice_state,
     run,
     settle,
 )
@@ -381,7 +382,7 @@ def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
         vc.speech_activity = True
         bot.rest.answers["GET", f"/guilds/{OTHER_GUILD_ID}/voice-states/{USER_ID}"] = (
             200,
-            {"channel_id": str(NO_BITRATE)},
+            rest_voice_state(NO_BITRATE, guild_id=OTHER_GUILD_ID),
         )
         ctx = ContextVoice(bot.voice, OTHER_GUILD_ID, USER_ID)
         joining = asyncio.ensure_future(

@@ -19,29 +19,29 @@ if TYPE_CHECKING:
 
 
 class RoleColors(Model, kw_only=True):
-    primary_color: int | None = None
-    secondary_color: int | None = None
-    tertiary_color: int | None = None
+    primary_color: int
+    secondary_color: int | None
+    tertiary_color: int | None
 
 
 class Role(Model, kw_only=True):
     """A guild role."""
 
     id: int
-    name: str | None = None
-    colors: RoleColors | None = None
-    hoist: bool | None = None
+    name: str
+    colors: RoleColors
+    hoist: bool
     icon: str | None = None
     unicode_emoji: str | None = None
-    position: int | None = None
-    _permissions: str | None = msgspec.field(default=None, name="permissions")
-    managed: bool | None = None
-    mentionable: bool | None = None
-    flags: RoleFlags | None = None
+    position: int
+    _permissions: str = msgspec.field(name="permissions")
+    managed: bool
+    mentionable: bool
+    flags: RoleFlags
 
     @property
-    def permissions(self) -> Permissions | None:
-        return permissions_from(self._permissions)
+    def permissions(self) -> Permissions:
+        return Permissions(int(self._permissions))
 
     @property
     def mention(self) -> str:
@@ -52,38 +52,43 @@ class Role(Model, kw_only=True):
         return resolved.roles.get(id)
 
 
-class Member(Model, kw_only=True):
-    """A user's membership in a guild."""
+class PartialMember(Model, kw_only=True):
+    """A member without its user, as resolved options and message events carry it."""
 
-    user: User | None = None
+    roles: tuple[int, ...]
+    joined_at: datetime | None
+    flags: MemberFlags
     nick: str | None = None
     avatar: str | None = None
-    roles: tuple[int, ...] = ()
-    joined_at: datetime | None = None
     premium_since: datetime | None = None
     deaf: bool | None = None
     mute: bool | None = None
-    pending: bool | None = None
+    pending: bool = False
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
-    flags: MemberFlags | None = None
 
     @property
     def permissions(self) -> Permissions | None:
         """The member's permissions in the channel of an interaction."""
         return permissions_from(self._permissions)
 
-    @property
-    def id(self) -> int | None:
-        return None if self.user is None else self.user.id
+
+class Member(PartialMember, kw_only=True):
+    """A user's membership in a guild."""
+
+    user: User
 
     @property
-    def mention(self) -> str | None:
-        return None if self.user is None else self.user.mention
+    def id(self) -> int:
+        return self.user.id
+
+    @property
+    def mention(self) -> str:
+        return self.user.mention
 
     @property
     def display_name(self) -> str:
-        return self.nick or ("" if self.user is None else self.user.display_name)
+        return self.nick or self.user.display_name
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Member | None":
@@ -94,37 +99,39 @@ class Guild(Model, kw_only=True):
     """The header of a guild, without its channels, roles or members."""
 
     id: int
-    name: str | None = None
-    icon: str | None = None
-    owner_id: int | None = None
-    afk_channel_id: int | None = None
-    verification_level: VerificationLevel | None = None
-    features: tuple[str, ...] = ()
+    name: str
+    icon: str | None
+    owner_id: int
+    afk_channel_id: int | None
+    verification_level: VerificationLevel
+    features: tuple[str, ...]
+    system_channel_id: int | None
+    rules_channel_id: int | None
+    preferred_locale: str
+    premium_tier: PremiumTier
+    description: str | None
+    banner: str | None
+    vanity_url_code: str | None
+    nsfw_level: NSFWLevel
     member_count: int | None = None
     large: bool | None = None
-    unavailable: bool | None = None
-    system_channel_id: int | None = None
-    rules_channel_id: int | None = None
-    preferred_locale: str | None = None
-    premium_tier: PremiumTier | None = None
-    description: str | None = None
-    banner: str | None = None
-    vanity_url_code: str | None = None
-    nsfw_level: NSFWLevel | None = None
+    unavailable: bool = False
 
 
 class UnavailableGuild(Model, kw_only=True):
+    """A guild Discord has not sent yet, or one it lost to an outage."""
+
     id: int
-    unavailable: bool | None = None
+    unavailable: bool
 
 
 class Emoji(Model, kw_only=True):
-    id: int | None = None
-    name: str | None = None
-    animated: bool | None = None
+    id: int | None
+    name: str | None
     roles: tuple[int, ...] = ()
     require_colons: bool | None = None
-    managed: bool | None = None
+    managed: bool = False
+    animated: bool = False
     available: bool | None = None
 
 
@@ -132,15 +139,15 @@ class VoiceState(Model, kw_only=True):
     """A user's voice connection state in a guild."""
 
     guild_id: int | None = None
-    channel_id: int | None = None
-    user_id: int | None = None
+    channel_id: int | None
+    user_id: int
     member: Member | None = None
-    session_id: str | None = None
-    deaf: bool | None = None
-    mute: bool | None = None
-    self_deaf: bool | None = None
-    self_mute: bool | None = None
-    self_stream: bool | None = None
-    self_video: bool | None = None
-    suppress: bool | None = None
-    request_to_speak_timestamp: datetime | None = None
+    session_id: str
+    deaf: bool
+    mute: bool
+    self_deaf: bool
+    self_mute: bool
+    self_stream: bool = False
+    self_video: bool
+    suppress: bool
+    request_to_speak_timestamp: datetime | None

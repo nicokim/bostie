@@ -599,6 +599,24 @@ def voice_state(
     }
 
 
+def rest_voice_state(
+    channel_id: int | None, user_id: int = USER_ID, guild_id: int = GUILD_ID
+) -> dict[str, Any]:
+    return {
+        "guild_id": str(guild_id),
+        "channel_id": None if channel_id is None else str(channel_id),
+        "user_id": str(user_id),
+        "session_id": "abc",
+        "deaf": False,
+        "mute": False,
+        "self_deaf": False,
+        "self_mute": False,
+        "self_video": False,
+        "suppress": False,
+        "request_to_speak_timestamp": None,
+    }
+
+
 def ready(guild_id: int = GUILD_ID) -> VoiceDelivery:
     return ("voice_state", guild_id, "ready", None, None, "")
 

@@ -19,7 +19,9 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models import Application, Member, Message, decode
+from bostie.models import Application, Message, PartialMember, decode
+
+MEMBER = b'{"roles": [], "joined_at": null, "flags": 0, "permissions": "%d"}'
 
 
 class Channel(msgspec.Struct):
@@ -83,7 +85,7 @@ def test_reading_permissions_caches_no_composite_values() -> None:
     cached = len(Permissions._value2member_map_)
 
     for value in range(1, 2000):
-        member = decode(Member, b'{"permissions": "%d"}' % (value << 20))
+        member = decode(PartialMember, MEMBER % (value << 20))
         assert member.permissions == value << 20
 
     assert len(Permissions._value2member_map_) == cached

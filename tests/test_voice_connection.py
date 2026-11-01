@@ -6,6 +6,7 @@ from datetime import datetime
 
 import msgspec
 import pytest
+from fakediscord import payloads
 from voice_fakes import (
     BOT_ID,
     ELSEWHERE,
@@ -21,6 +22,7 @@ from voice_fakes import (
     connected,
     disconnected,
     ready,
+    rest_voice_state,
     run,
     settle,
     voice_state,
@@ -30,7 +32,7 @@ from bostie import voice
 from bostie.enums import Intents, SpeakingFlags
 from bostie.errors import Forbidden, NotFound
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
-from bostie.models import VoiceState
+from bostie.models import VoiceState, decode
 from bostie.voice import connection as connection_module
 
 PATCH_ME = f"/guilds/{GUILD_ID}/voice-states/@me"
@@ -113,10 +115,11 @@ def test_voice_needs_a_running_bot() -> None:
 
 def test_a_cached_channel_needs_no_request() -> None:
     async def scenario(bot: FakeBot) -> None:
-        guild = {
-            "id": str(GUILD_ID),
-            "channels": [{"id": str(VOICE), "type": 2, "bitrate": 128_000}],
-        }
+        guild = payloads.guild(
+            id=str(GUILD_ID),
+            channels=[{"id": str(VOICE), "type": 2, "bitrate": 128_000}],
+            threads=[],
+        )
         bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
         await connected(bot)
         assert bot.rest.requests == []
@@ -705,10 +708,8 @@ def test_close_disconnects_every_connection_and_ends_the_silent_ones(
 
 
 def voice_state_update(channel_id: int, user_id: int = BOT_ID) -> VoiceStateUpdate:
-    state = VoiceState(
-        guild_id=GUILD_ID, channel_id=channel_id, user_id=user_id, session_id="abc"
-    )
-    return VoiceStateUpdate(voice_state=state)
+    state = msgspec.json.encode(rest_voice_state(channel_id, user_id))
+    return VoiceStateUpdate(voice_state=decode(VoiceState, state))
 
 
 def test_connect_external_returns_the_state_and_server_and_disconnects() -> None:
@@ -762,7 +763,7 @@ def test_context_voice_connects_to_the_users_channel() -> None:
     async def scenario(bot: FakeBot) -> None:
         bot.rest.answers[("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")] = (
             200,
-            {"channel_id": str(OTHER_VOICE), "user_id": str(USER_ID)},
+            rest_voice_state(OTHER_VOICE),
         )
         ctx = context_voice(bot)
         before = ctx.current
@@ -785,7 +786,7 @@ def test_context_voice_raises_not_in_voice(case: str) -> None:
         if case == "unknown voice state":
             bot.rest.answers[route] = (404, {"code": 10065, "message": "Unknown"})
         elif case == "no channel":
-            bot.rest.answers[route] = (200, {"channel_id": None})
+            bot.rest.answers[route] = (200, rest_voice_state(None))
         guild_id = None if case == "dm" else GUILD_ID
         with pytest.raises(voice.NotInVoice):
             await context_voice(bot, guild_id).connect()

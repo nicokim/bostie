@@ -343,7 +343,6 @@ def test_permissions_beyond_64_bits_decode() -> None:
     assert created is not None
     assert received is not None
     role_permissions = created.roles[3].permissions
-    assert role_permissions is not None
     assert role_permissions & bit
     assert Permissions.ADMINISTRATOR in role_permissions
     decoded_overwrite = created.channels[3].permission_overwrites[0]

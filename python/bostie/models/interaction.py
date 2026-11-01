@@ -11,7 +11,7 @@ from bostie.enums import (
 )
 from bostie.models.base import Model, permissions_from
 from bostie.models.channel import Channel
-from bostie.models.guild import Member, Role
+from bostie.models.guild import Member, PartialMember, Role
 from bostie.models.message import Attachment, Message, in_guild
 from bostie.models.user import User
 
@@ -30,19 +30,19 @@ class Resolved(Model, kw_only=True):
     """The users, members, roles, channels, messages and files an interaction names."""
 
     users: dict[int, User] = msgspec.field(default_factory=dict)
-    members: dict[int, Member] = msgspec.field(default_factory=dict)
+    members: dict[int, PartialMember] = msgspec.field(default_factory=dict)
     roles: dict[int, Role] = msgspec.field(default_factory=dict)
     channels: dict[int, Channel] = msgspec.field(default_factory=dict)
     messages: dict[int, Message] = msgspec.field(default_factory=dict)
     attachments: dict[int, Attachment] = msgspec.field(default_factory=dict)
 
     def member(self, id: int) -> Member | None:
-        """The member with this id, with its user filled in."""
+        """The member with this id, with its user."""
         member = self.members.get(id)
         user = self.users.get(id)
         if member is None or user is None:
-            return member
-        return msgspec.structs.replace(member, user=user)
+            return None
+        return Member(user=user, **msgspec.structs.asdict(member))
 
 
 class InteractionData(Model, kw_only=True):

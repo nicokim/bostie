@@ -50,6 +50,7 @@ from bostie.models import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
+ROLE = json.loads((FIXTURES / "events" / "GUILD_ROLE_CREATE.json").read_bytes())["role"]
 
 
 def payload(name: str) -> bytes:
@@ -90,7 +91,6 @@ def test_snowflakes_permissions_and_timestamps_are_typed() -> None:
     guild = decode(Guild, payload("events/GUILD_UPDATE.json"))
     interaction = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
 
-    assert member.user is not None
     assert member.user.id == 820774541721731073
     assert member.joined_at == datetime(2025, 4, 18, 19, 3, 11, 987000, tzinfo=UTC)
     assert guild.owner_id == 308882807193731073
@@ -268,7 +268,6 @@ def test_resolved_options_convert_to_their_models() -> None:
     attachment = Attachment.from_resolved(resolved, 1564609863064092673)
 
     assert member is not None
-    assert member.user is not None
     assert member.user.username == "linus"
     assert member.permissions == 1817464907619905
     assert user is not None
@@ -344,7 +343,7 @@ def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:
 def test_mentions_and_display_names() -> None:
     member = decode(Member, payload("rest/member.json"))
     user = decode(User, payload("rest/user.json"))
-    role = decode(Role, b'{"id": "42"}')
+    role = decode(Role, msgspec.json.encode(ROLE | {"id": "42"}))
     channel = decode(Channel, b'{"id": "7", "type": 0}')
 
     assert user.mention == "<@308882807193731073>"
@@ -355,7 +354,6 @@ def test_mentions_and_display_names() -> None:
     assert msgspec.structs.replace(user, global_name=None).display_name == user.username
     assert member.display_name == "linus"
     assert msgspec.structs.replace(member, nick="Lin").display_name == "Lin"
-    assert decode(Member, b"{}").display_name == ""
 
 
 def test_build_message_sets_only_the_given_parts() -> None:
@@ -458,11 +456,12 @@ def test_v2_components_set_their_flag_clear_old_content_and_refuse_new_content()
 
 def test_text_inputs_and_deprecated_role_colors_are_not_modelled() -> None:
     text_input = msgspec.Raw(b'{"type": 4, "custom_id": "note", "label": "Note"}')
-    role = decode(Role, b'{"id": "42", "color": 3447003}')
+    role_payload = ROLE | {"color": 3447003}
+    role = decode(Role, msgspec.json.encode(role_payload))
 
     (component,) = decode_components([text_input])
 
     assert isinstance(component, UnknownComponent)
     assert component.type == ComponentType.TEXT_INPUT
     assert "color" not in Role.__struct_fields__
-    assert role.raw == {"id": "42", "color": 3447003}
+    assert role.raw == role_payload
