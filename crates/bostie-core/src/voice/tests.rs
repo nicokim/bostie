@@ -702,13 +702,18 @@ impl Harness {
         self.pump(call, |harness, _| harness.ready()).await;
     }
 
-    fn ready(&mut self) -> bool {
-        self.voice
-            .shared
-            .connections
-            .lock()
-            .get(&guild())
-            .is_some_and(|handle| handle.info.status() == VoiceStatus::Ready)
+    fn ready(&self) -> bool {
+        let latest = self
+            .deliveries
+            .iter()
+            .rev()
+            .find_map(|delivery| match delivery {
+                Delivery::VoiceState {
+                    guild: got, status, ..
+                } if *got == guild() => Some(*status),
+                _ => None,
+            });
+        latest == Some(VoiceStatus::Ready)
     }
 
     async fn encrypting(&mut self, call: &mut Call) {

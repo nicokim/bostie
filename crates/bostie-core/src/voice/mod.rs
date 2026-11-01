@@ -486,7 +486,6 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
         debug!(%error, guild = %info.guild, "the voice leave was not queued");
     }
     debug!(guild = %info.guild, reason = ending.reason.as_str(), "voice connection ended");
-    info.set_status(VoiceStatus::Disconnected);
     shared.inbox.push(Delivery::VoiceState {
         guild: info.guild,
         status: VoiceStatus::Disconnected,

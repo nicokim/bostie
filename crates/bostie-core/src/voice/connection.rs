@@ -135,7 +135,6 @@ pub struct Info {
     pub members: Mutex<HashSet<UserId>>,
     latency_ws: AtomicU64,
     latency_udp: AtomicU64,
-    status: Mutex<VoiceStatus>,
 }
 
 impl Info {
@@ -147,7 +146,6 @@ impl Info {
             members: Mutex::new(HashSet::new()),
             latency_ws: AtomicU64::new(UNKNOWN_LATENCY),
             latency_udp: AtomicU64::new(UNKNOWN_LATENCY),
-            status: Mutex::new(VoiceStatus::Connecting),
         }
     }
 
@@ -165,15 +163,6 @@ impl Info {
 
     pub fn set_latency_udp(&self, latency: Duration) {
         self.latency_udp.store(nanos(latency), Ordering::Relaxed);
-    }
-
-    #[cfg(test)]
-    pub fn status(&self) -> VoiceStatus {
-        *self.status.lock()
-    }
-
-    pub fn set_status(&self, status: VoiceStatus) {
-        *self.status.lock() = status;
     }
 }
 
@@ -506,7 +495,6 @@ impl Connection {
 
     fn announce(&mut self, status: VoiceStatus, detail: &str) {
         self.status = status;
-        self.info.set_status(status);
         self.push(Delivery::VoiceState {
             guild: self.guild,
             status,
