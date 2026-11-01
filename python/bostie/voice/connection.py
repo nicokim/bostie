@@ -24,7 +24,7 @@ from bostie.errors import NotFound, NotInVoice, VoiceConnectError, VoiceNotConne
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT, SHARD, GatewayClient
 from bostie.http import HTTPClient
-from bostie.models import Channel, User
+from bostie.models import Channel, User, VoiceState, decode
 from bostie.voice import layers
 from bostie.voice.encoder import DEFAULT_BITRATE, percent
 from bostie.voice.events import (
@@ -1157,7 +1157,7 @@ class ContextVoice:
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
         try:
-            state = await self._manager._bot.http.request(
+            state = await self._manager._bot.http._request(
                 "GET",
                 "/guilds/{guild_id}/voice-states/{user_id}",
                 guild_id=self._guild_id,
@@ -1166,14 +1166,15 @@ class ContextVoice:
         except NotFound as error:
             if error.code != JSONErrorCode.UNKNOWN_VOICE_STATE:
                 raise
-            state = {}
-        channel_id = state.get("channel_id")
+            channel_id = None
+        else:
+            channel_id = decode(VoiceState, state).channel_id
         if channel_id is None:
             raise NotInVoice(
                 f"user {self._user_id} is not in a voice channel of guild "
                 f"{self._guild_id}"
             )
-        return await self._manager.connect(int(channel_id), **options)
+        return await self._manager.connect(channel_id, **options)
 
 
 def versions() -> dict[str, str]:

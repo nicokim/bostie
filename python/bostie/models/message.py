@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack
 
 import msgspec
 
@@ -44,8 +44,6 @@ V2_COMPONENT_TYPES = frozenset(
 
 class Attachment(Model, kw_only=True):
     """A file attached to a message or passed as a command option."""
-
-    __option_type__: ClassVar[int] = 11
 
     id: int
     filename: str | None = None

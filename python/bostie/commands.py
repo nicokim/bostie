@@ -24,10 +24,20 @@ from typing import (
 
 from bostie.enums import CommandType, InteractionContextType, OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
+from bostie.models import (
+    Attachment,
+    Channel,
+    InteractionDataOption,
+    Member,
+    Resolved,
+    Role,
+    User,
+)
 
 if TYPE_CHECKING:
     from typing import Annotated as Range
 
+    from bostie.context import AutocompleteContext
     from bostie.router import Router
 
 __all__ = [
@@ -49,8 +59,11 @@ __all__ = [
 type ChoiceValue = str | int | float
 type CommandCallback = Callable[..., Coroutine[Any, Any, None]]
 type AutocompleteCallback = Callable[
-    [Any, Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
+    ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
+type OptionModel = (
+    type[User] | type[Member] | type[Role] | type[Channel] | type[Attachment]
+)
 type Scope = Literal["global", "guild"]
 
 LIBRARY_DIRECTORY = os.path.dirname(__file__)
@@ -97,6 +110,13 @@ FIELD_TYPES = {
     "channel_types": frozenset({OptionType.CHANNEL}),
 }
 MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
+OPTION_MODELS: dict[OptionModel, OptionType] = {
+    User: OptionType.USER,
+    Member: OptionType.USER,
+    Role: OptionType.ROLE,
+    Channel: OptionType.CHANNEL,
+    Attachment: OptionType.ATTACHMENT,
+}
 
 
 class GroupSettings(TypedDict, total=False):
@@ -175,7 +195,7 @@ class _Parameter:
     python_name: str
     payload: dict[str, Any]
     default: object
-    classes: tuple[Any, ...]
+    models: tuple[OptionModel, ...]
     lookup: Callable[[Any], object] | None
     autocomplete: AutocompleteCallback | None
 
@@ -191,8 +211,8 @@ class _Parameter:
     def required(self) -> bool:
         return bool(self.payload["required"])
 
-    def convert(self, value: Any, resolved: Any) -> object:
-        if self.classes:
+    def convert(self, value: Any, resolved: Resolved | None) -> object:
+        if self.models:
             return self._resolve(value, resolved)
         if type(value) not in VALUE_TYPES[self.type]:
             raise OptionConversionError(
@@ -209,14 +229,14 @@ class _Parameter:
                 f"option {self.name!r} got {value!r}, which is not one of its choices"
             ) from None
 
-    def _resolve(self, value: object, resolved: Any) -> object:
+    def _resolve(self, value: object, resolved: Resolved | None) -> object:
         snowflake = int(value) if isinstance(value, str) and value.isdecimal() else None
         if snowflake is not None and resolved is not None:
-            for cls in self.classes:
-                found = cls.from_resolved(resolved, snowflake)
+            for model in self.models:
+                found = model.from_resolved(resolved, snowflake)
                 if found is not None:
                     return found
-        expected = " or ".join(cls.__name__ for cls in self.classes)
+        expected = " or ".join(model.__name__ for model in self.models)
         raise OptionConversionError(
             f"option {self.name!r} got {value!r}, which resolves to no {expected}"
         )
@@ -333,11 +353,13 @@ class Command(_Node):
             return self._settings["auto_defer"]
         return self.router.bot.auto_defer
 
-    def bind(self, options: Sequence[Any], resolved: Any) -> dict[str, Any]:
+    def bind(
+        self, options: Sequence[InteractionDataOption], resolved: Resolved | None
+    ) -> dict[str, Any]:
         """Turn the leaf options of an invocation into keyword arguments."""
         arguments: dict[str, Any] = {}
         for option in options:
-            parameter = self._by_option_name.get(option.name)
+            parameter = self._by_option_name.get(option.name or "")
             if parameter is None or option.type != parameter.type:
                 raise OptionConversionError(
                     f"/{self.qualified_name} has no option {option.name!r} "
@@ -490,7 +512,7 @@ def _parameter(parameter: inspect.Parameter, hints: Mapping[str, object]) -> _Pa
 
 def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
     members, optional, metadata = _unwrap(hint)
-    option_type, choices, classes, lookup = _kind(members)
+    option_type, choices, models, lookup = _kind(members)
     settings = _merge(
         [
             *(
@@ -544,7 +566,7 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
         None if parameter.default is inspect.Parameter.empty else parameter.default
     )
     return _Parameter(
-        parameter.name, payload, default, classes, lookup, settings.autocomplete
+        parameter.name, payload, default, models, lookup, settings.autocomplete
     )
 
 
@@ -571,11 +593,18 @@ def _unwrap(hint: object) -> tuple[tuple[object, ...], bool, list[object]]:
 
 def _kind(
     members: tuple[object, ...],
-) -> tuple[OptionType, list[Choice], tuple[Any, ...], Callable[[Any], object] | None]:
-    if len(members) == 2 and {_model_type(member) for member in members} == (
-        MENTIONABLE_TYPES
-    ):
-        return OptionType.MENTIONABLE, [], members, None
+) -> tuple[
+    OptionType, list[Choice], tuple[OptionModel, ...], Callable[[Any], object] | None
+]:
+    models = tuple(
+        model for member in members for model in OPTION_MODELS if model is member
+    )
+    if len(models) == len(members):
+        kinds = {OPTION_MODELS[model] for model in models}
+        if len(models) == 1:
+            return kinds.pop(), [], models, None
+        if kinds == MENTIONABLE_TYPES:
+            return OptionType.MENTIONABLE, [], models, None
     hint = members[0] if len(members) == 1 else None
     if hint in SCALAR_TYPES:
         return SCALAR_TYPES[hint], [], (), None
@@ -587,19 +616,9 @@ def _kind(
         choices = [Choice(str(value), value) for value in values]
         lookup = {value: value for value in values}.__getitem__
         return _choice_type(choices), choices, (), lookup
-    model_type = _model_type(hint)
-    if model_type is not None:
-        return model_type, [], (hint,), None
     raise CommandDefinitionError(
         "unsupported type hint " + " | ".join(map(inspect.formatannotation, members))
     )
-
-
-def _model_type(hint: object) -> OptionType | None:
-    option_type = (
-        getattr(hint, "__option_type__", None) if isinstance(hint, type) else None
-    )
-    return None if option_type is None else OptionType(option_type)
 
 
 def _choice_type(choices: Sequence[Choice]) -> OptionType:

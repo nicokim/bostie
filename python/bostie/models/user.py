@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from bostie.enums import UserFlags
 from bostie.models.base import Model
@@ -9,8 +9,6 @@ if TYPE_CHECKING:
 
 class User(Model, kw_only=True):
     """A Discord user or bot account."""
-
-    __option_type__: ClassVar[int] = 6
 
     id: int
     username: str | None = None

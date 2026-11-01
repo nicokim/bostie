@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import msgspec
 
@@ -38,8 +38,6 @@ class ThreadMetadata(Model, kw_only=True):
 
 class Channel(Model, kw_only=True):
     """Any channel, thread included."""
-
-    __option_type__: ClassVar[int] = 7
 
     id: int
     type: ChannelType | None = None

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import msgspec
 
@@ -26,8 +26,6 @@ class RoleColors(Model, kw_only=True):
 
 class Role(Model, kw_only=True):
     """A guild role."""
-
-    __option_type__: ClassVar[int] = 8
 
     id: int
     name: str | None = None
@@ -56,8 +54,6 @@ class Role(Model, kw_only=True):
 
 class Member(Model, kw_only=True):
     """A user's membership in a guild; members attached to messages lack `user`."""
-
-    __option_type__: ClassVar[int] = 6
 
     user: User | None = None
     nick: str | None = None

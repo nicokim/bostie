@@ -1,8 +1,7 @@
 import inspect
 import re
-from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 import pytest
 
@@ -13,75 +12,24 @@ from bostie.commands import (
     Range,
     autocomplete_choices,
 )
-from bostie.enums import Permissions
+from bostie.enums import OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
+from bostie.models import (
+    Attachment,
+    Channel,
+    InteractionDataOption,
+    Member,
+    Resolved,
+    Role,
+    User,
+)
 from bostie.router import Router
 
 
-@dataclass
-class Resolved:
-    users: dict[int, "User"] = field(default_factory=dict)
-    members: dict[int, "Member"] = field(default_factory=dict)
-    roles: dict[int, "Role"] = field(default_factory=dict)
-    channels: dict[int, "Channel"] = field(default_factory=dict)
-    attachments: dict[int, "Attachment"] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class User:
-    __option_type__: ClassVar[int] = 6
-    id: int
-
-    @classmethod
-    def from_resolved(cls, resolved: Resolved, id: int) -> "User | None":
-        return resolved.users.get(id)
-
-
-@dataclass(frozen=True)
-class Member:
-    __option_type__: ClassVar[int] = 6
-    id: int
-
-    @classmethod
-    def from_resolved(cls, resolved: Resolved, id: int) -> "Member | None":
-        return resolved.members.get(id)
-
-
-@dataclass(frozen=True)
-class Role:
-    __option_type__: ClassVar[int] = 8
-    id: int
-
-    @classmethod
-    def from_resolved(cls, resolved: Resolved, id: int) -> "Role | None":
-        return resolved.roles.get(id)
-
-
-@dataclass(frozen=True)
-class Channel:
-    __option_type__: ClassVar[int] = 7
-    id: int
-
-    @classmethod
-    def from_resolved(cls, resolved: Resolved, id: int) -> "Channel | None":
-        return resolved.channels.get(id)
-
-
-@dataclass(frozen=True)
-class Attachment:
-    __option_type__: ClassVar[int] = 11
-    id: int
-
-    @classmethod
-    def from_resolved(cls, resolved: Resolved, id: int) -> "Attachment | None":
-        return resolved.attachments.get(id)
-
-
-@dataclass(frozen=True)
-class Given:
-    name: str
-    type: int
-    value: str | int | float | bool
+def filled(
+    name: str, type: int, value: str | int | float | bool
+) -> InteractionDataOption:
+    return InteractionDataOption(name=name, type=OptionType(type), value=value)
 
 
 class Unit(Enum):
@@ -570,27 +518,27 @@ def kitchen_sink() -> Command:
 
 def test_bind_converts_every_option_type() -> None:
     resolved = Resolved(
-        users={1: User(1)},
-        members={1: Member(1)},
-        roles={2: Role(2)},
-        channels={3: Channel(3)},
-        attachments={4: Attachment(4)},
+        users={1: User(id=1)},
+        members={1: Member()},
+        roles={2: Role(id=2)},
+        channels={3: Channel(id=3)},
+        attachments={4: Attachment(id=4)},
     )
     given = [
-        Given("text", 3, "hello"),
-        Given("number", 4, 7),
-        Given("ratio", 10, 2),
-        Given("flag", 5, True),
-        Given("user", 6, "1"),
-        Given("member", 6, "1"),
-        Given("role", 8, "2"),
-        Given("channel", 7, "3"),
-        Given("file", 11, "4"),
-        Given("who", 9, "2"),
-        Given("unit", 3, "imperial"),
-        Given("size", 4, 2),
-        Given("mode", 3, "list"),
-        Given("half", 10, 1),
+        filled("text", 3, "hello"),
+        filled("number", 4, 7),
+        filled("ratio", 10, 2),
+        filled("flag", 5, True),
+        filled("user", 6, "1"),
+        filled("member", 6, "1"),
+        filled("role", 8, "2"),
+        filled("channel", 7, "3"),
+        filled("file", 11, "4"),
+        filled("who", 9, "2"),
+        filled("unit", 3, "imperial"),
+        filled("size", 4, 2),
+        filled("mode", 3, "list"),
+        filled("half", 10, 1),
     ]
 
     arguments = kitchen_sink().bind(given, resolved)
@@ -600,12 +548,12 @@ def test_bind_converts_every_option_type() -> None:
         "number": 7,
         "ratio": 2.0,
         "flag": True,
-        "user": User(1),
-        "member": Member(1),
-        "role": Role(2),
-        "channel": Channel(3),
-        "file": Attachment(4),
-        "who": Role(2),
+        "user": User(id=1),
+        "member": Member(user=User(id=1)),
+        "role": Role(id=2),
+        "channel": Channel(id=3),
+        "file": Attachment(id=4),
+        "who": Role(id=2),
         "unit": Unit.IMPERIAL,
         "size": Size.LARGE,
         "mode": "list",
@@ -624,9 +572,9 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
     async def poke(ctx: object, who: User | Role) -> None:
         pass
 
-    both = Resolved(users={5: User(5)}, roles={5: Role(5)})
+    both = Resolved(users={5: User(id=5)}, roles={5: Role(id=5)})
 
-    assert poke.bind([Given("who", 9, "5")], both) == {"who": User(5)}
+    assert poke.bind([filled("who", 9, "5")], both) == {"who": User(id=5)}
 
 
 @pytest.mark.parametrize(
@@ -634,21 +582,21 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
     [
         ([], Resolved(), "required option 'name' is missing"),
         (
-            [Given("name", 3, "x"), Given("other", 3, "y")],
+            [filled("name", 3, "x"), filled("other", 3, "y")],
             Resolved(),
             "no option 'other'",
         ),
-        ([Given("name", 4, 1)], Resolved(), "no option 'name' of type 4"),
-        ([Given("name", 3, 1)], Resolved(), "is STRING but got 1"),
-        ([Given("name", 3, "x"), Given("count", 4, True)], Resolved(), "is INTEGER"),
-        ([Given("name", 3, "x"), Given("unit", 3, "kelvin")], Resolved(), "choices"),
-        ([Given("name", 3, "x"), Given("member", 6, "9")], Resolved(), "no Member"),
-        ([Given("name", 3, "x"), Given("member", 6, "9")], None, "no Member"),
-        ([Given("name", 3, "x"), Given("member", 6, "abc")], Resolved(), "no Member"),
+        ([filled("name", 4, 1)], Resolved(), "no option 'name' of type 4"),
+        ([filled("name", 3, 1)], Resolved(), "is STRING but got 1"),
+        ([filled("name", 3, "x"), filled("count", 4, True)], Resolved(), "is INTEGER"),
+        ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], Resolved(), "choices"),
+        ([filled("name", 3, "x"), filled("member", 6, "9")], Resolved(), "no Member"),
+        ([filled("name", 3, "x"), filled("member", 6, "9")], None, "no Member"),
+        ([filled("name", 3, "x"), filled("member", 6, "abc")], Resolved(), "no Member"),
     ],
 )
 def test_bind_rejects_unexpected_input(
-    given: list[Given], resolved: Resolved | None, problem: str
+    given: list[InteractionDataOption], resolved: Resolved | None, problem: str
 ) -> None:
     router = Router()
 
