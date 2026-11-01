@@ -169,10 +169,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
             self._drained()
             return 0
         guild_id = self._connection.guild_id
-        for item in batch:
-            converted = _convert(item, now, guild_id)
-            if converted is not None:
-                self._items.append(converted)
+        self._items.extend(_convert(item, now, guild_id) for item in batch)
         return len(batch)
 
     def _drained(self) -> None:
@@ -206,9 +203,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         return ReceiverStats(*self._native.stats())
 
 
-def _convert(
-    item: "ReceivedItem", now: float, guild_id: int
-) -> tuple[float, Item] | None:
+def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, Item]:
     match item:
         case ("frame", user, ssrc, timestamp, offset, samples, age, data, lost, queued):
             return now - queued, Frame(
@@ -231,4 +226,3 @@ def _convert(
                 duration=duration,
                 offset=offset,
             )
-    return None
