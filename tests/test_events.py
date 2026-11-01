@@ -180,7 +180,7 @@ def test_guild_delete_reads_the_guild_id_from_id() -> None:
 
     assert outage.guild_id == left.guild_id == 1335172792320131073
     assert outage.unavailable is True
-    assert left.unavailable is None
+    assert left.unavailable is False
 
 
 @pytest.mark.parametrize(
@@ -201,21 +201,18 @@ def test_member_remove_carries_only_the_user() -> None:
     event = decode(MemberRemove, "GUILD_MEMBER_REMOVE")
 
     assert event.guild_id == 1335172792320131073
-    assert event.user is not None
     assert event.user.username == "newcomer"
 
 
 def test_ready() -> None:
     event = decode(Ready, "READY")
 
-    assert event.user is not None
     assert event.user.bot is True
     assert [guild.id for guild in event.guilds] == [
         1335172792320131073,
         1335927767040131073,
     ]
     assert all(guild.unavailable for guild in event.guilds)
-    assert event.application is not None
     assert event.application.flags == 9084928
     assert ApplicationFlags.APPLICATION_COMMAND_BADGE in event.application.flags
     assert event.session_id == "70374e9c7263b9d5e16c4f418ff85dc1"
@@ -248,7 +245,6 @@ def test_message_and_reaction_events() -> None:
     assert created.message.member is not None
     assert created.message.member.flags == MemberFlags.COMPLETED_ONBOARDING
     assert deleted.id == created.message.id
-    assert reaction.emoji is not None
     assert reaction.emoji.animated is True
     assert reaction.member is not None
     assert reaction.message_author_id == 1329027298099331073
@@ -335,7 +331,6 @@ def test_reprs_leave_out_interaction_and_voice_tokens() -> None:
     )
     assert isinstance(created.interaction, CommandInteraction)
     token = created.interaction.token
-    assert server.token is not None
 
     for value, secret in [
         (created, token),

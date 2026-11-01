@@ -495,8 +495,7 @@ class Bot(Router):
             ready = event(Ready)
             if ready is not None:
                 self.user = ready.user
-                if ready.application is not None:
-                    self.application_id = ready.application.id
+                self.application_id = ready.application.id
             self._ready = True
             for future in self._ready_waiters:
                 if not future.done():

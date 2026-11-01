@@ -115,19 +115,16 @@ class Cache:
                 self._store_channel(event.channel)
             case ChannelDelete() | ThreadDelete():
                 self._remove_channel(event.channel.id)
-            case ThreadListSync(guild_id=int(guild_id)) if guild_id in self._guilds:
+            case ThreadListSync() if event.guild_id in self._guilds:
                 parents = None if event.channel_ids is None else set(event.channel_ids)
-                self._drop_threads(guild_id, parents)
+                self._drop_threads(event.guild_id, parents)
                 for thread in event.threads:
-                    self._store_channel(_in_guild(thread, guild_id))
-            case (
-                RoleCreate(guild_id=int(guild_id), role=Role() as role)
-                | RoleUpdate(guild_id=int(guild_id), role=Role() as role)
-            ):
-                self._store_role(guild_id, role)
-            case RoleDelete(guild_id=int(guild_id), role_id=int(role_id)):
-                self._guild_roles.get(guild_id, {}).pop(role_id, None)
-                self._roles.pop(role_id, None)
+                    self._store_channel(_in_guild(thread, event.guild_id))
+            case RoleCreate() | RoleUpdate():
+                self._store_role(event.guild_id, event.role)
+            case RoleDelete():
+                self._guild_roles.get(event.guild_id, {}).pop(event.role_id, None)
+                self._roles.pop(event.role_id, None)
 
     def _add_guild(self, event: GuildCreate, guild: Guild) -> None:
         guild_id = guild.id

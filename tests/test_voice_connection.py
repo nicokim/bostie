@@ -718,7 +718,9 @@ def test_connect_external_returns_the_state_and_server_and_disconnects() -> None
         await settle()
         assert bot.core.sent == [voice_state(VOICE)]
         bot.dispatch(voice_state_update(VOICE, user_id=USER_ID))
-        bot.dispatch(VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="other"))
+        bot.dispatch(
+            VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="other", endpoint=None)
+        )
         bot.dispatch(voice_state_update(VOICE))
         bot.dispatch(
             VoiceServerUpdate(guild_id=GUILD_ID, token="t", endpoint="v.discord.gg")

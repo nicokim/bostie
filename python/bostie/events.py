@@ -64,10 +64,10 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 class Ready(Event, kw_only=True):
     NAME = "READY"
 
-    user: User | None = None
-    guilds: tuple[UnavailableGuild, ...] = ()
-    application: PartialApplication | None = None
-    session_id: str | None = None
+    user: User
+    guilds: tuple[UnavailableGuild, ...]
+    application: PartialApplication
+    session_id: str
 
 
 class Resumed(Event, kw_only=True):
@@ -152,7 +152,7 @@ class GuildDelete(Event, kw_only=True):
     INTENTS = Intents.GUILDS
 
     guild_id: int = msgspec.field(name="id")
-    unavailable: bool | None = None
+    unavailable: bool = False
 
 
 class _ChannelEvent(Event, kw_only=True):
@@ -195,16 +195,16 @@ class ThreadListSync(Event, kw_only=True):
     NAME = "THREAD_LIST_SYNC"
     INTENTS = Intents.GUILDS
 
-    guild_id: int | None = None
+    guild_id: int
     channel_ids: tuple[int, ...] | None = None
-    threads: tuple[Channel, ...] = ()
+    threads: tuple[Channel, ...]
 
 
 class _RoleEvent(Event, kw_only=True):
     INTENTS = Intents.GUILDS
 
-    guild_id: int | None = None
-    role: Role | None = None
+    guild_id: int
+    role: Role
 
 
 class RoleCreate(_RoleEvent, kw_only=True):
@@ -219,8 +219,8 @@ class RoleDelete(Event, kw_only=True):
     NAME = "GUILD_ROLE_DELETE"
     INTENTS = Intents.GUILDS
 
-    guild_id: int | None = None
-    role_id: int | None = None
+    guild_id: int
+    role_id: int
 
 
 class _MessageEvent(Event, kw_only=True):
@@ -248,25 +248,26 @@ class MessageDelete(Event, kw_only=True):
     INTENTS = Intents.GUILD_MESSAGES | Intents.DIRECT_MESSAGES
 
     id: int
-    channel_id: int | None = None
+    channel_id: int
     guild_id: int | None = None
 
 
 class _ReactionEvent(Event, kw_only=True):
     INTENTS = Intents.GUILD_MESSAGE_REACTIONS | Intents.DIRECT_MESSAGE_REACTIONS
 
-    user_id: int | None = None
-    channel_id: int | None = None
-    message_id: int | None = None
+    user_id: int
+    channel_id: int
+    message_id: int
     guild_id: int | None = None
-    member: Member | None = None
-    emoji: PartialEmoji | None = None
-    message_author_id: int | None = None
-    burst: bool | None = None
+    emoji: PartialEmoji
+    burst: bool
 
 
 class ReactionAdd(_ReactionEvent, kw_only=True):
     NAME = "MESSAGE_REACTION_ADD"
+
+    member: Member | None = None
+    message_author_id: int | None = None
 
 
 class ReactionRemove(_ReactionEvent, kw_only=True):
@@ -279,21 +280,21 @@ class TypingStart(Event, kw_only=True):
     NAME = "TYPING_START"
     INTENTS = Intents.GUILD_MESSAGE_TYPING | Intents.DIRECT_MESSAGE_TYPING
 
-    channel_id: int | None = None
+    channel_id: int
     guild_id: int | None = None
-    user_id: int | None = None
-    timestamp: datetime | None = None
+    user_id: int
+    timestamp: datetime
     member: Member | None = None
 
 
 class _GuildMemberPayload(Member, kw_only=True):
-    guild_id: int | None = None
+    guild_id: int
 
 
 class _MemberEvent(Event, kw_only=True):
     INTENTS = Intents.GUILD_MEMBERS
 
-    guild_id: int | None = None
+    guild_id: int
     member: Member
 
     @classmethod
@@ -319,8 +320,8 @@ class MemberRemove(Event, kw_only=True):
     NAME = "GUILD_MEMBER_REMOVE"
     INTENTS = Intents.GUILD_MEMBERS
 
-    guild_id: int | None = None
-    user: User | None = None
+    guild_id: int
+    user: User
 
 
 class InteractionCreate(Event, kw_only=True):
@@ -351,9 +352,9 @@ class VoiceStateUpdate(Event, kw_only=True):
 class VoiceServerUpdate(Event, kw_only=True):
     NAME = "VOICE_SERVER_UPDATE"
 
-    token: str | None = None
-    guild_id: int | None = None
-    endpoint: str | None = None
+    token: str
+    guild_id: int
+    endpoint: str | None
 
 
 class RawEvent(Event, kw_only=True):
