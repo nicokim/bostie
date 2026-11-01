@@ -22,6 +22,7 @@ use crate::voice::crypto::Mode;
 use crate::voice::dave::{DaveCounters, Fault, MlsCall, Outbound, RECOVERY_LIMIT, SendMode};
 use crate::voice::proto::op;
 use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
+use crate::voice::sink::tests::stat;
 use crate::voice::source::tests::fixture;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, HelloAt, Outgoing};
@@ -625,17 +626,6 @@ impl Harness {
         self.media().gate()
     }
 
-    fn counter(&self, name: &str) -> u64 {
-        let media = self.media();
-        media
-            .counters
-            .snapshot()
-            .into_iter()
-            .find(|(key, _)| *key == name)
-            .unwrap_or_else(|| panic!("no counter {name}"))
-            .1
-    }
-
     fn dave_counters(&self) -> DaveCounters {
         self.media().dave.lock().counters()
     }
@@ -1048,8 +1038,8 @@ async fn a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending() {
     assert_eq!(ready["transition_id"].as_u64(), Some(6));
     assert_eq!(harness.server.count(op::IDENTIFY), 1);
     assert_eq!(harness.server.sfu.wait_packets(8, WAIT).len(), 8);
-    assert_eq!(harness.counter("held_ticks"), 0);
-    assert_eq!(harness.counter("resumes"), 1);
+    assert_eq!(stat(&sink, "held_ticks"), 0);
+    assert_eq!(harness.server.count(op::RESUME), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1135,7 +1125,7 @@ async fn close_codes_of_a_dead_session_rejoin_with_a_new_voice_state() {
         harness.fresh_server().await;
         harness.until(VoiceStatus::Ready).await;
         assert_eq!(harness.server.count(op::RESUME), 0, "{code}");
-        assert_eq!(harness.counter("rejoins"), 1, "{code}");
+        assert_eq!(harness.joins(CHANNEL), 2, "{code}");
     }
 }
 
@@ -1216,15 +1206,6 @@ fn speaking_ssrc(delivery: &Delivery) -> Option<u32> {
 
 fn queued_frames(sink: &Sink) -> u64 {
     sink.queued().unwrap().as_micros() as u64 * 48 / 1000
-}
-
-fn sink_stat(sink: &Sink, name: &str) -> u64 {
-    sink.stats()
-        .unwrap()
-        .into_iter()
-        .find(|(key, _)| *key == name)
-        .unwrap()
-        .1
 }
 
 impl Harness {
@@ -1434,9 +1415,8 @@ async fn an_endpointless_server_holds_media_until_the_next_one() {
 
     assert_eq!(detail, "server_unavailable");
     assert_eq!(server.sfu.wait_packets(3, WAIT).len(), 3);
-    assert_eq!(harness.counter("packets_sent"), 5);
     assert_eq!(harness.server.sfu.packets().len(), 2);
-    assert_eq!(harness.counter("held_ticks"), 2);
+    assert_eq!(stat(&sink, "held_ticks"), 2);
     assert_eq!(queued_frames(&sink), 15 * 960);
 }
 
@@ -1615,8 +1595,8 @@ async fn across_a_move_hold_sinks_keep_their_audio_and_drop_sinks_skip_ahead() {
     assert_eq!(queued_frames(&hold), 20 * 960);
     assert_eq!(queued_frames(&skip), 15 * 960);
     assert_eq!(
-        sink_stat(&skip, "dropped_samples"),
-        sink_stat(&skip, "held_ticks") * 960
+        stat(&skip, "dropped_samples"),
+        stat(&skip, "held_ticks") * 960
     );
     harness.fresh_server().await;
     harness.until(VoiceStatus::Ready).await;
@@ -1659,7 +1639,6 @@ async fn unknown_opcodes_are_ignored() {
     );
     harness.speaking_from(90).await;
 
-    assert_eq!(harness.counter("invalid_frames"), 0);
     assert_eq!(harness.statuses().len(), 2);
 }
 
@@ -1686,7 +1665,7 @@ async fn an_exhausted_nonce_rejoins_for_a_new_key_and_restarts_at_zero() {
         .map(|packet| (packet.key, packet.nonce))
         .collect();
     assert_eq!(nonces, [(0, 0), (0, 1), (1, 0), (1, 1)]);
-    assert_eq!(harness.counter("rejoins"), 1);
+    assert_eq!(harness.joins(CHANNEL), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1749,7 +1728,7 @@ async fn a_replaced_main_session_inside_the_move_window_is_not_a_removal() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_malformed_frame_after_ready_is_skipped_counted_and_never_replayed() {
+async fn a_malformed_frame_after_ready_is_skipped_and_never_replayed() {
     let mut harness = Harness::start().await;
     harness.connected().await;
 
@@ -1761,10 +1740,14 @@ async fn a_malformed_frame_after_ready_is_skipped_counted_and_never_replayed() {
         .server
         .gateway
         .send(op::SPEAKING, json!({"user_id": "not a snowflake"}));
-    harness.speaking_from(90).await;
+    let speaking = json!({"user_id": "9", "ssrc": 92, "speaking": 1});
+    let unsequenced = json!({"op": op::SPEAKING, "d": speaking});
     harness
-        .settle(|harness| harness.counter("invalid_frames") == 1)
-        .await;
+        .server
+        .gateway
+        .send_raw(Message::text(unsequenced.to_string()));
+    harness.speaking_from(90).await;
+    harness.speaking_from(92).await;
     harness.server.gateway.drop_connection();
     let resume = harness.server.expect_op(op::RESUME).await;
     harness.until(VoiceStatus::Ready).await;
@@ -1775,7 +1758,6 @@ async fn a_malformed_frame_after_ready_is_skipped_counted_and_never_replayed() {
     harness.speaking_from(91).await;
 
     assert_eq!(resume["seq_ack"].as_u64(), Some(4));
-    assert_eq!(harness.counter("invalid_frames"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1787,9 +1769,6 @@ async fn a_truncated_binary_frame_is_skipped_after_ready() {
         .server
         .gateway
         .send_raw(Message::binary(vec![0_u8, 2]));
-    harness
-        .settle(|harness| harness.counter("invalid_frames") == 1)
-        .await;
     harness.server.gateway.send(
         op::SPEAKING,
         json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
@@ -1817,7 +1796,6 @@ async fn a_truncated_binary_frame_before_ready_fails_the_attempt_and_rejoins() {
 
     let statuses: Vec<VoiceStatus> = harness.statuses().iter().map(|state| state.0).collect();
     assert_eq!(statuses, [VoiceStatus::Connecting, VoiceStatus::Ready]);
-    assert_eq!(harness.counter("invalid_frames"), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2001,20 +1979,23 @@ async fn a_server_without_an_endpoint_closes_the_socket_and_stops_keepalives() {
     let mut harness = Harness::tuned(|tuning| tuning.keepalive_interval = keepalive).await;
     harness.connected().await;
     harness
-        .settle(|harness| harness.counter("keepalives_answered") >= 1)
+        .settle(|harness| harness.voice.latency(guild()).unwrap().1.is_some())
         .await;
+    let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    probe.connect(harness.server.sfu.address()).unwrap();
 
     harness.offer_server(guild(), "gone", None);
     let code = harness.server.expect_close().await;
     harness.until(VoiceStatus::Reconnecting).await;
-    let sent = harness.counter("keepalives_sent");
+    harness.server.sfu.flush(&probe, WAIT);
+    let sent = harness.server.sfu.discoveries();
     sleep(keepalive * 3).await;
+    harness.server.sfu.flush(&probe, WAIT);
 
     assert_eq!(code, 4000);
-    assert_eq!(harness.counter("keepalives_sent"), sent);
+    assert_eq!(harness.server.sfu.discoveries(), sent);
     assert!(harness.media().transport.lock().is_none());
     assert_eq!(harness.gate(), SendMode::Hold);
-    assert!(harness.voice.latency(guild()).unwrap().1.is_some());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2231,7 +2212,6 @@ async fn a_peer_joining_a_lone_bot_forms_a_group_and_hears_the_exact_opus_bytes(
             "{peer}"
         );
         harness.assert_heard(&mut call, &[peer]);
-        assert_eq!(harness.counter("dave_frames"), 2);
     }
 }
 
@@ -2255,11 +2235,12 @@ async fn the_last_peer_leaving_resets_the_group_and_a_new_peer_gets_a_new_key() 
         sink.write(&packet).unwrap();
     }
     harness.tick(3);
+    let drained = queued_frames(&sink);
     sink.close();
 
     assert_eq!(transition_readies(&harness.server).len(), readies);
     assert!(harness.server.sfu.packets().is_empty());
-    assert_eq!(harness.counter("alone_ticks"), 3);
+    assert_eq!(drained, 0);
     call.join(user(THIRD_PEER));
     harness.encrypting(&mut call).await;
     harness.assert_heard(&mut call, &[THIRD_PEER]);
@@ -2539,10 +2520,10 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
         .expect("the ticks waited for the DAVE call")
         .unwrap();
     let dave = harness.voice.dave(guild()).unwrap();
-    let busy = harness.counter("dave_busy");
+    let held = stat(&own, "held_ticks");
     release.send(()).unwrap();
 
-    assert_eq!(busy, 5);
+    assert_eq!(held, 5);
     assert_eq!(dave.protocol_version, 1);
     assert_eq!(queued_frames(&own), 5 * 960);
     assert_eq!(second.sfu.wait_packets(5, WAIT).len(), 5);
@@ -2602,7 +2583,7 @@ async fn an_acknowledged_heartbeat_restores_the_rejoin_budget() {
         harness.until(VoiceStatus::Ready).await;
     }
 
-    assert_eq!(harness.counter("rejoins"), 4);
+    assert_eq!(harness.joins(CHANNEL), 5);
     assert!(harness.voice.latency(guild()).unwrap().0.is_some());
 }
 
@@ -2624,7 +2605,7 @@ async fn late_announced_clients_hold_media_until_the_group_forms() {
         .await;
     let forming = harness.gate();
     harness.tick(2);
-    let held = harness.counter("held_ticks");
+    let held = stat(&sink, "held_ticks");
     let released = call.fake.release_transitions();
     call.enqueue(released);
     harness.encrypting(&mut call).await;
@@ -2913,9 +2894,10 @@ async fn receiving_continues_across_a_resume_and_a_server_change() {
     harness.say(70, 4, &packets[4]);
     harness.say(70, 5, &packets[5]);
     heard.extend(harness.hear(&receiver, 2).await);
+    harness.server.collect().await;
 
     assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
-    assert_eq!(harness.counter("resumes"), 1);
+    assert_eq!(harness.server.count(op::RESUME), 1);
     assert_eq!(receiver.ended(), None);
     assert_eq!(open_after_the_resume, None);
     assert_eq!(ending.ended(), Some(Ended::Reconnecting));
@@ -3017,8 +2999,7 @@ async fn a_slow_receiver_drops_its_oldest_frames_and_sending_keeps_its_pace() {
     let dropped = receiver.stats().unwrap()[1].1;
     assert!(dropped > 0, "{dropped}");
     assert_eq!(harness.server.sfu.wait_packets(30, WAIT).len(), 30);
-    assert_eq!(harness.counter("packets_sent"), 30);
-    assert_eq!(harness.counter("held_ticks"), 0);
+    assert_eq!(stat(&sink, "held_ticks"), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -18,7 +18,7 @@ use super::Throttle;
 use super::connection::{Command, Connection, GatewayEvent, Step, until};
 use super::crypto::{Cipher, Mode};
 use super::dave::{Dave, Outbound, SendMode};
-use super::media::{Transport, bump};
+use super::media::Transport;
 use super::proto::{self, Inbound, ProtoError, SessionDescription};
 use super::receive::Intake;
 use super::types::{DaveOp, DisconnectReason};
@@ -343,7 +343,6 @@ impl<'c> Session<'c> {
         if self.progress != Progress::Ready {
             return Err(SessionEnd::Invalid(format!("invalid frame: {error}")));
         }
-        bump(&self.conn.media.counters.invalid_frames);
         if self.invalid.allows(Instant::now().into_std()) {
             warn!(%error, guild = %self.conn.guild, "skipping an invalid voice frame");
         }
@@ -565,7 +564,6 @@ impl<'c> Session<'c> {
 
     async fn resumed(&mut self) -> Result<(), SessionEnd> {
         self.progress = Progress::Ready;
-        bump(&self.conn.media.counters.resumes);
         self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         self.conn.became_ready();
         self.request_speaking().await
@@ -730,7 +728,6 @@ impl<'c> Session<'c> {
         match udp.socket.send(&udp::discovery_request(udp.ssrc)).await {
             Ok(_) => {
                 keepalive.sent_at = Some(std::time::Instant::now());
-                bump(&self.conn.media.counters.keepalives_sent);
             }
             Err(error) => debug!(%error, "a voice keepalive was not sent"),
         }
@@ -756,7 +753,6 @@ impl<'c> Session<'c> {
         {
             keepalive.sent_at = None;
             self.conn.info.set_latency_udp(answer.at - sent);
-            bump(&self.conn.media.counters.keepalives_answered);
         }
     }
 

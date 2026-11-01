@@ -192,6 +192,14 @@ impl Sfu {
         runs
     }
 
+    pub fn flush(&self, socket: &UdpSocket, timeout: Duration) -> Vec<Packet> {
+        let rejected = self.rejected();
+        socket.send(&[0]).unwrap();
+        self.wait(timeout, |state| state.rejected > rejected)
+            .packets
+            .clone()
+    }
+
     pub fn wait_packets(&self, count: usize, timeout: Duration) -> Vec<Packet> {
         self.wait(timeout, |state| state.packets.len() >= count)
             .packets

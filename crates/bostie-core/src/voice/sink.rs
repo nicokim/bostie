@@ -483,7 +483,7 @@ pub(crate) mod tests {
         sink.pull_pcm(&mut frame).then(|| frame[0])
     }
 
-    fn stat(sink: &Sink, name: &str) -> u64 {
+    pub(crate) fn stat(sink: &Sink, name: &str) -> u64 {
         sink.stats()
             .unwrap()
             .into_iter()

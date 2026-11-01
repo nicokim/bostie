@@ -273,7 +273,7 @@ fn a_sole_member_reset_drops_the_old_key_and_holds_until_the_new_group() {
     let mut out = Vec::new();
     assert_eq!(
         call.dave_mut(user(BOT)).encrypt(OPUS, &mut out),
-        Err(EncryptFailure::NotReady)
+        Err(EncryptFailure)
     );
 
     call.fake.hold_transitions = true;
@@ -637,43 +637,19 @@ fn the_silence_frame_is_never_encrypted_into_plaintext() {
 
     assert_eq!(
         call.dave_mut(user(BOT)).encrypt(&SILENCE_FRAME, &mut out),
-        Err(EncryptFailure::Failed)
+        Err(EncryptFailure)
     );
     assert!(out.is_empty());
 }
 
 #[test]
-fn encrypting_before_a_group_is_not_ready() {
+fn nothing_is_encrypted_before_a_group() {
     let (mut alone, _) = started(1);
     let mut stage = Dave::new(user(BOT), channel(), &ReceiveTuning::default());
     let mut out = Vec::new();
 
-    assert_eq!(alone.encrypt(OPUS, &mut out), Err(EncryptFailure::NotReady));
-    assert_eq!(stage.encrypt(OPUS, &mut out), Err(EncryptFailure::NotReady));
-}
-
-#[test]
-fn encrypt_errors_map_to_not_ready_or_failed() {
-    assert_eq!(
-        encrypt_failure(&EncryptError::NotReady),
-        EncryptFailure::NotReady
-    );
-    assert_eq!(
-        encrypt_failure(&EncryptError::EncryptionFailed(
-            EncryptorEncryptError::MissingKeyRatchet
-        )),
-        EncryptFailure::NotReady
-    );
-    for error in [
-        EncryptorEncryptError::MissingCryptor,
-        EncryptorEncryptError::EncryptionFailure,
-        EncryptorEncryptError::TooManyAttempts,
-    ] {
-        assert_eq!(
-            encrypt_failure(&EncryptError::EncryptionFailed(error)),
-            EncryptFailure::Failed
-        );
-    }
+    assert_eq!(alone.encrypt(OPUS, &mut out), Err(EncryptFailure));
+    assert_eq!(stage.encrypt(OPUS, &mut out), Err(EncryptFailure));
 }
 
 #[test]

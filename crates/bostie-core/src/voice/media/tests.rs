@@ -8,8 +8,9 @@ use crate::bell;
 use crate::ids::Handle;
 use crate::voice::codec::{FrameEncoder, packet_samples};
 use crate::voice::crypto::Mode;
+use crate::voice::sink::tests::stat;
 use crate::voice::testkit::mls::Call;
-use crate::voice::testkit::sfu::Sfu;
+use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
     Application, FRAME, PcmFormat, SampleFormat, SinkFormat, SinkOptions, StallPolicy,
 };
@@ -165,28 +166,15 @@ impl Rig {
         }
     }
 
-    fn counter(&self, name: &str) -> u64 {
-        self.media
-            .counters
-            .snapshot()
-            .into_iter()
-            .find(|(counter, _)| *counter == name)
-            .unwrap()
-            .1
-    }
-
     fn deliveries(&self) -> Vec<Delivery> {
         self.inbox.drain()
     }
 
-    fn packets(&self, count: usize) -> Vec<crate::voice::testkit::sfu::Packet> {
-        let packets = self.sfu.wait_packets(count, WAIT);
+    fn packets(&self, count: usize) -> Vec<Packet> {
+        let transport = self.media.transport.lock().clone().unwrap();
+        let packets = self.sfu.flush(&transport.socket, WAIT);
         assert_eq!(packets.len(), count, "{packets:?}");
         packets
-    }
-
-    fn sent(&self, count: u64) {
-        assert_eq!(self.counter("packets_sent"), count);
     }
 }
 
@@ -259,8 +247,7 @@ fn a_held_gate_keeps_hold_sinks_and_drains_drop_sinks() {
 
     assert_eq!(queued_frames(&hold), 9_600);
     assert_eq!(queued_frames(&drop_sink), 6 * 960);
-    assert_eq!(rig.counter("held_ticks"), 4);
-    assert_eq!(rig.counter("packets_sent"), 0);
+    assert_eq!(stat(&hold, "held_ticks"), 4);
     rig.connect(&KEY);
     rig.plain();
     rig.tick(1);
@@ -294,9 +281,7 @@ fn alone_in_a_dave_call_sinks_drain_and_nothing_is_sent() {
     let mut resolved = markers(&rig.deliveries());
     resolved.sort_unstable();
     assert_eq!(resolved, [(pcm_marker, true), (opus_marker, true)]);
-    assert_eq!(rig.counter("alone_ticks"), 6);
-    assert_eq!(rig.counter("packets_sent"), 0);
-    rig.sent(0);
+    rig.packets(0);
 }
 
 #[test]
@@ -317,9 +302,6 @@ fn plain_audio_ends_with_exactly_five_silence_frames() {
                 && packet_samples(&packet.payload) == Some(960))
     );
     assert_eq!(rig.sfu.silence_runs(), [5]);
-    assert_eq!(rig.counter("silence_packets"), 5);
-    assert_eq!(rig.counter("encoded_packets"), 3);
-    rig.sent(8);
 }
 
 #[test]
@@ -365,10 +347,7 @@ fn an_encrypting_lane_sends_dave_frames_and_an_encoded_silence_tail() {
         assert_ne!(silence.as_slice(), SILENCE_FRAME);
         assert_eq!(packet_samples(silence), Some(960));
     }
-    assert_eq!(rig.counter("dave_frames"), 7);
-    assert_eq!(rig.counter("passthrough_packets"), 2);
-    assert_eq!(rig.counter("silence_packets"), 5);
-    rig.sent(7);
+    assert_eq!(stat(&sink, "passthrough_packets"), 2);
 }
 
 #[test]
@@ -383,7 +362,7 @@ fn a_held_gate_sends_nothing_and_a_plain_gate_sends_opus() {
         .store(SendMode::Hold as u8, Ordering::Release);
 
     rig.tick(2);
-    rig.sent(0);
+    rig.packets(0);
     rig.plain();
     rig.tick(2);
 
@@ -431,7 +410,6 @@ fn rtp_sequence_counts_packets_and_the_timestamp_counts_every_tick() {
         first.timestamp.wrapping_add(960 * (7 + 5))
     );
     assert_eq!(packets[7].header.sequence, first.sequence.wrapping_add(7));
-    assert_eq!(rig.counter("late_ticks"), 4);
 }
 
 #[test]
@@ -476,7 +454,6 @@ fn a_nonce_about_to_wrap_stops_sending_and_asks_for_a_new_key_once() {
     assert_eq!(packets[0].nonce, u32::MAX - 1);
     assert!(asked.is_some());
     assert!(rig.media.exhausted.notified().now_or_never().is_none());
-    rig.sent(1);
 }
 
 #[test]
@@ -492,10 +469,9 @@ fn a_busy_dave_lock_holds_the_tick_and_keeps_the_audio() {
     rig.tick(2);
     drop(guard);
 
-    assert_eq!(rig.counter("dave_busy"), 2);
-    assert_eq!(rig.counter("held_ticks"), 2);
+    assert_eq!(stat(&sink, "held_ticks"), 2);
     assert_eq!(queued_frames(&sink), 2_880);
-    rig.sent(0);
+    rig.packets(0);
     rig.tick(1);
     rig.packets(1);
 }
@@ -518,9 +494,9 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
 
     rig.tick(2);
 
-    assert_eq!(rig.counter("held_ticks"), 2);
+    assert_eq!(stat(&sink, "held_ticks"), 2);
     assert_eq!(queued_frames(&sink), 1_920);
-    rig.sent(0);
+    rig.packets(0);
 }
 
 #[test]
@@ -679,7 +655,6 @@ fn include_self_tees_exactly_the_packets_sent() {
     assert!(held.is_empty());
     assert!(alone.is_empty());
     assert_eq!(teed(&rig), sent);
-    rig.sent(3);
 
     let mut rig = Rig::new();
     rig.connect(&KEY);

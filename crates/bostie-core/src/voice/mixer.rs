@@ -23,11 +23,6 @@ pub struct Mixer {
     stale: bool,
 }
 
-pub struct Mixed<'a> {
-    pub packet: &'a [u8],
-    pub passthrough: bool,
-}
-
 struct Strip {
     gain: f32,
     target: f32,
@@ -93,7 +88,7 @@ impl Mixer {
         }
     }
 
-    pub fn mix(&mut self, sinks: &[Arc<Sink>]) -> Option<Mixed<'_>> {
+    pub fn mix(&mut self, sinks: &[Arc<Sink>]) -> Option<&[u8]> {
         let mut live = 0;
         let mut solo = None;
         for sink in sinks {
@@ -113,10 +108,7 @@ impl Mixer {
         {
             self.pass(sink, sinks);
             self.passed = packet;
-            return Some(Mixed {
-                packet: &self.passed,
-                passthrough: true,
-            });
+            return Some(&self.passed);
         }
         self.stop_passing(sinks);
         self.sum.fill(0.0);
@@ -133,10 +125,7 @@ impl Mixer {
             strip.add_to(&mut self.sum);
         }
         self.soft_clip.apply(&mut self.sum);
-        self.encode().map(|packet| Mixed {
-            packet,
-            passthrough: false,
-        })
+        self.encode()
     }
 
     pub fn silence(&mut self) -> Option<&[u8]> {
@@ -312,10 +301,8 @@ mod tests {
             .1
     }
 
-    fn mixed(mixer: &mut Mixer, sinks: &[Arc<Sink>]) -> Option<(Vec<u8>, bool)> {
-        mixer
-            .mix(sinks)
-            .map(|mixed| (mixed.packet.to_vec(), mixed.passthrough))
+    fn mixed(mixer: &mut Mixer, sinks: &[Arc<Sink>]) -> Option<Vec<u8>> {
+        mixer.mix(sinks).map(<[u8]>::to_vec)
     }
 
     #[test]
@@ -328,7 +315,7 @@ mod tests {
 
         let result = mixed(&mut mixer, std::slice::from_ref(&sink));
 
-        assert_eq!(result, Some((original, true)));
+        assert_eq!(result, Some(original));
         assert!(sink.passthrough().unwrap());
     }
 
@@ -346,18 +333,12 @@ mod tests {
         accompanied.write(&packet(Channels::Stereo, 960)).unwrap();
         let pcm = pcm_sink(&mut fixture, 0.1, 960);
 
-        for sinks in [
-            vec![quiet],
-            vec![mono],
-            vec![long],
-            vec![Arc::clone(&accompanied), pcm],
-        ] {
+        for sinks in [vec![quiet], vec![mono], vec![long], vec![accompanied, pcm]] {
             let mut mixer = Mixer::new(settings()).unwrap();
-            let (packet, passthrough) = mixed(&mut mixer, &sinks).unwrap();
-            assert!(!passthrough);
+            let packet = mixed(&mut mixer, &sinks).unwrap();
+            assert!(sinks.iter().all(|sink| !sink.passthrough().unwrap()));
             assert_eq!(codec::packet_samples(&packet), Some(960));
         }
-        assert!(!accompanied.passthrough().unwrap());
     }
 
     #[test]
@@ -370,9 +351,8 @@ mod tests {
         mixer.mix(std::slice::from_ref(&opus)).unwrap();
         let pcm = pcm_sink(&mut fixture, 0.1, 960);
 
-        let (_, passthrough) = mixed(&mut mixer, &[Arc::clone(&opus), pcm]).unwrap();
+        mixer.mix(&[Arc::clone(&opus), pcm]).unwrap();
 
-        assert!(!passthrough);
         assert!(!opus.passthrough().unwrap());
     }
 
@@ -484,13 +464,14 @@ mod tests {
         }
         let opus = opus_sink(&mut fixture);
         opus.write(&packet(Channels::Stereo, 960)).unwrap();
-        assert!(resumed.mix(&[opus]).unwrap().passthrough);
+        resumed.mix(std::slice::from_ref(&opus)).unwrap();
+        assert!(opus.passthrough().unwrap());
 
         let encoded: Vec<Vec<u8>> = [&mut fresh, &mut resumed, &mut continued]
             .into_iter()
             .map(|mixer| {
                 let sink = pcm_sink(&mut fixture, 0.2, 960);
-                mixed(mixer, &[sink]).unwrap().0
+                mixed(mixer, &[sink]).unwrap()
             })
             .collect();
 

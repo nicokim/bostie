@@ -13,8 +13,8 @@ use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::voice::crypto::Cipher;
-use crate::voice::dave::{Dave, DaveInfo, EncryptFailure, SendMode};
-use crate::voice::mixer::{Mixed, Mixer};
+use crate::voice::dave::{Dave, DaveInfo, SendMode};
+use crate::voice::mixer::Mixer;
 use crate::voice::nanos;
 use crate::voice::pacer::Tick;
 use crate::voice::receiver::{Ended, Receiver};
@@ -30,41 +30,6 @@ pub const SILENCE_TAIL: u8 = 5;
 const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
 const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
 
-macro_rules! counters {
-    ($counters:ident { $($name:ident),+ $(,)? }) => {
-        #[derive(Debug, Default)]
-        pub struct $counters {
-            $(pub $name: AtomicU64,)+
-        }
-
-        impl $counters {
-            #[cfg(test)]
-            pub fn snapshot(&self) -> Vec<(&'static str, u64)> {
-                vec![$((stringify!($name), self.$name.load(Ordering::Relaxed)),)+]
-            }
-        }
-    };
-}
-
-counters!(SendCounters {
-    packets_sent,
-    passthrough_packets,
-    encoded_packets,
-    silence_packets,
-    held_ticks,
-    alone_ticks,
-    late_ticks,
-    dave_frames,
-    dave_not_ready,
-    encrypt_failures,
-    dave_busy,
-    invalid_frames,
-    keepalives_sent,
-    keepalives_answered,
-    resumes,
-    rejoins,
-});
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arrival {
     pub ssrc: u32,
@@ -75,10 +40,6 @@ pub struct Arrival {
     pub silence: bool,
     pub extension: Option<(u16, Bytes)>,
     pub own: bool,
-}
-
-pub fn bump(counter: &AtomicU64) {
-    counter.fetch_add(1, Ordering::Relaxed);
 }
 
 #[derive(Debug)]
@@ -122,7 +83,6 @@ pub struct Media {
     pub sinks: Mutex<Vec<Arc<Sink>>>,
     pub encoder: Mutex<Option<EncoderSettings>>,
     pub others: AtomicUsize,
-    pub counters: SendCounters,
     pub closed: AtomicBool,
     pub lost: Notify,
     pub exhausted: Notify,
@@ -160,7 +120,6 @@ impl Media {
             sinks: Mutex::new(Vec::new()),
             encoder: Mutex::new(None),
             others: AtomicUsize::new(0),
-            counters: SendCounters::default(),
             closed: AtomicBool::new(false),
             lost: Notify::new(),
             exhausted: Notify::new(),
@@ -431,10 +390,6 @@ impl Lane {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }
-        self.media
-            .counters
-            .late_ticks
-            .fetch_add(u64::from(tick.skipped), Ordering::Relaxed);
         if let Some(settings) = self.media.encoder.lock().take()
             && let Err(error) = self.mixer.set_encoder(settings)
         {
@@ -485,14 +440,12 @@ impl Lane {
 
     fn hold(&mut self, now: Instant) {
         self.mixer.hold(&self.sinks);
-        bump(&self.media.counters.held_ticks);
         self.stalling(now);
     }
 
     fn discard(&mut self) {
         self.mixer.discard(&self.sinks);
         self.silence_left = 0;
-        bump(&self.media.counters.alone_ticks);
     }
 
     fn send(&mut self, transport: &Transport, now: Instant) {
@@ -501,7 +454,6 @@ impl Lane {
         let mut dave = None;
         if mode == SendMode::Encrypt {
             let Some(guard) = media.dave.try_lock() else {
-                bump(&media.counters.dave_busy);
                 self.hold(now);
                 return;
             };
@@ -521,12 +473,10 @@ impl Lane {
         now: Instant,
         mut dave: Option<MutexGuard<'_, Dave>>,
     ) {
-        let counters = &self.media.counters;
         let payload: &[u8] = match self.mixer.mix(&self.sinks) {
-            Some(mixed) => {
+            Some(packet) => {
                 self.silence_left = SILENCE_TAIL;
-                count_mixed(counters, &mixed);
-                mixed.packet
+                packet
             }
             None if self.silence_left > 0 => {
                 self.silence_left -= 1;
@@ -538,7 +488,6 @@ impl Lane {
                 let Some(silence) = silence else {
                     return;
                 };
-                bump(&counters.silence_packets);
                 silence
             }
             None => return,
@@ -546,18 +495,13 @@ impl Lane {
         let wire: &[u8] = match &mut dave {
             Some(dave) => {
                 self.dave_out.clear();
-                if let Err(failure) = dave.encrypt(payload, &mut self.dave_out) {
-                    match failure {
-                        EncryptFailure::NotReady => bump(&counters.dave_not_ready),
-                        EncryptFailure::Failed => bump(&counters.encrypt_failures),
-                    }
+                if dave.encrypt(payload, &mut self.dave_out).is_err() {
                     return;
                 }
                 &self.dave_out
             }
             None => payload,
         };
-        let encrypted = dave.is_some();
         drop(dave);
         let stamp = self.rtp.map(|rtp| (rtp.sequence, rtp.timestamp));
         let sent = self
@@ -565,9 +509,6 @@ impl Lane {
             .as_mut()
             .is_some_and(|rtp| seal_and_send(&self.media, transport, rtp, &mut self.packet, wire));
         if sent {
-            if encrypted {
-                bump(&counters.dave_frames);
-            }
             tee(&self.media, transport, stamp, payload);
         }
         self.after_send(sent, now);
@@ -626,14 +567,6 @@ fn tee(media: &Media, transport: &Transport, stamp: Option<(u16, u32)>, payload:
     });
 }
 
-fn count_mixed(counters: &SendCounters, mixed: &Mixed<'_>) {
-    if mixed.passthrough {
-        bump(&counters.passthrough_packets);
-    } else {
-        bump(&counters.encoded_packets);
-    }
-}
-
 fn seal_and_send(
     media: &Media,
     transport: &Transport,
@@ -660,7 +593,6 @@ fn seal_and_send(
     match transport.socket.send(packet) {
         Ok(_) => {
             rtp.sequence = rtp.sequence.wrapping_add(1);
-            bump(&media.counters.packets_sent);
             true
         }
         Err(error) => {

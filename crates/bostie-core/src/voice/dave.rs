@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use davey::errors::{
-    DecryptError, DecryptorDecryptError, EncryptError, EncryptorEncryptError, ProcessCommitError,
-    ProcessProposalsError, SetExternalSenderError,
+    DecryptError, DecryptorDecryptError, ProcessCommitError, ProcessProposalsError,
+    SetExternalSenderError,
 };
 use davey::{Codec, DaveSession, MediaType, ProposalsOperationType};
 use tracing::{debug, error, warn};
@@ -92,10 +92,7 @@ impl SendMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EncryptFailure {
-    NotReady,
-    Failed,
-}
+pub struct EncryptFailure;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecryptFailure {
@@ -271,14 +268,14 @@ impl Dave {
 
     pub fn encrypt(&mut self, frame: &[u8], out: &mut Vec<u8>) -> Result<(), EncryptFailure> {
         if frame == SILENCE_FRAME {
-            return Err(EncryptFailure::Failed);
+            return Err(EncryptFailure);
         }
         let Some(session) = &mut self.session else {
-            return Err(EncryptFailure::NotReady);
+            return Err(EncryptFailure);
         };
         session
             .encrypt_into(MediaType::AUDIO, Codec::OPUS, frame, out)
-            .map_err(|error| encrypt_failure(&error))
+            .map_err(|_| EncryptFailure)
     }
 
     pub fn receive(
@@ -839,20 +836,6 @@ pub fn verification_code(fingerprints: [Vec<u8>; 2]) -> Result<String, DaveError
         .map_err(|error| DaveError::Verification(error.into()))?;
     davey::generate_displayable_code(&pairwise, VERIFICATION_CODE_DIGITS, VERIFICATION_CODE_GROUP)
         .map_err(|error| DaveError::Verification(error.into()))
-}
-
-fn encrypt_failure(error: &EncryptError) -> EncryptFailure {
-    match error {
-        EncryptError::NotReady
-        | EncryptError::EncryptionFailed(EncryptorEncryptError::MissingKeyRatchet) => {
-            EncryptFailure::NotReady
-        }
-        EncryptError::EncryptionFailed(
-            EncryptorEncryptError::MissingCryptor
-            | EncryptorEncryptError::EncryptionFailure
-            | EncryptorEncryptError::TooManyAttempts,
-        ) => EncryptFailure::Failed,
-    }
 }
 
 fn decrypt_failure(error: &DecryptError) -> DecryptFailure {

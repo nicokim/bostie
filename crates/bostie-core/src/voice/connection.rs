@@ -12,7 +12,7 @@ use tokio::time::{Instant, sleep, sleep_until};
 use tracing::debug;
 
 use super::close::{self, CloseAction};
-use super::media::{Media, bump};
+use super::media::Media;
 use super::proto;
 use super::receiver::Ended;
 use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
@@ -679,7 +679,6 @@ impl Connection {
             return Next::End(Ending::new(reason, self.last_code, detail));
         }
         self.rejoins += 1;
-        bump(&self.media.counters.rejoins);
         self.drop_session();
         self.reconnecting(Step::Rejoining);
         match self.send_voice_state(Some(self.target)).await {
