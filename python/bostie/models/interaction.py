@@ -12,7 +12,7 @@ from bostie.enums import (
 from bostie.models.base import Model, permissions_from
 from bostie.models.channel import Channel
 from bostie.models.guild import Member, PartialMember, Role
-from bostie.models.message import Attachment, Message, in_guild
+from bostie.models.message import Attachment, Message, PartialMessage, in_guild
 from bostie.models.user import User
 
 
@@ -33,7 +33,7 @@ class Resolved(Model, kw_only=True):
     members: dict[int, PartialMember] = msgspec.field(default_factory=dict)
     roles: dict[int, Role] = msgspec.field(default_factory=dict)
     channels: dict[int, Channel] = msgspec.field(default_factory=dict)
-    messages: dict[int, Message] = msgspec.field(default_factory=dict)
+    messages: dict[int, PartialMessage] = msgspec.field(default_factory=dict)
     attachments: dict[int, Attachment] = msgspec.field(default_factory=dict)
 
     def member(self, id: int) -> Member | None:

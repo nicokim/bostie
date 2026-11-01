@@ -25,6 +25,7 @@ ROUTE_WINDOW = 1.0
 MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
 MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
 GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
+CLEARED: Json = {"content": "", "embeds": []}
 EPHEMERAL = 1 << 6
 LOADING = 1 << 7
 LOCALIZATIONS = ("name_localizations", "description_localizations")
@@ -818,7 +819,8 @@ def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Respo
 
 
 def _message_fields(body: Json) -> Json:
-    return {key: body[key] for key in MESSAGE_FIELDS if key in body}
+    fields = {key: body[key] for key in MESSAGE_FIELDS if key in body}
+    return fields | {key: CLEARED[key] for key in CLEARED if fields.get(key, 0) is None}
 
 
 def _callback_response(interaction: Json, kind: int, original: Json | None) -> Json:

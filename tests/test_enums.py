@@ -19,7 +19,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models import Application, Message, PartialMember, decode
+from bostie.models import Application, PartialMember, PartialMessage, decode
 
 MEMBER = b'{"roles": [], "joined_at": null, "flags": 0, "permissions": "%d"}'
 
@@ -75,8 +75,10 @@ def test_every_operator_keeps_unknown_bits(flags: type[IntFlag], unknown: int) -
 
 
 def test_clearing_a_message_flag_keeps_bits_discord_added_later() -> None:
-    message = decode(Message, b'{"id": "1", "flags": %d}' % (1 << 16 | 1 << 2))
-    assert message.flags is not None
+    message = decode(
+        PartialMessage,
+        b'{"id": "1", "channel_id": "2", "flags": %d}' % (1 << 16 | 1 << 2),
+    )
 
     assert message.flags & ~MessageFlags.SUPPRESS_EMBEDS == 1 << 16
 

@@ -50,6 +50,7 @@ from bostie.models import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
+MESSAGE = json.loads((FIXTURES / "events" / "MESSAGE_CREATE.json").read_bytes())
 ROLE = json.loads((FIXTURES / "events" / "GUILD_ROLE_CREATE.json").read_bytes())["role"]
 
 
@@ -80,7 +81,6 @@ def test_rest_results_keep_their_payload(name: str, model: type[Model]) -> None:
 def test_nested_objects_have_no_raw_payload() -> None:
     message = decode(Message, payload("rest/message.json"))
 
-    assert message.author is not None
     assert message.author.raw is None
     assert message.referenced_message is not None
     assert message.referenced_message.raw is None
@@ -121,7 +121,6 @@ def test_rich_message() -> None:
     assert second.video is not None
     assert second.video.url == "https://www.youtube.com/embed/q3Vx8RmT2kZ"
     assert [reaction.count for reaction in message.reactions] == [2, 1]
-    assert message.reactions[1].emoji is not None
     assert message.reactions[1].emoji.id == 1345334752051331073
     assert message.sticker_items[0].name == "lyre wave"
     assert message.message_reference is not None
@@ -226,7 +225,7 @@ def test_a_decoded_select_sent_back_keeps_its_default_values() -> None:
     default = {"id": "820774541721731073", "type": "user"}
     select = {"type": 5, "custom_id": "who", "default_values": [default]}
     row = {"type": 1, "components": [select]}
-    message = decode(Message, msgspec.json.encode({"id": "1", "components": [row]}))
+    message = decode(Message, msgspec.json.encode(MESSAGE | {"components": [row]}))
     decoded_row = message.components[0]
     assert isinstance(decoded_row, ActionRow)
     child = decoded_row.components[0]
@@ -409,7 +408,7 @@ def test_build_message_never_writes_raw_payloads() -> None:
 
 
 def test_build_message_keeps_listed_attachments_before_new_files() -> None:
-    kept = decode(Attachment, b'{"id": "1564609863064092673", "filename": "a.png"}')
+    kept = decode(Message, payload("events/MESSAGE_CREATE.rich.json")).attachments[0]
 
     body, _ = build_message(
         files=[File("new.png", b"", spoiler=True)], attachments=[kept, 42]
@@ -417,7 +416,7 @@ def test_build_message_keeps_listed_attachments_before_new_files() -> None:
 
     assert body == {
         "attachments": [
-            {"id": 1564609863064092673},
+            {"id": kept.id},
             {"id": 42},
             {"id": 0, "filename": "new.png", "is_spoiler": True},
         ]

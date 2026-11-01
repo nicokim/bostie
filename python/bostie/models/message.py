@@ -46,18 +46,18 @@ class Attachment(Model, kw_only=True):
     """A file attached to a message or passed as a command option."""
 
     id: int
-    filename: str | None = None
+    filename: str
     title: str | None = None
     description: str | None = None
     content_type: str | None = None
-    size: int | None = None
-    url: str | None = None
-    proxy_url: str | None = None
+    size: int
+    url: str
+    proxy_url: str
     height: int | None = None
     width: int | None = None
-    ephemeral: bool | None = None
+    ephemeral: bool = False
     duration_secs: float | None = None
-    flags: AttachmentFlags | None = None
+    flags: AttachmentFlags = AttachmentFlags(0)
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
@@ -65,19 +65,19 @@ class Attachment(Model, kw_only=True):
 
 
 class EmbedField(Builder, kw_only=True):
-    name: str | None = None
-    value: str | None = None
-    inline: bool | None = None
+    name: str
+    value: str
+    inline: bool = False
 
 
 class EmbedFooter(Builder, kw_only=True):
-    text: str | None = None
+    text: str
     icon_url: str | None = None
     proxy_icon_url: str | None = None
 
 
 class EmbedAuthor(Builder, kw_only=True):
-    name: str | None = None
+    name: str
     url: str | None = None
     icon_url: str | None = None
     proxy_icon_url: str | None = None
@@ -116,9 +116,9 @@ class Embed(Builder, kw_only=True):
 
 
 class Reaction(Model, kw_only=True):
-    count: int | None = None
-    me: bool | None = None
-    emoji: PartialEmoji | None = None
+    count: int
+    me: bool
+    emoji: PartialEmoji
 
 
 class MessageReference(Builder, kw_only=True):
@@ -131,8 +131,8 @@ class MessageReference(Builder, kw_only=True):
 
 class StickerItem(Model, kw_only=True):
     id: int
-    name: str | None = None
-    format_type: StickerFormatType | None = None
+    name: str
+    format_type: StickerFormatType
 
 
 class AllowedMentions(Builder, kw_only=True):
@@ -144,29 +144,17 @@ class AllowedMentions(Builder, kw_only=True):
     replied_user: bool | None = None
 
 
-class Message(Model, kw_only=True):
-    """A message in a channel."""
+class PartialMessage(Model, kw_only=True):
+    """A message as an interaction resolves it, with only some of its fields."""
 
     id: int
-    channel_id: int | None = None
+    channel_id: int
     guild_id: int | None = None
-    author: User | None = None
     member: PartialMember | None = None
-    content: str | None = None
-    timestamp: datetime | None = None
-    edited_timestamp: datetime | None = None
-    tts: bool | None = None
-    mention_everyone: bool | None = None
-    mentions: tuple[User, ...] = ()
-    mention_roles: tuple[int, ...] = ()
-    attachments: tuple[Attachment, ...] = ()
-    embeds: tuple[Embed, ...] = ()
     reactions: tuple[Reaction, ...] = ()
     nonce: int | str | None = None
-    pinned: bool | None = None
     webhook_id: int | None = None
-    type: MessageType | None = None
-    flags: MessageFlags | None = None
+    flags: MessageFlags = MessageFlags(0)
     message_reference: MessageReference | None = None
     referenced_message: "Message | None" = None
     thread: Channel | None = None
@@ -186,11 +174,28 @@ class Message(Model, kw_only=True):
         return f"https://discord.com/channels/{guild}/{self.channel_id}/{self.id}"
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "Message | None":
+    def from_resolved(cls, resolved: "Resolved", id: int) -> "PartialMessage | None":
         return resolved.messages.get(id)
 
 
-def in_guild(message: Message, guild_id: int | None) -> Message:
+class Message(PartialMessage, kw_only=True):
+    """A message in a channel."""
+
+    author: User
+    content: str
+    timestamp: datetime
+    edited_timestamp: datetime | None
+    tts: bool
+    mention_everyone: bool
+    mentions: tuple[User, ...]
+    mention_roles: tuple[int, ...]
+    attachments: tuple[Attachment, ...]
+    embeds: tuple[Embed, ...]
+    pinned: bool
+    type: MessageType
+
+
+def in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:
     if message.guild_id is None:
         msgspec.structs.force_setattr(message, "guild_id", guild_id)
     if message.referenced_message is not None:
