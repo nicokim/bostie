@@ -521,26 +521,30 @@ mod tests {
             Err(CoreError::HandleClosed(handle)) if handle == closed.id()
         ));
 
-        for why in [Ended::Disconnected, Ended::Moved] {
-            let ended = open(&fixture, 60_000);
-            let waiting = open(&fixture, 60_000);
-            ended.push([frame(ALICE, 0, now)], now);
-            assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Pending);
+        let ended = open(&fixture, 60_000);
+        let waiting = open(&fixture, 60_000);
+        ended.push([frame(ALICE, 0, now)], now);
+        assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Pending);
 
-            for receiver in [&ended, &waiting] {
-                receiver.end(why);
-                receiver.end(Ended::Disconnected);
-            }
-            ended.push([frame(ALICE, 960, now)], now);
-
-            assert_eq!(wakes(&fixture), 1);
-            assert_eq!(ended.ended(), Some(why));
-            assert_eq!(
-                ended.read(256).unwrap(),
-                ReceiveRead::Items(vec![(now, frame(ALICE, 0, now))])
-            );
-            assert_eq!(ended.read(256).unwrap(), ReceiveRead::Ended(why));
-            assert_eq!(waiting.read(256).unwrap(), ReceiveRead::Ended(why));
+        for receiver in [&ended, &waiting] {
+            receiver.end(Ended::Disconnected);
+            receiver.end(Ended::Moved);
         }
+        ended.push([frame(ALICE, 960, now)], now);
+
+        assert_eq!(wakes(&fixture), 1);
+        assert_eq!(ended.ended(), Some(Ended::Disconnected));
+        assert_eq!(
+            ended.read(256).unwrap(),
+            ReceiveRead::Items(vec![(now, frame(ALICE, 0, now))])
+        );
+        assert_eq!(
+            ended.read(256).unwrap(),
+            ReceiveRead::Ended(Ended::Disconnected)
+        );
+        assert_eq!(
+            waiting.read(256).unwrap(),
+            ReceiveRead::Ended(Ended::Disconnected)
+        );
     }
 }

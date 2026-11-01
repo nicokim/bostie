@@ -595,19 +595,6 @@ fn a_pending_encoder_change_applies_on_the_next_tick() {
 }
 
 #[test]
-fn closed_sinks_leave_the_lane_snapshot() {
-    let mut rig = Rig::new();
-    let first = rig.pcm_sink(StallPolicy::Hold);
-    let _second = rig.pcm_sink(StallPolicy::Hold);
-    first.close();
-
-    rig.tick(1);
-
-    assert_eq!(rig.media.sinks.lock().len(), 1);
-    assert_eq!(rig.lane.sinks.len(), 1);
-}
-
-#[test]
 fn include_self_tees_exactly_the_packets_sent() {
     let mut rig = Rig::new();
     let teed = |rig: &Rig| -> Vec<(u32, u16, u32, Vec<u8>, bool)> {

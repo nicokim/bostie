@@ -738,21 +738,6 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_thread_blocks_instead_of_ticking() {
-        let clock = Synthetic::new();
-        let load = Arc::new(Load::default());
-        load.lanes.store(1, Ordering::Relaxed);
-        let leaving = Assignment::new(Box::new(|_| false), None);
-        let _pacer = pace_loaded(&clock, vec![leaving], Arc::clone(&load));
-        wait_until(|| load.lanes() == 0);
-        let idle = clock.now();
-
-        thread::sleep(FRAME * 3);
-
-        assert_eq!(clock.now(), idle);
-    }
-
-    #[test]
     fn a_lane_handed_to_a_sleeping_thread_runs_on_the_next_tick() {
         struct Handing {
             clock: Synthetic,

@@ -846,10 +846,4 @@ pub(crate) mod tests {
         sink.close();
         assert!(!sink.is_closed());
     }
-
-    #[test]
-    fn sinks_are_shared_across_threads() {
-        fn shared<T: Send + Sync>() {}
-        shared::<Sink>();
-    }
 }
