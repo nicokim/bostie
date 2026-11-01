@@ -36,15 +36,23 @@ from bostie.models import (
     Member,
     Message,
     MessageParts,
+    ModalSubmitInteraction,
     PartialChannel,
     PartialMessage,
+    SubmittedCheckbox,
+    SubmittedFileUpload,
+    SubmittedInput,
+    SubmittedLabel,
+    SubmittedRadioGroup,
+    SubmittedTextInput,
+    SubmittedValues,
     User,
     WebhookMessage,
     decode,
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
-from bostie.models.message import in_guild, message_body
+from bostie.models.message import NULL, in_guild, message_body
 from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
 
@@ -107,7 +115,10 @@ DEFER_OPTIONS = DeferOptions.__optional_keys__
 
 
 class _InteractionContext[
-    I: CommandInteraction | ComponentInteraction | AutocompleteInteraction
+    I: CommandInteraction
+    | ComponentInteraction
+    | ModalSubmitInteraction
+    | AutocompleteInteraction
 ]:
     def __init__(self, interaction: I, bot: "Bot", *, received: float) -> None:
         self.interaction = interaction
@@ -209,7 +220,7 @@ class _InteractionContext[
 
 
 class _ReplyingContext[
-    I: CommandInteraction | ComponentInteraction,
+    I: CommandInteraction | ComponentInteraction | ModalSubmitInteraction,
     M: Message | WebhookMessage,
 ](_InteractionContext[I], ABC):
     _original_ephemeral = False
@@ -451,28 +462,14 @@ class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
         return self.command_name
 
 
-class ComponentContext(
-    _ReplyingContext[ComponentInteraction, Message | WebhookMessage]
+class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
+    _ReplyingContext[I, Message | WebhookMessage]
 ):
-    """The context of a button or select menu use."""
-
-    @property
-    def custom_id(self) -> str:
-        return self.interaction.data.custom_id
-
-    @property
-    def values(self) -> tuple[str, ...]:
-        """The values picked in a select menu."""
-        return self.interaction.data.values
-
-    async def modal(self, modal: ModalDict) -> None:
-        """Answer with a modal built by `ui.modal`; nothing can answer after it."""
-        await self._open_modal(modal)
-
     async def defer_update(self) -> None:
         """Acknowledge silently; edit the component's message later with `update`."""
         async with self._lock:
             self._ensure_alive()
+            self._ensure_message()
             if self.state is ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
             if self.state is ResponseState.PENDING:
@@ -488,6 +485,7 @@ class ComponentContext(
         body, files = self._edit_body(content, parts)
         async with self._lock:
             self._ensure_alive()
+            self._ensure_message()
             match self.state:
                 case ResponseState.PENDING:
                     response = await self._update_with_callback(body, files, parts)
@@ -504,7 +502,10 @@ class ComponentContext(
 
     @override
     async def _defer_automatically(self) -> None:
-        await self._defer_update()
+        if self.interaction._message == NULL:
+            await super()._defer_automatically()
+        else:
+            await self._defer_update()
 
     async def _defer_update(self) -> None:
         await self._callback(InteractionCallbackType.DEFERRED_UPDATE_MESSAGE)
@@ -518,6 +519,12 @@ class ComponentContext(
         self._warn_if_ephemeral_differs(parts)
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
+    def _ensure_message(self) -> None:
+        if self.interaction._message == NULL:
+            raise InteractionResponded(
+                "only a modal opened from a message component can update its message"
+            )
+
     def _component_message_is_ephemeral(self) -> bool:
         message = decoder(_MessageFlagsOnly).decode(self.interaction._message)
         return MessageFlags.EPHEMERAL in message.flags
@@ -526,10 +533,78 @@ class ComponentContext(
     def _decode_original(self, body: bytes) -> Message | WebhookMessage:
         return decode_message(body)
 
+
+class ComponentContext(_UpdatingContext[ComponentInteraction]):
+    """The context of a button or select menu use."""
+
+    @property
+    def custom_id(self) -> str:
+        return self.interaction.data.custom_id
+
+    @property
+    def values(self) -> tuple[str, ...]:
+        """The values picked in a select menu."""
+        return self.interaction.data.values
+
+    async def modal(self, modal: ModalDict) -> None:
+        """Answer with a modal built by `ui.modal`; nothing can answer after it."""
+        await self._open_modal(modal)
+
     @property
     @override
     def _label(self) -> str:
         return f"component {self.custom_id}"
+
+
+class ModalContext(_UpdatingContext[ModalSubmitInteraction]):
+    """The context of a modal submit; `update` edits the message that opened it."""
+
+    @property
+    def custom_id(self) -> str:
+        return self.interaction.data.custom_id
+
+    def text(self, custom_id: str) -> str:
+        """What the user typed in the text input `custom_id`."""
+        return self._submitted(custom_id, SubmittedTextInput).value
+
+    def values(self, custom_id: str) -> tuple[str, ...]:
+        """The values picked in a select or checkbox group, or the ids uploaded."""
+        return self._submitted(custom_id, SubmittedValues).values
+
+    def attachments(self, custom_id: str) -> tuple[Attachment, ...]:
+        """The files uploaded with the file upload `custom_id`."""
+        uploaded = self._submitted(custom_id, SubmittedFileUpload).values
+        files = self.interaction.data.resolved.attachments
+        return tuple(files[int(id)] for id in uploaded)
+
+    def choice(self, custom_id: str) -> str | None:
+        """The option picked in the radio group `custom_id`, if any."""
+        return self._submitted(custom_id, SubmittedRadioGroup).value
+
+    def checked(self, custom_id: str) -> bool:
+        """Whether the checkbox `custom_id` is ticked."""
+        return self._submitted(custom_id, SubmittedCheckbox).value
+
+    def _submitted[S: SubmittedInput](self, custom_id: str, kind: type[S]) -> S:
+        for component in self.interaction.data.components:
+            answer = (
+                component.component
+                if isinstance(component, SubmittedLabel)
+                else component
+            )
+            if not isinstance(answer, SubmittedInput) or answer.custom_id != custom_id:
+                continue
+            if not isinstance(answer, kind):
+                raise TypeError(
+                    f"{custom_id!r} is a {type(answer).__name__}, not a {kind.__name__}"
+                )
+            return answer
+        raise KeyError(f"the modal {self.custom_id!r} has no input {custom_id!r}")
+
+    @property
+    @override
+    def _label(self) -> str:
+        return f"modal {self.custom_id}"
 
 
 class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):

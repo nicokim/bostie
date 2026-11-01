@@ -6,7 +6,7 @@
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
-> **Status:** pre-alpha. Text bots work: slash, user and message commands, buttons and selects, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
+> **Status:** pre-alpha. Text bots work: slash, user and message commands, buttons, selects and modals, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
 
 ## Install
 
@@ -32,7 +32,7 @@ from enum import Enum
 from typing import Annotated, Literal
 
 import bostie
-from bostie import ComponentContext, Context, Range, ui
+from bostie import ComponentContext, Context, ModalContext, Range, User, ui
 from bostie.events import MessageCreate
 
 bot = bostie.Bot(dev_guilds=[123456789012345678])
@@ -62,6 +62,23 @@ async def reroll(ctx: ComponentContext, sides: int) -> None:
     await ctx.update(components=[ui.text(f"Rolled a d{sides} again")])
 
 
+@bot.user_command("Report")
+async def report(ctx: Context, user: User) -> None:
+    reason = ui.text_input("reason", style=ui.TextInputStyle.PARAGRAPH)
+    await ctx.modal(
+        ui.modal(
+            reported.id(user=user.id),
+            f"Report {user.display_name}",
+            ui.label("What happened?", reason),
+        )
+    )
+
+
+@bot.on_modal("report:{user:int}")
+async def reported(ctx: ModalContext, user: int) -> None:
+    await ctx.respond(f"Reported <@{user}>: {ctx.text('reason')}", ephemeral=True)
+
+
 @bot.listen
 async def wave_back(event: MessageCreate) -> None:
     message = event.message
@@ -84,7 +101,8 @@ A few things the example takes for granted:
 - A handler that has not answered after 2.5 s is deferred for you.
 - Every handler and listener runs in its own task, which starts at once: its code up to the first `await` runs before the next event is handled.
 - Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `PartialChannel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
-- `@bot.user_command("Show avatar")` and `@bot.message_command("Bookmark")` add a command to the context menu of a user or a message. The handler takes the target after the context, typed `User` or `Member`, or `Message`, `WebhookMessage` or both.
+- `@bot.user_command` and `@bot.message_command` add a command to the context menu of a user or a message. The handler takes the target after the context, typed `User` or `Member`, or `Message`, `WebhookMessage` or both.
+- `ctx.modal(ui.modal(...))` opens a form from a command or a component. `@bot.on_modal` routes its submit by custom id template, like a component, and `ctx.text`, `ctx.values`, `ctx.attachments`, `ctx.choice` and `ctx.checked` read the answers by their custom ids.
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
@@ -94,8 +112,8 @@ Everything bostie does not model yet stays reachable:
 - `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint.
 - `bot.gateway.send(op=..., d=...)` sends any opcode: op 3 to every shard, a payload with a `guild_id` to that guild's shard, anything else to shard 0. `bot.gateway.shard(id).send(...)` picks the shard yourself.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
-- `ui.raw({...})` puts a component that `ui` has no builder for into a row, section or container.
-- An `InteractionCreate` listener gets every interaction, routed or not: a modal submit arrives as a `ModalSubmitInteraction`, and a type bostie does not model as an `UnknownInteraction`, with the payload in `raw`.
+- `ui.raw({...})` puts a component that `ui` has no builder for into a row, section, container, label or modal.
+- An `InteractionCreate` listener gets every interaction, routed or not. A type bostie does not model arrives as an `UnknownInteraction`, with the payload in `raw`.
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
 

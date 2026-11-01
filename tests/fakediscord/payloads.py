@@ -10,7 +10,7 @@ type Json = dict[str, Any]
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "models"
 DISCORD_EPOCH_MS = 1_420_070_400_000
-INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete"}
+INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete", 5: "modal"}
 STAGE_CHANNEL_ID = "1335174052137131073"
 
 _increments = itertools.count()
@@ -124,6 +124,12 @@ def select(custom_id: str, *values: str) -> Json:
     """The ``data`` of a string select interaction."""
     data: Json = fixture("events/INTERACTION_CREATE.select")["data"]
     return data | {"custom_id": custom_id, "values": list(values)}
+
+
+def modal(custom_id: str) -> Json:
+    """The ``data`` of a modal submit."""
+    data: Json = fixture("events/INTERACTION_CREATE.modal")["data"]
+    return data | {"custom_id": custom_id}
 
 
 def voice_channel(**fields: Any) -> Json:

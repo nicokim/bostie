@@ -43,6 +43,12 @@ from bostie.models import (
     Section,
     Separator,
     StringSelect,
+    SubmittedCheckbox,
+    SubmittedFileUpload,
+    SubmittedLabel,
+    SubmittedRadioGroup,
+    SubmittedTextDisplay,
+    SubmittedTextInput,
     TextDisplay,
     Thumbnail,
     UnknownComponent,
@@ -346,6 +352,33 @@ def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> N
     assert isinstance(unknown, UnknownInteraction)
     assert unknown.type == 99
     assert unknown.raw == future
+
+
+def test_a_modal_submit_decodes_each_answer_inside_its_label() -> None:
+    document = json.loads(payload("events/INTERACTION_CREATE.modal.json"))
+    document["data"]["components"].append({"type": 99, "id": 10})
+
+    modal = decode(ModalSubmitInteraction, msgspec.json.encode(document))
+
+    display, *labels, future = modal.data.components
+    answers = [label.component for label in labels if isinstance(label, SubmittedLabel)]
+    assert display == SubmittedTextDisplay(id=1)
+    assert answers == [
+        SubmittedTextInput(
+            id=3, custom_id="feedback", value="The new queue command is great"
+        ),
+        SubmittedRadioGroup(id=5, custom_id="rating", value="great"),
+        SubmittedFileUpload(
+            id=7, custom_id="screenshots", values=("1564615271093121025",)
+        ),
+        SubmittedCheckbox(id=9, custom_id="subscribe", value=True),
+    ]
+    assert modal.data.resolved.attachments[1564615271093121025].filename == (
+        "queue.png"
+    )
+    assert isinstance(future, UnknownComponent)
+    assert future.type == 99
+    assert modal.message is None
 
 
 def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:

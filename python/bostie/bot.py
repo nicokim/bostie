@@ -28,9 +28,11 @@ from bostie.context import (
     AutocompleteContext,
     ComponentContext,
     Context,
+    ModalContext,
     ResponseState,
     _split_subcommands,
 )
+from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents
 from bostie.errors import TransportError
 from bostie.events import (
@@ -460,7 +462,12 @@ class Bot(Router):
             return None
         if self._caching:
             names |= Cache.NAMES
-        if self.commands or self.context_menus or self.component_routes:
+        if (
+            self.commands
+            or self.context_menus
+            or self.component_routes
+            or self.modal_routes
+        ):
             names.add(InteractionCreate.NAME)
         return sorted(names)
 
@@ -619,23 +626,34 @@ class Bot(Router):
     ) -> Coroutine[Any, Any, None] | None:
         match interaction:
             case ComponentInteraction():
-                return self._component_handler(interaction, received)
+                return self._route_handler(
+                    self.match_component(interaction.data.custom_id),
+                    partial(ComponentContext, interaction),
+                    received,
+                )
+            case ModalSubmitInteraction():
+                return self._route_handler(
+                    self.match_modal(interaction.data.custom_id),
+                    partial(ModalContext, interaction),
+                    received,
+                )
             case CommandInteraction():
                 return self._command_handler(interaction, received)
             case AutocompleteInteraction():
                 return self._autocomplete_handler(interaction, received)
-            case ModalSubmitInteraction() | UnknownInteraction():
+            case UnknownInteraction():
                 return None
 
-    def _component_handler(
-        self, interaction: ComponentInteraction, received: float
+    def _route_handler(
+        self,
+        found: tuple[ComponentRoute[...], dict[str, str | int]] | None,
+        context: Callable[..., ComponentContext | ModalContext],
+        received: float,
     ) -> Coroutine[Any, Any, None] | None:
-        found = self.match_component(interaction.data.custom_id)
         if found is None:
             return None
         route, params = found
-        ctx = ComponentContext(
-            interaction,
+        ctx = context(
             self,
             received=received,
             ephemeral=False,
@@ -694,7 +712,7 @@ class Bot(Router):
 
     async def _run_handler(
         self,
-        ctx: Context | ComponentContext,
+        ctx: Context | ComponentContext | ModalContext,
         owner: Router,
         handler: Handler,
         arguments: Callable[[], Mapping[str, Any]],
@@ -734,7 +752,7 @@ class Bot(Router):
 
     async def _handle_error(
         self,
-        ctx: Context | ComponentContext | AutocompleteContext,
+        ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
         owner: Router,
         handler: Callable[..., object],
         error: Exception,
@@ -787,7 +805,7 @@ async def _run_listener(listener: Listener, event: AnyEvent, name: str) -> None:
 
 
 async def _answer_failure(
-    ctx: Context | ComponentContext | AutocompleteContext,
+    ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
 ) -> None:
     if isinstance(ctx, AutocompleteContext):
         if ctx.state is ResponseState.PENDING:

@@ -12,7 +12,7 @@ KINDS = frozenset({"", "int"})
 
 
 class ComponentRoute[**P]:
-    """A component handler for a custom_id template like "vote:{tag}:{up:int}"."""
+    """A component or modal handler for a custom_id template like "vote:{up:int}"."""
 
     def __init__(
         self,

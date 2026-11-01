@@ -26,6 +26,8 @@ from bostie import (
     InvalidToken,
     Member,
     Message,
+    ModalContext,
+    ModalSubmitInteraction,
     NotFound,
     Option,
     OptionType,
@@ -438,18 +440,67 @@ def test_context_menu_commands_sync_and_route_by_type_and_name() -> None:
     run(scenario)
 
 
-def test_a_bot_with_only_component_routes_answers_clicks() -> None:
+def test_modal_submits_are_routed_by_template_and_all_reach_listeners() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        seen: asyncio.Queue[str] = asyncio.Queue()
+
+        @bot.on_modal("feedback:{ticket:int}")
+        async def feedback(ctx: ModalContext, ticket: int) -> None:
+            await ctx.respond(f"#{ticket}: {ctx.text('feedback')}", ephemeral=True)
+
+        @bot.on_modal("broken")
+        async def broken(ctx: ModalContext) -> None:
+            raise RuntimeError("boom")
+
+        @bot.on_error
+        async def explain(ctx: ModalContext, error: Exception) -> None:
+            await ctx.respond(f"{ctx.custom_id} failed: {error}")
+
+        @bot.listen
+        async def on_interaction(event: InteractionCreate) -> None:
+            if isinstance(event.interaction, ModalSubmitInteraction):
+                seen.put_nowait(event.interaction.data.custom_id)
+
+        async with running(bot, fake):
+            routed = await fake.interaction(5, payloads.modal("feedback:42"))
+            failed = await fake.interaction(5, payloads.modal("broken"))
+            unrouted = payloads.interaction(5, payloads.modal("survey"))
+            await fake.dispatch("INTERACTION_CREATE", unrouted)
+            assert [await seen.get() for _ in range(3)] == [
+                "feedback:42",
+                "broken",
+                "survey",
+            ]
+            await settle()
+
+        assert routed.json["data"] == {
+            "content": "#42: The new queue command is great",
+            "allowed_mentions": MENTIONS,
+            "flags": EPHEMERAL,
+        }
+        assert failed.json["data"]["content"] == "broken failed: boom"
+        assert not any(unrouted["id"] in request.path for request in fake.requests)
+
+    run(scenario)
+
+
+@pytest.mark.parametrize("modal", [False, True])
+def test_a_bot_with_only_component_or_modal_routes_answers_them(modal: bool) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
 
-        @bot.on_component("go")
-        async def go(ctx: ComponentContext) -> None:
-            await ctx.update("went")
+        async def go(ctx: ComponentContext | ModalContext) -> None:
+            await ctx.respond("went")
 
+        (bot.on_modal if modal else bot.on_component)("go")(go)
         async with running(bot, fake):
-            clicked = await fake.interaction(3, payloads.button("go"))
+            answer = await fake.interaction(
+                5 if modal else 3,
+                payloads.modal("go") if modal else payloads.button("go"),
+            )
 
-        assert clicked.json["type"] == 7
+        assert answer.json["type"] == 4
 
     run(scenario)
 

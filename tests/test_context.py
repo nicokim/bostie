@@ -20,6 +20,7 @@ from bostie import (
     InteractionNotAnswered,
     InteractionResponded,
     MessageFlags,
+    ModalContext,
     NotFound,
     Option,
     UnexpectedResponse,
@@ -44,7 +45,7 @@ class Interactions:
         self.fake = fake
         self.bot = bot
 
-    async def answer[C: Context | ComponentContext](
+    async def answer[C: Context | ComponentContext | ModalContext](
         self,
         kind: type[C],
         handler: Callable[[C], Awaitable[None]],
@@ -67,6 +68,9 @@ class Interactions:
         if issubclass(kind, ComponentContext):
             self.bot.on_component(name)(handle)
             payload = payloads.interaction(3, payloads.button(name), **fields)
+        elif issubclass(kind, ModalContext):
+            self.bot.on_modal(name)(handle)
+            payload = payloads.interaction(5, payloads.modal(name), **fields)
         else:
             self.bot.command(name=name, ephemeral=ephemeral)(handle)
             payload = payloads.interaction(2, payloads.command(name), **fields)
@@ -206,6 +210,51 @@ def test_a_modal_answers_a_command_and_stops_its_auto_defer() -> None:
 
         (callback,) = await on.answer(Context, handler)
         assert callback.json == {"type": 9, "data": FORM}
+
+    run_bot(scenario, auto_defer=0.0)
+
+
+def test_a_modal_context_reads_each_answer_by_custom_id() -> None:
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ModalContext) -> None:
+            assert ctx.text("feedback") == "The new queue command is great"
+            assert ctx.choice("rating") == "great"
+            assert ctx.values("screenshots") == ("1564615271093121025",)
+            assert [file.filename for file in ctx.attachments("screenshots")] == [
+                "queue.png"
+            ]
+            assert ctx.checked("subscribe") is True
+            with pytest.raises(KeyError, match="has no input 'missing'"):
+                ctx.text("missing")
+            with pytest.raises(TypeError, match="'rating' is a SubmittedRadioGroup"):
+                ctx.text("rating")
+            await ctx.respond("thanks")
+
+        await on.answer(ModalContext, handler)
+
+    run_bot(scenario)
+
+
+@pytest.mark.parametrize("from_component", [False, True])
+def test_a_modal_submit_updates_and_auto_defers_only_the_message_it_came_from(
+    from_component: bool,
+) -> None:
+    clicked = payloads.fixture("events/INTERACTION_CREATE.button")["message"]
+
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ModalContext) -> None:
+            await settle()
+            assert (ctx.interaction.message is not None) is from_component
+            if from_component:
+                await ctx.update("done")
+                return
+            with pytest.raises(InteractionResponded, match="message component"):
+                await ctx.update("done")
+            await ctx.respond("done")
+
+        fields = {"message": clicked} if from_component else {}
+        requests = await on.answer(ModalContext, handler, **fields)
+        assert calls(requests) == [CALLBACK_6 if from_component else CALLBACK_5, EDIT]
 
     run_bot(scenario, auto_defer=0.0)
 

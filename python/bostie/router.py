@@ -56,7 +56,7 @@ class _Registry[K, V]:
 
 
 class Router:
-    """Commands, listeners, component routes and error hooks; a bot is a router."""
+    """Commands, listeners, routes and error hooks; a bot is a router."""
 
     def __init__(self) -> None:
         self.parent: Router | None = None
@@ -64,6 +64,7 @@ class Router:
         self.context_menus: dict[tuple[CommandType, str], ContextMenuCommand] = {}
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
+        self.modal_routes: dict[str, ComponentRoute[...]] = {}
         self.error_handlers: dict[type[BaseException], ErrorHandler] = {}
 
     @property
@@ -163,15 +164,13 @@ class Router:
         self, template: str
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route buttons and selects whose custom_id fits `template`."""
+        return self._custom_id_route(COMPONENT_ROUTES, template)
 
-        def register(
-            handler: Callable[P, Coroutine[Any, Any, None]],
-        ) -> ComponentRoute[P]:
-            route = ComponentRoute(template, handler, router=self)
-            self._add(COMPONENT_ROUTES, template, route)
-            return route
-
-        return register
+    def on_modal[**P](
+        self, template: str
+    ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
+        """Route the submits of modals whose custom_id fits `template`."""
+        return self._custom_id_route(MODAL_ROUTES, template)
 
     @overload
     def on_error[H: ErrorHandler](self, handler: H, /) -> H: ...
@@ -215,15 +214,14 @@ class Router:
     def match_component(
         self, custom_id: str
     ) -> tuple[ComponentRoute[...], dict[str, str | int]] | None:
-        """The route for a custom_id and its placeholder values, or None."""
-        exact = self.component_routes.get(custom_id)
-        if exact is not None and not exact.names:
-            return exact, {}
-        for route in self.component_routes.values():
-            params = route.match(custom_id)
-            if params is not None:
-                return route, params
-        return None
+        """The component route for a custom_id and its placeholder values, or None."""
+        return _match(self.component_routes, custom_id)
+
+    def match_modal(
+        self, custom_id: str
+    ) -> tuple[ComponentRoute[...], dict[str, str | int]] | None:
+        """The modal route for a custom_id and its placeholder values, or None."""
+        return _match(self.modal_routes, custom_id)
 
     def find_error_handlers(self, error: BaseException) -> Iterator[ErrorHandler]:
         """Hooks for `error`: this router's nearest match first, then each parent's."""
@@ -281,6 +279,18 @@ class Router:
 
         return register
 
+    def _custom_id_route[**P](
+        self, registry: _Registry[str, ComponentRoute[...]], template: str
+    ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
+        def register(
+            handler: Callable[P, Coroutine[Any, Any, None]],
+        ) -> ComponentRoute[P]:
+            route = ComponentRoute(template, handler, router=self)
+            self._add(registry, template, route)
+            return route
+
+        return register
+
     def _check[K](self, registry: _Registry[K, Any], key: K) -> None:
         if any(key in registry.of(router) for router in self._chain()):
             raise registry.taken(key)
@@ -318,11 +328,31 @@ COMPONENT_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
         f"the component template {template!r} is already registered"
     ),
 )
+MODAL_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
+    lambda router: router.modal_routes,
+    lambda template: ValueError(
+        f"the modal template {template!r} is already registered"
+    ),
+)
 REGISTRIES: tuple[_Registry[Any, Any], ...] = (
     COMMANDS,
     CONTEXT_MENUS,
     COMPONENT_ROUTES,
+    MODAL_ROUTES,
 )
+
+
+def _match(
+    routes: dict[str, ComponentRoute[...]], custom_id: str
+) -> tuple[ComponentRoute[...], dict[str, str | int]] | None:
+    exact = routes.get(custom_id)
+    if exact is not None and not exact.names:
+        return exact, {}
+    for route in routes.values():
+        params = route.match(custom_id)
+        if params is not None:
+            return route, params
+    return None
 
 
 def _annotated_events(listener: Callable[..., object]) -> tuple[Any, ...]:

@@ -13,8 +13,10 @@ from bostie.enums import (
 )
 from bostie.models.base import Model, decode, decoder
 from bostie.models.channel import PartialChannel
+from bostie.models.components import SubmittedComponent, decode_submitted
 from bostie.models.guild import Member, PartialMember, Role, with_user
 from bostie.models.message import (
+    NULL,
     Attachment,
     Message,
     PartialMessage,
@@ -158,15 +160,29 @@ class ComponentInteraction(_Interaction, kw_only=True):
 
 
 class ModalSubmitData(Model, kw_only=True):
-    """The modal a user submitted; the values they entered are in `raw`."""
+    """The modal a user submitted and what they answered in it."""
 
     custom_id: str
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(name="components")
+    resolved: Resolved = msgspec.field(default_factory=Resolved)
+
+    @property
+    def components(self) -> tuple[SubmittedComponent, ...]:
+        return decode_submitted(self._components)
 
 
 class ModalSubmitInteraction(_Interaction, kw_only=True):
-    """A modal submit, which bostie decodes but does not route."""
+    """A modal submit."""
 
     data: ModalSubmitData
+    _message: msgspec.Raw = msgspec.field(default=NULL, name="message")
+
+    @property
+    def message(self) -> Message | WebhookMessage | None:
+        """The message whose component opened the modal, decoded on each access."""
+        if self._message == NULL:
+            return None
+        return nested_message(self._message, self.guild_id)
 
 
 class UnknownInteraction(Model, kw_only=True):

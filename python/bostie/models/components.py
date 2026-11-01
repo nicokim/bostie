@@ -4,7 +4,7 @@ from typing import Literal, cast
 import msgspec
 
 from bostie.enums import ButtonStyle, ChannelType, ComponentType
-from bostie.models.base import Builder, decoder
+from bostie.models.base import Builder, Model, decoder
 
 
 class PartialEmoji(Builder, kw_only=True):
@@ -191,6 +191,113 @@ type KnownComponent = (
 type Component = KnownComponent | UnknownComponent
 
 
+class _Submitted(Model, kw_only=True, tag_field="type"):
+    id: int
+
+
+class SubmittedTextDisplay(
+    _Submitted, kw_only=True, tag=ComponentType.TEXT_DISPLAY.value
+):
+    """A text display of a submitted modal, which carries no answer."""
+
+
+class SubmittedLabel(_Submitted, kw_only=True, tag=ComponentType.LABEL.value):
+    """A label of a submitted modal and the answered component inside it."""
+
+    _component: msgspec.Raw = msgspec.field(name="component")
+
+    @property
+    def component(self) -> "SubmittedComponent":
+        return _decode_submitted(self._component)
+
+
+class SubmittedInput(_Submitted, kw_only=True):
+    """What the user answered in one component of a modal."""
+
+    custom_id: str
+
+
+class SubmittedTextInput(
+    SubmittedInput, kw_only=True, tag=ComponentType.TEXT_INPUT.value
+):
+    value: str
+
+
+class SubmittedValues(SubmittedInput, kw_only=True):
+    """An answer of several values; those of entity selects and uploads are ids."""
+
+    values: tuple[str, ...]
+
+
+class SubmittedStringSelect(
+    SubmittedValues, kw_only=True, tag=ComponentType.STRING_SELECT.value
+):
+    pass
+
+
+class SubmittedUserSelect(
+    SubmittedValues, kw_only=True, tag=ComponentType.USER_SELECT.value
+):
+    pass
+
+
+class SubmittedRoleSelect(
+    SubmittedValues, kw_only=True, tag=ComponentType.ROLE_SELECT.value
+):
+    pass
+
+
+class SubmittedMentionableSelect(
+    SubmittedValues, kw_only=True, tag=ComponentType.MENTIONABLE_SELECT.value
+):
+    pass
+
+
+class SubmittedChannelSelect(
+    SubmittedValues, kw_only=True, tag=ComponentType.CHANNEL_SELECT.value
+):
+    pass
+
+
+class SubmittedFileUpload(
+    SubmittedValues, kw_only=True, tag=ComponentType.FILE_UPLOAD.value
+):
+    pass
+
+
+class SubmittedRadioGroup(
+    SubmittedInput, kw_only=True, tag=ComponentType.RADIO_GROUP.value
+):
+    value: str | None
+
+
+class SubmittedCheckboxGroup(
+    SubmittedValues, kw_only=True, tag=ComponentType.CHECKBOX_GROUP.value
+):
+    pass
+
+
+class SubmittedCheckbox(SubmittedInput, kw_only=True, tag=ComponentType.CHECKBOX.value):
+    value: bool
+
+
+type KnownSubmitted = (
+    SubmittedTextDisplay
+    | SubmittedLabel
+    | SubmittedTextInput
+    | SubmittedStringSelect
+    | SubmittedUserSelect
+    | SubmittedRoleSelect
+    | SubmittedMentionableSelect
+    | SubmittedChannelSelect
+    | SubmittedFileUpload
+    | SubmittedRadioGroup
+    | SubmittedCheckboxGroup
+    | SubmittedCheckbox
+)
+type SubmittedComponent = KnownSubmitted | UnknownComponent
+
+
 class _ComponentTag(msgspec.Struct):
     type: int | None = None
 
@@ -200,9 +307,22 @@ def decode_components(raws: Iterable[msgspec.Raw]) -> tuple[Component, ...]:
     return tuple(_decode_component(raw) for raw in raws)
 
 
+def decode_submitted(raws: Iterable[msgspec.Raw]) -> tuple[SubmittedComponent, ...]:
+    """Decode a modal's answered components; unknown ones become `UnknownComponent`."""
+    return tuple(_decode_submitted(raw) for raw in raws)
+
+
 def _decode_component(raw: msgspec.Raw) -> Component:
     try:
         component: KnownComponent = decoder(KnownComponent.__value__).decode(raw)
+    except msgspec.ValidationError:
+        return UnknownComponent(type=_component_type(raw), raw=raw)
+    return component
+
+
+def _decode_submitted(raw: msgspec.Raw) -> SubmittedComponent:
+    try:
+        component: KnownSubmitted = decoder(KnownSubmitted.__value__).decode(raw)
     except msgspec.ValidationError:
         return UnknownComponent(type=_component_type(raw), raw=raw)
     return component

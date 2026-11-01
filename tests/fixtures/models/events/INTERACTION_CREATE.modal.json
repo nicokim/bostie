@@ -6,16 +6,69 @@
     "custom_id": "feedback:42",
     "components": [
       {
+        "type": 10,
+        "id": 1
+      },
+      {
         "type": 18,
-        "id": 1,
+        "id": 2,
         "component": {
           "type": 4,
-          "id": 2,
+          "id": 3,
           "custom_id": "feedback",
           "value": "The new queue command is great"
         }
+      },
+      {
+        "type": 18,
+        "id": 4,
+        "component": {
+          "type": 21,
+          "id": 5,
+          "custom_id": "rating",
+          "value": "great"
+        }
+      },
+      {
+        "type": 18,
+        "id": 6,
+        "component": {
+          "type": 19,
+          "id": 7,
+          "custom_id": "screenshots",
+          "values": [
+            "1564615271093121025"
+          ]
+        }
+      },
+      {
+        "type": 18,
+        "id": 8,
+        "component": {
+          "type": 23,
+          "id": 9,
+          "custom_id": "subscribe",
+          "value": true
+        }
       }
-    ]
+    ],
+    "resolved": {
+      "attachments": {
+        "1564615271093121025": {
+          "content_type": "image/png",
+          "ephemeral": true,
+          "filename": "queue.png",
+          "height": 604,
+          "id": "1564615271093121025",
+          "placeholder": "/PcBAoBQydvKesabEIoMsdg=",
+          "placeholder_version": 1,
+          "proxy_url": "https://media.discordapp.net/ephemeral-attachments/1335173295636611073/1564615271093121025/queue.png",
+          "size": 241394,
+          "url": "https://cdn.discordapp.com/ephemeral-attachments/1335173295636611073/1564615271093121025/queue.png",
+          "width": 2482
+        }
+      }
+    }
   },
   "guild": {
     "id": "1335172792320131073",

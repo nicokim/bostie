@@ -112,6 +112,18 @@ def test_component_routes_prefer_exact_templates_then_registration_order() -> No
         router.on_component("vote:{tag}")(component)
 
 
+def test_modal_routes_are_kept_apart_from_component_routes() -> None:
+    router = Router()
+    button = router.on_component("report:{id:int}")(component)
+    form = router.on_modal("report:{id:int}")(component)
+
+    assert router.match_component("report:1") == (button, {"id": 1})
+    assert router.match_modal("report:1") == (form, {"id": 1})
+    assert router.match_modal("poll:1") is None
+    with pytest.raises(ValueError, match="modal template 'report:"):
+        router.on_modal("report:{id:int}")(component)
+
+
 def test_include_merges_and_keeps_following_the_child() -> None:
     bot = Router()
     music = Router()
