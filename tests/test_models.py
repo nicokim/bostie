@@ -12,10 +12,14 @@ from bostie.enums import (
     ChannelFlags,
     ChannelType,
     ComponentType,
+    ExplicitContentFilterLevel,
+    GuildFeature,
     MessageFlags,
     MessageType,
+    MFALevel,
     OptionType,
     Permissions,
+    SystemChannelFlags,
 )
 from bostie.file import File
 from bostie.models import (
@@ -107,9 +111,23 @@ def test_snowflakes_permissions_and_timestamps_are_typed() -> None:
     assert member.user.id == 820774541721731073
     assert member.joined_at == datetime(2025, 4, 18, 19, 3, 11, 987000, tzinfo=UTC)
     assert guild.owner_id == 308882807193731073
-    assert guild.features[0] == "ANIMATED_ICON"
     assert interaction.app_permissions == 4069281901182529
     assert Permissions.ATTACH_FILES in interaction.app_permissions
+
+
+def test_a_guild_carries_its_settings_roles_and_expressions() -> None:
+    guild = decode(Guild, payload("rest/guild.json"))
+
+    assert guild.features[0] is GuildFeature.ANIMATED_ICON
+    assert guild.mfa_level is MFALevel.NONE
+    assert guild.explicit_content_filter is ExplicitContentFilterLevel.ALL_MEMBERS
+    assert guild.system_channel_flags == (
+        SystemChannelFlags.SUPPRESS_GUILD_REMINDER_NOTIFICATIONS
+    )
+    assert (guild.afk_timeout, guild.premium_subscription_count) == (300, 7)
+    assert guild.roles[0].name == "@everyone"
+    assert guild.emojis[0].name == "lyre"
+    assert guild.stickers[0].name == "lyre wave"
 
 
 def test_rich_message() -> None:

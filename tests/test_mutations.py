@@ -101,6 +101,9 @@ ENUM_KEYS = {
     "video_quality_mode",
     "default_sort_order",
     "default_forum_layout",
+    "mfa_level",
+    "default_message_notifications",
+    "explicit_content_filter",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {
@@ -111,6 +114,7 @@ FLAG_KEYS = {
     "allow",
     "deny",
     "public_flags",
+    "system_channel_flags",
 }
 UNKNOWN_FLAGS = 1 << 62 | 1
 TOKEN = "bostie-test-token-7c1f"

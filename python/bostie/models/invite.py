@@ -3,6 +3,7 @@ from datetime import datetime
 import msgspec
 
 from bostie.enums import (
+    GuildFeature,
     GuildInviteFlags,
     InviteTargetType,
     InviteType,
@@ -27,7 +28,7 @@ class InviteGuild(Model, kw_only=True):
     banner: str | None = None
     description: str | None = None
     icon: str | None = None
-    features: tuple[str, ...] = ()
+    features: tuple[GuildFeature, ...] = ()
     verification_level: VerificationLevel | None = None
     vanity_url_code: str | None = None
     nsfw_level: NSFWLevel | None = None

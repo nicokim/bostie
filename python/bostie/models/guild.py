@@ -4,12 +4,17 @@ from typing import TYPE_CHECKING
 import msgspec
 
 from bostie.enums import (
+    DefaultMessageNotificationLevel,
+    ExplicitContentFilterLevel,
+    GuildFeature,
     IntegrationExpireBehavior,
     MemberFlags,
+    MFALevel,
     NSFWLevel,
     Permissions,
     PremiumTier,
     RoleFlags,
+    SystemChannelFlags,
     VerificationLevel,
 )
 from bostie.models.base import Builder, Model, permissions_from
@@ -104,26 +109,68 @@ def with_user(member: PartialMember, user: User) -> Member:
     return Member(user=user, **msgspec.structs.asdict(member))
 
 
+class WelcomeScreenChannel(Builder, kw_only=True):
+    channel_id: int
+    description: str
+    emoji_id: int | None
+    emoji_name: str | None
+
+
+class WelcomeScreen(Model, kw_only=True):
+    description: str | None
+    welcome_channels: tuple[WelcomeScreenChannel, ...]
+
+
+class IncidentsData(Model, kw_only=True):
+    invites_disabled_until: datetime | None
+    dms_disabled_until: datetime | None
+    dm_spam_detected_at: datetime | None = None
+    raid_detected_at: datetime | None = None
+
+
 class Guild(Model, kw_only=True):
-    """The header of a guild, without its channels, roles or members."""
+    """A guild, without its channels or members."""
 
     id: int
     name: str
     icon: str | None
+    splash: str | None
+    discovery_splash: str | None
     owner_id: int
     afk_channel_id: int | None
+    afk_timeout: int
+    widget_enabled: bool = False
+    widget_channel_id: int | None = None
     verification_level: VerificationLevel
-    features: tuple[str, ...]
+    default_message_notifications: DefaultMessageNotificationLevel
+    explicit_content_filter: ExplicitContentFilterLevel
+    roles: tuple[Role, ...]
+    emojis: tuple[Emoji, ...]
+    features: tuple[GuildFeature, ...]
+    mfa_level: MFALevel
+    application_id: int | None
     system_channel_id: int | None
+    system_channel_flags: SystemChannelFlags
     rules_channel_id: int | None
-    preferred_locale: str
-    premium_tier: PremiumTier
+    max_presences: int | None = None
+    max_members: int | None = None
+    vanity_url_code: str | None
     description: str | None
     banner: str | None
-    vanity_url_code: str | None
-    nsfw_level: NSFWLevel
+    premium_tier: PremiumTier
+    premium_subscription_count: int | None = None
+    preferred_locale: str
+    public_updates_channel_id: int | None
+    max_video_channel_users: int | None = None
+    max_stage_video_channel_users: int | None = None
     approximate_member_count: int | None = None
     approximate_presence_count: int | None = None
+    welcome_screen: WelcomeScreen | None = None
+    nsfw_level: NSFWLevel
+    stickers: tuple[Sticker, ...] = ()
+    premium_progress_bar_enabled: bool
+    safety_alerts_channel_id: int | None
+    incidents_data: IncidentsData | None
     joined_at: datetime | None = None
     member_count: int | None = None
     large: bool | None = None
@@ -139,7 +186,7 @@ class CurrentUserGuild(Model, kw_only=True):
     banner: str | None
     owner: bool
     _permissions: str = msgspec.field(name="permissions")
-    features: tuple[str, ...]
+    features: tuple[GuildFeature, ...]
     approximate_member_count: int | None = None
     approximate_presence_count: int | None = None
 
@@ -155,7 +202,7 @@ class GuildPreview(Model, kw_only=True):
     splash: str | None
     discovery_splash: str | None
     emojis: tuple[Emoji, ...]
-    features: tuple[str, ...]
+    features: tuple[GuildFeature, ...]
     approximate_member_count: int
     approximate_presence_count: int
     description: str | None
@@ -196,25 +243,6 @@ class GuildWidget(Model, kw_only=True):
 class VanityURL(Model, kw_only=True):
     code: str | None
     uses: int
-
-
-class WelcomeScreenChannel(Builder, kw_only=True):
-    channel_id: int
-    description: str
-    emoji_id: int | None
-    emoji_name: str | None
-
-
-class WelcomeScreen(Model, kw_only=True):
-    description: str | None
-    welcome_channels: tuple[WelcomeScreenChannel, ...]
-
-
-class IncidentsData(Model, kw_only=True):
-    invites_disabled_until: datetime | None
-    dms_disabled_until: datetime | None
-    dm_spam_detected_at: datetime | None = None
-    raid_detected_at: datetime | None = None
 
 
 class Ban(Model, kw_only=True):
