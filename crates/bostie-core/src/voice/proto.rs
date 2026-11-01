@@ -644,15 +644,29 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_or_null_dave_protocol_version_is_0() {
+    fn a_dave_protocol_version_is_0_if_absent_and_refused_if_malformed() {
         let key = vec!["1"; 32].join(",");
+        let frame = |version: &str| {
+            format!(r#"{{"op":4,"d":{{"mode":"m","secret_key":[{key}]{version}}}}}"#)
+        };
         for version in ["", r#","dave_protocol_version":null"#] {
-            let frame = format!(r#"{{"op":4,"d":{{"mode":"m","secret_key":[{key}]{version}}}}}"#);
-
-            let Inbound::SessionDescription(description) = inbound(&frame) else {
+            let Inbound::SessionDescription(description) = inbound(&frame(version)) else {
                 panic!("expected SessionDescription");
             };
             assert_eq!(description.dave_protocol_version, 0);
+        }
+        for version in [
+            r#","dave_protocol_version":"1""#,
+            r#","dave_protocol_version":65536"#,
+        ] {
+            assert_eq!(
+                error(&frame(version)),
+                ProtoError::Field {
+                    op: 4,
+                    field: "dave_protocol_version"
+                },
+                "{version}"
+            );
         }
     }
 
@@ -971,6 +985,7 @@ mod tests {
                 "modes",
             ),
             (r#"{"op":2}"#, 2, "ssrc"),
+            (r#"{"op":4,"d":{}}"#, 4, "mode"),
             (
                 r#"{"op":5,"d":{"user_id":"1","ssrc":1,"speaking":-1}}"#,
                 5,
