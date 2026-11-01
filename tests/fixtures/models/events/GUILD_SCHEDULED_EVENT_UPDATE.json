@@ -1,0 +1,35 @@
+{
+  "id": "1565130688371631073",
+  "guild_id": "1335172792320131073",
+  "channel_id": null,
+  "creator_id": "613374681415811073",
+  "name": "Lyre meetup",
+  "description": null,
+  "scheduled_start_time": "2026-12-05T15:00:00+00:00",
+  "scheduled_end_time": "2026-12-05T18:00:00+00:00",
+  "privacy_level": 2,
+  "status": 2,
+  "entity_type": 3,
+  "entity_id": null,
+  "entity_metadata": {
+    "location": "Concert hall, room 2"
+  },
+  "image": null,
+  "recurrence_rule": {
+    "start": "2026-12-05T15:00:00+00:00",
+    "end": null,
+    "frequency": 1,
+    "interval": 1,
+    "by_weekday": null,
+    "by_n_weekday": [
+      {
+        "n": 1,
+        "day": 5
+      }
+    ],
+    "by_month": null,
+    "by_month_day": null,
+    "by_year_day": null,
+    "count": null
+  }
+}

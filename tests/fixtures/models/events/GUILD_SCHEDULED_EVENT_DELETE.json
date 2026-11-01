@@ -1,0 +1,33 @@
+{
+  "id": "1565131069675831073",
+  "guild_id": "1335172792320131073",
+  "channel_id": "1335173547294851073",
+  "creator_id": null,
+  "name": "Anniversary",
+  "description": "The server turns two",
+  "scheduled_start_time": "2027-02-01T18:00:00+00:00",
+  "scheduled_end_time": null,
+  "privacy_level": 2,
+  "status": 4,
+  "entity_type": 2,
+  "entity_id": null,
+  "entity_metadata": null,
+  "user_count": 0,
+  "image": null,
+  "recurrence_rule": {
+    "start": "2027-02-01T18:00:00+00:00",
+    "end": null,
+    "frequency": 0,
+    "interval": 1,
+    "by_weekday": null,
+    "by_n_weekday": null,
+    "by_month": [
+      2
+    ],
+    "by_month_day": [
+      1
+    ],
+    "by_year_day": null,
+    "count": null
+  }
+}

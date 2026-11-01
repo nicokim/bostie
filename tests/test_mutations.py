@@ -53,8 +53,13 @@ ENUM_KEYS = {
     "trigger_type",
     "rule_trigger_type",
     "action_type",
+    "privacy_level",
+    "status",
+    "entity_type",
+    "frequency",
+    "day",
 }
-ENUM_LIST_KEYS = {"channel_types", "presets"}
+ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {
     "flags",
     "flags_new",

@@ -24,6 +24,7 @@ from bostie.models import (
     PartialApplication,
     PartialEmoji,
     Role,
+    ScheduledEvent,
     SoundboardSound,
     Sticker,
     UnavailableGuild,
@@ -95,6 +96,7 @@ class _GuildCreatePayload(Guild, kw_only=True):
     threads: tuple[Channel, ...]
     roles: tuple[Role, ...]
     voice_states: tuple[VoiceState, ...]
+    guild_scheduled_events: tuple[ScheduledEvent, ...]
     soundboard_sounds: tuple[SoundboardSound, ...]
     _members: msgspec.Raw = msgspec.field(name="members")
     _presences: msgspec.Raw = msgspec.field(name="presences")
@@ -111,6 +113,7 @@ class GuildCreate(Event, kw_only=True):
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
     voice_states: tuple[VoiceState, ...] = ()
+    guild_scheduled_events: tuple[ScheduledEvent, ...] = ()
     soundboard_sounds: tuple[SoundboardSound, ...] = ()
     _members: msgspec.Raw = msgspec.Raw(b"[]")
     _presences: msgspec.Raw = msgspec.Raw(b"[]")
@@ -143,6 +146,7 @@ class GuildCreate(Event, kw_only=True):
             threads=payload.threads,
             roles=payload.roles,
             voice_states=payload.voice_states,
+            guild_scheduled_events=payload.guild_scheduled_events,
             soundboard_sounds=payload.soundboard_sounds,
             _members=payload._members,
             _presences=payload._presences,
@@ -540,6 +544,49 @@ class SoundboardSounds(Event, kw_only=True):
     guild_id: int
 
 
+class _ScheduledEventEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_SCHEDULED_EVENTS
+
+    scheduled_event: ScheduledEvent
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            scheduled_event=decode(ScheduledEvent, data),
+        )
+
+
+class ScheduledEventCreate(_ScheduledEventEvent, kw_only=True):
+    NAME = "GUILD_SCHEDULED_EVENT_CREATE"
+
+
+class ScheduledEventUpdate(_ScheduledEventEvent, kw_only=True):
+    NAME = "GUILD_SCHEDULED_EVENT_UPDATE"
+
+
+class ScheduledEventDelete(_ScheduledEventEvent, kw_only=True):
+    NAME = "GUILD_SCHEDULED_EVENT_DELETE"
+
+
+class _ScheduledEventUserEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_SCHEDULED_EVENTS
+
+    guild_scheduled_event_id: int
+    user_id: int
+    guild_id: int
+
+
+class ScheduledEventUserAdd(_ScheduledEventUserEvent, kw_only=True):
+    NAME = "GUILD_SCHEDULED_EVENT_USER_ADD"
+
+
+class ScheduledEventUserRemove(_ScheduledEventUserEvent, kw_only=True):
+    NAME = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -593,6 +640,11 @@ EVENTS: dict[str, type[Event]] = {
         SoundboardSoundDelete,
         SoundboardSoundsUpdate,
         SoundboardSounds,
+        ScheduledEventCreate,
+        ScheduledEventUpdate,
+        ScheduledEventDelete,
+        ScheduledEventUserAdd,
+        ScheduledEventUserRemove,
     )
 }
 

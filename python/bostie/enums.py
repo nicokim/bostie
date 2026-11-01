@@ -325,6 +325,55 @@ class AuditLogEvent(DiscordIntEnum):
     VOICE_CHANNEL_STATUS_DELETE = 193
 
 
+class ScheduledEventPrivacyLevel(DiscordIntEnum):
+    GUILD_ONLY = 2
+
+
+class ScheduledEventEntityType(DiscordIntEnum):
+    STAGE_INSTANCE = 1
+    VOICE = 2
+    EXTERNAL = 3
+
+
+class ScheduledEventStatus(DiscordIntEnum):
+    SCHEDULED = 1
+    ACTIVE = 2
+    COMPLETED = 3
+    CANCELED = 4
+
+
+class RecurrenceFrequency(DiscordIntEnum):
+    YEARLY = 0
+    MONTHLY = 1
+    WEEKLY = 2
+    DAILY = 3
+
+
+class Weekday(DiscordIntEnum):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
+    SATURDAY = 5
+    SUNDAY = 6
+
+
+class Month(DiscordIntEnum):
+    JANUARY = 1
+    FEBRUARY = 2
+    MARCH = 3
+    APRIL = 4
+    MAY = 5
+    JUNE = 6
+    JULY = 7
+    AUGUST = 8
+    SEPTEMBER = 9
+    OCTOBER = 10
+    NOVEMBER = 11
+    DECEMBER = 12
+
+
 class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1

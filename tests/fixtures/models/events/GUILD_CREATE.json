@@ -517,7 +517,39 @@
     }
   ],
   "stage_instances": [],
-  "guild_scheduled_events": [],
+  "guild_scheduled_events": [
+    {
+      "id": "1565130211538231073",
+      "guild_id": "1335172792320131073",
+      "channel_id": "1335173547294851073",
+      "creator_id": "308882807193731073",
+      "name": "Weekly jam",
+      "description": "Bring an instrument",
+      "scheduled_start_time": "2026-11-04T19:00:00+00:00",
+      "scheduled_end_time": null,
+      "privacy_level": 2,
+      "status": 1,
+      "entity_type": 2,
+      "entity_id": null,
+      "entity_metadata": null,
+      "creator": {
+        "id": "308882807193731073",
+        "username": "ada_owner",
+        "global_name": "Ada",
+        "discriminator": "0",
+        "avatar": "a_173d406e7b4073210e72cabee9602253",
+        "public_flags": 576,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "image": "0e7f1d7b3c46b3f9d5a2b6c0f9e81a44",
+      "sku_ids": [],
+      "recurrence_rule": null
+    }
+  ],
   "soundboard_sounds": [
     {
       "name": "lyre strum",

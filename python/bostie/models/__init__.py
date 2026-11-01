@@ -93,6 +93,12 @@ from bostie.models.moderation import (
     AutoModerationRule,
     AutoModerationTriggerMetadata,
 )
+from bostie.models.scheduled_event import (
+    RecurrenceRule,
+    RecurrenceRuleNWeekday,
+    ScheduledEvent,
+    ScheduledEventEntityMetadata,
+)
 from bostie.models.user import PartialUser, User
 
 __all__ = [
@@ -147,10 +153,14 @@ __all__ = [
     "PartialMessage",
     "PartialUser",
     "Reaction",
+    "RecurrenceRule",
+    "RecurrenceRuleNWeekday",
     "Resolved",
     "Role",
     "RoleColors",
     "RoleSelect",
+    "ScheduledEvent",
+    "ScheduledEventEntityMetadata",
     "Section",
     "SelectDefaultValue",
     "SelectOption",
