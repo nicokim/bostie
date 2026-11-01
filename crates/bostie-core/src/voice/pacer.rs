@@ -509,7 +509,7 @@ fn contained(what: &str, call: impl FnOnce() -> bool) -> bool {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::AtomicBool;
-    use std::sync::mpsc::RecvTimeoutError;
+    use std::sync::mpsc::{RecvTimeoutError, SyncSender};
 
     use super::*;
 
@@ -735,6 +735,46 @@ mod tests {
         take(&ticks, 5);
 
         assert_eq!(lanes(&pool), 1);
+    }
+
+    #[test]
+    fn an_idle_thread_blocks_instead_of_ticking() {
+        struct Watched {
+            clock: Synthetic,
+            sleeps: SyncSender<Instant>,
+        }
+        impl Clock for Watched {
+            fn now(&self) -> Instant {
+                self.clock.now()
+            }
+
+            fn sleep_until(&self, deadline: Instant) {
+                let _ = self.sleeps.send(deadline);
+                self.clock.sleep_until(deadline);
+            }
+        }
+        let synthetic = Synthetic::new();
+        let origin = synthetic.now();
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(Assignment::new(Box::new(|_| false), None))
+            .unwrap();
+        let (sleeps, slept) = mpsc::sync_channel(0);
+        let clock = Watched {
+            clock: synthetic,
+            sleeps,
+        };
+        let home = home_alone(origin, Arc::default());
+        thread::spawn(move || pace(&receiver, &home, &clock));
+
+        let first = slept.recv_timeout(PATIENCE);
+        drop(sender);
+
+        assert_eq!(first, Ok(origin));
+        assert_eq!(
+            slept.recv_timeout(PATIENCE),
+            Err(RecvTimeoutError::Disconnected)
+        );
     }
 
     #[test]
