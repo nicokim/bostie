@@ -14,7 +14,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 use self::decrypt::Hold;
 pub use self::intake::Intake;
@@ -106,13 +106,6 @@ struct Watchdog {
     stall: Stall,
     arrived: bool,
     heard: bool,
-}
-
-#[derive(Default)]
-struct Undecryptable {
-    total: u64,
-    warned_up_to: u64,
-    warned: Throttle,
 }
 
 pub struct Reception {
@@ -264,7 +257,7 @@ impl State {
         let listening = !self.subscribers.is_empty();
         self.watchdog.watch(&self.core.media, now, listening);
         self.prune(now, now48);
-        self.hold.undecryptable.warn(now, self.core.media.guild());
+        self.hold.warn_undecryptable(now, self.core.media.guild());
         self.shrink_buffers();
         true
     }
@@ -588,23 +581,6 @@ impl Watchdog {
     fn resume(&mut self, media: &Media, now: Instant) {
         if let Some(duration) = self.stall.resume(now) {
             media.stalled(Direction::Receive, false, duration);
-        }
-    }
-}
-
-impl Undecryptable {
-    fn count(&mut self) {
-        self.total = self.total.saturating_add(1);
-    }
-
-    fn warn(&mut self, now: Instant, guild: GuildId) {
-        if self.total > self.warned_up_to && self.warned.allows(now) {
-            warn!(
-                %guild,
-                dropped = self.total.saturating_sub(self.warned_up_to),
-                "dropped received voice frames that could not be decrypted"
-            );
-            self.warned_up_to = self.total;
         }
     }
 }

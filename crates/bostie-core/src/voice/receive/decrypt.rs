@@ -4,10 +4,11 @@ use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
 use parking_lot::MutexGuard;
-use tracing::debug;
+use tracing::{debug, warn};
 
-use super::{Core, Key, Undecryptable, Work};
-use crate::ids::UserId;
+use super::{Core, Key, Work};
+use crate::ids::{GuildId, UserId};
+use crate::voice::Throttle;
 use crate::voice::dave::{Dave, DecryptFailure};
 use crate::voice::media::Arrival;
 use crate::voice::peak::Peak;
@@ -23,6 +24,13 @@ struct Held {
     arrival: Arrival,
     check: Check,
     tried: u64,
+}
+
+#[derive(Default)]
+pub(super) struct Undecryptable {
+    pub(super) total: u64,
+    warned_up_to: u64,
+    warned: Throttle,
 }
 
 #[derive(Debug, Default)]
@@ -124,6 +132,10 @@ impl Hold {
                 self.undecryptable.count();
             }
         }
+    }
+
+    pub(super) fn warn_undecryptable(&mut self, now: Instant, guild: GuildId) {
+        self.undecryptable.warn(now, guild);
     }
 
     pub(super) fn forget_streaks(&mut self, kept: impl Fn(&UserId) -> bool) {
@@ -318,6 +330,23 @@ impl Hold {
         self.held.clear();
         self.per_user.clear();
         self.waiting.clear();
+    }
+}
+
+impl Undecryptable {
+    fn count(&mut self) {
+        self.total = self.total.saturating_add(1);
+    }
+
+    fn warn(&mut self, now: Instant, guild: GuildId) {
+        if self.total > self.warned_up_to && self.warned.allows(now) {
+            warn!(
+                %guild,
+                dropped = self.total.saturating_sub(self.warned_up_to),
+                "dropped received voice frames that could not be decrypted"
+            );
+            self.warned_up_to = self.total;
+        }
     }
 }
 
