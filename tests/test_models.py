@@ -352,7 +352,7 @@ def test_mentions_and_display_names() -> None:
     assert role.mention == "<@&42>"
     assert channel.mention == "<#7>"
     assert user.display_name == "Ada"
-    assert decode(User, b'{"id": "1"}').display_name == ""
+    assert msgspec.structs.replace(user, global_name=None).display_name == user.username
     assert member.display_name == "linus"
     assert msgspec.structs.replace(member, nick="Lin").display_name == "Lin"
     assert decode(Member, b"{}").display_name == ""

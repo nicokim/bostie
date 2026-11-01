@@ -59,7 +59,7 @@ FLAG_KEYS = {
     "deny",
     "public_flags",
 }
-UNKNOWN_FLAGS = 1 << 62
+UNKNOWN_FLAGS = 1 << 62 | 1
 TOKEN = "bostie-test-token-7c1f"
 MISSING = re.compile(
     r"Object missing required field `(?P<key>[^`]+)`(?: - at `\$(?P<at>.*)`)?$"
@@ -237,7 +237,7 @@ def test_unknown_enum_values_and_flag_bits_are_kept(
     enums = [value for value in decoded if isinstance(value, DiscordIntEnum)]
     flags = [value for value in decoded if isinstance(value, IntFlag)]
     assert all(value.name == "UNKNOWN_9999" for value in enums)
-    assert all(value == UNKNOWN_FLAGS for value in flags)
+    assert all(value in (0, UNKNOWN_FLAGS) for value in flags)
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)

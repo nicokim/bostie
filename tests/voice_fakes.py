@@ -514,7 +514,18 @@ class FakeBot:
         self.core = FakeCore()
         self.rest = FakeBridge(self.core)
         self._bridge: FakeBridge | None = self.rest if running else None
-        self.user: User | None = User(id=BOT_ID) if running else None
+        self.user: User | None = (
+            User(
+                id=BOT_ID,
+                username="bostie",
+                discriminator="0",
+                global_name=None,
+                avatar=None,
+                bot=True,
+            )
+            if running
+            else None
+        )
         self.cache = Cache()
         self.http = HTTPClient(cast(Bridge, self.rest))
         self.gateway = GatewayClient(cast(Bridge, self.rest), "token")

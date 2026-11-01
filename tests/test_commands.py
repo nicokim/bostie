@@ -3,7 +3,9 @@ import re
 from enum import Enum, IntEnum
 from typing import Annotated, Any, Literal
 
+import msgspec
 import pytest
+from fakediscord import payloads
 
 from bostie.commands import (
     Choice,
@@ -12,7 +14,7 @@ from bostie.commands import (
     Range,
     autocomplete_choices,
 )
-from bostie.enums import ChannelType, OptionType, Permissions
+from bostie.enums import OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
@@ -22,8 +24,15 @@ from bostie.models import (
     Resolved,
     Role,
     User,
+    decode,
 )
 from bostie.router import Router
+
+RESOLVED = decode(Resolved, msgspec.json.encode(payloads.resolved()))
+USER_ID = 820774541721731073
+ROLE_ID = 1335174302269571073
+CHANNEL_ID = 1335173547294851073
+ATTACHMENT_ID = 1564609863064092673
 
 
 def filled(
@@ -517,43 +526,36 @@ def kitchen_sink() -> Command:
 
 
 def test_bind_converts_every_option_type() -> None:
-    resolved = Resolved(
-        users={1: User(id=1)},
-        members={1: Member()},
-        roles={2: Role(id=2)},
-        channels={3: Channel(id=3, type=ChannelType.GUILD_VOICE)},
-        attachments={4: Attachment(id=4)},
-    )
     given = [
         filled("text", 3, "hello"),
         filled("number", 4, 7),
         filled("ratio", 10, 2),
         filled("flag", 5, True),
-        filled("user", 6, "1"),
-        filled("member", 6, "1"),
-        filled("role", 8, "2"),
-        filled("channel", 7, "3"),
-        filled("file", 11, "4"),
-        filled("who", 9, "2"),
+        filled("user", 6, str(USER_ID)),
+        filled("member", 6, str(USER_ID)),
+        filled("role", 8, str(ROLE_ID)),
+        filled("channel", 7, str(CHANNEL_ID)),
+        filled("file", 11, str(ATTACHMENT_ID)),
+        filled("who", 9, str(ROLE_ID)),
         filled("unit", 3, "imperial"),
         filled("size", 4, 2),
         filled("mode", 3, "list"),
         filled("half", 10, 1),
     ]
 
-    arguments = kitchen_sink().bind(given, resolved)
+    arguments = kitchen_sink().bind(given, RESOLVED)
 
     assert arguments == {
         "text": "hello",
         "number": 7,
         "ratio": 2.0,
         "flag": True,
-        "user": User(id=1),
-        "member": Member(user=User(id=1)),
-        "role": Role(id=2),
-        "channel": Channel(id=3, type=ChannelType.GUILD_VOICE),
-        "file": Attachment(id=4),
-        "who": Role(id=2),
+        "user": RESOLVED.users[USER_ID],
+        "member": RESOLVED.member(USER_ID),
+        "role": RESOLVED.roles[ROLE_ID],
+        "channel": RESOLVED.channels[CHANNEL_ID],
+        "file": RESOLVED.attachments[ATTACHMENT_ID],
+        "who": RESOLVED.roles[ROLE_ID],
         "unit": Unit.IMPERIAL,
         "size": Size.LARGE,
         "mode": "list",
@@ -563,6 +565,7 @@ def test_bind_converts_every_option_type() -> None:
     }
     assert type(arguments["ratio"]) is float
     assert type(arguments["half"]) is float
+    assert type(arguments["member"]) is Member
 
 
 def test_mentionable_prefers_the_first_class_that_resolves() -> None:
@@ -572,9 +575,13 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
     async def poke(ctx: object, who: User | Role) -> None:
         pass
 
-    both = Resolved(users={5: User(id=5)}, roles={5: Role(id=5)})
+    data = {
+        "users": {"5": payloads.user(id="5")},
+        "roles": {"5": payloads.role(id="5")},
+    }
+    both = decode(Resolved, msgspec.json.encode(data))
 
-    assert poke.bind([filled("who", 9, "5")], both) == {"who": User(id=5)}
+    assert poke.bind([filled("who", 9, "5")], both) == {"who": both.users[5]}
 
 
 @pytest.mark.parametrize(

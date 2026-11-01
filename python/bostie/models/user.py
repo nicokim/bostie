@@ -11,15 +11,15 @@ class User(Model, kw_only=True):
     """A Discord user or bot account."""
 
     id: int
-    username: str | None = None
-    global_name: str | None = None
-    discriminator: str | None = None
-    avatar: str | None = None
-    bot: bool | None = None
-    system: bool | None = None
+    username: str
+    discriminator: str
+    global_name: str | None
+    avatar: str | None
+    bot: bool = False
+    system: bool = False
     banner: str | None = None
     accent_color: int | None = None
-    public_flags: UserFlags | None = None
+    public_flags: UserFlags = UserFlags(0)
 
     @property
     def mention(self) -> str:
@@ -27,7 +27,7 @@ class User(Model, kw_only=True):
 
     @property
     def display_name(self) -> str:
-        return self.global_name or self.username or ""
+        return self.global_name or self.username
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":
