@@ -99,7 +99,7 @@ banned-module-level-imports = [
 "crates/**/vectors.py" = ["T201"]  # the script prints the vectors
 "tests/**" = ["ARG", "FBT", "PLR0917", "PLR2004", "S101", "S106", "S107", "S603"]
 "tests/{test_context,test_mutations}.py" = ["BLE001"]  # they hand back whatever the code under test raises
-"tests/{test_voice_layers,test_voice_receive}.py" = ["PERF401"]  # a concurrent check watches the list grow item by item
+"tests/{test_voice_recording,test_voice_receive}.py" = ["PERF401"]  # a concurrent check watches the list grow item by item
 
 [tool.mypy]
 strict = true
