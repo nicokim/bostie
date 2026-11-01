@@ -933,20 +933,7 @@ class VoiceConnection:
             case ("voice_state", _, status, reason, code, detail):
                 self._set_state(status, reason, code, detail)
             case ("voice_moved", _, old, new, by_us):
-                self._channel_id = new
-                self._members = frozenset()
-                for receiver in list(self._receivers):
-                    receiver._wake()
-                self._emit(
-                    Moved(
-                        guild_id=self.guild_id,
-                        old_channel_id=old,
-                        new_channel_id=new,
-                        by_us=by_us,
-                    )
-                )
-                self._changed()
-                spawn(self.manager._tasks, self._follow(new))
+                self._moved(old, new, by_us=by_us)
             case ("voice_dave", _, version, epoch, transition):
                 self._emit(
                     DaveTransition(
@@ -969,14 +956,7 @@ class VoiceConnection:
                     )
                 )
             case ("voice_clients", _, user_ids):
-                joined = [
-                    user
-                    for user in dict.fromkeys(user_ids)
-                    if user not in self._members
-                ]
-                self._members |= frozenset(joined)
-                for user_id in joined:
-                    self._emit(UserJoin(guild_id=self.guild_id, user_id=user_id))
+                self._clients(user_ids)
             case ("voice_client_left", _, user_id):
                 self._members -= {user_id}
                 self._emit(UserLeave(guild_id=self.guild_id, user_id=user_id))
@@ -990,30 +970,61 @@ class VoiceConnection:
                     )
                 )
             case ("voice_speech", _, user_id, ssrc, True, age, _):
-                at = time.monotonic() - age
-                self._speaking[user_id] = at
-                self._speech_ssrcs[user_id] = ssrc
-                self._emit(
-                    SpeechStart(
-                        guild_id=self.guild_id, user_id=user_id, ssrc=ssrc, at=at
-                    )
-                )
+                self._speech_started(user_id, ssrc, age)
             case ("voice_speech", _, user_id, ssrc, False, age, duration):
-                self._speaking.pop(user_id, None)
-                self._speech_ssrcs.pop(user_id, None)
-                self._emit(
-                    SpeechStop(
-                        guild_id=self.guild_id,
-                        user_id=user_id,
-                        ssrc=ssrc,
-                        at=time.monotonic() - age,
-                        duration=duration,
-                    )
-                )
+                self._speech_stopped(user_id, ssrc, age, duration)
             case ("voice_deaf", _, deaf):
-                if deaf and not self._deaf and self._receivers:
-                    self._warn_deafened()
-                self._deaf = deaf
+                self._set_deaf(deaf=deaf)
+
+    def _set_deaf(self, *, deaf: bool) -> None:
+        if deaf and not self._deaf and self._receivers:
+            self._warn_deafened()
+        self._deaf = deaf
+
+    def _moved(self, old: int, new: int, *, by_us: bool) -> None:
+        self._channel_id = new
+        self._members = frozenset()
+        for receiver in list(self._receivers):
+            receiver._wake()
+        self._emit(
+            Moved(
+                guild_id=self.guild_id,
+                old_channel_id=old,
+                new_channel_id=new,
+                by_us=by_us,
+            )
+        )
+        self._changed()
+        spawn(self.manager._tasks, self._follow(new))
+
+    def _clients(self, user_ids: list[int]) -> None:
+        joined = [user for user in dict.fromkeys(user_ids) if user not in self._members]
+        self._members |= frozenset(joined)
+        for user_id in joined:
+            self._emit(UserJoin(guild_id=self.guild_id, user_id=user_id))
+
+    def _speech_started(self, user_id: int, ssrc: int, age: float) -> None:
+        at = time.monotonic() - age
+        self._speaking[user_id] = at
+        self._speech_ssrcs[user_id] = ssrc
+        self._emit(
+            SpeechStart(guild_id=self.guild_id, user_id=user_id, ssrc=ssrc, at=at)
+        )
+
+    def _speech_stopped(
+        self, user_id: int, ssrc: int, age: float, duration: float
+    ) -> None:
+        self._speaking.pop(user_id, None)
+        self._speech_ssrcs.pop(user_id, None)
+        self._emit(
+            SpeechStop(
+                guild_id=self.guild_id,
+                user_id=user_id,
+                ssrc=ssrc,
+                at=time.monotonic() - age,
+                duration=duration,
+            )
+        )
 
     def _set_state(
         self,
