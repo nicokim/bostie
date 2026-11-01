@@ -229,28 +229,10 @@ pub enum Overflow {
     DropNewest,
 }
 
-impl Overflow {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::DropOldest => "drop_oldest",
-            Self::DropNewest => "drop_newest",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceiveStall {
     Wait,
     End,
-}
-
-impl ReceiveStall {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Wait => "wait",
-            Self::End => "end",
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -561,14 +543,6 @@ mod tests {
         assert_eq!(
             [Direction::Send, Direction::Receive].map(Direction::as_str),
             ["send", "receive"]
-        );
-        assert_eq!(
-            [Overflow::DropOldest, Overflow::DropNewest].map(Overflow::as_str),
-            ["drop_oldest", "drop_newest"]
-        );
-        assert_eq!(
-            [ReceiveStall::Wait, ReceiveStall::End].map(ReceiveStall::as_str),
-            ["wait", "end"]
         );
     }
 
