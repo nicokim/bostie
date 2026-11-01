@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
@@ -22,8 +23,11 @@ from bostie.errors import (
 from bostie.file import File
 from bostie.models import (
     AllowedMentions,
+    AutocompleteInteraction,
+    CommandData,
+    CommandInteraction,
+    ComponentInteraction,
     EditParts,
-    Interaction,
     InteractionDataOption,
     Member,
     Message,
@@ -67,10 +71,12 @@ class _CallbackResponse(msgspec.Struct):
     resource: _CallbackResource | None = None
 
 
-class _InteractionContext:
+class _InteractionContext[
+    I: CommandInteraction | ComponentInteraction | AutocompleteInteraction
+]:
     def __init__(
         self,
-        interaction: Interaction,
+        interaction: I,
         bot: "Bot",
         *,
         received: float,
@@ -91,12 +97,7 @@ class _InteractionContext:
     @property
     def user(self) -> User:
         """The user who triggered the interaction, in a guild or in a DM."""
-        author = self.interaction.author
-        if author is None:
-            raise RuntimeError(
-                f"Discord sent interaction {self.interaction.id} without a user"
-            )
-        return author
+        return self.interaction.user
 
     @property
     def member(self) -> Member | None:
@@ -115,22 +116,13 @@ class _InteractionContext:
         return self.interaction.channel
 
     @property
-    def locale(self) -> str | None:
+    def locale(self) -> str:
         return self.interaction.locale
 
     @property
     def voice(self) -> ContextVoice:
         """Voice in this guild; `connect()` joins the channel of the user who ran it."""
         return ContextVoice(self.bot.voice, self.guild_id, self.user.id)
-
-    @property
-    def command_name(self) -> str | None:
-        """The invoked command with its subcommands, such as `"role color set"`."""
-        data = self.interaction.data
-        if data is None or data.name is None:
-            return None
-        names, _ = _split_subcommands(data.options)
-        return " ".join((data.name, *names))
 
     def _ensure_alive(self) -> None:
         if self.state is ResponseState.EXPIRED:
@@ -189,9 +181,9 @@ class _InteractionContext:
         return response
 
 
-class Context(_InteractionContext):
-    """The context of a slash command: who ran it, where, and how to answer."""
-
+class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
+    _InteractionContext[I], ABC
+):
     _original_ephemeral = False
     _warned_ephemeral = False
     _auto_defer_task: "asyncio.Task[None] | None" = None
@@ -313,9 +305,7 @@ class Context(_InteractionContext):
                 if self.state is ResponseState.PENDING:
                     await self._defer_automatically()
         except Exception:
-            logger.warning(
-                "automatic defer of /%s failed", self.command_name, exc_info=True
-            )
+            logger.warning("automatic defer of %s failed", self._label, exc_info=True)
 
     async def _defer_automatically(self) -> None:
         await self._defer(self._ephemeral)
@@ -363,8 +353,8 @@ class Context(_InteractionContext):
         if not self._warned_ephemeral:
             self._warned_ephemeral = True
             logger.warning(
-                "/%s: ephemeral=%s is ignored because the message being edited is %s",
-                self.command_name,
+                "%s: ephemeral=%s is ignored because the message being edited is %s",
+                self._label,
                 ephemeral,
                 "ephemeral" if self._original_ephemeral else "public",
             )
@@ -376,20 +366,35 @@ class Context(_InteractionContext):
             parts.setdefault("allowed_mentions", self._allowed_mentions)
         return build_message(content, **parts)
 
+    @property
+    @abstractmethod
+    def _label(self) -> str: ...
 
-class ComponentContext(Context):
+
+class Context(_ReplyingContext[CommandInteraction]):
+    """The context of a slash command: who ran it, where, and how to answer."""
+
+    @property
+    def command_name(self) -> str:
+        """The invoked command with its subcommands, such as `"role color set"`."""
+        return _command_name(self.interaction.data)
+
+    @property
+    def _label(self) -> str:
+        return f"/{self.command_name}"
+
+
+class ComponentContext(_ReplyingContext[ComponentInteraction]):
     """The context of a button or select menu use."""
 
     @property
-    def custom_id(self) -> str | None:
-        data = self.interaction.data
-        return None if data is None else data.custom_id
+    def custom_id(self) -> str:
+        return self.interaction.data.custom_id
 
     @property
     def values(self) -> tuple[str, ...]:
         """The values picked in a select menu."""
-        data = self.interaction.data
-        return () if data is None else data.values
+        return self.interaction.data.values
 
     async def defer_update(self) -> None:
         """Acknowledge silently; edit the component's message later with `update`."""
@@ -444,20 +449,26 @@ class ComponentContext(Context):
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _component_message_is_ephemeral(self) -> bool:
-        message = self.interaction.message
-        flags = None if message is None else message.flags
-        return bool((flags or 0) & MessageFlags.EPHEMERAL)
+        return MessageFlags.EPHEMERAL in self.interaction.message.flags
+
+    @property
+    def _label(self) -> str:
+        return f"component {self.custom_id}"
 
 
-class AutocompleteContext(_InteractionContext):
+class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
     """The context of an autocomplete request; it never defers."""
+
+    @property
+    def command_name(self) -> str:
+        """The command being filled in, with its subcommands."""
+        return _command_name(self.interaction.data)
 
     @property
     def options(self) -> dict[str, str | int | float | bool | None]:
         """The options filled so far, by name; required ones may be missing."""
-        data = self.interaction.data
-        _, leaves = _split_subcommands(() if data is None else data.options)
-        return {option.name: option.value for option in leaves if option.name}
+        _, leaves = _split_subcommands(self.interaction.data.options)
+        return {option.name: option.value for option in leaves}
 
     async def _respond(self, choices: list[dict[str, Any]]) -> None:
         async with self._lock:
@@ -476,9 +487,14 @@ def _split_subcommands(
 ) -> tuple[list[str], tuple[InteractionDataOption, ...]]:
     names: list[str] = []
     while options and options[0].type in SUBCOMMAND_TYPES:
-        names.append(options[0].name or "")
+        names.append(options[0].name)
         options = options[0].options
     return names, options
+
+
+def _command_name(data: CommandData) -> str:
+    names, _ = _split_subcommands(data.options)
+    return " ".join((data.name, *names))
 
 
 def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:

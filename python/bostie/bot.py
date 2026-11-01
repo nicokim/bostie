@@ -5,7 +5,7 @@ import os
 import signal
 import threading
 import time
-from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Unpack, cast
@@ -30,7 +30,7 @@ from bostie.context import (
     ResponseState,
     _split_subcommands,
 )
-from bostie.enums import CommandType, Intents, InteractionType
+from bostie.enums import CommandType, Intents
 from bostie.errors import TransportError
 from bostie.events import (
     EVENTS,
@@ -45,11 +45,14 @@ from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import (
     AllowedMentions,
+    AutocompleteInteraction,
     Channel,
+    CommandData,
+    CommandInteraction,
+    ComponentInteraction,
     EditParts,
     Guild,
     Interaction,
-    InteractionData,
     InteractionDataOption,
     Member,
     Message,
@@ -77,12 +80,6 @@ PRIVILEGED_INTENTS = (
 )
 DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
-COMMAND_INTERACTIONS = frozenset(
-    {
-        InteractionType.APPLICATION_COMMAND,
-        InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE,
-    }
-)
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
 
@@ -567,33 +564,39 @@ class Bot(Router):
     def _handler(
         self, interaction: Interaction, received: float
     ) -> Coroutine[Any, Any, None] | None:
-        data = interaction.data
-        if data is None:
+        match interaction:
+            case ComponentInteraction():
+                return self._component_handler(interaction, received)
+            case CommandInteraction():
+                return self._command_handler(interaction, received)
+            case AutocompleteInteraction():
+                return self._autocomplete_handler(interaction, received)
+        return None
+
+    def _component_handler(
+        self, interaction: ComponentInteraction, received: float
+    ) -> Coroutine[Any, Any, None] | None:
+        found = self.match_component(interaction.data.custom_id)
+        if found is None:
             return None
-        if interaction.type is InteractionType.MESSAGE_COMPONENT:
-            found = self.match_component(data.custom_id or "")
-            if found is None:
-                return None
-            route, params = found
-            component = ComponentContext(
-                interaction,
-                self,
-                received=received,
-                ephemeral=False,
-                auto_defer=self.auto_defer,
-                allowed_mentions=self._allowed_mentions,
-            )
-            return self._run_handler(
-                component, route.router, route.handler, params.copy
-            )
-        found_command = (
-            self._command(data) if interaction.type in COMMAND_INTERACTIONS else None
+        route, params = found
+        ctx = ComponentContext(
+            interaction,
+            self,
+            received=received,
+            ephemeral=False,
+            auto_defer=self.auto_defer,
+            allowed_mentions=self._allowed_mentions,
         )
-        if found_command is None:
+        return self._run_handler(ctx, route.router, route.handler, params.copy)
+
+    def _command_handler(
+        self, interaction: CommandInteraction, received: float
+    ) -> Coroutine[Any, Any, None] | None:
+        found = self._command(interaction.data)
+        if found is None:
             return None
-        command, options = found_command
-        if interaction.type is InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE:
-            return self._autocomplete_handler(interaction, received, command, options)
+        command, options = found
         ctx = Context(
             interaction,
             self,
@@ -606,13 +609,13 @@ class Bot(Router):
             ctx,
             command.router,
             command.callback,
-            partial(command.bind, options, data.resolved),
+            partial(command.bind, options, interaction.data.resolved),
         )
 
     def _command(
-        self, data: InteractionData
+        self, data: CommandData
     ) -> tuple[Command, tuple[InteractionDataOption, ...]] | None:
-        if data.type not in (None, CommandType.CHAT_INPUT) or data.name is None:
+        if data.type is not CommandType.CHAT_INPUT:
             return None
         names, options = _split_subcommands(data.options)
         node: Command | Group | None = self.commands.get(data.name)
@@ -621,16 +624,14 @@ class Bot(Router):
         return (node, options) if isinstance(node, Command) else None
 
     def _autocomplete_handler(
-        self,
-        interaction: Interaction,
-        received: float,
-        command: Command,
-        options: Sequence[InteractionDataOption],
+        self, interaction: AutocompleteInteraction, received: float
     ) -> Coroutine[Any, Any, None] | None:
+        found = self._command(interaction.data)
+        if found is None:
+            return None
+        command, options = found
         focused = next((option for option in options if option.focused), None)
-        function = (
-            None if focused is None else command.autocompletes.get(focused.name or "")
-        )
+        function = None if focused is None else command.autocompletes.get(focused.name)
         if focused is None or function is None:
             return None
         ctx = AutocompleteContext(
@@ -645,7 +646,7 @@ class Bot(Router):
 
     async def _run_handler(
         self,
-        ctx: Context,
+        ctx: Context | ComponentContext,
         owner: Router,
         handler: Handler,
         arguments: Callable[[], Mapping[str, Any]],
@@ -685,7 +686,7 @@ class Bot(Router):
 
     async def _handle_error(
         self,
-        ctx: Context | AutocompleteContext,
+        ctx: Context | ComponentContext | AutocompleteContext,
         owner: Router,
         handler: Callable[..., object],
         error: Exception,
@@ -737,11 +738,13 @@ async def _run_listener(listener: Listener, event: AnyEvent, name: str) -> None:
         )
 
 
-async def _answer_failure(ctx: Context | AutocompleteContext) -> None:
-    if ctx.state is ResponseState.PENDING:
-        if isinstance(ctx, AutocompleteContext):
+async def _answer_failure(
+    ctx: Context | ComponentContext | AutocompleteContext,
+) -> None:
+    if isinstance(ctx, AutocompleteContext):
+        if ctx.state is ResponseState.PENDING:
             await ctx._respond([])
-        else:
-            await ctx.respond(FAILURE_ANSWER, ephemeral=True)
-    elif ctx.state is ResponseState.DEFERRED and isinstance(ctx, Context):
+    elif ctx.state is ResponseState.PENDING:
+        await ctx.respond(FAILURE_ANSWER, ephemeral=True)
+    elif ctx.state is ResponseState.DEFERRED:
         await ctx.respond(FAILURE_ANSWER)

@@ -33,7 +33,7 @@ from bostie.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from bostie.models import Guild, Member, Model, UnavailableGuild
+from bostie.models import CommandInteraction, Guild, Member, Model, UnavailableGuild
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
 
@@ -333,8 +333,9 @@ def test_reprs_leave_out_interaction_and_voice_tokens() -> None:
     raw = RawEvent(
         shard_id=0, raw_json=created.raw_json, name=InteractionCreate.NAME, seq=1
     )
+    assert isinstance(created.interaction, CommandInteraction)
     token = created.interaction.token
-    assert token is not None and server.token is not None
+    assert server.token is not None
 
     for value, secret in [
         (created, token),

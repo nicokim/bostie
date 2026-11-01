@@ -1,3 +1,5 @@
+from typing import cast
+
 import msgspec
 
 from bostie.enums import (
@@ -9,7 +11,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models.base import Model, permissions_from
+from bostie.models.base import Model, decode
 from bostie.models.channel import PartialChannel
 from bostie.models.guild import Member, PartialMember, Role
 from bostie.models.message import Attachment, Message, PartialMessage, in_guild
@@ -19,11 +21,11 @@ from bostie.models.user import User
 class InteractionDataOption(Model, kw_only=True):
     """An option the user filled; subcommands and groups nest their options."""
 
-    name: str | None = None
-    type: OptionType | None = None
+    name: str
+    type: OptionType
     value: str | int | float | bool | None = None
     options: tuple["InteractionDataOption", ...] = ()
-    focused: bool | None = None
+    focused: bool = False
 
 
 class Resolved(Model, kw_only=True):
@@ -45,65 +47,118 @@ class Resolved(Model, kw_only=True):
         return Member(user=user, **msgspec.structs.asdict(member))
 
 
-class InteractionData(Model, kw_only=True):
-    """Command data or component data; the interaction's `type` tells which."""
+class CommandData(Model, kw_only=True):
+    """The command an interaction invokes and the options the user filled."""
 
-    id: int | None = None
-    name: str | None = None
-    type: CommandType | None = None
-    resolved: Resolved | None = None
+    id: int
+    name: str
+    type: CommandType
+    resolved: Resolved = msgspec.field(default_factory=Resolved)
     options: tuple[InteractionDataOption, ...] = ()
     guild_id: int | None = None
     target_id: int | None = None
-    custom_id: str | None = None
-    component_type: ComponentType | None = None
+
+
+class ComponentData(Model, kw_only=True):
+    """The component an interaction comes from and the values picked in it."""
+
+    custom_id: str
+    component_type: ComponentType
     values: tuple[str, ...] = ()
+    resolved: Resolved = msgspec.field(default_factory=Resolved)
 
 
-class Application(Model, kw_only=True):
+class PartialApplication(Model, kw_only=True):
     id: int
-    name: str | None = None
-    _flags: str | None = msgspec.field(default=None, name="flags_new")
-    bot_public: bool | None = None
+    _flags: str = msgspec.field(name="flags_new")
 
     @property
-    def flags(self) -> ApplicationFlags | None:
-        return None if self._flags is None else ApplicationFlags(int(self._flags))
+    def flags(self) -> ApplicationFlags:
+        return ApplicationFlags(int(self._flags))
 
 
-class Interaction(Model, kw_only=True):
-    """A slash command, autocomplete request or component use."""
-
+class _Interaction(Model, kw_only=True):
     id: int
-    application_id: int | None = None
-    type: InteractionType | None = None
-    data: InteractionData | None = None
+    application_id: int
+    type: InteractionType
+    token: str
+    version: int
+    _app_permissions: str = msgspec.field(name="app_permissions")
+    locale: str
+    authorizing_integration_owners: dict[str, int]
+    attachment_size_limit: int
     guild_id: int | None = None
     channel: PartialChannel | None = None
     channel_id: int | None = None
     member: Member | None = None
-    user: User | None = None
-    token: str | None = None
-    version: int | None = None
-    message: Message | None = None
-    _app_permissions: str | None = msgspec.field(default=None, name="app_permissions")
-    locale: str | None = None
+    _user: User | None = msgspec.field(default=None, name="user")
     guild_locale: str | None = None
-    authorizing_integration_owners: dict[str, int] | None = None
     context: InteractionContextType | None = None
-    attachment_size_limit: int | None = None
 
     def __post_init__(self) -> None:
-        if self.message is not None:
-            in_guild(self.message, self.guild_id)
+        if self.member is None and self._user is None:
+            missing = "user" if self.guild_id is None else "member"
+            raise ValueError(f"Object missing required field `{missing}`")
 
     @property
-    def app_permissions(self) -> Permissions | None:
-        return permissions_from(self._app_permissions)
-
-    @property
-    def author(self) -> User | None:
+    def user(self) -> User:
         """The user who triggered the interaction, in a guild or in a DM."""
-        if self.member is not None and self.member.user is not None:
-            return self.member.user
-        return self.user
+        return self.member.user if self.member is not None else cast(User, self._user)
+
+    @property
+    def app_permissions(self) -> Permissions:
+        return Permissions(int(self._app_permissions))
+
+
+class CommandInteraction(_Interaction, kw_only=True):
+    """A slash command run."""
+
+    data: CommandData
+
+
+class AutocompleteInteraction(_Interaction, kw_only=True):
+    """A request for choices while the user types an option."""
+
+    data: CommandData
+
+
+class ComponentInteraction(_Interaction, kw_only=True):
+    """A button press or a select menu pick."""
+
+    data: ComponentData
+    message: Message
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        in_guild(self.message, self.guild_id)
+
+
+class UnknownInteraction(Model, kw_only=True):
+    """An interaction bostie does not route, such as a modal submit; see `raw`."""
+
+    id: int
+    type: InteractionType
+
+
+type Interaction = (
+    CommandInteraction
+    | ComponentInteraction
+    | AutocompleteInteraction
+    | UnknownInteraction
+)
+
+INTERACTIONS: dict[
+    InteractionType,
+    type[CommandInteraction | ComponentInteraction | AutocompleteInteraction],
+] = {
+    InteractionType.APPLICATION_COMMAND: CommandInteraction,
+    InteractionType.MESSAGE_COMPONENT: ComponentInteraction,
+    InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE: AutocompleteInteraction,
+}
+
+
+def decode_interaction(data: bytes) -> Interaction:
+    """Decode an interaction into the model of its type, or `UnknownInteraction`."""
+    unknown = decode(UnknownInteraction, data)
+    model = INTERACTIONS.get(unknown.type)
+    return unknown if model is None else decode(model, data)

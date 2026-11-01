@@ -14,14 +14,13 @@ from bostie.enums import DiscordIntEnum, Permissions
 from bostie.events import (
     EVENTS,
     GuildCreate,
-    InteractionCreate,
     MessageCreate,
     decode_event,
 )
 from bostie.models import (
     ActionRow,
-    Application,
     Channel,
+    CommandInteraction,
     Guild,
     Member,
     Message,
@@ -38,7 +37,6 @@ REST_MODELS: dict[str, type[Model]] = {
     "channel": Channel,
     "guild": Guild,
     "message": Message,
-    "application_me": Application,
 }
 ENUM_KEYS = {
     "type",
@@ -338,19 +336,15 @@ def test_permissions_beyond_64_bits_decode() -> None:
     channel["permissions"] = str(bit | Permissions.SEND_MESSAGES)
 
     created = decode_event(GuildCreate, 0, msgspec.json.encode(guild))
-    received = decode_event(InteractionCreate, 0, msgspec.json.encode(interaction))
+    received = decode(CommandInteraction, msgspec.json.encode(interaction))
 
     assert created is not None
-    assert received is not None
     role_permissions = created.roles[3].permissions
     assert role_permissions & bit
     assert Permissions.ADMINISTRATOR in role_permissions
     decoded_overwrite = created.channels[3].permission_overwrites[0]
     assert decoded_overwrite.allow == bit | Permissions.VIEW_CHANNEL
     assert decoded_overwrite.deny == bit
-    assert received.interaction.app_permissions == bit
-    data = received.interaction.data
-    assert data is not None and data.resolved is not None
-    assert data.resolved.channels is not None
-    resolved_channel = data.resolved.channels[int(channel_id)]
+    assert received.app_permissions == bit
+    resolved_channel = received.data.resolved.channels[int(channel_id)]
     assert resolved_channel.permissions == bit | Permissions.SEND_MESSAGES

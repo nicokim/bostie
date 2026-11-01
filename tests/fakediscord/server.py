@@ -266,7 +266,7 @@ class FakeDiscord(VoiceGateway):
         """Send a dispatch event, kept for RESUME replay, and return its seq."""
         if self._session_id is None:
             raise RuntimeError("no gateway session yet; await next_identify() first")
-        if name == "INTERACTION_CREATE":
+        if name == "INTERACTION_CREATE" and "token" in d:
             self._interactions[d["token"]] = d
         seq = self._append(name, d)
         if self.connections and self.connections[-1].live:

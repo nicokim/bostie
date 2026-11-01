@@ -12,6 +12,7 @@ from bostie.enums import (
     ChannelFlags,
     ChannelType,
     ComponentType,
+    InteractionType,
     MessageFlags,
     MessageType,
     OptionType,
@@ -21,17 +22,18 @@ from bostie.file import File
 from bostie.models import (
     ActionRow,
     AllowedMentions,
-    Application,
     Attachment,
+    AutocompleteInteraction,
     Button,
     Channel,
     ChannelSelect,
+    CommandInteraction,
+    ComponentInteraction,
     Container,
     Embed,
     EmbedField,
     FileComponent,
     Guild,
-    Interaction,
     MediaGallery,
     Member,
     Message,
@@ -44,11 +46,13 @@ from bostie.models import (
     TextDisplay,
     Thumbnail,
     UnknownComponent,
+    UnknownInteraction,
     User,
     UserSelect,
     build_message,
     decode,
     decode_components,
+    decode_interaction,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
@@ -68,7 +72,6 @@ def payload(name: str) -> bytes:
         ("rest/channel.json", Channel),
         ("rest/guild.json", Guild),
         ("rest/message.json", Message),
-        ("rest/application_me.json", Application),
     ],
 )
 def test_rest_results_keep_their_payload(name: str, model: type[Model]) -> None:
@@ -91,7 +94,9 @@ def test_nested_objects_have_no_raw_payload() -> None:
 def test_snowflakes_permissions_and_timestamps_are_typed() -> None:
     member = decode(Member, payload("rest/member.json"))
     guild = decode(Guild, payload("events/GUILD_UPDATE.json"))
-    interaction = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
+    interaction = decode(
+        CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
+    )
 
     assert member.user.id == 820774541721731073
     assert member.joined_at == datetime(2025, 4, 18, 19, 3, 11, 987000, tzinfo=UTC)
@@ -239,9 +244,10 @@ def test_a_decoded_select_sent_back_keeps_its_default_values() -> None:
 
 
 def test_a_component_interaction_links_its_message_to_the_guild() -> None:
-    interaction = decode(Interaction, payload("events/INTERACTION_CREATE.button.json"))
+    interaction = decode(
+        ComponentInteraction, payload("events/INTERACTION_CREATE.button.json")
+    )
     message = interaction.message
-    assert message is not None
 
     assert message.jump_url == (
         f"https://discord.com/channels/{interaction.guild_id}/"
@@ -255,10 +261,9 @@ def test_a_component_interaction_links_its_message_to_the_guild() -> None:
 
 
 def test_resolved_options_convert_to_their_models() -> None:
-    interaction = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
-    assert interaction.data is not None
-    resolved = interaction.data.resolved
-    assert resolved is not None
+    resolved = decode(
+        CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
+    ).data.resolved
 
     member = Member.from_resolved(resolved, 820774541721731073)
     user = User.from_resolved(resolved, 308882807193731073)
@@ -282,9 +287,10 @@ def test_resolved_options_convert_to_their_models() -> None:
 
 
 def test_option_values_keep_their_json_types() -> None:
-    interaction = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
-    assert interaction.data is not None
-    (group,) = interaction.data.options
+    data = decode(
+        CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
+    ).data
+    (group,) = data.options
     (subcommand,) = group.options
 
     values = {option.name: option.value for option in subcommand.options}
@@ -298,37 +304,48 @@ def test_option_values_keep_their_json_types() -> None:
     assert values["target"] == "820774541721731073"
 
 
-def test_author_comes_from_the_member_in_guilds_and_the_user_in_dms() -> None:
-    guild = decode(Interaction, payload("events/INTERACTION_CREATE.command.json"))
-    dm = decode(Interaction, payload("events/INTERACTION_CREATE.command_dm.json"))
-    assert dm.data is not None
-    assert dm.data.resolved is not None
+def test_the_user_comes_from_the_member_in_guilds_and_the_user_in_dms() -> None:
+    guild = decode(
+        CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
+    )
+    dm = decode(
+        CommandInteraction, payload("events/INTERACTION_CREATE.command_dm.json")
+    )
 
-    assert guild.author is not None
-    assert guild.author.username == "grace"
-    assert dm.author is not None
-    assert dm.author.username == "grace"
+    assert guild.member is not None
+    assert guild.user is guild.member.user
+    assert guild.user.username == "grace"
+    assert dm.user.username == "grace"
     assert dm.member is None
     assert Member.from_resolved(dm.data.resolved, 820774541721731073) is None
     assert User.from_resolved(dm.data.resolved, 820774541721731073) is not None
 
 
-def test_component_and_autocomplete_data() -> None:
-    button = decode(Interaction, payload("events/INTERACTION_CREATE.button.json"))
-    select = decode(Interaction, payload("events/INTERACTION_CREATE.select.json"))
-    autocomplete = decode(
-        Interaction, payload("events/INTERACTION_CREATE.autocomplete.json")
-    )
-    assert button.data is not None
-    assert select.data is not None
-    assert autocomplete.data is not None
+def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> None:
+    names = ("command", "button", "select", "autocomplete")
+    modal = json.loads(payload("events/INTERACTION_CREATE.command.json")) | {
+        "type": 5,
+        "data": {"custom_id": "form", "components": []},
+    }
 
+    command, button, select, autocomplete = (
+        decode_interaction(payload(f"events/INTERACTION_CREATE.{name}.json"))
+        for name in names
+    )
+    unknown = decode_interaction(msgspec.json.encode(modal))
+
+    assert isinstance(command, CommandInteraction)
+    assert isinstance(button, ComponentInteraction)
     assert button.data.custom_id == "ticket:close:42"
     assert button.data.component_type is ComponentType.BUTTON
-    assert button.message is not None
     assert len(button.message.components) == 3
+    assert isinstance(select, ComponentInteraction)
     assert select.data.values == ("ant", "lyrebird")
-    assert [option.focused for option in autocomplete.data.options] == [None, True]
+    assert isinstance(autocomplete, AutocompleteInteraction)
+    assert [option.focused for option in autocomplete.data.options] == [False, True]
+    assert isinstance(unknown, UnknownInteraction)
+    assert unknown.type is InteractionType.MODAL_SUBMIT
+    assert unknown.raw == modal
 
 
 def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:

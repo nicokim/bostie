@@ -40,7 +40,7 @@ class Interactions:
         self.fake = fake
         self.bot = bot
 
-    async def answer[C: Context](
+    async def answer[C: Context | ComponentContext](
         self,
         kind: type[C],
         handler: Callable[[C], Awaitable[None]],
@@ -184,27 +184,6 @@ def test_response_state_machine(
         await on.answer(ComponentContext, handler)
 
     run_bot(scenario)
-
-
-def test_the_user_is_the_member_in_guilds_the_user_in_dms_and_never_none() -> None:
-    dm_user = payloads.fixture("events/INTERACTION_CREATE.command_dm")["user"]
-    names: list[str | None] = []
-
-    async def scenario(on: Interactions) -> None:
-        async def name(ctx: Context) -> None:
-            names.append(ctx.user.username)
-
-        async def nobody(ctx: Context) -> None:
-            with pytest.raises(RuntimeError, match="without a user"):
-                _ = ctx.user
-
-        await on.answer(Context, name)
-        await on.answer(Context, name, guild_id=None, member=None, user=dm_user)
-        await on.answer(Context, nobody, guild_id=None, member=None, user=None)
-
-    run_bot(scenario)
-
-    assert names == ["grace", "grace"]
 
 
 def test_callbacks_target_the_interaction_and_webhooks_the_application() -> None:
@@ -355,7 +334,7 @@ def test_autocomplete_sees_the_options_filled_so_far_and_the_command_name() -> N
 def test_command_name_includes_groups_and_subcommands() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        names: list[str | None] = []
+        names: list[str] = []
         inspect = bot.group("kit", "Kit").group("inspect", "Inspect")
 
         @inspect.command(name="all")
@@ -363,17 +342,11 @@ def test_command_name_includes_groups_and_subcommands() -> None:
             names.append(ctx.command_name)
             await ctx.respond("ok")
 
-        @bot.on_component("tap")
-        async def tap(ctx: ComponentContext) -> None:
-            names.append(ctx.command_name)
-            await ctx.update("ok")
-
         subcommand = payloads.group("inspect", payloads.subcommand("all"))
         async with running(bot, fake):
             await fake.interaction(2, payloads.command("kit", subcommand))
-            await fake.interaction(3, payloads.button("tap"))
 
-        assert names == ["kit inspect all", None]
+        assert names == ["kit inspect all"]
 
     run(scenario)
 

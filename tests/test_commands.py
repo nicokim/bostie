@@ -598,12 +598,11 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
         ([filled("name", 3, "x"), filled("count", 4, True)], Resolved(), "is INTEGER"),
         ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], Resolved(), "choices"),
         ([filled("name", 3, "x"), filled("member", 6, "9")], Resolved(), "no Member"),
-        ([filled("name", 3, "x"), filled("member", 6, "9")], None, "no Member"),
         ([filled("name", 3, "x"), filled("member", 6, "abc")], Resolved(), "no Member"),
     ],
 )
 def test_bind_rejects_unexpected_input(
-    given: list[InteractionDataOption], resolved: Resolved | None, problem: str
+    given: list[InteractionDataOption], resolved: Resolved, problem: str
 ) -> None:
     router = Router()
 

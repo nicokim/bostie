@@ -211,7 +211,7 @@ class _Parameter:
     def required(self) -> bool:
         return bool(self.payload["required"])
 
-    def convert(self, value: Any, resolved: Resolved | None) -> object:
+    def convert(self, value: Any, resolved: Resolved) -> object:
         if self.models:
             return self._resolve(value, resolved)
         if type(value) not in VALUE_TYPES[self.type]:
@@ -229,9 +229,9 @@ class _Parameter:
                 f"option {self.name!r} got {value!r}, which is not one of its choices"
             ) from None
 
-    def _resolve(self, value: object, resolved: Resolved | None) -> object:
+    def _resolve(self, value: object, resolved: Resolved) -> object:
         snowflake = int(value) if isinstance(value, str) and value.isdecimal() else None
-        if snowflake is not None and resolved is not None:
+        if snowflake is not None:
             for model in self.models:
                 found = model.from_resolved(resolved, snowflake)
                 if found is not None:
@@ -354,12 +354,12 @@ class Command(_Node):
         return self.router.bot.auto_defer
 
     def bind(
-        self, options: Sequence[InteractionDataOption], resolved: Resolved | None
+        self, options: Sequence[InteractionDataOption], resolved: Resolved
     ) -> dict[str, Any]:
         """Turn the leaf options of an invocation into keyword arguments."""
         arguments: dict[str, Any] = {}
         for option in options:
-            parameter = self._by_option_name.get(option.name or "")
+            parameter = self._by_option_name.get(option.name)
             if parameter is None or option.type != parameter.type:
                 raise OptionConversionError(
                     f"/{self.qualified_name} has no option {option.name!r} "

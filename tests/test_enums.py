@@ -19,7 +19,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models import Application, PartialMember, PartialMessage, decode
+from bostie.models import PartialApplication, PartialMember, PartialMessage, decode
 
 MEMBER = b'{"roles": [], "joined_at": null, "flags": 0, "permissions": "%d"}'
 
@@ -43,7 +43,7 @@ def test_unknown_value_decodes_to_a_stable_pseudo_member() -> None:
 def test_application_flags_keep_unknown_bits_beyond_64_from_a_string() -> None:
     bits = (1 << 70) | ApplicationFlags.APPLICATION_COMMAND_BADGE
 
-    flags = decode(Application, b'{"id": "1", "flags_new": "%d"}' % bits).flags
+    flags = decode(PartialApplication, b'{"id": "1", "flags_new": "%d"}' % bits).flags
 
     assert flags == bits
     assert ApplicationFlags.APPLICATION_COMMAND_BADGE in flags

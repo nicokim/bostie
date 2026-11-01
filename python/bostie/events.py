@@ -6,13 +6,13 @@ import msgspec
 
 from bostie.enums import Intents
 from bostie.models import (
-    Application,
     Channel,
     Guild,
     Interaction,
     Member,
     Message,
     Model,
+    PartialApplication,
     PartialEmoji,
     Role,
     UnavailableGuild,
@@ -20,6 +20,7 @@ from bostie.models import (
     VoiceState,
 )
 from bostie.models.base import decode, decoder, redacted_repr, shown_fields
+from bostie.models.interaction import decode_interaction
 from bostie.models.message import in_guild
 
 logger = logging.getLogger("bostie.events")
@@ -65,7 +66,7 @@ class Ready(Event, kw_only=True):
 
     user: User | None = None
     guilds: tuple[UnavailableGuild, ...] = ()
-    application: Application | None = None
+    application: PartialApplication | None = None
     session_id: str | None = None
 
 
@@ -330,7 +331,7 @@ class InteractionCreate(Event, kw_only=True):
     @classmethod
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
-            shard_id=shard_id, raw_json=data, interaction=decode(Interaction, data)
+            shard_id=shard_id, raw_json=data, interaction=decode_interaction(data)
         )
 
 
