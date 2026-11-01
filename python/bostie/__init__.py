@@ -1,4 +1,4 @@
-from bostie import ui, voice
+from bostie import activity, ui, voice
 from bostie.bot import Bot
 from bostie.commands import Choice, Option, Range
 from bostie.context import (
@@ -395,6 +395,7 @@ __all__ = [
     "VoiceState",
     "WebhookMessage",
     "Weekday",
+    "activity",
     "ui",
     "voice",
 ]

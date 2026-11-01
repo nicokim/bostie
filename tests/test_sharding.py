@@ -6,7 +6,7 @@ from typing import Literal
 import pytest
 from fakediscord import Connection, FakeDiscord, payloads, run
 
-from bostie import Bot
+from bostie import Bot, Status, activity
 from bostie.events import GuildCreate, Ready
 
 GUILD_ON_SHARD_1 = 1 << 22
@@ -74,6 +74,36 @@ def test_a_bot_runs_every_recommended_shard_and_routes_by_guild() -> None:
             shards = {connection.shard: connection for connection in fake.connections}
             assert [op for op in ops(shards[0]) if op != 1] == [2, 3]
             assert [op for op in ops(shards[1]) if op != 1] == [2, 8, 3]
+
+    run(scenario)
+
+
+def test_update_presence_reaches_every_shard_and_every_later_identify() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        recommend(fake, shards=2, max_concurrency=2)
+        release = fake.hold_hello()
+        bot = Bot(api_url=fake.api_url)
+        first = asyncio.ensure_future(bot.wait_for(Ready))
+        async with starting(bot, fake):
+            await first
+            await bot.update_presence(
+                status=Status.DND, activities=[activity.custom("rolling dice")]
+            )
+            release.set()
+            identifies = [await fake.next_identify() for _ in range(2)]
+            await received(fake, 3, 3)
+
+        presence = {
+            "since": None,
+            "activities": [
+                {"name": "Custom Status", "type": 4, "state": "rolling dice"}
+            ],
+            "status": "dnd",
+            "afk": False,
+        }
+        assert identifies[1]["presence"] == presence
+        for connection in fake.connections:
+            assert [p["d"] for p in connection.received if p["op"] == 3] == [presence]
 
     run(scenario)
 

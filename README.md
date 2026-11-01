@@ -233,7 +233,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `auto_defer`: seconds before an unanswered handler is deferred, or `None` to never defer. `@bot.command(auto_defer=...)` overrides it for one command.
 - `cache`: `False` leaves `bot.cache` empty. By default it keeps guilds, channels, threads and roles current.
 - `allowed_mentions`: who the bot's messages may ping. The default allows users and roles, not `@everyone`.
-- `presence`: the `presence` object sent with identify, as a dict in Discord's format.
+- `status`, `activities`, `afk` and `idle_since`: the presence the bot shows, online with no activity by default. `bostie.activity` builds activities, such as `activity.playing("chess")` or `activity.custom("Rolling dice")`. `await bot.update_presence(...)` changes any of them on every shard, and sessions that start later show the change too.
 - `global_rate_limit`: requests per second across all routes, 50 by default. Interaction responses and follow-ups do not count.
 - `api_url`: the REST API base URL, for a proxy or a fake Discord in tests.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.

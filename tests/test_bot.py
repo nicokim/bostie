@@ -7,6 +7,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated, Any, Literal
 
@@ -36,8 +37,10 @@ from bostie import (
     Range,
     Router,
     StateError,
+    Status,
     UnexpectedResponse,
     WebhookMessage,
+    activity,
     ui,
 )
 from bostie.commands import CommandSettings
@@ -160,16 +163,13 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
 def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         route = f"/applications/{fake.application_id}/commands"
-        presence: dict[str, Any] = {
-            "since": None,
-            "activities": [],
-            "status": "idle",
-            "afk": False,
-        }
         bot = example_bot(
             fake,
             intents=Intents.DEFAULT | Intents.MESSAGE_CONTENT,
-            presence=presence,
+            status=Status.IDLE,
+            activities=[activity.streaming("dice", "https://twitch.tv/bostie")],
+            afk=True,
+            idle_since=datetime(2026, 11, 1, tzinfo=UTC),
         )
         async with running(bot, fake):
             identify = await fake.next_identify()
@@ -191,7 +191,14 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
         assert bot.user.id == int(fake.bot_user["id"])
         assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
         assert "capabilities" not in identify
-        assert identify["presence"] == presence
+        assert identify["presence"] == {
+            "since": 1_793_491_200_000,
+            "activities": [
+                {"name": "dice", "type": 1, "url": "https://twitch.tv/bostie"}
+            ],
+            "status": "idle",
+            "afk": True,
+        }
 
         fake.requests.clear()
         again = example_bot(fake)

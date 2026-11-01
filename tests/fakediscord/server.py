@@ -167,6 +167,7 @@ class FakeDiscord(VoiceGateway):
         self._sessions: dict[int, _Session] = {}
         self._identifies: asyncio.Queue[Json] = asyncio.Queue()
         self._identify_holds: dict[int, asyncio.Event] = {}
+        self._hello_holds: list[asyncio.Event] = []
         self._resumes: asyncio.Queue[Json] = asyncio.Queue()
         self._interactions: dict[str, Json] = {}
         self._responses: dict[str, dict[str, Json]] = {}
@@ -265,7 +266,7 @@ class FakeDiscord(VoiceGateway):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        for held in self._identify_holds.values():
+        for held in [*self._identify_holds.values(), *self._hello_holds]:
             held.set()
         for connection in self.connections:
             await connection.ws.close(code=WSCloseCode.GOING_AWAY)
@@ -337,6 +338,12 @@ class FakeDiscord(VoiceGateway):
         release = self._identify_holds[shard] = asyncio.Event()
         return release
 
+    def hold_hello(self) -> asyncio.Event:
+        """Leave the next gateway connection without HELLO until the event is set."""
+        release = asyncio.Event()
+        self._hello_holds.append(release)
+        return release
+
     async def next_resume(self) -> Json:
         """Wait for the next RESUME and return its ``d``."""
         return await self._resumes.get()
@@ -404,6 +411,8 @@ class FakeDiscord(VoiceGateway):
         compress = None if self._zstd_stream is None else self._zstd_stream()
         connection = Connection(request, ws, compress)
         self.connections.append(connection)
+        if self._hello_holds:
+            await self._hello_holds.pop(0).wait()
         hello = {"heartbeat_interval": self._heartbeat_interval, "_trace": [TRACE]}
         await connection.send(_frame(None, None, 10, hello))
         while (message := await ws.receive()).type in (

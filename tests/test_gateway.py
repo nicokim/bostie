@@ -21,13 +21,22 @@ from bostie.gateway import GatewayClient
 
 type Scenario = Callable[["Harness"], Coroutine[Any, Any, None]]
 
+PRESENCE: dict[str, Any] = {
+    "since": None,
+    "activities": [],
+    "status": "online",
+    "afk": False,
+}
+
 
 class Harness:
     def __init__(self, fake: FakeDiscord, token: str) -> None:
         self.fake = fake
         self.deliveries: asyncio.Queue[GatewayDelivery] = asyncio.Queue()
         self.bridge = Bridge(token, fake.api_url, self._on_gateway, global_limit=50)
-        self.gateway = GatewayClient(self.bridge, token, shard_count=1, shard_ids=[0])
+        self.gateway = GatewayClient(
+            self.bridge, token, intents=513, shard_count=1, shard_ids=[0]
+        )
 
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
         self.deliveries.put_nowait(delivery)
@@ -37,9 +46,9 @@ class Harness:
             case _:
                 pass
 
-    def start(self, **identify: Any) -> None:
+    def start(self) -> None:
         self.started = asyncio.create_task(
-            self.gateway._start(self.fake.gateway_url, intents=513, **identify)
+            self.gateway._start(self.fake.gateway_url, PRESENCE)
         )
 
     async def next_dispatch(self) -> tuple[int, str, Any]:
@@ -50,8 +59,8 @@ class Harness:
                 case _:
                     pass
 
-    async def ready(self, **identify: Any) -> None:
-        self.start(**identify)
+    async def ready(self) -> None:
+        self.start()
         await self.fake.next_identify()
         await self.next_dispatch()
 
@@ -80,7 +89,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
         gateway._identify_limit(
             {"remaining": 0, "total": 1, "reset_after": 300, "max_concurrency": 1}
         )
-        harness.start(presence=MappingProxyType({"status": "idle"}))
+        harness.start()
 
         assert await harness.deliveries.get() == (
             "disconnected",
@@ -99,7 +108,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
                 "device": "bostie",
             },
             "shard": [0, 1],
-            "presence": {"status": "idle"},
+            "presence": PRESENCE,
         }
         seq, name, ready = await harness.next_dispatch()
         assert (seq, name, ready["user"]) == (1, "READY", fake.bot_user)
@@ -135,7 +144,7 @@ def test_start_on_a_bridge_that_is_not_running_starts_no_shard() -> None:
         async with FakeDiscord() as fake:
             harness = Harness(fake, fake.token)
             with pytest.raises(RuntimeError, match="not running"):
-                await harness.gateway._start(fake.gateway_url, intents=513)
+                await harness.gateway._start(fake.gateway_url, PRESENCE)
 
             async with harness.bridge, asyncio.timeout(10):
                 await harness.ready()
@@ -308,7 +317,8 @@ def test_status_deliveries_are_logged_at_their_level(
         "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
     )
 
-    GatewayClient(bridge, "token", shard_count=1, shard_ids=[0])._handle(delivery)
+    gateway = GatewayClient(bridge, "token", intents=0, shard_count=1, shard_ids=[0])
+    gateway._handle(delivery)
     asyncio.run(bridge.close())
 
     assert [record.levelno for record in caplog.records] == [level]

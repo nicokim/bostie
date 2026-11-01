@@ -7,12 +7,14 @@ import threading
 import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import partial
 from typing import Any, Literal, Unpack, cast, override
 
 from bostie import sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie.activity import ActivityDict
 from bostie.cache import Cache
 from bostie.commands import (
     AutocompleteCallback,
@@ -31,7 +33,7 @@ from bostie.context import (
     _split_subcommands,
 )
 from bostie.custom_id import ComponentRoute
-from bostie.enums import CommandType, Intents
+from bostie.enums import CommandType, Intents, Status
 from bostie.errors import StateError, TransportError
 from bostie.events import (
     EVENTS,
@@ -44,7 +46,12 @@ from bostie.events import (
     UserUpdate,
     decode_event,
 )
-from bostie.gateway import GatewayClient
+from bostie.gateway import (
+    PRESENCE_OPTIONS,
+    GatewayClient,
+    PresenceOptions,
+    presence_fields,
+)
 from bostie.http import HTTPClient
 from bostie.models import (
     AllowedMentions,
@@ -136,7 +143,10 @@ class Bot(Router):
         auto_defer: float | None = 2.5,
         cache: bool = True,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
-        presence: Mapping[str, Any] | None = None,
+        status: Status = Status.ONLINE,
+        activities: Iterable[ActivityDict] = (),
+        afk: bool = False,
+        idle_since: datetime | None = None,
         global_rate_limit: int = 50,
         api_url: str = "https://discord.com/api/v10",
         voice: Defaults = DEFAULT_VOICE,
@@ -156,7 +166,14 @@ class Bot(Router):
         self.auto_defer = auto_defer
         self._caching = cache
         self._allowed_mentions = allowed_mentions
-        self._presence = presence
+        self._presence = presence_fields(
+            {
+                "status": status,
+                "activities": activities,
+                "afk": afk,
+                "idle_since": idle_since,
+            }
+        )
         self._global_rate_limit = global_rate_limit
         self._api_url = api_url
         self._bridge: Bridge | None = None
@@ -244,6 +261,7 @@ class Bot(Router):
                 self._gateway = gateway = GatewayClient(
                     bridge,
                     token,
+                    intents=self._intents,
                     shard_count=count,
                     shard_ids=range(count)
                     if isinstance(self._shard_ids, str)
@@ -262,11 +280,7 @@ class Bot(Router):
                 self._warn_about_privileged_intents()
                 gateway._filter(self._dispatch_names())
                 gateway._identify_limit(info["session_start_limit"])
-                await gateway._start(
-                    info["url"],
-                    intents=self._intents,
-                    presence=self._presence,
-                )
+                await gateway._start(info["url"], self._presence)
             except (TransportError, StateError):
                 if self._closing is None:
                     raise
@@ -313,6 +327,13 @@ class Bot(Router):
             if not waiters:
                 del self._waiters[event.NAME]
                 self._refresh_filter()
+
+    async def update_presence(self, **options: Unpack[PresenceOptions]) -> None:
+        """Change what the bot shows on every shard, and on sessions it starts later."""
+        check_keys(options, PRESENCE_OPTIONS, "presence options")
+        self._presence |= presence_fields(options)
+        if self._gateway is not None:
+            self._gateway._update_presence(self._presence)
 
     async def sync_commands(self) -> list[sync.SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""

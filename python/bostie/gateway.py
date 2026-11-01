@@ -3,9 +3,12 @@ import contextlib
 import logging
 import sys
 from collections.abc import Iterable, Mapping
-from typing import Any
+from datetime import datetime
+from typing import Any, TypedDict
 
 from bostie._bridge import Bridge, StatusDelivery
+from bostie.activity import ActivityDict
+from bostie.enums import Status
 from bostie.errors import (
     BostieError,
     GatewayClosed,
@@ -26,6 +29,32 @@ CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
 }
 
 log = logging.getLogger("bostie.gateway")
+
+
+class PresenceOptions(TypedDict, total=False):
+    """What the bot shows; `bot.update_presence()` keeps each option not given."""
+
+    status: Status
+    activities: Iterable[ActivityDict]
+    afk: bool
+    idle_since: datetime | None
+
+
+PRESENCE_OPTIONS = PresenceOptions.__optional_keys__
+
+
+def presence_fields(options: PresenceOptions) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    if "idle_since" in options:
+        since = options["idle_since"]
+        fields["since"] = None if since is None else int(since.timestamp() * 1000)
+    if "activities" in options:
+        fields["activities"] = list(options["activities"])
+    if "status" in options:
+        fields["status"] = options["status"]
+    if "afk" in options:
+        fields["afk"] = options["afk"]
+    return fields
 
 
 class Shard:
@@ -60,11 +89,13 @@ class GatewayClient:
         bridge: Bridge,
         token: str,
         *,
+        intents: int,
         shard_count: int,
         shard_ids: Iterable[int],
     ) -> None:
         self._bridge = bridge
         self._token = token
+        self._intents = intents
         self.shard_count = shard_count
         self._shards = {shard_id: Shard(bridge, shard_id) for shard_id in shard_ids}
         self._running: set[int] = set()
@@ -94,34 +125,38 @@ class GatewayClient:
             session_start_limit["max_concurrency"],
         )
 
-    async def _start(
-        self,
-        url: str,
-        *,
-        intents: int,
-        presence: Mapping[str, Any] | None = None,
-    ) -> None:
+    async def _start(self, url: str, presence: Mapping[str, Any]) -> None:
         stopped = self._bridge.create_future()
         for shard_id in self._shards:
-            identify: dict[str, Any] = {
+            identify = self._identify(shard_id, presence)
+            self._bridge.core.gateway_start(shard_id, url, identify)
+            self._running.add(shard_id)
+        self._stopped = stopped
+        await asyncio.shield(stopped)
+
+    def _update_presence(self, presence: Mapping[str, Any]) -> None:
+        for shard_id in self._running:
+            identify = self._identify(shard_id, presence)
+            self._bridge.core.gateway_identify(shard_id, identify)
+            self._shards[shard_id].send(PRESENCE_UPDATE, presence)
+
+    def _identify(self, shard_id: int, presence: Mapping[str, Any]) -> bytes:
+        return encoder.encode(
+            {
                 "token": self._token,
-                "intents": intents,
+                "intents": self._intents,
                 "properties": {
                     "os": sys.platform,
                     "browser": "bostie",
                     "device": "bostie",
                 },
                 "shard": [shard_id, self.shard_count],
+                "presence": presence,
             }
-            if presence is not None:
-                identify["presence"] = presence
-            self._bridge.core.gateway_start(shard_id, url, encoder.encode(identify))
-            self._running.add(shard_id)
-        self._stopped = stopped
-        await asyncio.shield(stopped)
+        )
 
     def send(self, op: int, d: Any = None) -> None:
-        """Send a gateway command such as op 8, 31 or 43 to the shard it belongs to.
+        """Send a gateway command such as op 31 or 43 to the shard it belongs to.
 
         Op 3 goes to every shard, a payload with a guild_id to that guild's shard,
         anything else to shard 0. Replies arrive only for event names someone

@@ -543,7 +543,11 @@ class FakeBot:
         self.cache = Cache()
         self.http = HTTPClient(cast("Bridge", self.rest))
         self.gateway = GatewayClient(
-            cast("Bridge", self.rest), "token", shard_count=1, shard_ids=[0]
+            cast("Bridge", self.rest),
+            "token",
+            intents=intents,
+            shard_count=1,
+            shard_ids=[0],
         )
         self._intents = intents
         self.events: list[VoiceEvent] = []
