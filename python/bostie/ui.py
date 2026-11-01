@@ -1,11 +1,23 @@
 from collections.abc import Iterable, Mapping
-from typing import Any, Literal
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from bostie.custom_id import MAX_CUSTOM_ID
 from bostie.enums import ButtonStyle, ComponentType
 
 __all__ = [
+    "ButtonDict",
     "ButtonStyle",
+    "ContainerDict",
+    "FileDict",
+    "GalleryItemDict",
+    "MediaGalleryDict",
+    "RowDict",
+    "SectionDict",
+    "SelectDict",
+    "SelectOptionDict",
+    "SeparatorDict",
+    "TextDict",
+    "ThumbnailDict",
     "button",
     "container",
     "file",
@@ -27,7 +39,93 @@ type InteractiveStyle = Literal[
 ]
 
 
-def row(*components: Mapping[str, Any]) -> dict[str, Any]:
+class ButtonDict(TypedDict):
+    type: Literal[ComponentType.BUTTON]
+    style: ButtonStyle
+    label: NotRequired[str]
+    emoji: NotRequired[Mapping[str, Any]]
+    custom_id: NotRequired[str]
+    url: NotRequired[str]
+    disabled: bool
+
+
+class SelectOptionDict(TypedDict):
+    label: str
+    value: str
+    description: NotRequired[str]
+    emoji: NotRequired[Mapping[str, Any]]
+    default: bool
+
+
+class SelectDict(TypedDict):
+    type: Literal[ComponentType.STRING_SELECT]
+    custom_id: str
+    options: list[SelectOptionDict]
+    placeholder: NotRequired[str]
+    min_values: int
+    max_values: int
+    disabled: bool
+
+
+class RowDict(TypedDict):
+    type: Literal[ComponentType.ACTION_ROW]
+    components: list[ButtonDict | SelectDict]
+
+
+class TextDict(TypedDict):
+    type: Literal[ComponentType.TEXT_DISPLAY]
+    content: str
+
+
+class ThumbnailDict(TypedDict):
+    type: Literal[ComponentType.THUMBNAIL]
+    media: dict[str, str]
+    description: NotRequired[str]
+    spoiler: bool
+
+
+class SectionDict(TypedDict):
+    type: Literal[ComponentType.SECTION]
+    components: list[TextDict]
+    accessory: ButtonDict | ThumbnailDict
+
+
+class GalleryItemDict(TypedDict):
+    media: dict[str, str]
+    description: NotRequired[str]
+    spoiler: bool
+
+
+class MediaGalleryDict(TypedDict):
+    type: Literal[ComponentType.MEDIA_GALLERY]
+    items: list[GalleryItemDict]
+
+
+class FileDict(TypedDict):
+    type: Literal[ComponentType.FILE]
+    file: dict[str, str]
+    spoiler: bool
+
+
+class SeparatorDict(TypedDict):
+    type: Literal[ComponentType.SEPARATOR]
+    divider: bool
+    spacing: Literal[1, 2]
+
+
+type _ContainerChild = (
+    RowDict | TextDict | SectionDict | MediaGalleryDict | FileDict | SeparatorDict
+)
+
+
+class ContainerDict(TypedDict):
+    type: Literal[ComponentType.CONTAINER]
+    components: list[_ContainerChild]
+    accent_color: NotRequired[int]
+    spoiler: bool
+
+
+def row(*components: ButtonDict | SelectDict) -> RowDict:
     """An action row holding up to five buttons or one select menu."""
     return {"type": ComponentType.ACTION_ROW, "components": list(components)}
 
@@ -39,50 +137,59 @@ def button(
     style: InteractiveStyle = ButtonStyle.SECONDARY,
     emoji: _Emoji | None = None,
     disabled: bool = False,
-) -> dict[str, Any]:
+) -> ButtonDict:
     """A button that sends `custom_id` to the bot when clicked."""
-    return _present(
-        type=ComponentType.BUTTON,
-        style=style,
-        label=label,
-        emoji=_emoji(emoji),
-        custom_id=_checked(custom_id),
-        disabled=disabled,
+    return cast(
+        ButtonDict,
+        _present(
+            type=ComponentType.BUTTON,
+            style=style,
+            label=label,
+            emoji=_emoji(emoji),
+            custom_id=_checked(custom_id),
+            disabled=disabled,
+        ),
     )
 
 
 def link_button(
     label: str | None, url: str, *, emoji: _Emoji | None = None, disabled: bool = False
-) -> dict[str, Any]:
+) -> ButtonDict:
     """A button that opens `url` and never reaches the bot."""
-    return _present(
-        type=ComponentType.BUTTON,
-        style=ButtonStyle.LINK,
-        label=label,
-        emoji=_emoji(emoji),
-        url=url,
-        disabled=disabled,
+    return cast(
+        ButtonDict,
+        _present(
+            type=ComponentType.BUTTON,
+            style=ButtonStyle.LINK,
+            label=label,
+            emoji=_emoji(emoji),
+            url=url,
+            disabled=disabled,
+        ),
     )
 
 
 def select(
     custom_id: str,
-    options: Iterable[Mapping[str, Any]],
+    options: Iterable[SelectOptionDict],
     *,
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
     disabled: bool = False,
-) -> dict[str, Any]:
+) -> SelectDict:
     """A string select menu; build its options with `select_option`."""
-    return _present(
-        type=ComponentType.STRING_SELECT,
-        custom_id=_checked(custom_id),
-        options=list(options),
-        placeholder=placeholder,
-        min_values=min_values,
-        max_values=max_values,
-        disabled=disabled,
+    return cast(
+        SelectDict,
+        _present(
+            type=ComponentType.STRING_SELECT,
+            custom_id=_checked(custom_id),
+            options=list(options),
+            placeholder=placeholder,
+            min_values=min_values,
+            max_values=max_values,
+            disabled=disabled,
+        ),
     )
 
 
@@ -93,23 +200,26 @@ def select_option(
     description: str | None = None,
     emoji: _Emoji | None = None,
     default: bool = False,
-) -> dict[str, Any]:
+) -> SelectOptionDict:
     """One entry of a select menu; `value` is what the bot receives."""
-    return _present(
-        label=label,
-        value=value,
-        description=description,
-        emoji=_emoji(emoji),
-        default=default,
+    return cast(
+        SelectOptionDict,
+        _present(
+            label=label,
+            value=value,
+            description=description,
+            emoji=_emoji(emoji),
+            default=default,
+        ),
     )
 
 
-def text(content: str) -> dict[str, Any]:
+def text(content: str) -> TextDict:
     """Markdown text; Components V2 messages use it instead of `content`."""
     return {"type": ComponentType.TEXT_DISPLAY, "content": content}
 
 
-def section(*texts: Mapping[str, Any], accessory: Mapping[str, Any]) -> dict[str, Any]:
+def section(*texts: TextDict, accessory: ButtonDict | ThumbnailDict) -> SectionDict:
     """One to three `text` components with a `button` or `thumbnail` beside them."""
     return {
         "type": ComponentType.SECTION,
@@ -120,29 +230,35 @@ def section(*texts: Mapping[str, Any], accessory: Mapping[str, Any]) -> dict[str
 
 def thumbnail(
     url: str, *, description: str | None = None, spoiler: bool = False
-) -> dict[str, Any]:
+) -> ThumbnailDict:
     """A small image for a `section`; `url` may be `attachment://<filename>`."""
-    return _present(
-        type=ComponentType.THUMBNAIL,
-        media={"url": url},
-        description=description,
-        spoiler=spoiler,
+    return cast(
+        ThumbnailDict,
+        _present(
+            type=ComponentType.THUMBNAIL,
+            media={"url": url},
+            description=description,
+            spoiler=spoiler,
+        ),
     )
 
 
-def media_gallery(*items: Mapping[str, Any]) -> dict[str, Any]:
+def media_gallery(*items: GalleryItemDict) -> MediaGalleryDict:
     """One to ten images or videos built with `gallery_item`."""
     return {"type": ComponentType.MEDIA_GALLERY, "items": list(items)}
 
 
 def gallery_item(
     url: str, *, description: str | None = None, spoiler: bool = False
-) -> dict[str, Any]:
+) -> GalleryItemDict:
     """One entry of a `media_gallery`; `url` may be `attachment://<filename>`."""
-    return _present(media={"url": url}, description=description, spoiler=spoiler)
+    return cast(
+        GalleryItemDict,
+        _present(media={"url": url}, description=description, spoiler=spoiler),
+    )
 
 
-def file(filename: str, *, spoiler: bool = False) -> dict[str, Any]:
+def file(filename: str, *, spoiler: bool = False) -> FileDict:
     """A file uploaded with the message, named as in its `File`."""
     return {
         "type": ComponentType.FILE,
@@ -151,22 +267,25 @@ def file(filename: str, *, spoiler: bool = False) -> dict[str, Any]:
     }
 
 
-def separator(*, divider: bool = True, spacing: Literal[1, 2] = 1) -> dict[str, Any]:
+def separator(*, divider: bool = True, spacing: Literal[1, 2] = 1) -> SeparatorDict:
     """Space between components; `spacing=2` is large, and `divider` draws a line."""
     return {"type": ComponentType.SEPARATOR, "divider": divider, "spacing": spacing}
 
 
 def container(
-    *components: Mapping[str, Any],
+    *components: _ContainerChild,
     accent_color: int | None = None,
     spoiler: bool = False,
-) -> dict[str, Any]:
+) -> ContainerDict:
     """A box around rows, texts, sections, galleries, files and separators."""
-    return _present(
-        type=ComponentType.CONTAINER,
-        components=list(components),
-        accent_color=accent_color,
-        spoiler=spoiler,
+    return cast(
+        ContainerDict,
+        _present(
+            type=ComponentType.CONTAINER,
+            components=list(components),
+            accent_color=accent_color,
+            spoiler=spoiler,
+        ),
     )
 
 
