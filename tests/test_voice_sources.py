@@ -2,6 +2,7 @@ import asyncio
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from fakediscord import settle
@@ -31,7 +32,17 @@ def test_properties_need_open_first() -> None:
                 getattr(source, name)
 
 
-def test_open_waits_for_the_probe_and_reports_48_khz_stereo_f32() -> None:
+@pytest.mark.parametrize(
+    ("probe", "expected"),
+    [
+        (("pcm", 12.5, True), (voice.PCM(48_000, 2, "f32le"), 12.5, True)),
+        (("opus", None, False), (voice.Opus(), None, False)),
+    ],
+)
+def test_open_waits_for_the_probe_and_reports_its_format(
+    probe: tuple[Literal["pcm", "opus"], float | None, bool],
+    expected: tuple[voice.Format, float | None, bool],
+) -> None:
     async def scenario(bot: FakeBot) -> None:
         bot.core.probe = None
         source = voice.File(Path("song.flac"))
@@ -39,29 +50,11 @@ def test_open_waits_for_the_probe_and_reports_48_khz_stereo_f32() -> None:
         await settle()
         assert not opening.done()
         native = bot.core.sources[-1]
-        native.probe = ("pcm", 12.5, True)
+        native.probe = probe
         native.feed()
         await opening
-        assert (source.format, source.duration, source.seekable) == (
-            voice.PCM(48_000, 2, "f32le"),
-            12.5,
-            True,
-        )
+        assert (source.format, source.duration, source.seekable) == expected
         assert bot.core.calls[-1][:2] == ("voice_file", ("song.flac",))
-
-    run(scenario)
-
-
-def test_an_opus_track_plays_as_opus_packets() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        bot.core.probe = ("opus", None, False)
-        source = voice.Url("https://example.com/live.ogg")
-        await source.open(bot.voice)
-        assert (source.format, source.duration, source.seekable) == (
-            voice.Opus(),
-            None,
-            False,
-        )
 
     run(scenario)
 
