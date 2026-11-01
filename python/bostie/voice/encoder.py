@@ -1,10 +1,9 @@
 from collections.abc import Buffer
 
 from bostie import _native
-from bostie.voice.formats import PCM, EncoderSettings
+from bostie.voice.formats import DEFAULT_PCM, PCM, EncoderSettings
 
 DEFAULT_BITRATE = 64_000
-DEFAULT_PCM = PCM()
 DEFAULT_ENCODER = EncoderSettings()
 
 

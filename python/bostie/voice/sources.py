@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from bostie._aio import Wake
 from bostie.errors import SourceError
-from bostie.voice.formats import PCM, SAMPLE_RATE, Format, Opus
+from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE, Format, Opus
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceCore, VoiceManager
@@ -18,8 +18,13 @@ if TYPE_CHECKING:
 PLAYS_ONCE = "a Source plays once; create a new one"
 NATIVE_PCM = PCM(SAMPLE_RATE, 2, "f32le")
 FFMPEG_PCM = PCM(SAMPLE_RATE, 2, "s16le")
-FFMPEG_READ = 19_200
-FFMPEG_OUTPUT = ("-f", "s16le", "-ar", "48000", "-ac", "2", "-loglevel", "error")
+FFMPEG_READ = FFMPEG_PCM.rate // 10 * FFMPEG_PCM.channels * SAMPLE_BYTES["s16le"]
+FFMPEG_OUTPUT = (
+    *("-f", FFMPEG_PCM.sample),
+    *("-ar", str(FFMPEG_PCM.rate)),
+    *("-ac", str(FFMPEG_PCM.channels)),
+    *("-loglevel", "error"),
+)
 
 
 class NativeSource(Protocol):

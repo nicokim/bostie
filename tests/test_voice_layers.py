@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Self, cast
+from typing import Any, ClassVar, Self, cast
 
 import pytest
 
@@ -18,7 +18,15 @@ from bostie.errors import (
 )
 from bostie.voice import layers
 from bostie.voice.events import SpeechStart, SpeechStop
-from bostie.voice.formats import PCM, EncoderSettings, Format, Opus, ReceiveFormat
+from bostie.voice.formats import (
+    DEFAULT_PCM,
+    PCM,
+    EncoderSettings,
+    Format,
+    Opus,
+    ReceiveFormat,
+    SinkStall,
+)
 from bostie.voice.frames import Frame
 from bostie.voice.layers import (
     EndReason,
@@ -31,7 +39,6 @@ from bostie.voice.layers import (
 
 FRAME = 0.02
 SETTLE = 20
-DEFAULT_PCM = PCM()
 
 type Scenario = Callable[["Clock"], Coroutine[Any, Any, None]]
 
@@ -232,7 +239,7 @@ class FakeConnection:
         *,
         buffer: float | None = None,
         volume: float = 1.0,
-        stall: Literal["hold", "drop"] | None = None,
+        stall: SinkStall | None = None,
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
             raise VoiceNotConnected("the voice connection has ended")
@@ -932,7 +939,7 @@ def test_broadcast_encodes_pcm_once_for_every_connection(
         await layers.broadcast(cast(Any, source), cast(Any, connections))
         expected = [b"opus-" + chunk for chunk in frames("s", 3)] + [b"opus-tail"]
         assert [vc.sinks[0].sent for vc in connections] == [expected] * 2
-        assert FakeEncoder.made == [(pcm, EncoderSettings(bitrate=64_000))]
+        assert FakeEncoder.made == [(pcm, EncoderSettings())]
         voip = EncoderSettings(application="voip")
         await layers.broadcast(
             cast(Any, FakeSource(clock, "t", 1, format=pcm)),

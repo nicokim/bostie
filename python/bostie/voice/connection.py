@@ -21,7 +21,7 @@ from bostie.enums import (
 )
 from bostie.errors import NotFound, NotInVoice, VoiceConnectError, VoiceNotConnected
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
-from bostie.gateway import SHARD, GatewayClient
+from bostie.gateway import CLOSE_TIMEOUT, SHARD, GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import Channel, User
 from bostie.voice import layers
@@ -40,7 +40,9 @@ from bostie.voice.events import (
     VoiceEvent,
 )
 from bostie.voice.formats import (
+    DEFAULT_PCM,
     PCM,
+    Application,
     Defaults,
     EncoderSettings,
     Format,
@@ -50,6 +52,9 @@ from bostie.voice.formats import (
     Packets,
     ReceiveFormat,
     ReceiveStall,
+    Sample,
+    SinkStall,
+    StageRole,
 )
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.receiver import NativeReceiver, Receiver
@@ -61,13 +66,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bostie.voice")
 
-CLOSE_TIMEOUT = 2.0
 UNKNOWN_VOICE_STATE = 10065
 VOICE_STATE_UPDATE = 4
 VOICE_CHANNELS = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
-DEFAULT_PCM = PCM()
 
-type StageRole = Literal["listen", "request", "speak"]
 type VoiceDelivery = (
     _native.VoiceStateDelivery
     | _native.VoiceMovedDelivery
@@ -97,7 +99,7 @@ class VoiceCore(Protocol):
         timeout: float,
         server_change_delay: float,
         bitrate: int,
-        application: Literal["audio", "voip", "lowdelay"],
+        application: Application,
         fec: bool,
         packet_loss: int,
         complexity: int,
@@ -113,7 +115,7 @@ class VoiceCore(Protocol):
         guild_id: int,
         *,
         bitrate: int,
-        application: Literal["audio", "voip", "lowdelay"],
+        application: Application,
         fec: bool,
         packet_loss: int,
         complexity: int,
@@ -129,10 +131,10 @@ class VoiceCore(Protocol):
         kind: Literal["pcm", "opus"],
         rate: int,
         channels: int,
-        sample: Literal["s16le", "f32le"],
+        sample: Sample,
         buffer: float,
         volume: float,
-        stall: Literal["hold", "drop"],
+        stall: SinkStall,
     ) -> NativeSink: ...
     def voice_file(self, path: str) -> NativeSource: ...
     def voice_bytes(self, data: bytes, hint: str | None) -> NativeSource: ...
@@ -144,7 +146,7 @@ class VoiceCore(Protocol):
         kind: Literal["pcm", "opus", "packets"],
         rate: int,
         channels: int,
-        sample: Literal["s16le", "f32le"],
+        sample: Sample,
         users: list[int] | None,
         exclude: list[int],
         include_self: bool,
@@ -567,7 +569,7 @@ class VoiceConnection:
         *,
         buffer: float | None = None,
         volume: float = 1.0,
-        stall: Literal["hold", "drop"] | None = None,
+        stall: SinkStall | None = None,
     ) -> Sink:
         """Open a bounded writer whose audio is mixed into this connection."""
         self._check_live()
@@ -745,7 +747,7 @@ class VoiceConnection:
         *,
         volume: float = 1.0,
         buffer: float | None = None,
-        stall: Literal["hold", "drop"] | None = None,
+        stall: SinkStall | None = None,
         meta: Any = None,
     ) -> layers.Track:
         """Play a source on its own sink, mixed with anything else playing."""

@@ -2,17 +2,16 @@ import asyncio
 import contextlib
 from collections.abc import Buffer, Generator, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from bostie._aio import Wake
 from bostie.errors import BufferFull, SinkClosed
-from bostie.voice.formats import SAMPLE_RATE, Format, Opus
+from bostie.voice.formats import SAMPLE_BYTES, SAMPLE_RATE, Format, Opus, SinkStall
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceConnection
 
 MIN_PIECE = 0.02
-SAMPLE_BYTES = {"s16le": 2, "f32le": 4}
 
 
 class NativeSink(Protocol):
@@ -69,7 +68,7 @@ class Sink:
         format: Format,
         *,
         buffer: float,
-        stall: Literal["hold", "drop"],
+        stall: SinkStall,
         volume: float,
     ) -> None:
         self.format = format

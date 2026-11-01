@@ -21,6 +21,12 @@ DECODE_RATES = frozenset(_native.DECODE_RATES)
 
 type Overflow = Literal["drop_oldest", "drop_newest"]
 type ReceiveStall = Literal["wait", "end"]
+type SinkStall = Literal["hold", "drop"]
+type Application = Literal["audio", "voip", "lowdelay"]
+type Sample = Literal["s16le", "f32le"]
+type StageRole = Literal["listen", "request", "speak"]
+
+SAMPLE_BYTES: dict[Sample, int] = {"s16le": 2, "f32le": 4}
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +35,7 @@ class PCM:
 
     rate: int = SAMPLE_RATE
     channels: Literal[1, 2] = 2
-    sample: Literal["s16le", "f32le"] = "s16le"
+    sample: Sample = "s16le"
 
     def __post_init__(self) -> None:
         if not MIN_RATE <= self.rate <= MAX_RATE:
@@ -46,6 +52,9 @@ class PCM:
             raise ValueError(f"channels must be 1 or 2, got {self.channels}")
         if self.sample not in ("s16le", "f32le"):
             raise ValueError(f"sample must be 's16le' or 'f32le', got {self.sample!r}")
+
+
+DEFAULT_PCM = PCM()
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +78,7 @@ class EncoderSettings:
     """Opus encoder settings; `bitrate=None` follows the channel."""
 
     bitrate: int | None = None
-    application: Literal["audio", "voip", "lowdelay"] = "audio"
+    application: Application = "audio"
     fec: bool = True
     packet_loss: float = 0.1
     complexity: int = 10
@@ -105,9 +114,9 @@ class Defaults:
     server_change_delay: float = 0.0
     encoder: EncoderSettings = EncoderSettings()
     speaking_flags: SpeakingFlags = SpeakingFlags.MICROPHONE
-    stage: Literal["listen", "request", "speak"] = "listen"
+    stage: StageRole = "listen"
     sink_buffer: float = 0.2
-    stall: Literal["hold", "drop"] = "hold"
+    stall: SinkStall = "hold"
     speech_hangover: float = 0.2
     speech_activity: bool = True
     receive_buffer: float = 2.0

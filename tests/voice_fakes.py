@@ -17,7 +17,7 @@ from bostie.http import HTTPClient
 from bostie.models import Channel, User, decode
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
-from bostie.voice.formats import Defaults
+from bostie.voice.formats import Application, Defaults, Sample, SinkStall
 
 if TYPE_CHECKING:
     from bostie._native import ReceivedItem
@@ -360,7 +360,7 @@ class FakeCore:
         guild_id: int,
         *,
         bitrate: int,
-        application: Literal["audio", "voip", "lowdelay"],
+        application: Application,
         fec: bool,
         packet_loss: int,
         complexity: int,
@@ -397,10 +397,10 @@ class FakeCore:
         kind: Literal["pcm", "opus"],
         rate: int,
         channels: int,
-        sample: Literal["s16le", "f32le"],
+        sample: Sample,
         buffer: float,
         volume: float,
-        stall: Literal["hold", "drop"],
+        stall: SinkStall,
     ) -> FakeSink:
         self._record(
             "voice_sink",

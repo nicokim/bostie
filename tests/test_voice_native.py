@@ -7,12 +7,12 @@ import time
 import warnings
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Literal
 
 import pytest
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie.voice.formats import Application, Sample
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 API_URL = "http://127.0.0.1:1/api/v10"
@@ -44,7 +44,7 @@ def connect(
     timeout: float = 60.0,
     server_change_delay: float = 0.0,
     bitrate: int = 64_000,
-    application: Literal["audio", "voip", "lowdelay"] = "audio",
+    application: Application = "audio",
     speaking: int = 1,
 ) -> None:
     core.voice_connect(
@@ -123,7 +123,7 @@ def encoder(
     *,
     rate: int = 48_000,
     channels: int = 2,
-    sample: Literal["s16le", "f32le"] = "s16le",
+    sample: Sample = "s16le",
     bitrate: int = 64_000,
 ) -> _native.OpusEncoder:
     return _native.OpusEncoder(

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, BinaryIO, Literal
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from bostie._aio import spawn
 from bostie.enums import State
@@ -22,9 +22,16 @@ from bostie.errors import (
     SourceError,
     VoiceNotConnected,
 )
-from bostie.voice.encoder import OpusEncoder
+from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop
-from bostie.voice.formats import PCM, SAMPLE_RATE, EncoderSettings, Format, Opus
+from bostie.voice.formats import (
+    PCM,
+    SAMPLE_RATE,
+    EncoderSettings,
+    Format,
+    Opus,
+    SinkStall,
+)
 from bostie.voice.frames import Frame
 
 if TYPE_CHECKING:
@@ -35,7 +42,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bostie.voice")
 
-BROADCAST_BITRATE = 64_000
 SILENCE = b"\xf8\xff\xfe"
 SILENCE_SAMPLES = 960
 TICK = 0.02
@@ -165,13 +171,13 @@ class _Player:
         *,
         volume: float,
         buffer: float | None,
-        stall: Literal["hold", "drop"] | None,
+        stall: SinkStall | None,
     ) -> None:
         self.vc = vc
         self.closed = False
         self._volume = volume
         self._buffer = buffer
-        self._stall: Literal["hold", "drop"] | None = stall
+        self._stall: SinkStall | None = stall
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
         self._format: Format | None = None
@@ -517,7 +523,7 @@ class Queue:
         *,
         volume: float = 1.0,
         buffer: float | None = None,
-        stall: Literal["hold", "drop"] | None = None,
+        stall: SinkStall | None = None,
     ) -> None:
         self.vc = vc
         self._player = _Player(vc, volume=volume, buffer=buffer, stall=stall)
@@ -578,7 +584,7 @@ async def play(
     *,
     volume: float = 1.0,
     buffer: float | None = None,
-    stall: Literal["hold", "drop"] | None = None,
+    stall: SinkStall | None = None,
     meta: Any = None,
 ) -> Track:
     try:
@@ -595,8 +601,8 @@ async def broadcast(
     source: "Source",
     connections: Iterable["VoiceConnection"],
     *,
-    encoder: EncoderSettings | None = None,
-    stall: Literal["hold", "drop"] = "drop",
+    encoder: EncoderSettings = DEFAULT_ENCODER,
+    stall: SinkStall = "drop",
 ) -> None:
     """Play one source on every given connection, encoding PCM once.
 
@@ -613,13 +619,8 @@ async def broadcast(
             for vc in targets
             if vc.state is not State.DISCONNECTED
         ]
-        settings = (
-            EncoderSettings(bitrate=BROADCAST_BITRATE) if encoder is None else encoder
-        )
         format = source.format
-        opus = (
-            OpusEncoder(format, encoder=settings) if isinstance(format, PCM) else None
-        )
+        opus = OpusEncoder(format, encoder=encoder) if isinstance(format, PCM) else None
         async for chunk in source:
             for packet in [chunk] if opus is None else opus.encode(chunk):
                 sinks = await _write_all(sinks, packet)
