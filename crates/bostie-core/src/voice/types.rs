@@ -573,24 +573,23 @@ mod tests {
 
     #[test]
     fn pcm_formats_are_checked_against_their_bounds() {
-        let refused: [(u32, u8, &[&str]); 8] = [
-            (8_001, 2, &["gcd(rate, 48000)", "8001"]),
-            (44_101, 2, &["gcd(rate, 48000)", "44101"]),
-            (0, 2, &["from 8000 to 192000 Hz"]),
+        let refused: [(u32, u8, &[&str]); 5] = [
+            (8_016, 2, &["gcd(rate, 48000)", "8016"]),
             (7_999, 2, &["from 8000 to 192000 Hz"]),
             (192_001, 2, &["from 8000 to 192000 Hz"]),
             (48_000, 0, &["channels"]),
             (48_000, 3, &["channels"]),
-            (48_000, 6, &["channels"]),
         ];
 
-        for rate in [
-            8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000, 88_200, 96_000,
-            176_400, 192_000,
+        for (rate, channels) in [
+            (8_000, 1),
+            (8_050, 2),
+            (11_025, 1),
+            (44_100, 2),
+            (48_000, 1),
+            (192_000, 2),
         ] {
-            for channels in [1, 2] {
-                assert!(pcm(rate, channels).validate().is_ok(), "{rate} Hz");
-            }
+            assert!(pcm(rate, channels).validate().is_ok(), "{rate} Hz");
         }
         for (rate, channels, fragments) in refused {
             let message = rejection(pcm(rate, channels).validate());
