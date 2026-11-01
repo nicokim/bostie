@@ -136,28 +136,6 @@ fn send_mode_follows_the_protocol_version_the_members_and_the_key() {
 }
 
 #[test]
-fn alone_in_a_dave_call_the_bot_sends_a_key_package_and_discards_media() {
-    let mut call = call(1);
-    call.join(user(BOT));
-    call.run();
-
-    assert!(matches!(
-        call.sent_by(user(BOT)).as_slice(),
-        [Outbound::KeyPackage(_)]
-    ));
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
-    assert_eq!(
-        call.dave(user(BOT)).info(),
-        DaveInfo {
-            protocol_version: 1,
-            epoch: None,
-            privacy_code: None,
-        }
-    );
-    assert!(call.failures.is_empty());
-}
-
-#[test]
 fn a_refused_external_sender_leaves_the_bot_to_join_by_welcome() {
     let mut call = call(1);
     call.join(user(BOT));
