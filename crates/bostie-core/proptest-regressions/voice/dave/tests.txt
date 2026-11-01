@@ -1,8 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc a38c7c0383c6b2ec723cb0f72aab29535e07916b15c70c31abd19e30dcff4ceb # shrinks to bytes = [125, 204, 20, 56, 173, 85, 203, 88, 161, 99, 6, 30, 19, 5, 98, 231, 10, 32, 169, 203, 150, 190, 198, 167, 243, 20, 127, 117, 181, 121, 92, 6, 187, 15, 5, 116, 199, 5, 213, 98, 65, 125, 82, 155, 60, 91, 156, 145, 124, 48, 232, 237, 89, 163, 114, 98, 244, 187, 25, 166, 143, 115, 190, 182, 11, 206, 201, 15, 35, 148, 237, 197, 237, 197, 220, 201, 187, 240, 188, 55, 183, 52, 228, 152, 147, 214, 137, 180, 243, 91, 86, 242, 116, 254, 71, 227, 90, 152, 120, 193, 102], transition_id = 58135
-cc 3088715c041dc7318c91bd570a951465213fb51b278af48d9516839c722e43d1 # shrinks to bytes = [161, 56, 32, 195, 181, 123, 180, 92, 43, 234, 227, 58, 241, 47, 212, 180, 197, 8, 11, 206, 136, 22, 70, 141, 42, 144, 43, 137, 142, 25, 2, 219, 103, 54, 83, 49, 66, 98, 103, 252, 227, 235, 26, 250, 245, 68, 61, 32, 187, 215, 110, 214, 12, 254, 232, 149, 36, 81, 84, 4, 139, 109, 106, 67, 161, 204, 61, 139, 193, 164, 142, 17], transition_id = 46954
