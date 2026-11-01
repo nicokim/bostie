@@ -29,6 +29,7 @@ from bostie.events import (
     RawEvent,
     ReactionAdd,
     Ready,
+    SoundboardSoundCreate,
     ThreadCreate,
     ThreadDelete,
     ThreadListSync,
@@ -107,6 +108,7 @@ def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
         (VoiceStateUpdate, "VOICE_STATE_UPDATE", "voice_state"),
         (GuildUpdate, "GUILD_UPDATE", "guild"),
         (AutoModerationRuleCreate, "AUTO_MODERATION_RULE_CREATE", "rule"),
+        (SoundboardSoundCreate, "GUILD_SOUNDBOARD_SOUND_CREATE", "sound"),
     ],
 )
 def test_an_event_that_is_one_entity_shares_its_payload_with_it(
@@ -165,6 +167,7 @@ def test_guild_create_splits_the_guild_from_its_children() -> None:
         "Admin",
     ]
     assert event.voice_states[0].user_id == 308882807193731073
+    assert [sound.name for sound in event.soundboard_sounds] == ["lyre strum"]
 
 
 def test_guild_create_members_and_presences_decode_on_access() -> None:

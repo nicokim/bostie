@@ -39,8 +39,8 @@ from bostie.models.components import (
     UserSelect,
     decode_components,
 )
+from bostie.models.expressions import Emoji, SoundboardSound, Sticker
 from bostie.models.guild import (
-    Emoji,
     Guild,
     Member,
     PartialMember,
@@ -155,6 +155,8 @@ __all__ = [
     "SelectDefaultValue",
     "SelectOption",
     "Separator",
+    "SoundboardSound",
+    "Sticker",
     "StickerItem",
     "StringSelect",
     "SubmittedChannelSelect",

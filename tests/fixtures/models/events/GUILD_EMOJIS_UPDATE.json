@@ -1,0 +1,73 @@
+{
+  "guild_id": "1335172792320131073",
+  "emojis": [
+    {
+      "id": "1345334752051331073",
+      "name": "lyre",
+      "roles": [],
+      "user": {
+        "id": "308882807193731073",
+        "username": "ada_owner",
+        "global_name": "Ada",
+        "discriminator": "0",
+        "avatar": "a_173d406e7b4073210e72cabee9602253",
+        "public_flags": 576,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "require_colons": true,
+      "managed": false,
+      "animated": false,
+      "available": true
+    },
+    {
+      "id": "1345335003709571073",
+      "name": "lyre_spin",
+      "roles": [],
+      "user": {
+        "id": "308882807193731073",
+        "username": "ada_owner",
+        "global_name": "Ada",
+        "discriminator": "0",
+        "avatar": "a_173d406e7b4073210e72cabee9602253",
+        "public_flags": 576,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "require_colons": true,
+      "managed": false,
+      "animated": true,
+      "available": true
+    },
+    {
+      "id": "1565120387469731073",
+      "name": "harp",
+      "roles": [
+        "1335174302269571073"
+      ],
+      "user": {
+        "id": "613374681415811073",
+        "username": "grace",
+        "global_name": "Grace H.",
+        "discriminator": "0",
+        "avatar": null,
+        "public_flags": 0,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "require_colons": true,
+      "managed": false,
+      "animated": false,
+      "available": false
+    }
+  ]
+}

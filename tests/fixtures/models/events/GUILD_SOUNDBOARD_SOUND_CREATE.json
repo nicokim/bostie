@@ -1,0 +1,22 @@
+{
+  "name": "Yay",
+  "sound_id": "1565122204124631073",
+  "volume": 1,
+  "emoji_id": "1345334752051331073",
+  "emoji_name": null,
+  "guild_id": "1335172792320131073",
+  "available": true,
+  "user": {
+    "id": "613374681415811073",
+    "username": "grace",
+    "global_name": "Grace H.",
+    "discriminator": "0",
+    "avatar": null,
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "soundboard_sounds": [
+    {
+      "name": "Yay!",
+      "sound_id": "1565122204124631073",
+      "volume": 0.65,
+      "emoji_id": null,
+      "emoji_name": "🎉",
+      "guild_id": "1335172792320131073",
+      "available": true,
+      "user": {
+        "id": "613374681415811073",
+        "username": "grace",
+        "global_name": "Grace H.",
+        "discriminator": "0",
+        "avatar": null,
+        "public_flags": 0,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      }
+    },
+    {
+      "name": "lyre strum",
+      "sound_id": "1565122576989831073",
+      "volume": 0.8,
+      "emoji_id": "1345335003709571073",
+      "emoji_name": null,
+      "guild_id": "1335172792320131073",
+      "available": false,
+      "user": {
+        "id": "308882807193731073",
+        "username": "ada_owner",
+        "global_name": "Ada",
+        "discriminator": "0",
+        "avatar": "a_173d406e7b4073210e72cabee9602253",
+        "public_flags": 576,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      }
+    }
+  ],
+  "guild_id": "1335172792320131073"
+}

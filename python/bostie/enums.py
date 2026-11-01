@@ -165,6 +165,11 @@ class NSFWLevel(DiscordIntEnum):
     AGE_RESTRICTED = 3
 
 
+class StickerType(DiscordIntEnum):
+    STANDARD = 1
+    GUILD = 2
+
+
 class StickerFormatType(DiscordIntEnum):
     PNG = 1
     APNG = 2

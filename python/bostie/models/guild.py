@@ -129,16 +129,6 @@ class UnavailableGuild(Model, kw_only=True):
     unavailable: bool
 
 
-class Emoji(Model, kw_only=True):
-    id: int | None
-    name: str | None
-    roles: tuple[int, ...] = ()
-    require_colons: bool | None = None
-    managed: bool = False
-    animated: bool = False
-    available: bool | None = None
-
-
 class VoiceState(Model, kw_only=True):
     """A user's voice connection state in a guild."""
 

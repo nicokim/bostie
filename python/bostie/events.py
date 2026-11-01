@@ -15,6 +15,7 @@ from bostie.models import (
     AutoModerationAction,
     AutoModerationRule,
     Channel,
+    Emoji,
     Guild,
     Interaction,
     Member,
@@ -23,6 +24,8 @@ from bostie.models import (
     PartialApplication,
     PartialEmoji,
     Role,
+    SoundboardSound,
+    Sticker,
     UnavailableGuild,
     User,
     VoiceState,
@@ -92,6 +95,7 @@ class _GuildCreatePayload(Guild, kw_only=True):
     threads: tuple[Channel, ...]
     roles: tuple[Role, ...]
     voice_states: tuple[VoiceState, ...]
+    soundboard_sounds: tuple[SoundboardSound, ...]
     _members: msgspec.Raw = msgspec.field(name="members")
     _presences: msgspec.Raw = msgspec.field(name="presences")
 
@@ -107,6 +111,7 @@ class GuildCreate(Event, kw_only=True):
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
     voice_states: tuple[VoiceState, ...] = ()
+    soundboard_sounds: tuple[SoundboardSound, ...] = ()
     _members: msgspec.Raw = msgspec.Raw(b"[]")
     _presences: msgspec.Raw = msgspec.Raw(b"[]")
 
@@ -138,6 +143,7 @@ class GuildCreate(Event, kw_only=True):
             threads=payload.threads,
             roles=payload.roles,
             voice_states=payload.voice_states,
+            soundboard_sounds=payload.soundboard_sounds,
             _members=payload._members,
             _presences=payload._presences,
         )
@@ -472,6 +478,68 @@ class BanRemove(_BanEvent, kw_only=True):
     NAME = "GUILD_BAN_REMOVE"
 
 
+class EmojisUpdate(Event, kw_only=True):
+    NAME = "GUILD_EMOJIS_UPDATE"
+    INTENTS = Intents.GUILD_EXPRESSIONS
+
+    guild_id: int
+    emojis: tuple[Emoji, ...]
+
+
+class StickersUpdate(Event, kw_only=True):
+    NAME = "GUILD_STICKERS_UPDATE"
+    INTENTS = Intents.GUILD_EXPRESSIONS
+
+    guild_id: int
+    stickers: tuple[Sticker, ...]
+
+
+class _SoundboardSoundEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_EXPRESSIONS
+
+    sound: SoundboardSound
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id, raw_json=data, sound=decode(SoundboardSound, data)
+        )
+
+
+class SoundboardSoundCreate(_SoundboardSoundEvent, kw_only=True):
+    NAME = "GUILD_SOUNDBOARD_SOUND_CREATE"
+
+
+class SoundboardSoundUpdate(_SoundboardSoundEvent, kw_only=True):
+    NAME = "GUILD_SOUNDBOARD_SOUND_UPDATE"
+
+
+class SoundboardSoundDelete(Event, kw_only=True):
+    NAME = "GUILD_SOUNDBOARD_SOUND_DELETE"
+    INTENTS = Intents.GUILD_EXPRESSIONS
+
+    sound_id: int
+    guild_id: int
+
+
+class SoundboardSoundsUpdate(Event, kw_only=True):
+    NAME = "GUILD_SOUNDBOARD_SOUNDS_UPDATE"
+    INTENTS = Intents.GUILD_EXPRESSIONS
+
+    soundboard_sounds: tuple[SoundboardSound, ...]
+    guild_id: int
+
+
+class SoundboardSounds(Event, kw_only=True):
+    """A guild's soundboard sounds, sent for a Request Soundboard Sounds."""
+
+    NAME = "SOUNDBOARD_SOUNDS"
+
+    soundboard_sounds: tuple[SoundboardSound, ...]
+    guild_id: int
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -518,6 +586,13 @@ EVENTS: dict[str, type[Event]] = {
         AuditLogEntryCreate,
         BanAdd,
         BanRemove,
+        EmojisUpdate,
+        StickersUpdate,
+        SoundboardSoundCreate,
+        SoundboardSoundUpdate,
+        SoundboardSoundDelete,
+        SoundboardSoundsUpdate,
+        SoundboardSounds,
     )
 }
 
