@@ -103,7 +103,6 @@ def test_snowflakes_permissions_and_timestamps_are_typed() -> None:
     assert guild.owner_id == 308882807193731073
     assert guild.features[0] == "ANIMATED_ICON"
     assert interaction.app_permissions == 4069281901182529
-    assert interaction.app_permissions is not None
     assert Permissions.ATTACH_FILES in interaction.app_permissions
 
 
