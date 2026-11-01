@@ -43,6 +43,7 @@ const MIX_SLACK: Duration = Duration::from_millis(100);
 const WARN_EVERY: Duration = Duration::from_secs(1);
 const RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 const RECOVERIES_PER_USER: u8 = 2;
+const SPARE_WINDOWS: usize = 8;
 
 type Key = (u32, UserId);
 
@@ -101,7 +102,9 @@ impl Intake {
         let header = opened.header;
         if !self.windows.contains_key(&header.ssrc) {
             let ssrcs = self.info.ssrcs.lock();
-            self.windows.retain(|ssrc, _| ssrcs.contains_key(ssrc));
+            if self.windows.len() >= ssrcs.len().saturating_add(SPARE_WINDOWS) {
+                self.windows.retain(|ssrc, _| ssrcs.contains_key(ssrc));
+            }
         }
         let replay_window = self.replay_window;
         let window = self

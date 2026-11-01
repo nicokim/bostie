@@ -1005,28 +1005,34 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
 }
 
 #[test]
-fn the_intake_forgets_replay_windows_of_departed_ssrcs() {
+fn the_intake_forgets_departed_ssrcs_once_unmapped_windows_pile_up() {
     let mut rig = Rig::new(tuning());
     let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
     let mut intake = rig.intake();
     let _packets = rig.open(options(ReceiveFormat::Packets));
     rig.map(ALICE_SSRC, ALICE);
     rig.map(BOB_SSRC, BOB);
+    let unmapped: Vec<u32> = (2_000..).take(SPARE_WINDOWS - 1).collect();
 
     let mut send = |nonce, ssrc| {
         let sealing = Sealing::default();
         let mut packet = sfu::seal(&cipher, nonce, ssrc, 0, 0, &SILENCE_FRAME, &sealing);
         intake.rtp(&mut packet);
+        let mut windows: Vec<u32> = intake.windows.keys().copied().collect();
+        windows.sort_unstable();
+        windows
     };
     send(0, ALICE_SSRC);
     send(1, BOB_SSRC);
     rig.info.ssrcs.lock().remove(&ALICE_SSRC);
-    rig.map(STRANGER_SSRC, STRANGER);
-    send(2, STRANGER_SSRC);
+    let mut piled = Vec::new();
+    for (nonce, &ssrc) in (2..).zip(&unmapped) {
+        piled = send(nonce, ssrc);
+    }
+    let swept = send(100, STRANGER_SSRC);
 
-    let mut windows: Vec<u32> = intake.windows.keys().copied().collect();
-    windows.sort_unstable();
-    assert_eq!(windows, [BOB_SSRC, STRANGER_SSRC]);
+    assert_eq!(piled, [vec![ALICE_SSRC, BOB_SSRC], unmapped].concat());
+    assert_eq!(swept, [BOB_SSRC, STRANGER_SSRC]);
 }
 
 #[test]
