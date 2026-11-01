@@ -16,6 +16,7 @@ from bostie.models import (
     AutoModerationRule,
     Channel,
     Emoji,
+    Entitlement,
     Guild,
     Interaction,
     Member,
@@ -27,6 +28,7 @@ from bostie.models import (
     ScheduledEvent,
     SoundboardSound,
     Sticker,
+    Subscription,
     UnavailableGuild,
     User,
     VoiceState,
@@ -587,6 +589,54 @@ class ScheduledEventUserRemove(_ScheduledEventUserEvent, kw_only=True):
     NAME = "GUILD_SCHEDULED_EVENT_USER_REMOVE"
 
 
+class _EntitlementEvent(Event, kw_only=True):
+    entitlement: Entitlement
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id, raw_json=data, entitlement=decode(Entitlement, data)
+        )
+
+
+class EntitlementCreate(_EntitlementEvent, kw_only=True):
+    NAME = "ENTITLEMENT_CREATE"
+
+
+class EntitlementUpdate(_EntitlementEvent, kw_only=True):
+    """An entitlement changed; a subscription's one only when it ends."""
+
+    NAME = "ENTITLEMENT_UPDATE"
+
+
+class EntitlementDelete(_EntitlementEvent, kw_only=True):
+    NAME = "ENTITLEMENT_DELETE"
+
+
+class _SubscriptionEvent(Event, kw_only=True):
+    subscription: Subscription
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id, raw_json=data, subscription=decode(Subscription, data)
+        )
+
+
+class SubscriptionCreate(_SubscriptionEvent, kw_only=True):
+    NAME = "SUBSCRIPTION_CREATE"
+
+
+class SubscriptionUpdate(_SubscriptionEvent, kw_only=True):
+    NAME = "SUBSCRIPTION_UPDATE"
+
+
+class SubscriptionDelete(_SubscriptionEvent, kw_only=True):
+    NAME = "SUBSCRIPTION_DELETE"
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -645,6 +695,12 @@ EVENTS: dict[str, type[Event]] = {
         ScheduledEventDelete,
         ScheduledEventUserAdd,
         ScheduledEventUserRemove,
+        EntitlementCreate,
+        EntitlementUpdate,
+        EntitlementDelete,
+        SubscriptionCreate,
+        SubscriptionUpdate,
+        SubscriptionDelete,
     )
 }
 

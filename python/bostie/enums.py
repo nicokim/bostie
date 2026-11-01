@@ -374,6 +374,23 @@ class Month(DiscordIntEnum):
     DECEMBER = 12
 
 
+class EntitlementType(DiscordIntEnum):
+    PURCHASE = 1
+    PREMIUM_SUBSCRIPTION = 2
+    DEVELOPER_GIFT = 3
+    TEST_MODE_PURCHASE = 4
+    FREE_PURCHASE = 5
+    USER_GIFT = 6
+    PREMIUM_PURCHASE = 7
+    APPLICATION_SUBSCRIPTION = 8
+
+
+class SubscriptionStatus(DiscordIntEnum):
+    ACTIVE = 0
+    INACTIVE = 1
+    ENDING = 2
+
+
 class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1

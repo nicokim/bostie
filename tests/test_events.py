@@ -16,6 +16,7 @@ from bostie.events import (
     AuditLogEntryCreate,
     AutoModerationRuleCreate,
     ChannelUpdate,
+    EntitlementCreate,
     Event,
     GuildCreate,
     GuildDelete,
@@ -31,6 +32,7 @@ from bostie.events import (
     Ready,
     ScheduledEventCreate,
     SoundboardSoundCreate,
+    SubscriptionCreate,
     ThreadCreate,
     ThreadDelete,
     ThreadListSync,
@@ -111,6 +113,8 @@ def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
         (AutoModerationRuleCreate, "AUTO_MODERATION_RULE_CREATE", "rule"),
         (SoundboardSoundCreate, "GUILD_SOUNDBOARD_SOUND_CREATE", "sound"),
         (ScheduledEventCreate, "GUILD_SCHEDULED_EVENT_CREATE", "scheduled_event"),
+        (EntitlementCreate, "ENTITLEMENT_CREATE", "entitlement"),
+        (SubscriptionCreate, "SUBSCRIPTION_CREATE", "subscription"),
     ],
 )
 def test_an_event_that_is_one_entity_shares_its_payload_with_it(

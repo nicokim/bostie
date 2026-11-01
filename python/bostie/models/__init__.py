@@ -93,6 +93,7 @@ from bostie.models.moderation import (
     AutoModerationRule,
     AutoModerationTriggerMetadata,
 )
+from bostie.models.monetization import Entitlement, Subscription
 from bostie.models.scheduled_event import (
     RecurrenceRule,
     RecurrenceRuleNWeekday,
@@ -131,6 +132,7 @@ __all__ = [
     "EmbedMedia",
     "EmbedProvider",
     "Emoji",
+    "Entitlement",
     "FileComponent",
     "Guild",
     "Interaction",
@@ -184,6 +186,7 @@ __all__ = [
     "SubmittedTextInput",
     "SubmittedUserSelect",
     "SubmittedValues",
+    "Subscription",
     "TextDisplay",
     "ThreadMetadata",
     "Thumbnail",

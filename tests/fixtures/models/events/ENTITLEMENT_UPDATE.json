@@ -1,0 +1,14 @@
+{
+  "id": "1565140873419131073",
+  "sku_id": "1565138012983631073",
+  "application_id": "1329027298099331073",
+  "user_id": "613374681415811073",
+  "promotion_id": null,
+  "type": 8,
+  "deleted": false,
+  "gift_code_flags": 0,
+  "consumed": false,
+  "starts_at": "2026-11-01T10:00:00.000000+00:00",
+  "ends_at": "2026-12-01T10:00:00.000000+00:00",
+  "subscription_id": "1565140861339731073"
+}
