@@ -677,21 +677,13 @@ impl State {
         } else {
             feed.stream.check(arrival.sequence)
         };
-        match check {
-            Check::Duplicate => {
-                bump(&self.media.receive.duplicates);
-                let counters = self.users.entry(user).or_default();
-                counters.duplicates = counters.duplicates.saturating_add(1);
-                return;
-            }
-            Check::Late | Check::Jump => {
-                bump(&self.media.receive.late_packets);
-                return;
-            }
-            Check::Fresh | Check::Restart => {
-                self.admitted.insert(admitted);
-            }
+        if check == Check::Duplicate {
+            bump(&self.media.receive.duplicates);
+            let counters = self.users.entry(user).or_default();
+            counters.duplicates = counters.duplicates.saturating_add(1);
+            return;
         }
+        self.admitted.insert(admitted);
         let refused = payload.is_empty()
             || (!own
                 && protocol_version > 0
@@ -955,18 +947,18 @@ impl State {
             at: at48,
             payload: Some(plain.clone()),
         };
-        if !feed.stream.insert(slot, check, &self.tuning) {
+        if feed.stream.insert(slot, check, &self.tuning) {
+            feed.received = feed.received.saturating_add(1);
+            let own = feed.own;
+            let played = self.subscribers.values().any(|subscriber| {
+                subscriber.out.format != ReceiveFormat::Packets
+                    && wants(subscriber.receiver.options(), user, own)
+            });
+            if !played {
+                feed.stream.release_before(arrival.sequence.wrapping_add(1));
+            }
+        } else {
             bump(&self.media.receive.late_packets);
-            return;
-        }
-        feed.received = feed.received.saturating_add(1);
-        let own = feed.own;
-        let played = self.subscribers.values().any(|subscriber| {
-            subscriber.out.format != ReceiveFormat::Packets
-                && wants(subscriber.receiver.options(), user, own)
-        });
-        if !played {
-            feed.stream.release_before(arrival.sequence.wrapping_add(1));
         }
         self.deliver(user, &arrival, &plain, samples, at48, hangover);
     }
@@ -3393,7 +3385,7 @@ mod tests {
         let mut rig = Rig::dave();
         let mut call = rig.group(&[ALICE]);
         rig.map(ALICE_SSRC, ALICE);
-        let packets = opus(4, 0.3);
+        let packets = opus(7, 0.3);
         let frames: Vec<Vec<u8>> = packets
             .iter()
             .map(|packet| call.speak(user(ALICE), packet))
@@ -3417,21 +3409,30 @@ mod tests {
             rig.media.arrive(arrival);
         }
         rig.step();
+        rig.send(ALICE_SSRC, 100, &frames[4]);
+        rig.step();
+        rig.send(ALICE_SSRC, 30, &frames[5]);
+        rig.send(ALICE_SSRC, 20_000, &frames[6]);
+        rig.step();
 
-        let packet = |sequence: u16, extensions: Vec<(u8, Bytes)>| Heard::Packet {
+        let packet = |sequence: u16, index: usize, extensions: Vec<(u8, Bytes)>| Heard::Packet {
             sequence,
-            opus: packets[usize::from(sequence)].clone(),
+            opus: packets[index].clone(),
             extensions,
         };
         assert_eq!(
             heard(&read(&receiver)),
             [
-                packet(2, vec![(1, Bytes::from_static(&[0xAA]))]),
-                packet(0, Vec::new()),
-                packet(1, Vec::new()),
+                packet(2, 2, vec![(1, Bytes::from_static(&[0xAA]))]),
+                packet(0, 0, Vec::new()),
+                packet(1, 1, Vec::new()),
+                packet(100, 4, Vec::new()),
+                packet(30, 5, Vec::new()),
+                packet(20_000, 6, Vec::new()),
             ]
         );
         assert_eq!(rig.counter("invalid_extensions"), 1);
+        assert_eq!(rig.counter("late_packets"), 2);
     }
 
     #[test]

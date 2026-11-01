@@ -39,7 +39,7 @@ Leaving the `async with` block closes the receiver. You can also call `rx.close(
 |---|---|
 | `voice.PCM(rate, channels, sample)` | Decoded audio, one `voice.Frame` per user per 20 ms. The rate is 8, 12, 16, 24 or 48 kHz (`voice.DECODE_RATES`), mono or stereo, `"s16le"` or `"f32le"`. The default, `voice.PCM()`, is 48 kHz stereo s16le, the same as a sink's. |
 | `voice.Opus()` | Each user's Opus packets as they were sent, in order, one `voice.Frame` per packet, not decoded. This is the cheapest format, made for recording and relaying. |
-| `voice.Packets()` | Every packet as it arrives, before any reordering, as a `voice.Packet` with its RTP sequence, timestamp and header extensions. |
+| `voice.Packets()` | Every packet as it arrives, before any reordering, as a `voice.Packet` with its RTP sequence, timestamp and header extensions. In an end-to-end encrypted call, a packet that waits for its key comes out once it decrypts. |
 
 A `voice.Frame` has these fields:
 
