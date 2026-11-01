@@ -558,7 +558,8 @@ mod tests {
     fn losses_are_concealed_up_to_the_limit_and_skipped_beyond() {
         for (samples, lost, pause, bridge) in [
             (960, 1, 0, Out::Conceal(1)),
-            (960, 3, 0, Out::Conceal(3)),
+            (960, 2, 480, Out::Conceal(2)),
+            (960, 2, 481, Out::Skip(2)),
             (960, 5, 0, Out::Conceal(5)),
             (960, 6, 0, Out::Skip(6)),
             (960, 2, 48_000, Out::Skip(2)),
@@ -592,18 +593,6 @@ mod tests {
                 .collect();
             assert_eq!(player.offsets(), offsets, "{samples} {lost} {pause}");
         }
-
-        let mut player = Player::new(0);
-        let trimmed = Slot {
-            samples: 2_880,
-            ..packet(0, 0, 0)
-        };
-        let unplayable = Slot {
-            payload: None,
-            ..packet(1, 0, 0)
-        };
-        player.run([trimmed, unplayable, packet(2, 0, FRAME)]);
-        assert_eq!(player.played, [Out::Play(0), Out::Skip(1), Out::Play(2)]);
     }
 
     #[test]
@@ -629,19 +618,20 @@ mod tests {
     #[test]
     fn duplicates_and_packets_older_than_the_ring_are_refused() {
         let mut player = Player::new(0);
-        for sequence in (0..=100).filter(|&sequence| sequence != 37 && sequence != 90) {
+        for sequence in (0..=100).filter(|&sequence| sequence != 37) {
             player.arrive(steady(sequence));
         }
         let stream = &mut player.stream;
 
         for (sequence, check) in [
             (100, Check::Duplicate),
-            (60, Check::Duplicate),
-            (90, Check::Fresh),
             (37, Check::Fresh),
             (36, Check::Late),
-            (30, Check::Late),
+            (0, Check::Late),
+            (65_535, Check::Jump),
             (101, Check::Fresh),
+            (3_100, Check::Fresh),
+            (3_101, Check::Jump),
         ] {
             assert_eq!(stream.check(sequence), check, "{sequence}");
         }
@@ -826,29 +816,39 @@ mod tests {
 
     #[test]
     fn long_packets_advance_by_their_own_duration() {
-        for samples in [1_920, 2_880] {
+        let mut player = Player::new(JITTER);
+        player.run((0..5).map(|sequence| {
+            let start = 2_880 * u32::from(sequence);
+            Slot {
+                samples: 2_880,
+                ..packet(sequence, start, i64::from(start))
+            }
+        }));
+        let frames: Vec<(u64, u32)> = (0..5)
+            .map(|index: u32| (u64::from(2_880 * index), 2_880))
+            .collect();
+        assert_eq!(player.frames, frames);
+
+        for (samples, kept) in [(5_760, [960, 960, 960, 960, 5_760]), (1_920, [1_920; 5])] {
             let mut player = Player::new(JITTER);
-
-            player.run((0..5).map(|sequence| {
-                let start = samples * u32::from(sequence);
-                Slot {
-                    samples,
-                    ..packet(sequence, start, i64::from(start))
-                }
+            player.run((0..5).map(|sequence| Slot {
+                samples,
+                ..steady(sequence)
             }));
-
-            let frames: Vec<(u64, u32)> = (0..5)
-                .map(|index| (u64::from(samples * index), samples))
-                .collect();
-            assert_eq!(player.frames, frames);
+            let durations: Vec<u32> = player.frames.iter().map(|&(_, samples)| samples).collect();
+            assert_eq!(durations, kept, "{samples}");
         }
 
-        let mut player = Player::new(JITTER);
-        player.run((0..5).map(|sequence| Slot {
-            samples: 5_760,
-            ..steady(sequence)
-        }));
-        let samples: Vec<u32> = player.frames.iter().map(|&(_, samples)| samples).collect();
-        assert_eq!(samples, [960, 960, 960, 960, 5_760]);
+        let mut player = Player::new(0);
+        let trimmed = Slot {
+            samples: 2_880,
+            ..packet(0, 0, 0)
+        };
+        let unplayable = Slot {
+            payload: None,
+            ..packet(1, 0, 0)
+        };
+        player.run([trimmed, unplayable, packet(2, 0, FRAME)]);
+        assert_eq!(player.played, [Out::Play(0), Out::Skip(1), Out::Play(2)]);
     }
 }

@@ -65,35 +65,32 @@ mod tests {
         assert!(!is_speech(&voice, true));
         assert!(!is_speech(&SILENCE_FRAME, false));
 
-        for hangover in [10 * FRAME, 25 * FRAME] {
+        let hangover = 10 * FRAME;
+
+        for (speech, end) in [
+            (&[0, FRAME][..], 2 * FRAME),
+            (&[0, 2 * FRAME, FRAME][..], 3 * FRAME),
+        ] {
             let mut activity = Activity::default();
 
-            let edges = [
-                activity.packet(SSRC, 0, 960, is_speech(&voice, false)),
-                activity.packet(SSRC, FRAME, 960, is_speech(&voice, false)),
-                activity.packet(SSRC, 2 * FRAME, 960, is_speech(&SILENCE_FRAME, false)),
-                activity.packet(SSRC, 3 * FRAME, 960, is_speech(&voice, true)),
-                activity.expire(2 * FRAME + hangover - 1, hangover),
-            ];
+            let mut edges: Vec<Option<Edge>> = speech
+                .iter()
+                .map(|&at| activity.packet(SSRC, at, 960, is_speech(&voice, false)))
+                .collect();
+            edges.push(activity.packet(SSRC, end, 960, is_speech(&SILENCE_FRAME, false)));
+            edges.push(activity.packet(SSRC, end + FRAME, 960, is_speech(&voice, true)));
+            edges.push(activity.expire(end + hangover - 1, hangover));
             assert!(activity.is_speaking());
-            let stop = activity.expire(2 * FRAME + hangover, hangover);
+            let stop = activity.expire(end + hangover, hangover);
 
-            assert_eq!(
-                edges,
-                [
-                    Some(Edge::Start { ssrc: SSRC, at: 0 }),
-                    None,
-                    None,
-                    None,
-                    None
-                ]
-            );
+            assert_eq!(edges[0], Some(Edge::Start { ssrc: SSRC, at: 0 }));
+            assert!(edges[1..].iter().all(Option::is_none), "{edges:?}");
             assert_eq!(
                 stop,
                 Some(Edge::Stop {
                     ssrc: SSRC,
-                    at: 2 * FRAME,
-                    duration: 2 * FRAME
+                    at: end,
+                    duration: end
                 })
             );
             assert!(!activity.is_speaking());

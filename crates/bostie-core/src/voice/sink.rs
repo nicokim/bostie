@@ -510,7 +510,7 @@ pub(crate) mod tests {
     fn the_wake_fires_once_the_queue_is_down_to_half_the_buffer() {
         let mut fixture = Fixture::new();
         let sink = fixture.sink(stereo_48k(), 100, StallPolicy::Hold);
-        sink.write(&frames_of(0.1, 5_760)).unwrap();
+        sink.write(&frames_of(0.1, 5_280)).unwrap();
         assert!(!sink.write(&frames_of(0.1, 960)).unwrap());
 
         let mut wakes = Vec::new();
@@ -519,7 +519,7 @@ pub(crate) mod tests {
             wakes.push(fixture.wakes());
         }
 
-        assert_eq!(wakes, [0, 0, 0, 1, 0]);
+        assert_eq!(wakes, [0, 0, 1, 0, 0]);
     }
 
     #[test]

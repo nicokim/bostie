@@ -441,7 +441,7 @@ mod tests {
             speech(BOB, true, start),
         ];
         receiver.push(turn, at(60));
-        receiver.push([frame(BOB, 0, start)], at(120));
+        receiver.push([frame(BOB, 0, start)], at(100));
         receiver.push([frame(BOB, 960, start)], at(180));
         receiver.push([speech(BOB, false, start)], at(200));
         receiver.add_dropped(2);
@@ -450,7 +450,7 @@ mod tests {
             receiver.read(256).unwrap(),
             ReceiveRead::Items(vec![
                 (at(60), speech(ALICE, false, start)),
-                (at(120), frame(BOB, 0, start)),
+                (at(100), frame(BOB, 0, start)),
                 (at(180), frame(BOB, 960, start)),
                 (at(200), speech(BOB, false, start)),
             ])
@@ -474,26 +474,28 @@ mod tests {
 
         receiver.push([frame(ALICE, 0, start)], at(0));
         receiver.push([frame(ALICE, 960, start)], at(60));
-        let late = [frame(ALICE, 1_920, start), speech(ALICE, false, start)];
+        receiver.push([frame(ALICE, 1_920, start)], at(100));
+        let late = [frame(ALICE, 2_880, start), speech(ALICE, false, start)];
         receiver.push(late, at(120));
         let kept = receiver.read(256).unwrap();
-        receiver.push([frame(ALICE, 2_880, start)], at(130));
+        receiver.push([frame(ALICE, 3_840, start)], at(130));
 
         assert_eq!(
             kept,
             ReceiveRead::Items(vec![
                 (at(0), frame(ALICE, 0, start)),
                 (at(60), frame(ALICE, 960, start)),
+                (at(100), frame(ALICE, 1_920, start)),
                 (at(120), speech(ALICE, false, start)),
             ])
         );
         assert_eq!(
             receiver.read(256).unwrap(),
-            ReceiveRead::Items(vec![(at(130), frame(ALICE, 2_880, start))])
+            ReceiveRead::Items(vec![(at(130), frame(ALICE, 3_840, start))])
         );
         assert_eq!(
             receiver.stats().unwrap(),
-            [("delivered", 3), ("dropped", 1), ("lost", 0)]
+            [("delivered", 4), ("dropped", 1), ("lost", 0)]
         );
     }
 
