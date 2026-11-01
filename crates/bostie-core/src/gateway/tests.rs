@@ -369,6 +369,24 @@ impl Harness {
         }
     }
 
+    async fn until_holding(&mut self) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let deliveries = self.inbox.drain();
+            let holding = deliveries
+                .iter()
+                .any(|delivery| matches!(delivery, Delivery::Backpressure { .. }));
+            for delivery in deliveries {
+                self.inbox.push(delivery);
+            }
+            if holding {
+                return;
+            }
+            assert!(Instant::now() < deadline, "the shard never held an event");
+            sleep(Duration::from_millis(2)).await;
+        }
+    }
+
     async fn dispatch(&mut self) -> (u64, Box<str>, Bytes) {
         match self.delivery().await {
             Delivery::Dispatch {
@@ -909,7 +927,10 @@ async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
 
     let mut unread_again = harness.fake.accept().await;
     unread_again.send(&hello(SLOW_HEARTBEAT)).await;
-    sleep(Duration::from_millis(100)).await;
+    timeout(WAIT, unread_again.socket.get_ref().readable())
+        .await
+        .unwrap()
+        .unwrap();
     harness.gateway.close(shard()).unwrap();
     assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
 }
@@ -951,6 +972,7 @@ async fn a_slow_consumer_pauses_reading_without_losing_events() {
     for seq in 2..=14 {
         peer.send(&message(seq)).await;
     }
+    harness.until_holding().await;
     for _ in 0..3 {
         peer.heartbeat().await;
     }
@@ -987,7 +1009,7 @@ async fn reconnecting_while_paused_delivers_the_held_event_once() {
     for seq in 2..=14 {
         peer.send(&message(seq)).await;
     }
-    sleep(Duration::from_millis(300)).await;
+    harness.until_holding().await;
 
     harness.gateway.reconnect(shard()).unwrap();
 
@@ -1004,7 +1026,6 @@ async fn reconnecting_while_paused_delivers_the_held_event_once() {
         .await;
 
     let mut seqs = Vec::new();
-    let mut backpressure = 0;
     loop {
         match harness.delivery().await {
             Delivery::Dispatch { seq, name, .. } if &*name == "RESUMED" => {
@@ -1012,12 +1033,11 @@ async fn reconnecting_while_paused_delivers_the_held_event_once() {
                 break;
             }
             Delivery::Dispatch { seq, .. } => seqs.push(seq),
-            Delivery::Backpressure { .. } => backpressure += 1,
+            Delivery::Backpressure { .. } => {}
             Delivery::Disconnected { reason, .. } => assert_eq!(reason, "reconnect requested"),
             other => panic!("unexpected {other:?}"),
         }
     }
-    assert!(backpressure >= 1);
     assert_eq!(seqs, (2..=14).collect::<Vec<_>>());
 }
 
