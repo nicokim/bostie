@@ -154,6 +154,13 @@ class Channel(PartialChannel, kw_only=True):
     default_forum_layout: ForumLayoutType | None = None
 
 
+class ActiveThreads(Model, kw_only=True):
+    """A guild's active threads and the bot's membership in those it joined."""
+
+    threads: tuple[Channel, ...]
+    members: tuple[ThreadMember, ...]
+
+
 class FollowedChannel(Model, kw_only=True):
     """An announcement channel followed through the webhook `webhook_id`."""
 

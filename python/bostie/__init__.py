@@ -113,6 +113,7 @@ from bostie.gateway import RequestedMembers
 from bostie.models import (
     SKU,
     ActionRow,
+    ActiveThreads,
     Activity,
     ActivityAssets,
     ActivityEmoji,
@@ -284,6 +285,7 @@ from bostie.sync import SyncResult
 __all__ = [
     "SKU",
     "ActionRow",
+    "ActiveThreads",
     "Activity",
     "ActivityAssets",
     "ActivityEmoji",

@@ -19,6 +19,7 @@ from bostie.events import (
 )
 from bostie.models import (
     ActionRow,
+    ActiveThreads,
     AuditLogPage,
     Ban,
     Channel,
@@ -67,6 +68,7 @@ REST_MODELS: dict[str, type[Model]] = {
     "welcome_screen": WelcomeScreen,
     "poll_message": Message,
     "forum_channel": Channel,
+    "active_threads": ActiveThreads,
 }
 ENUM_KEYS = {
     "type",

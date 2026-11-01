@@ -13,6 +13,7 @@ from bostie.models.application import (
 )
 from bostie.models.base import Builder, Model, decode
 from bostie.models.channel import (
+    ActiveThreads,
     AddedThreadMember,
     Channel,
     DefaultReaction,
@@ -201,6 +202,7 @@ from bostie.models.user import (
 __all__ = [
     "SKU",
     "ActionRow",
+    "ActiveThreads",
     "Activity",
     "ActivityAssets",
     "ActivityEmoji",
