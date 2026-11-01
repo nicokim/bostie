@@ -18,9 +18,11 @@ from bostie.enums import OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
+    Channel,
     InteractionDataOption,
     Member,
     PartialChannel,
+    PartialUser,
     Resolved,
     Role,
     User,
@@ -264,6 +266,8 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
         (list[int], "unsupported type hint list\\[int\\]"),
         (int | str, "unsupported type hint"),
         (User | Member, "unsupported type hint"),
+        (Channel, "Channel; a channel option is a PartialChannel"),
+        (PartialUser | None, "PartialUser; a user option is a User or a Member"),
         (Literal["a", 1], "must be all str, all int or all float"),
         (Literal[True], "must be all str, all int or all float"),
         (

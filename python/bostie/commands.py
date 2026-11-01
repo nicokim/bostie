@@ -26,9 +26,11 @@ from bostie.enums import CommandType, InteractionContextType, OptionType, Permis
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
+    Channel,
     InteractionDataOption,
     Member,
     PartialChannel,
+    PartialUser,
     Resolved,
     Role,
     User,
@@ -116,6 +118,10 @@ OPTION_MODELS: dict[OptionModel, OptionType] = {
     Role: OptionType.ROLE,
     PartialChannel: OptionType.CHANNEL,
     Attachment: OptionType.ATTACHMENT,
+}
+MODEL_ADVICE: dict[type, str] = {
+    Channel: "a channel option is a PartialChannel",
+    PartialUser: "a user option is a User or a Member",
 }
 
 
@@ -616,8 +622,15 @@ def _kind(
         choices = [Choice(str(value), value) for value in values]
         lookup = {value: value for value in values}.__getitem__
         return _choice_type(choices), choices, (), lookup
+    advice = [use for model, use in MODEL_ADVICE.items() if model in members]
     raise CommandDefinitionError(
-        "unsupported type hint " + " | ".join(map(inspect.formatannotation, members))
+        "; ".join(
+            [
+                "unsupported type hint "
+                + " | ".join(map(inspect.formatannotation, members)),
+                *advice,
+            ]
+        )
     )
 
 
