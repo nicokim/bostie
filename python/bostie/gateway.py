@@ -12,6 +12,7 @@ from bostie.errors import (
     InvalidToken,
     PrivilegedIntentsRequired,
     ShardingRequired,
+    StateError,
 )
 from bostie.models.base import encoder
 
@@ -47,7 +48,7 @@ class Shard:
         """Seconds from the last heartbeat to its ACK, or None when there is none."""
         try:
             return self._bridge.core.gateway_latency(self.id)
-        except RuntimeError:
+        except StateError:
             return None
 
 
@@ -147,7 +148,7 @@ class GatewayClient:
     async def close(self) -> None:
         """Close every shard with code 1000 and wait up to 2 s for them to end."""
         for shard_id in self._running:
-            with contextlib.suppress(RuntimeError):
+            with contextlib.suppress(StateError):
                 self._bridge.core.gateway_close(shard_id)
         stopped = self._stopped
         if stopped is None or stopped.done():

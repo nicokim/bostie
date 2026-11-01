@@ -129,7 +129,7 @@ impl Receiver {
         self.owner.check()?;
         let mut queue = self.queue.lock();
         if queue.ended == Some(Ended::Closed) {
-            return Err(CoreError::HandleClosed(self.id));
+            return Err(CoreError::ReceiverClosed(self.id));
         }
         let items = queue.take(limit.max(1));
         if !items.is_empty() {
@@ -164,7 +164,7 @@ impl Receiver {
         self.owner.check()?;
         let mut queue = self.queue.lock();
         if queue.ended == Some(Ended::Closed) {
-            return Err(CoreError::HandleClosed(self.id));
+            return Err(CoreError::ReceiverClosed(self.id));
         }
         let id = queue.next_mark;
         queue.next_mark += 1;
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(closed.queued().unwrap(), Duration::ZERO);
         assert!(matches!(
             closed.read(256),
-            Err(CoreError::HandleClosed(handle)) if handle == closed.id()
+            Err(CoreError::ReceiverClosed(handle)) if handle == closed.id()
         ));
 
         let ended = open(&fixture, 60_000);

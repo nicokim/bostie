@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, Self, assert_never, cast
 
 from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
-from bostie.errors import Empty, ReceiverClosed
+from bostie.errors import BostieError, Empty, ReceiverClosed
 from bostie.voice.events import SpeechStart, SpeechStop
 from bostie.voice.formats import Overflow, ReceiveFormat, ReceiveStall
 from bostie.voice.frames import Frame, Packet
@@ -129,7 +129,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         """Stop receiving and discard what is queued."""
         if self.closed:
             return
-        with contextlib.suppress(RuntimeError):
+        with contextlib.suppress(BostieError):
             self._stats = self._read_stats()
         self._native.close()
         self._end(ClosedReason.CLOSED)
@@ -174,7 +174,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
 
     def _drained(self) -> None:
         reason = self._native.closed_reason()
-        with contextlib.suppress(RuntimeError):
+        with contextlib.suppress(BostieError):
             self._stats = self._read_stats()
         self._end(ClosedReason.DISCONNECTED if reason is None else ClosedReason(reason))
 

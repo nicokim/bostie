@@ -2518,7 +2518,7 @@ async fn shutdown_closes_every_open_source_and_refuses_new_ones() {
     harness.voice.shutdown();
 
     assert!(kept.is_closed());
-    assert!(matches!(kept.read(), Err(CoreError::HandleClosed(_))));
+    assert!(matches!(kept.read(), Err(CoreError::SourceClosed(_))));
     assert!(matches!(
         harness.voice.open_source(tone_file()),
         Err(CoreError::Closed)

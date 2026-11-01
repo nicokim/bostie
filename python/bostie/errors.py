@@ -20,6 +20,10 @@ class MissingIntent(BostieError, ValueError):
     """A feature needs an intent the bot did not ask for."""
 
 
+class StartupError(BostieError, OSError):
+    """bostie could not set up a system resource it needs."""
+
+
 class TransportError(BostieError):
     """A request failed before Discord answered it."""
 
@@ -135,6 +139,14 @@ class ShardingRequired(GatewayClosed):
     """The bot is in too many guilds to run on a single shard."""
 
 
+class ShardNotRunning(StateError):
+    """The shard does not run in this process, or has stopped."""
+
+
+class GatewayQueueFull(BostieError):
+    """The shard has too many gateway commands waiting to be sent."""
+
+
 class CommandError(BostieError):
     """Base class of errors about application commands and interactions."""
 
@@ -204,6 +216,14 @@ class VoiceNotConnected(VoiceError):
 
 class AlreadyConnected(VoiceError, StateError):
     """bostie already runs a voice connection in this guild."""
+
+
+class VoiceQueueFull(VoiceError):
+    """The voice connection has too many commands waiting."""
+
+
+class DaveError(VoiceError):
+    """A DAVE end-to-end encryption step failed."""
 
 
 class SinkClosed(VoiceError):

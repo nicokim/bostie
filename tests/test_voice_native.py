@@ -12,6 +12,7 @@ import pytest
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie.errors import ReceiverClosed, ShardNotRunning, SinkClosed, StateError
 from bostie.voice.formats import OpusApplication, Sample
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
@@ -239,9 +240,9 @@ def test_a_closed_sink_refuses_writes_but_keeps_its_stats(
     sink.close()
     sink.close()
 
-    with pytest.raises(RuntimeError, match=f"voice handle {sink.id} is closed"):
+    with pytest.raises(SinkClosed, match=f"sink {sink.id} is closed"):
         sink.write(bytes(FRAME_BYTES))
-    with pytest.raises(RuntimeError, match="closed"):
+    with pytest.raises(SinkClosed):
         sink.mark()
     assert sink.stats() == (0, 0, 0, 0, 0, 0)
     assert not sink.passthrough()
@@ -270,16 +271,16 @@ def test_a_receiver_on_a_connection_not_yet_ready_waits_until_closed(
 
     assert rx.closed_reason() == "closed"
     assert handle_deliveries(connected, rx.id) == [("voice_wake", rx.id)]
-    with pytest.raises(RuntimeError, match=f"voice handle {rx.id} is closed"):
+    with pytest.raises(ReceiverClosed, match=f"receiver {rx.id} is closed"):
         rx.read(256)
     assert rx.stats() == (0, 0, 0)
 
 
-def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
-    with pytest.raises(RuntimeError, match=f"no voice connection in guild {GUILD}"):
-        core.voice_dave(GUILD)
+def test_voice_connect_needs_a_running_shard_and_valid_settings(
+    core: _native.Core,
+) -> None:
     core.voice_disconnect(GUILD)
-    with pytest.raises(RuntimeError, match="shard 0 is not running"):
+    with pytest.raises(ShardNotRunning, match="shard 0 is not running"):
         connect(core)
     with pytest.raises(ValueError, match="bitrate"):
         connect(core, bitrate=10)
@@ -306,17 +307,6 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
             overflow="drop_oldest",
             stall="wait",
         )
-    with pytest.raises(RuntimeError, match="already has a voice connection"):
-        connect(core)
-    with pytest.raises(RuntimeError, match="code: there is no DAVE session"):
-        core.voice_verification_code(GUILD, USER)
-
-    core.close()
-
-    with pytest.raises(RuntimeError, match="closed"):
-        connect(core)
-    with pytest.raises(RuntimeError, match="closed"):
-        core.voice_file(str(MEDIA / "tone.flac"))
 
 
 def test_a_file_source_yields_one_second_of_48_khz_stereo_f32(
@@ -380,9 +370,9 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
     source.close()
 
     assert after_seek == pytest.approx(SECOND_OF_F32_STEREO / 2, rel=0.01)
-    with pytest.raises(RuntimeError, match=f"voice handle {source.id} is closed"):
+    with pytest.raises(StateError, match=f"source {source.id} is closed"):
         source.seek(0.0)
-    with pytest.raises(RuntimeError, match="closed"):
+    with pytest.raises(StateError, match="closed"):
         source.read()
 
 

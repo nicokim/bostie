@@ -300,7 +300,7 @@ impl Sink {
     fn open_queue(&self) -> Result<MutexGuard<'_, Queue>, CoreError> {
         let queue = self.queue.lock();
         if queue.closed {
-            return Err(CoreError::HandleClosed(self.id));
+            return Err(CoreError::SinkClosed(self.id));
         }
         Ok(queue)
     }
@@ -640,14 +640,14 @@ pub(crate) mod tests {
         assert!(pull(&sink).is_none());
         assert!(matches!(
             sink.write(&frames_of(0.1, 960)),
-            Err(CoreError::HandleClosed(handle)) if handle == sink.id()
+            Err(CoreError::SinkClosed(handle)) if handle == sink.id()
         ));
-        assert!(matches!(sink.mark(), Err(CoreError::HandleClosed(_))));
-        assert!(matches!(sink.flush(), Err(CoreError::HandleClosed(_))));
-        assert!(matches!(sink.clear(None), Err(CoreError::HandleClosed(_))));
+        assert!(matches!(sink.mark(), Err(CoreError::SinkClosed(_))));
+        assert!(matches!(sink.flush(), Err(CoreError::SinkClosed(_))));
+        assert!(matches!(sink.clear(None), Err(CoreError::SinkClosed(_))));
         assert!(matches!(
             sink.set_volume(0.5),
-            Err(CoreError::HandleClosed(_))
+            Err(CoreError::SinkClosed(_))
         ));
     }
 

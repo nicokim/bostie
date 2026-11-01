@@ -2,6 +2,7 @@ from bostie.enums import ClosedReason, Direction, DisconnectReason, State
 from bostie.errors import (
     AlreadyConnected,
     BufferFull,
+    DaveError,
     Empty,
     NotInVoice,
     ReceiverClosed,
@@ -10,6 +11,7 @@ from bostie.errors import (
     VoiceConnectError,
     VoiceError,
     VoiceNotConnected,
+    VoiceQueueFull,
 )
 from bostie.voice.connection import (
     ConnectOptions,
@@ -82,6 +84,7 @@ __all__ = [
     "ConnectOptions",
     "ContextVoice",
     "Dave",
+    "DaveError",
     "DaveTransition",
     "Defaults",
     "Direction",
@@ -145,6 +148,7 @@ __all__ = [
     "VoiceEvent",
     "VoiceManager",
     "VoiceNotConnected",
+    "VoiceQueueFull",
     "broadcast",
     "utterances",
     "versions",

@@ -240,6 +240,15 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
 - `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `wait_until_ready()` waits for every shard here, and each event carries its `shard_id`.
 
+## Errors
+
+A bad argument raises `ValueError` or `TypeError`. Every other error bostie raises, the Rust core's included, is a `bostie.BostieError`:
+
+- `HTTPException` and its subclasses such as `NotFound` when Discord answers with an error status, `TransportError` when a request fails before it answers, and `GatewayClosed` when Discord ends the gateway session for good.
+- `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.
+- `MissingIntent`, also a `ValueError`, when a feature needs an intent the bot did not ask for, and `StartupError`, also an `OSError`, when bostie cannot set up a thread, socket, HTTP client or TLS context it needs.
+- `CommandError` for commands and interactions, and `voice.VoiceError` for voice.
+
 ## License
 
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.

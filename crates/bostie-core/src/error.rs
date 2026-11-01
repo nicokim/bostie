@@ -27,8 +27,12 @@ pub enum CoreError {
     VoiceRunning(GuildId),
     #[error("the voice command queue of guild {0} is full")]
     VoiceQueueFull(GuildId),
-    #[error("voice handle {0} is closed")]
-    HandleClosed(Handle),
+    #[error("sink {0} is closed")]
+    SinkClosed(Handle),
+    #[error("receiver {0} is closed")]
+    ReceiverClosed(Handle),
+    #[error("source {0} is closed")]
+    SourceClosed(Handle),
     #[error(transparent)]
     Dave(#[from] DaveError),
     #[error("failed to start the async runtime")]

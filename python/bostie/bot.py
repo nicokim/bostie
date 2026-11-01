@@ -267,7 +267,7 @@ class Bot(Router):
                     intents=self._intents,
                     presence=self._presence,
                 )
-            except (TransportError, RuntimeError):
+            except (TransportError, StateError):
                 if self._closing is None:
                     raise
             finally:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from bostie._aio import Wake
-from bostie.errors import BufferFull, SinkClosed
+from bostie.errors import BostieError, BufferFull, SinkClosed
 from bostie.voice.formats import SAMPLE_BYTES, SAMPLE_RATE, Format, Opus, SinkStall
 
 if TYPE_CHECKING:
@@ -148,7 +148,7 @@ class Sink:
         """Discard the queued audio and close; `async with` drains first."""
         if self._closed:
             return
-        with contextlib.suppress(RuntimeError):
+        with contextlib.suppress(BostieError):
             self._stats = self._read_stats()
         self._native.close()
         self._release()

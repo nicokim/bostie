@@ -371,7 +371,7 @@ class VoiceManager:
             async with asyncio.timeout(settings.timeout):
                 return ExternalVoice(await state, await server, self, guild_id)
         except BaseException as error:
-            with contextlib.suppress(RuntimeError):
+            with contextlib.suppress(BostieError):
                 self._send_voice_state(guild_id, None, self_mute=False, self_deaf=False)
             if isinstance(error, TimeoutError):
                 raise VoiceConnectError(
@@ -872,7 +872,7 @@ class VoiceConnection:
         try:
             await self._until_ready()
         except asyncio.CancelledError:
-            with contextlib.suppress(RuntimeError):
+            with contextlib.suppress(BostieError):
                 self._core().voice_disconnect(self.guild_id)
             raise
 
@@ -1102,7 +1102,7 @@ class VoiceConnection:
             self._channel_bitrate = channel.bitrate
             if self._encoder.bitrate is None:
                 self._apply_encoder(self._encoder)
-        except (BostieError, RuntimeError, ValueError):
+        except (BostieError, ValueError):
             log.warning(
                 "could not read channel %d to follow its bitrate",
                 channel_id,

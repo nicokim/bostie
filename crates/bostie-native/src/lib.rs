@@ -17,11 +17,15 @@ use bostie_core::{
     RestRequest, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString};
 
+use crate::errors::{
+    AlreadyConnected, DaveError, GatewayQueueFull, ReceiverClosed, ShardNotRunning, SinkClosed,
+    StartupError, StateError, VoiceNotConnected, VoiceQueueFull,
+};
 use crate::voice::{
     Choice, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, speaking_parts,
 };
@@ -552,6 +556,20 @@ fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
     }
 }
 
+#[expect(clippy::same_name_method)]
+mod errors {
+    pyo3::import_exception!(bostie.errors, StateError);
+    pyo3::import_exception!(bostie.errors, ShardNotRunning);
+    pyo3::import_exception!(bostie.errors, GatewayQueueFull);
+    pyo3::import_exception!(bostie.errors, VoiceNotConnected);
+    pyo3::import_exception!(bostie.errors, AlreadyConnected);
+    pyo3::import_exception!(bostie.errors, VoiceQueueFull);
+    pyo3::import_exception!(bostie.errors, SinkClosed);
+    pyo3::import_exception!(bostie.errors, ReceiverClosed);
+    pyo3::import_exception!(bostie.errors, DaveError);
+    pyo3::import_exception!(bostie.errors, StartupError);
+}
+
 pub(crate) struct Error(PyErr);
 
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -563,18 +581,20 @@ impl From<CoreError> for Error {
             CoreError::InvalidRequest(_) => PyValueError::new_err(message),
             CoreError::Forked { .. }
             | CoreError::Closed
-            | CoreError::UnknownShard(_)
             | CoreError::ShardRunning(_)
-            | CoreError::SendQueueFull(_)
-            | CoreError::UnknownVoice(_)
-            | CoreError::VoiceRunning(_)
-            | CoreError::VoiceQueueFull(_)
-            | CoreError::HandleClosed(_)
-            | CoreError::Dave(_) => PyRuntimeError::new_err(message),
+            | CoreError::SourceClosed(_) => StateError::new_err(message),
+            CoreError::UnknownShard(_) => ShardNotRunning::new_err(message),
+            CoreError::SendQueueFull(_) => GatewayQueueFull::new_err(message),
+            CoreError::UnknownVoice(_) => VoiceNotConnected::new_err(message),
+            CoreError::VoiceRunning(_) => AlreadyConnected::new_err(message),
+            CoreError::VoiceQueueFull(_) => VoiceQueueFull::new_err(message),
+            CoreError::SinkClosed(_) => SinkClosed::new_err(message),
+            CoreError::ReceiverClosed(_) => ReceiverClosed::new_err(message),
+            CoreError::Dave(_) => DaveError::new_err(message),
             CoreError::Runtime(_)
             | CoreError::Bell(_)
             | CoreError::HttpClient(_)
-            | CoreError::Tls(_) => PyOSError::new_err(message),
+            | CoreError::Tls(_) => StartupError::new_err(message),
         })
     }
 }

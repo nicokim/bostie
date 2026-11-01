@@ -11,6 +11,7 @@ from fakediscord import settle
 
 from bostie.cache import Cache
 from bostie.enums import Intents
+from bostie.errors import SinkClosed
 from bostie.events import Event
 from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
@@ -175,7 +176,7 @@ class FakeSink:
         if self.failure is not None:
             raise self.failure
         if self.closed:
-            raise RuntimeError(f"voice handle {self._id} is closed")
+            raise SinkClosed(f"sink {self._id} is closed")
 
 
 class FakeSource:

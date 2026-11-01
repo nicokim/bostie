@@ -223,7 +223,7 @@ impl Source {
     fn open_state(&self) -> Result<MutexGuard<'_, State>, CoreError> {
         let state = self.shared.state.lock();
         if state.closed {
-            return Err(CoreError::HandleClosed(self.id));
+            return Err(CoreError::SourceClosed(self.id));
         }
         Ok(state)
     }
@@ -851,10 +851,10 @@ pub(crate) mod tests {
 
         assert_eq!(harness.wakes(), 1);
         assert!(source.is_closed());
-        assert!(matches!(source.read(), Err(CoreError::HandleClosed(_))));
+        assert!(matches!(source.read(), Err(CoreError::SourceClosed(_))));
         assert!(matches!(
             source.seek(Duration::ZERO),
-            Err(CoreError::HandleClosed(_))
+            Err(CoreError::SourceClosed(_))
         ));
         assert_eq!(source.info().unwrap(), Some(seekable_pcm()));
         drop(hold);
