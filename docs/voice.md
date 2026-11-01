@@ -1,5 +1,9 @@
 # Voice
 
+## Connecting again
+
+In a guild where the bot is already connected, `bot.voice.connect()` and `ctx.voice.connect()` move that connection, as `vc.move()` does, and return it. The connection keeps its mute, deafen, encoder, speaking flags and speech settings, and the call changes only the options you pass. `timeout` bounds this call alone, and `server_change_delay` stays as the first connect set it. `stage` is requested whenever you pass it and the channel is a stage channel, even when the bot is already there.
+
 ## Voice server changes
 
 Discord sometimes moves a call to another voice server, for example when someone changes the channel's region or when a server goes away. Everyone in the call reconnects at the same moment. bostie follows on its own: the connection goes `RECONNECTING`, comes back `READY` on the new server, and the audio held in its sinks plays from there.

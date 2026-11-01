@@ -270,25 +270,19 @@ class VoiceManager:
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
-        In a guild where the bot is already connected, this moves it.
+        In a guild where the bot is already connected, this moves it and applies
+        only the options given.
         """
         user = self._running_user("bot.voice.connect()")
         settings = self._settings(**options)
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
-        if vc is None:
-            vc = VoiceConnection(self, guild_id, channel, settings)
-            await vc._start(user.id)
-            entered = True
-        else:
-            entered = await vc._join(
-                channel, settings.self_mute, settings.self_deaf, settings.timeout
-            )
-        if (
-            entered
-            and channel.type is ChannelType.GUILD_STAGE_VOICE
-            and settings.stage != "listen"
-        ):
+        if vc is not None:
+            await vc._connect_again(channel, options)
+            return vc
+        vc = VoiceConnection(self, guild_id, channel, settings)
+        await vc._start(user.id)
+        if channel.type is ChannelType.GUILD_STAGE_VOICE and settings.stage != "listen":
             try:
                 await vc._request_stage(settings.stage)
             except BaseException:
@@ -849,9 +843,28 @@ class VoiceConnection:
                 self._core().voice_disconnect(self.guild_id)
             raise
 
+    async def _connect_again(self, channel: Channel, options: ConnectOptions) -> None:
+        mute, deaf = self._requested
+        await self._join(
+            channel,
+            options.get("self_mute", mute),
+            options.get("self_deaf", deaf),
+            options.get("timeout", self._settings.timeout),
+        )
+        if "encoder" in options:
+            self.encoder = options["encoder"]
+        if "speaking_flags" in options:
+            self.speaking_flags = options["speaking_flags"]
+        if "speech_hangover" in options:
+            self.speech_hangover = options["speech_hangover"]
+        if "speech_activity" in options:
+            self.speech_activity = options["speech_activity"]
+        if "stage" in options and channel.type is ChannelType.GUILD_STAGE_VOICE:
+            await self._request_stage(options["stage"])
+
     async def _join(
         self, channel: Channel, self_mute: bool, self_deaf: bool, timeout: float
-    ) -> bool:
+    ) -> None:
         moving = channel.id != self._channel_id
         if moving or (self_mute, self_deaf) != self._requested:
             self._update(channel.id, self_mute, self_deaf)
@@ -872,7 +885,6 @@ class VoiceConnection:
             raise VoiceConnectError(DisconnectReason.TIMEOUT, None, detail) from None
         if not reached:
             raise self._failure()
-        return moving
 
     async def _until_ready(self) -> None:
         if not await self._until(lambda: self._state is State.READY):

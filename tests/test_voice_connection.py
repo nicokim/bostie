@@ -27,6 +27,7 @@ from voice_fakes import (
     settle,
     voice_state,
 )
+from voice_fakes import Call as CoreCall
 
 from bostie import voice
 from bostie.enums import Intents, SpeakingFlags
@@ -225,12 +226,60 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
     run(scenario)
 
 
-def test_a_second_connect_with_other_flags_edits_them() -> None:
+@pytest.mark.parametrize(
+    ("options", "applied"),
+    [
+        ({}, []),
+        ({"self_deaf": True}, [("voice_update", (GUILD_ID, VOICE, True, True), {})]),
+        (
+            {"encoder": voice.EncoderSettings(application="voip")},
+            [
+                (
+                    "voice_encoder",
+                    (GUILD_ID,),
+                    {
+                        "bitrate": 96_000,
+                        "application": "voip",
+                        "fec": True,
+                        "packet_loss": 10,
+                        "complexity": 10,
+                    },
+                )
+            ],
+        ),
+        (
+            {"speaking_flags": SpeakingFlags.SOUNDSHARE},
+            [("voice_speaking", (GUILD_ID, 2), {})],
+        ),
+        (
+            {"speech_hangover": 0.5, "speech_activity": False},
+            [
+                ("voice_speech_hangover", (GUILD_ID, 0.5), {}),
+                ("voice_speech_activity", (GUILD_ID, False), {}),
+            ],
+        ),
+    ],
+)
+def test_a_second_connect_keeps_the_state_and_applies_only_its_options(
+    options: voice.ConnectOptions, applied: list[CoreCall]
+) -> None:
     async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot, VOICE)
-        assert await bot.voice.connect(VOICE) is vc
-        assert await bot.voice.connect(VOICE, self_deaf=True) is vc
-        assert bot.core.sent == [voice_state(VOICE), voice_state(VOICE, self_deaf=True)]
+        vc = await connected(bot, self_mute=True)
+        before = len(bot.core.calls)
+        assert await bot.voice.connect(VOICE, **options) is vc
+        assert bot.core.calls[before:] == applied
+
+    run(scenario)
+
+
+def test_a_second_connect_requests_the_stage_it_passes() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot, STAGE)
+        assert await bot.voice.connect(STAGE, stage="speak") is vc
+        (patch,) = [
+            request for request in bot.rest.requests if request.method == "PATCH"
+        ]
+        assert patch.json == {"channel_id": str(STAGE), "suppress": False}
 
     run(scenario)
 
