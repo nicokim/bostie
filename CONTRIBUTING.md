@@ -53,10 +53,10 @@ Rust needs no change: the core forwards any dispatch name Python asks for.
 Discord adds fields and enum values without notice, and a bot must not break when it does. So models never reject what they don't know:
 
 - Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values.
-- Every field except an id or `type` has a default, usually `None`. `test_fields_have_defaults_so_a_missing_field_never_drops_an_event` checks every model and event.
+- Every field except an id or `type` has a default, usually `None`.
 - `decoder()` in `python/bostie/models/base.py` runs msgspec in lax mode. Snowflake strings become `int` and unix timestamps become `datetime` without a converter.
 
-If a payload still doesn't fit, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it.
+If a payload still doesn't fit, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
 
 ## Tests
 

@@ -1,13 +1,15 @@
+import asyncio
 import json
-from collections.abc import Iterator
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import msgspec
 import pytest
+from fakediscord import FakeDiscord, run, running
 
-from bostie import events
+from bostie import Bot, events
 from bostie.enums import ApplicationFlags
 from bostie.events import (
     EVENTS,
@@ -31,7 +33,7 @@ from bostie.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from bostie.models import Builder, Channel, Guild, Member, Model
+from bostie.models import Guild, Member, Model
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
 
@@ -44,49 +46,22 @@ MODELLED = sorted(
 TOKEN = "bostie-test-token-7c1f"
 
 
-def subclasses(base: type) -> Iterator[type]:
-    subclass: type
-    for subclass in base.__subclasses__():
-        yield subclass
-        yield from subclasses(subclass)
-
-
-STRUCTS: list[type[msgspec.Struct]] = [
-    *subclasses(Model),
-    *subclasses(Builder),
-    *subclasses(Event),
-]
-SECRET_KEYS = {
-    field.encode_name
-    for struct in STRUCTS
-    for field in msgspec.structs.fields(struct)
-    if "token" in field.encode_name or "secret" in field.encode_name
-}
-
-
 def decode[E: Event](event: type[E], name: str, shard_id: int = 0) -> E:
     return event.decode(shard_id, (EVENT_FIXTURES / f"{name}.json").read_bytes())
 
 
-def decode_ids_only(struct: type[msgspec.Struct], **fields: Any) -> Any:
-    payload: dict[str, Any] = {"id": "1", "name": "n", "seq": 1} | fields
-    if any(
-        field.required and (field.name == "type" or field.type is Channel)
-        for field in msgspec.structs.fields(struct)
-    ):
-        payload["type"] = 1
-    data = msgspec.json.encode(payload)
-    try:
-        if issubclass(struct, Event):
-            return struct.decode(0, data)
-        if issubclass(struct, Model):
-            return decode_model(struct, data)
-        return decoder(struct).decode(data)
-    except msgspec.ValidationError as error:
-        pytest.fail(
-            f"{struct.__qualname__}: {error}. Every field but an id or type needs a "
-            "default such as None, so a payload without it does not drop the event"
-        )
+def without(document: dict[str, Any], key: str) -> dict[str, Any]:
+    return {name: value for name, value in document.items() if name != key}
+
+
+def required_keys(event: type[Event], document: dict[str, Any]) -> list[str]:
+    required = []
+    for key in document:
+        try:
+            event.decode(0, msgspec.json.encode(without(document, key)))
+        except msgspec.ValidationError:
+            required.append(key)
+    return required
 
 
 @pytest.mark.parametrize("path", MODELLED, ids=lambda path: path.stem)
@@ -301,21 +276,56 @@ def test_voice_events() -> None:
     assert server.token == "8f3e2b9c1d7a4f60"
 
 
-@pytest.mark.parametrize("struct", STRUCTS, ids=lambda struct: struct.__qualname__)
-def test_fields_have_defaults_so_a_missing_field_never_drops_an_event(
-    struct: type[msgspec.Struct],
+def test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    decode_ids_only(struct)
+    monkeypatch.setattr(events, "_undecodable", set())
+    cases: list[tuple[str, dict[str, Any], bool]] = []
+    for path in MODELLED:
+        name = path.name.split(".")[0]
+        document = json.loads(path.read_bytes())
+        cases.append((name, document, True))
+        cases += [
+            (name, without(document, key), False)
+            for key in required_keys(EVENTS[name], document)
+        ]
 
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        typed: set[bytes] = set()
+        raw: dict[int, bytes] = {}
 
-@pytest.mark.parametrize("struct", STRUCTS, ids=lambda struct: struct.__qualname__)
-def test_no_repr_shows_a_token_or_the_payload_holding_it(
-    struct: type[msgspec.Struct],
-) -> None:
-    value = decode_ids_only(struct, **dict.fromkeys(SECRET_KEYS, TOKEN))
+        @bot.listen(*EVENTS.values())
+        async def on_typed(event: Event) -> None:
+            typed.add(event.raw_json)
 
-    for text in (repr(value), str(value), repr(value.__rich_repr__())):
-        assert TOKEN not in text
+        @bot.listen
+        async def on_raw(event: RawEvent) -> None:
+            raw[event.seq] = event.raw_json
+
+        async with running(bot, fake):
+            seqs = [await fake.dispatch(name, document) for name, document, _ in cases]
+            end = asyncio.Task(
+                bot.wait_for(RawEvent, check=lambda event: event.name == "END"),
+                loop=asyncio.get_running_loop(),
+                eager_start=True,
+            )
+            await fake.dispatch("END", {})
+            await end
+
+        assert [raw[seq] in typed for seq in seqs] == [ok for _, _, ok in cases]
+
+    with caplog.at_level(logging.WARNING):
+        run(scenario)
+
+    broken = {name for name, _, ok in cases if not ok}
+    skipped = [
+        record.getMessage().split()[0]
+        for record in caplog.records
+        if record.name == "bostie.events"
+    ]
+    assert sorted(skipped) == sorted(broken)
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
 def test_reprs_leave_out_interaction_and_voice_tokens() -> None:

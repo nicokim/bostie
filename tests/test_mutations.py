@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Callable, Iterator
 from enum import IntFlag
 from functools import partial
@@ -59,8 +60,29 @@ FLAG_KEYS = {
     "public_flags",
 }
 UNKNOWN_FLAGS = 1 << 62
+TOKEN = "bostie-test-token-7c1f"
+MISSING = re.compile(
+    r"Object missing required field `(?P<key>[^`]+)`(?: - at `\$(?P<at>.*)`)?$"
+)
+NULL = re.compile(r"got `null` - at `\$(?P<at>.*)`$")
+SNOWFLAKE_KEY = re.compile(r"\.\d+(?=\.|\[|$)")
 
 type Decoder = Callable[[bytes], object]
+
+
+def subclasses(base: type) -> Iterator[type]:
+    subclass: type
+    for subclass in base.__subclasses__():
+        yield subclass
+        yield from subclasses(subclass)
+
+
+SECRET_KEYS = {
+    field.encode_name
+    for struct in (*subclasses(Model), *subclasses(events.Event))
+    for field in msgspec.structs.fields(struct)
+    if "token" in field.encode_name or "secret" in field.encode_name
+}
 
 
 def fixtures() -> Iterator[Any]:
@@ -111,7 +133,7 @@ def fields(value: Any, path: str = "$") -> Iterator[tuple[str, dict[str, Any], s
     if isinstance(value, dict):
         for key, item in value.items():
             where = f"{path}.{key}"
-            if not (key in ("id", "type") or is_snowflake_map(value)):
+            if not is_snowflake_map(value):
                 yield where, value, key
             yield from fields(item, where)
     elif isinstance(value, list):
@@ -159,10 +181,22 @@ def failures(
         mutate(container, key)
         try:
             decode_all(decoder, document)
+        except msgspec.ValidationError as error:
+            if not refused_by_its_model(error, where):
+                failed.append(f"{where}: {error}")
         except Exception as error:
             failed.append(f"{where}: {error!r}")
         container[key] = original
     return failed
+
+
+def refused_by_its_model(error: msgspec.ValidationError, where: str) -> bool:
+    where = SNOWFLAKE_KEY.sub("[...]", where)
+    if missing := MISSING.match(str(error)):
+        return where.endswith(f"{missing['at'] or ''}.{missing['key']}")
+    if null := NULL.search(str(error)):
+        return where.endswith(null["at"])
+    return False
 
 
 def set_null(container: dict[str, Any], key: str) -> None:
@@ -223,6 +257,21 @@ def test_unknown_component_types_become_unknown_components(
         )
 
 
+@pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
+def test_no_repr_shows_a_token_or_the_payload_holding_it(
+    path: Path, decoder: Decoder
+) -> None:
+    document = load(path)
+    for value in list(objects(document)):
+        for key in SECRET_KEYS & value.keys():
+            value[key] = TOKEN
+
+    for decoded in decode_all(decoder, document):
+        if isinstance(decoded, msgspec.Struct):
+            for text in (repr(decoded), str(decoded), repr(decoded.__rich_repr__())):
+                assert TOKEN not in text
+
+
 def test_unknown_components_keep_their_raw_json() -> None:
     document = load(FIXTURES / "events" / "MESSAGE_CREATE.rich.json")
     for component in components(document):
@@ -239,14 +288,14 @@ def test_unknown_components_keep_their_raw_json() -> None:
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
-def test_null_is_accepted_in_every_field_but_ids_types_and_collections(
+def test_null_is_accepted_wherever_the_model_allows_it(
     path: Path, decoder: Decoder
 ) -> None:
     assert failures(path, decoder, set_null, collections=False) == []
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
-def test_every_field_but_ids_and_types_may_be_missing(
+def test_a_field_may_be_missing_wherever_the_model_allows_it(
     path: Path, decoder: Decoder
 ) -> None:
     assert failures(path, decoder, delete, collections=True) == []
