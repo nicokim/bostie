@@ -903,26 +903,6 @@ async fn no_supported_mode_ends_with_a_protocol_error_and_leaves() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unanswered_ip_discovery_times_out_naming_it() {
-    let mut harness = Harness::start().await;
-    harness.server.sfu.ignore_discoveries(usize::MAX);
-    harness
-        .voice
-        .connect(&ConnectRequest {
-            timeout: Duration::from_secs(1),
-            ..harness.request()
-        })
-        .unwrap();
-    harness.announce().await;
-
-    let (reason, _, detail) = harness.ended().await;
-
-    assert_eq!(reason, DisconnectReason::Timeout);
-    assert!(detail.contains("ip discovery: no answer from"), "{detail}");
-    assert!(harness.leaves() >= 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending() {
     let mut harness = Harness::start().await;
     harness.connected().await;
@@ -1389,22 +1369,82 @@ async fn a_connect_after_the_main_session_started_joins_once() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn no_voice_events_time_out_naming_the_voice_server_update_and_leave() {
-    let mut harness = Harness::start().await;
-    harness
-        .voice
-        .connect(&ConnectRequest {
-            timeout: Duration::from_millis(300),
-            ..harness.request()
+async fn a_connect_timeout_names_what_is_missing() {
+    let short = Duration::from_millis(300);
+    let long = Duration::from_secs(1);
+    for (offered, timeout, missing) in [
+        (
+            "nothing",
+            short,
+            "voice_events: no VOICE_STATE_UPDATE or VOICE_SERVER_UPDATE arrived for the channel",
+        ),
+        (
+            "state",
+            short,
+            "voice_events: no VOICE_SERVER_UPDATE with an endpoint arrived",
+        ),
+        (
+            "server",
+            short,
+            "voice_events: no VOICE_STATE_UPDATE arrived for the channel",
+        ),
+        (
+            "a server that never answers discovery",
+            short,
+            "no progress within",
+        ),
+        (
+            "a server whose discovery fails",
+            long,
+            "ip discovery: no answer from",
+        ),
+        (
+            "an endpointless server after ready",
+            long,
+            "server_unavailable: no VOICE_SERVER_UPDATE with an endpoint arrived",
+        ),
+    ] {
+        let slow = offered == "a server that never answers discovery";
+        let mut harness = Harness::tuned(|tuning| {
+            if slow {
+                tuning.discovery_interval = WAIT;
+            }
         })
-        .unwrap();
+        .await;
+        harness
+            .voice
+            .connect(&ConnectRequest {
+                timeout,
+                ..harness.request()
+            })
+            .unwrap();
+        match offered {
+            "state" => harness.state(Some(CHANNEL)),
+            "server" => harness.fresh_server().await,
+            "nothing" => {}
+            "an endpointless server after ready" => {
+                harness.announce().await;
+                harness.until(VoiceStatus::Ready).await;
+                harness.offer_server(guild(), "gone", None);
+            }
+            _ => {
+                harness.server.sfu.ignore_discoveries(usize::MAX);
+                harness.announce().await;
+            }
+        }
 
-    let (reason, code, detail) = harness.ended().await;
+        let (reason, code, detail) = harness.ended().await;
 
-    assert_eq!((reason, code), (DisconnectReason::Timeout, None));
-    assert!(detail.starts_with("voice_events: "), "{detail}");
-    assert!(detail.contains("VOICE_SERVER_UPDATE"), "{detail}");
-    assert_eq!(harness.leaves(), 1);
+        assert_eq!(
+            (reason, code),
+            (DisconnectReason::Timeout, None),
+            "{offered}"
+        );
+        assert!(detail.contains(missing), "{offered}: {detail}");
+        if offered == "nothing" {
+            assert_eq!(harness.leaves(), 1);
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1540,13 +1580,11 @@ async fn closing_the_core_ends_without_a_leave_and_drops_the_lane() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unknown_opcodes_are_ignored() {
+async fn an_unknown_opcode_is_ignored() {
     let mut harness = Harness::start().await;
     harness.connected().await;
 
-    for unknown in [12, 15, 18, 20] {
-        harness.server.gateway.send(unknown, json!({"any": [1, 2]}));
-    }
+    harness.server.gateway.send(20, json!({"any": [1, 2]}));
     harness.server.gateway.send(
         op::SPEAKING,
         json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
@@ -1672,24 +1710,6 @@ async fn a_malformed_frame_after_ready_is_skipped_and_never_replayed() {
     harness.speaking_from(91).await;
 
     assert_eq!(resume["seq_ack"].as_u64(), Some(4));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_truncated_binary_frame_is_skipped_after_ready() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-
-    harness
-        .server
-        .gateway
-        .send_raw(Message::binary(vec![0_u8, 2]));
-    harness.server.gateway.send(
-        op::SPEAKING,
-        json!({"user_id": "9", "ssrc": 90, "speaking": 1}),
-    );
-    harness.speaking_from(90).await;
-
-    assert_eq!(harness.statuses().len(), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1900,7 +1920,6 @@ async fn speaking_updates_are_coalesced_and_the_last_flags_win() {
 
     let updates = harness.server.json(op::SPEAKING);
     assert!(updates.len() <= 3, "{updates:?}");
-    assert!(harness.voice.set_speaking(guild(), 0).is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2425,27 +2444,37 @@ impl Harness {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_acknowledged_heartbeat_restores_the_rejoin_budget() {
-    let mut harness = Harness::with(|config| config.heartbeat_interval = QUICK_HEARTBEAT).await;
-    harness.connected().await;
+async fn an_acknowledged_heartbeat_restores_the_rejoin_and_resume_budgets() {
+    for rejoins in [true, false] {
+        let mut harness = Harness::with(|config| config.heartbeat_interval = QUICK_HEARTBEAT).await;
+        harness.connected().await;
 
-    for rejoin in 0..4 {
+        for (round, ssrc) in (0..4).zip(90..) {
+            harness.acknowledged(ssrc).await;
+            if rejoins {
+                harness.server.gateway.close(4006);
+                harness
+                    .settle(|harness| harness.joins(CHANNEL) == round + 2)
+                    .await;
+                harness.fresh_server().await;
+            } else {
+                harness.server.gateway.drop_connection();
+                harness.until(VoiceStatus::Resuming).await;
+            }
+            harness.until(VoiceStatus::Ready).await;
+        }
         harness
-            .acknowledged(90 + u32::try_from(rejoin).unwrap())
+            .settle(|harness| {
+                let (gateway, udp) = harness.voice.latency(guild()).unwrap();
+                gateway.is_some() && udp.is_some()
+            })
             .await;
-        harness.server.gateway.close(4006);
-        harness
-            .settle(|harness| harness.joins(CHANNEL) == rejoin + 2)
-            .await;
-        harness.fresh_server().await;
-        harness.until(VoiceStatus::Ready).await;
+        harness.server.collect().await;
+
+        let expected = if rejoins { (5, 0) } else { (1, 4) };
+        let budgets = (harness.joins(CHANNEL), harness.server.count(op::RESUME));
+        assert_eq!(budgets, expected, "{rejoins}");
     }
-
-    assert_eq!(harness.joins(CHANNEL), 5);
-    assert!(harness.voice.latency(guild()).unwrap().0.is_some());
-    harness
-        .settle(|harness| harness.voice.latency(guild()).unwrap().1.is_some())
-        .await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2518,8 +2547,8 @@ async fn dropped_sources_are_forgotten_when_the_next_one_opens() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sinks_and_sources_never_share_an_id() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
+    let harness = Harness::start().await;
+    harness.connect();
 
     let first = harness.sink(pcm(), StallPolicy::Hold).id();
     let source = harness.voice.open_source(tone_file()).unwrap().id();

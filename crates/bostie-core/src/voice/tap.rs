@@ -266,31 +266,39 @@ mod tests {
     }
 
     #[test]
-    fn a_voice_state_for_another_user_or_guild_is_ignored() {
-        let (tap, receiver) = registered();
+    fn payloads_that_are_not_ours_or_unreadable_change_nothing() {
+        let unreadable_channel = format!(
+            r#"{{"guild_id":"{GUILD}","user_id":"{USER}","channel_id":"x","session_id":"s"}}"#
+        );
+        let offers: [(u32, &str, Vec<u8>); 9] = [
+            (
+                0,
+                VOICE_STATE_UPDATE,
+                state(GUILD, USER + 1, Some(CHANNEL), ""),
+            ),
+            (
+                0,
+                VOICE_STATE_UPDATE,
+                state(OTHER_GUILD, USER, Some(CHANNEL), ""),
+            ),
+            (
+                0,
+                VOICE_SERVER_UPDATE,
+                server(OTHER_GUILD, "t", Some("host")),
+            ),
+            (0, "MESSAGE_CREATE", state(GUILD, USER, Some(CHANNEL), "")),
+            (1, VOICE_STATE_UPDATE, state(GUILD, USER, Some(CHANNEL), "")),
+            (1, VOICE_SERVER_UPDATE, server(GUILD, "t", Some("host"))),
+            (0, VOICE_STATE_UPDATE, b"{not json".to_vec()),
+            (0, VOICE_SERVER_UPDATE, br#"{"guild_id":"1"}"#.to_vec()),
+            (0, VOICE_STATE_UPDATE, unreadable_channel.into_bytes()),
+        ];
 
-        tap.offer(
-            shard(0),
-            VOICE_STATE_UPDATE,
-            &state(GUILD, USER + 1, Some(CHANNEL), ""),
-        );
-        tap.offer(
-            shard(0),
-            VOICE_STATE_UPDATE,
-            &state(OTHER_GUILD, USER, Some(CHANNEL), ""),
-        );
-        tap.offer(
-            shard(0),
-            VOICE_SERVER_UPDATE,
-            &server(OTHER_GUILD, "t", Some("host")),
-        );
-        tap.offer(
-            shard(0),
-            "MESSAGE_CREATE",
-            &state(GUILD, USER, Some(CHANNEL), ""),
-        );
-
-        assert_eq!(*receiver.borrow(), Snapshot::default());
+        for (from, name, payload) in offers {
+            let (tap, receiver) = registered();
+            tap.offer(shard(from), name, &payload);
+            assert_eq!(*receiver.borrow(), Snapshot::default(), "{from} {name}");
+        }
     }
 
     #[test]
@@ -378,24 +386,6 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_payloads_change_nothing() {
-        let (tap, receiver) = registered();
-
-        tap.offer(shard(0), VOICE_STATE_UPDATE, b"{not json");
-        tap.offer(shard(0), VOICE_SERVER_UPDATE, br#"{"guild_id":"1"}"#);
-        tap.offer(
-            shard(0),
-            VOICE_STATE_UPDATE,
-            format!(
-                r#"{{"guild_id":"{GUILD}","user_id":"{USER}","channel_id":"x","session_id":"s"}}"#
-            )
-            .as_bytes(),
-        );
-
-        assert_eq!(*receiver.borrow(), Snapshot::default());
-    }
-
-    #[test]
     fn a_session_start_bumps_only_the_entries_of_that_shard() {
         let tap = GatewayTap::new();
         let first = tap.register(GuildId::from(GUILD), shard(0), UserId::from(USER));
@@ -420,24 +410,6 @@ mod tests {
         tap.session_started(shard(0));
         assert!(receiver.has_changed().unwrap());
         assert_eq!(receiver.borrow().main_session, 2);
-    }
-
-    #[test]
-    fn events_from_another_shard_are_ignored() {
-        let (tap, receiver) = registered();
-
-        tap.offer(
-            shard(1),
-            VOICE_STATE_UPDATE,
-            &state(GUILD, USER, Some(CHANNEL), ""),
-        );
-        tap.offer(
-            shard(1),
-            VOICE_SERVER_UPDATE,
-            &server(GUILD, "t", Some("host")),
-        );
-
-        assert_eq!(*receiver.borrow(), Snapshot::default());
     }
 
     #[test]

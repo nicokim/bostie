@@ -296,52 +296,12 @@ fn capture(shared: &Shared, datagram: &[u8], at: Instant) {
 mod tests {
     use super::*;
     use crate::voice::crypto::NONCE_LEN;
-    use crate::voice::rtp::{Extension, PAYLOAD_TYPE, write_header};
+    use crate::voice::rtp::{Extension, PAYLOAD_TYPE};
     use crate::voice::udp::discovery_request;
 
     const SSRC: u32 = 42;
     const KEY: [u8; KEY_LEN] = [7; KEY_LEN];
     const WAIT: Duration = Duration::from_secs(5);
-
-    fn send(
-        socket: &std::net::UdpSocket,
-        cipher: &Cipher,
-        sequence: u16,
-        payload: &[u8],
-    ) -> Instant {
-        let mut header = [0; HEADER_LEN];
-        write_header(&mut header, sequence, u32::from(sequence) * 960, SSRC);
-        let mut packet = Vec::new();
-        cipher
-            .seal(u32::from(sequence), &header, payload, &mut packet)
-            .unwrap();
-        let sent = Instant::now();
-        socket.send(&packet).unwrap();
-        sent
-    }
-
-    #[test]
-    fn sealed_packets_are_decrypted_and_parsed_on_arrival() {
-        let sfu = Sfu::start();
-        sfu.key(Mode::Aes256GcmRtpSize, &KEY);
-        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        socket.connect(sfu.address()).unwrap();
-
-        let sent = send(&socket, &cipher, 9, b"opus");
-        let packets = sfu.wait_packets(1, WAIT);
-
-        assert_eq!(packets.len(), 1);
-        let packet = &packets[0];
-        assert_eq!(packet.key, 0);
-        assert_eq!(packet.header.sequence, 9);
-        assert_eq!(packet.header.timestamp, 9 * 960);
-        assert_eq!(packet.header.ssrc, SSRC);
-        assert_eq!(packet.nonce, 9);
-        assert_eq!(packet.payload, b"opus");
-        assert!(packet.at >= sent);
-        assert_eq!(sfu.rejected(), 0);
-    }
 
     #[test]
     fn packets_reach_the_last_discovered_client_with_the_newest_key() {

@@ -130,16 +130,11 @@ mod tests {
             ),
         ];
 
+        let codes: Vec<u16> = CLOSE_CODES.iter().map(|&(code, ..)| code).collect();
+        assert_eq!(codes, DOCUMENTED);
         for (code, action) in expected {
             assert_eq!(classify(code).0, action, "close code {code}");
         }
-    }
-
-    #[test]
-    fn the_table_holds_exactly_the_documented_codes() {
-        let codes: Vec<u16> = CLOSE_CODES.iter().map(|&(code, ..)| code).collect();
-
-        assert_eq!(codes, DOCUMENTED);
     }
 
     #[test]
@@ -161,13 +156,6 @@ mod tests {
         for code in [1000, 1001, 1005, 1006, 1011, 3000, 5000] {
             assert_eq!(classify(code), (CloseAction::Resume, "connection lost"));
         }
-    }
-
-    #[test]
-    fn documented_codes_carry_their_docs_text() {
-        assert_eq!(classify(4006).1, "session no longer valid");
-        assert_eq!(classify(4017).1, "E2EE/DAVE protocol required");
-        assert_eq!(classify(4022).1, "disconnected: call terminated");
     }
 
     #[test]

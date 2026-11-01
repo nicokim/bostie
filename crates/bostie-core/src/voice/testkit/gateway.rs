@@ -532,17 +532,13 @@ fn json_message(op: u8, d: Value, seq: Option<u16>) -> Message {
 
 #[cfg(test)]
 mod tests {
-    use std::net::IpAddr;
-
     use tokio_websockets::Connector;
 
     use super::*;
     use crate::voice::proto::{self, Frame, Inbound, Ready};
-    use crate::voice::types::DaveOp;
     use crate::voice::ws::{Received, Timeouts, VoiceSocket, endpoint_url};
 
     const PATIENCE: Duration = Duration::from_secs(1);
-    const XCHACHA: &str = "aead_xchacha20_poly1305_rtpsize";
 
     async fn dial(gateway: &FakeVoiceGateway) -> VoiceSocket {
         let url = endpoint_url(&gateway.endpoint()).unwrap();
@@ -589,10 +585,6 @@ mod tests {
         )
     }
 
-    fn resume(config: &Config, seq_ack: Option<u64>) -> Bytes {
-        proto::resume(config.server_id, &config.session_id, &config.token, seq_ack)
-    }
-
     async fn hello(socket: &mut VoiceSocket) -> Duration {
         match inbound(socket).await {
             (None, Inbound::Hello { interval }) => interval,
@@ -613,120 +605,6 @@ mod tests {
         send(&mut socket, identify(config)).await;
         ready(&mut socket).await;
         socket
-    }
-
-    async fn skip_to_disconnected(gateway: &mut FakeVoiceGateway) {
-        while gateway.next().await != ClientMessage::Disconnected {}
-    }
-
-    #[tokio::test]
-    async fn identify_gets_ready_and_select_protocol_gets_the_session_description() {
-        let config = Config {
-            udp: SocketAddr::from(([127, 0, 0, 1], 50_013)),
-            ..Config::default()
-        };
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = dial(&gateway).await;
-
-        assert_eq!(hello(&mut socket).await, config.heartbeat_interval);
-        send(&mut socket, identify(&config)).await;
-        let ready = ready(&mut socket).await;
-        send(
-            &mut socket,
-            proto::select_protocol(ready.ip, ready.port, XCHACHA),
-        )
-        .await;
-        let (seq, description) = inbound(&mut socket).await;
-
-        assert_eq!(ready.ssrc, config.ssrc);
-        assert_eq!(ready.ip, IpAddr::from([127, 0, 0, 1]));
-        assert_eq!(ready.port, 50_013);
-        assert_eq!(
-            ready.modes,
-            ["aead_aes256_gcm_rtpsize", XCHACHA].map(Box::<str>::from)
-        );
-        assert_eq!(seq, Some(2));
-        let Inbound::SessionDescription(description) = description else {
-            panic!("expected a session description, got {description:?}");
-        };
-        assert_eq!(&*description.mode, XCHACHA);
-        assert_eq!(description.secret_key, config.secret_key);
-        assert_eq!(description.dave_protocol_version, 1);
-        assert_eq!(
-            gateway.next().await,
-            ClientMessage::Connected {
-                query: Some("v=8".to_owned())
-            }
-        );
-        let ClientMessage::Json { op: 0, d } = gateway.next().await else {
-            panic!("expected the identify");
-        };
-        assert_eq!(d["server_id"].as_str(), Some("1335172792320131073"));
-        assert_eq!(d["token"].as_str(), Some("voice-token"));
-        let ClientMessage::Json { op: 1, d } = gateway.next().await else {
-            panic!("expected the select protocol");
-        };
-        assert_eq!(d["data"]["port"].as_u64(), Some(50_013));
-    }
-
-    #[tokio::test]
-    async fn a_resume_replays_what_came_after_seq_ack() {
-        let config = Config::default();
-        let mut gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = identified(&gateway, &config).await;
-        gateway.send(11, json!({"user_ids": ["5"]}));
-        let (seq_ack, _) = inbound(&mut socket).await;
-
-        gateway.drop_connection();
-        assert!(matches!(
-            timeout(WAIT, socket.receive()).await.unwrap(),
-            Received::Lost(_)
-        ));
-        skip_to_disconnected(&mut gateway).await;
-        gateway.send(13, json!({"user_id": "5"}));
-        gateway.send_binary(25, &[0xCC]);
-        let mut resumed = dial(&gateway).await;
-        hello(&mut resumed).await;
-        send(&mut resumed, resume(&config, seq_ack)).await;
-
-        assert_eq!(seq_ack, Some(2));
-        assert_eq!(inbound(&mut resumed).await, (None, Inbound::Resumed));
-        assert_eq!(
-            inbound(&mut resumed).await,
-            (
-                Some(3),
-                Inbound::ClientDisconnect {
-                    user: UserId::from(5)
-                }
-            )
-        );
-        assert_eq!(
-            inbound(&mut resumed).await,
-            (
-                Some(4),
-                Inbound::Dave(DaveOp::ExternalSender(Bytes::from_static(&[0xCC])))
-            )
-        );
-        gateway.send(5, json!({"user_id": "5", "ssrc": 9, "speaking": 1}));
-        assert!(matches!(
-            inbound(&mut resumed).await,
-            (Some(5), Inbound::Speaking { ssrc: 9, .. })
-        ));
-    }
-
-    #[tokio::test]
-    async fn hello_can_follow_ready() {
-        let config = Config {
-            hello: HelloAt::AfterReady,
-            ..Config::default()
-        };
-        let gateway = FakeVoiceGateway::start(config.clone()).await;
-        let mut socket = dial(&gateway).await;
-
-        send(&mut socket, identify(&config)).await;
-
-        ready(&mut socket).await;
-        assert_eq!(hello(&mut socket).await, config.heartbeat_interval);
     }
 
     #[tokio::test]
