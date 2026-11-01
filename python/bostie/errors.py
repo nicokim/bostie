@@ -1,5 +1,7 @@
 from typing import Any
 
+import msgspec
+
 from bostie.enums import DisconnectReason
 
 
@@ -73,6 +75,24 @@ class RateLimited(HTTPException):
 
 class ServerError(HTTPException):
     """Discord answered with a 5xx status."""
+
+
+class UnexpectedResponse(BostieError):
+    """Discord accepted a request, but its answer does not decode; see `raw`."""
+
+    def __init__(self, raw_json: bytes, detail: str, *, took_effect: bool) -> None:
+        accepted = (
+            "Discord accepted the request and it took effect"
+            if took_effect
+            else "Discord answered the request"
+        )
+        super().__init__(f"{accepted}, but its answer does not decode: {detail}")
+        self.raw_json = raw_json
+
+    @property
+    def raw(self) -> Any:
+        """Discord's answer as JSON, or None if it was empty."""
+        return msgspec.json.decode(self.raw_json) if self.raw_json else None
 
 
 class GatewayClosed(BostieError):

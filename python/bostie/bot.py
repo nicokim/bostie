@@ -292,14 +292,15 @@ class Bot(Router):
         """Send a message; `reply_to` takes the id of a message in the same channel."""
         parts.setdefault("allowed_mentions", self._allowed_mentions)
         body, files = build_message(content, reply_to=reply_to, **parts)
-        data = await self.http._request(
+        message = await self.http._decoded(
+            partial(decode, Message),
             "POST",
             "/channels/{channel_id}/messages",
             json=body,
             files=files,
             channel_id=channel_id,
         )
-        return in_guild(decode(Message, data), self._guild_of(channel_id))
+        return in_guild(message, self._guild_of(channel_id))
 
     async def edit_message(
         self,
@@ -314,7 +315,8 @@ class Bot(Router):
         """
         parts.setdefault("allowed_mentions", self._allowed_mentions)
         body, files = build_message(content, **parts)
-        data = await self.http._request(
+        message = await self.http._decoded(
+            decode_message,
             "PATCH",
             "/channels/{channel_id}/messages/{message_id}",
             json=body,
@@ -322,7 +324,7 @@ class Bot(Router):
             channel_id=channel_id,
             message_id=message_id,
         )
-        return in_guild(decode_message(data), self._guild_of(channel_id))
+        return in_guild(message, self._guild_of(channel_id))
 
     async def delete_message(
         self, channel_id: int, message_id: int, *, reason: str | None = None
@@ -338,36 +340,41 @@ class Bot(Router):
     async def fetch_message(
         self, channel_id: int, message_id: int
     ) -> Message | WebhookMessage:
-        data = await self.http._request(
+        message = await self.http._decoded(
+            decode_message,
             "GET",
             "/channels/{channel_id}/messages/{message_id}",
             channel_id=channel_id,
             message_id=message_id,
         )
-        return in_guild(decode_message(data), self._guild_of(channel_id))
+        return in_guild(message, self._guild_of(channel_id))
 
     async def fetch_channel(self, channel_id: int) -> Channel:
-        data = await self.http._request(
-            "GET", "/channels/{channel_id}", channel_id=channel_id
+        return await self.http._decoded(
+            partial(decode, Channel),
+            "GET",
+            "/channels/{channel_id}",
+            channel_id=channel_id,
         )
-        return decode(Channel, data)
 
     async def fetch_user(self, user_id: int) -> User:
-        data = await self.http._request("GET", "/users/{user_id}", user_id=user_id)
-        return decode(User, data)
+        return await self.http._decoded(
+            partial(decode, User), "GET", "/users/{user_id}", user_id=user_id
+        )
 
     async def fetch_guild(self, guild_id: int) -> Guild:
-        data = await self.http._request("GET", "/guilds/{guild_id}", guild_id=guild_id)
-        return decode(Guild, data)
+        return await self.http._decoded(
+            partial(decode, Guild), "GET", "/guilds/{guild_id}", guild_id=guild_id
+        )
 
     async def fetch_member(self, guild_id: int, user_id: int) -> Member:
-        data = await self.http._request(
+        return await self.http._decoded(
+            partial(decode, Member),
             "GET",
             "/guilds/{guild_id}/members/{user_id}",
             guild_id=guild_id,
             user_id=user_id,
         )
-        return decode(Member, data)
 
     def _guild_of(self, channel_id: int) -> int | None:
         channel = self.cache.channel(channel_id)

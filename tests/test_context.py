@@ -4,7 +4,6 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Annotated, Any
 
-import msgspec
 import pytest
 from fakediscord import FakeDiscord, Recorded, payloads, run, running
 
@@ -22,6 +21,7 @@ from bostie import (
     MessageFlags,
     NotFound,
     Option,
+    UnexpectedResponse,
 )
 from bostie.context import ResponseState
 
@@ -212,7 +212,6 @@ def test_message_calls_return_the_message_discord_created() -> None:
             followup = await ctx.followup("more")
             await ctx.delete()
 
-            assert answer is not None and followup is not None
             assert (answer.content, followup.content) == ("hi", "more")
             assert answer.raw is not None and followup.raw is not None
             assert answer.raw["id"] != followup.raw["id"]
@@ -225,11 +224,12 @@ def test_message_calls_return_the_message_discord_created() -> None:
     run_bot(scenario)
 
 
-def test_an_accepted_answer_counts_even_when_its_message_fails_to_decode() -> None:
+def test_an_answer_that_fails_to_decode_raises_but_counts_as_sent() -> None:
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: Context) -> None:
-            with pytest.raises(msgspec.ValidationError):
+            with pytest.raises(UnexpectedResponse, match="took effect") as raised:
                 await ctx.respond(embeds=[{"fields": {}}])
+            assert raised.value.raw["resource"]["message"]["embeds"] == [{"fields": {}}]
             await ctx.respond("again")
 
         requests = await on.answer(Context, handler)

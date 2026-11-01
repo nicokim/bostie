@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
 
@@ -1180,7 +1181,8 @@ class ContextVoice:
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
         try:
-            state = await self._manager._bot.http._request(
+            state = await self._manager._bot.http._decoded(
+                partial(decode, VoiceState),
                 "GET",
                 "/guilds/{guild_id}/voice-states/{user_id}",
                 guild_id=self._guild_id,
@@ -1191,7 +1193,7 @@ class ContextVoice:
                 raise
             channel_id = None
         else:
-            channel_id = decode(VoiceState, state).channel_id
+            channel_id = state.channel_id
         if channel_id is None:
             raise NotInVoice(
                 f"user {self._user_id} is not in a voice channel of guild "

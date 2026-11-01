@@ -49,6 +49,7 @@ from bostie.errors import (
     ServerError,
     ShardingRequired,
     TransportError,
+    UnexpectedResponse,
 )
 from bostie.file import File
 from bostie.models import (
@@ -218,6 +219,7 @@ __all__ = [
     "Thumbnail",
     "TransportError",
     "UnavailableGuild",
+    "UnexpectedResponse",
     "UnfurledMediaItem",
     "UnknownComponent",
     "UnknownInteraction",

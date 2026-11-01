@@ -21,6 +21,7 @@ from bostie.errors import (
     InteractionResponded,
 )
 from bostie.file import File
+from bostie.http import decode_answer
 from bostie.models import (
     AllowedMentions,
     AutocompleteInteraction,
@@ -65,11 +66,11 @@ class ResponseState(Enum):
 
 
 class _CallbackResource(msgspec.Struct):
-    message: msgspec.Raw = msgspec.Raw()
+    message: msgspec.Raw
 
 
 class _CallbackResponse(msgspec.Struct):
-    resource: _CallbackResource | None = None
+    resource: _CallbackResource
 
 
 class _MessageFlagsOnly(msgspec.Struct):
@@ -218,7 +219,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[MessageParts],
-    ) -> Message | WebhookMessage | None:
+    ) -> Message | WebhookMessage:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
         body, files = self._message_body(content, **parts)
         async with self._lock:
@@ -250,7 +251,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[EditParts],
-    ) -> Message | WebhookMessage | None:
+    ) -> Message | WebhookMessage:
         """Edit the original answer.
 
         With `files` or `attachments`, only the listed `attachments` stay.
@@ -269,7 +270,7 @@ class _ReplyingContext[I: CommandInteraction | ComponentInteraction](
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[MessageParts],
-    ) -> Message | WebhookMessage | None:
+    ) -> Message | WebhookMessage:
         """Send another message; right after `defer()` it fills the deferred answer."""
         body, files = self._message_body(content, **parts)
         async with self._lock:
@@ -416,7 +417,7 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
         *,
         ephemeral: bool | None = None,
         **parts: Unpack[EditParts],
-    ) -> Message | WebhookMessage | None:
+    ) -> Message | WebhookMessage:
         """Edit the message the component is attached to.
 
         With `files` or `attachments`, only the listed `attachments` stay.
@@ -509,14 +510,15 @@ def _with_ephemeral(body: dict[str, Any], ephemeral: bool) -> dict[str, Any]:
     return {**body, "flags": body.get("flags", 0) | MessageFlags.EPHEMERAL}
 
 
-def _message(body: bytes, guild_id: int | None) -> Message | WebhookMessage | None:
-    return in_guild(decode_message(body), guild_id) if body else None
+def _message(body: bytes, guild_id: int | None) -> Message | WebhookMessage:
+    return in_guild(decode_answer(decode_message, body, took_effect=True), guild_id)
 
 
-def _callback_message(
-    body: bytes, guild_id: int | None
-) -> Message | WebhookMessage | None:
-    resource = decoder(_CallbackResponse).decode(body).resource if body else None
-    if resource is None or not resource.message:
-        return None
-    return in_guild(decode_message(bytes(resource.message)), guild_id)
+def _callback_message(body: bytes, guild_id: int | None) -> Message | WebhookMessage:
+    message = decode_answer(_resource_message, body, took_effect=True)
+    return in_guild(message, guild_id)
+
+
+def _resource_message(body: bytes) -> Message | WebhookMessage:
+    resource = decoder(_CallbackResponse).decode(body).resource
+    return decode_message(bytes(resource.message))

@@ -33,6 +33,7 @@ from bostie import (
     PrivilegedIntentsRequired,
     Range,
     Router,
+    UnexpectedResponse,
     WebhookMessage,
     ui,
 )
@@ -952,6 +953,27 @@ def test_the_typed_rest_helpers_send_edit_fetch_and_delete() -> None:
             assert (await bot.fetch_user(member_id)).id == member_id
             member = await bot.fetch_member(guild_id, member_id)
             assert member.id == member_id
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("method", "call", "accepted"),
+    [
+        ("POST", lambda bot: bot.send_message(1, "hi"), "it took effect"),
+        ("GET", lambda bot: bot.fetch_user(1), "Discord answered the request"),
+    ],
+)
+def test_a_rest_answer_that_fails_to_decode_raises_with_its_payload(
+    method: str, call: Callable[[Bot], Awaitable[object]], accepted: str
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            fake.fail(method, "/", 200, {"id": "1"})
+            with pytest.raises(UnexpectedResponse, match=accepted) as raised:
+                await call(bot)
+            assert raised.value.raw == {"id": "1"}
 
     run(scenario)
 

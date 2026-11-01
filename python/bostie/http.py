@@ -1,5 +1,5 @@
 import secrets
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import msgspec
@@ -14,6 +14,7 @@ from bostie.errors import (
     NotFound,
     RateLimited,
     ServerError,
+    UnexpectedResponse,
 )
 from bostie.file import File
 from bostie.models.base import encoder
@@ -70,6 +71,17 @@ class HTTPClient:
         )
         return msgspec.json.decode(body) if body else None
 
+    async def _decoded[T](
+        self,
+        decode: Callable[[bytes], T],
+        method: str,
+        route: str,
+        /,
+        **request: Any,
+    ) -> T:
+        data = await self._request(method, route, **request)
+        return decode_answer(decode, data, took_effect=method != "GET")
+
     async def _request(
         self,
         method: str,
@@ -101,6 +113,15 @@ class HTTPClient:
             bot_route = not any(token in route for token in TOKEN_PLACEHOLDERS)
             raise _status_error(status, data, bot_route=bot_route)
         return data
+
+
+def decode_answer[T](
+    decode: Callable[[bytes], T], data: bytes, *, took_effect: bool
+) -> T:
+    try:
+        return decode(data)
+    except msgspec.DecodeError as error:
+        raise UnexpectedResponse(data, str(error), took_effect=took_effect) from error
 
 
 def _query_pairs(query: Mapping[str, Any]) -> list[tuple[str, str]]:
