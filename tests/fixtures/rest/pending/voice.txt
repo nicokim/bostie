@@ -1,0 +1,6 @@
+PATCH /guilds/{guild_id}/voice-states/@me voice.edit_current_state
+PATCH /guilds/{guild_id}/voice-states/{user_id} voice.edit_state
+GET /guilds/{guild_id}/voice-states/@me voice.fetch_current_state
+GET /guilds/{guild_id}/voice-states/{user_id} voice.fetch_state
+GET /guilds/{guild_id}/regions voice.list_guild_regions
+GET /voice/regions voice.list_regions

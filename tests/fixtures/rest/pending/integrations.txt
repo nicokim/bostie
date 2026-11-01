@@ -1,0 +1,2 @@
+DELETE /guilds/{guild_id}/integrations/{integration_id} integrations.delete reason
+GET /guilds/{guild_id}/integrations integrations.list

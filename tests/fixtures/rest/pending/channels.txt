@@ -1,0 +1,17 @@
+PUT /channels/{channel_id}/recipients/{user_id} channels.add_recipient
+POST /guilds/{guild_id}/channels channels.create reason
+POST /users/@me/channels channels.create_dm
+POST /users/@me/channels channels.create_group_dm
+DELETE /channels/{channel_id} channels.delete reason
+DELETE /channels/{channel_id}/permissions/{overwrite_id} channels.delete_permission reason
+PATCH /channels/{channel_id} channels.edit reason
+PUT /channels/{channel_id}/permissions/{overwrite_id} channels.edit_permissions reason
+PATCH /guilds/{guild_id}/channels channels.edit_positions reason
+GET /channels/{channel_id} channels.fetch
+GET /channels/{channel_id}/permissions/member/{user_id} channels.fetch_member_permissions
+GET /channels/{channel_id}/permissions/role/{role_id} channels.fetch_role_permissions
+POST /channels/{channel_id}/followers channels.follow reason
+GET /guilds/{guild_id}/channels channels.list
+DELETE /channels/{channel_id}/recipients/{user_id} channels.remove_recipient
+PUT /channels/{channel_id}/voice-status channels.set_voice_status reason
+POST /channels/{channel_id}/typing channels.trigger_typing_indicator

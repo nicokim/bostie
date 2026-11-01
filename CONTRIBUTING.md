@@ -68,6 +68,17 @@ Models are typed as Discord's documentation describes each field. Discord also a
 
 If a payload still doesn't fit, for example because it lacks a required field, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
 
+## Adding a REST operation
+
+`bot.rest` has one method per documented bot operation, in the group that `tests/fixtures/rest/operations.txt` names. Each row there is `VERB path group.method`, ending in `reason` when the docs say the operation takes the `X-Audit-Log-Reason` header. A new operation gets its row by these rules:
+
+- The group is the noun the docs heading acts on: Create Guild Ban is `bans.create`, Add Guild Member Role is `members.add_role`.
+- Get one is `fetch`, Get or List many is `list`, Modify and Edit are `edit`, Create is `create`, Delete is `delete` and Bulk X is `bulk_x`. Any other verb, such as Add, Remove, Start or Sync, stays as the docs word. The rest of the heading follows without the group noun: Get Guild Role Member Counts is `roles.fetch_member_counts`.
+- Words that name the owner (Guild, Channel, Global, Current User) are dropped, unless the group has the same verb for another owner: then the more general or more used one keeps the bare verb and the other adds its owner, as in `users.fetch` and `users.fetch_current`, or `commands.list` and `commands.list_guild`.
+- Placeholders take the names of the OpenAPI spec, such as `{channel_id}` and `{emoji_name}`, or turn the docs' `{object.id}` into `{object_id}` where the spec lacks the route. The method takes them positional-only, in URL order, under the same names.
+
+`tests/fixtures/rest/spec.txt` pins every operation of Discord's OpenAPI spec at one commit, and `out_of_scope.txt` lists the ones `bot.rest` leaves to `bot.http.request`, each with its reason. `test_rest.py` checks that every row is implemented with its verb, route, ids and `reason`, that every public method has a row, and that every spec operation is named or out of scope. To follow a newer spec, list its `paths` again in `spec.txt` and give each new operation a row or an out-of-scope line. Rows in `tests/fixtures/rest/pending/` are not implemented yet: implementing one means deleting its line there.
+
 ## Tests
 
 `tests/fakediscord` is a local fake of the Discord gateway and REST API. It serves the payloads in `tests/fixtures/models` and records every REST request in `fake.requests`. pytest puts `tests/` on the import path, so you import it as `fakediscord`:

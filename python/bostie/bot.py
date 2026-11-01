@@ -84,6 +84,7 @@ from bostie.models import (
 )
 from bostie.models.base import check_keys
 from bostie.models.message import MESSAGE_PARTS, in_guild, message_body
+from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
@@ -186,6 +187,7 @@ class Bot(Router):
         self._api_url = api_url
         self._bridge: Bridge | None = None
         self._http: HTTPClient | None = None
+        self._rest: REST | None = None
         self._gateway: GatewayClient | None = None
         self._closing: asyncio.Task[None] | None = None
         self._ready = False
@@ -209,6 +211,13 @@ class Bot(Router):
         if self._http is None:
             raise StateError("bot.http exists once the bot has started")
         return self._http
+
+    @property
+    def rest(self) -> REST:
+        """Discord's REST operations by resource; they exist once `start()` runs."""
+        if self._rest is None:
+            raise StateError("bot.rest exists once the bot has started")
+        return self._rest
 
     @property
     def gateway(self) -> GatewayClient:
@@ -259,6 +268,7 @@ class Bot(Router):
         self._replaying.clear()
         async with bridge:
             self._http = http = HTTPClient(bridge)
+            self._rest = REST(http, self._allowed_mentions, self.cache)
             self._gateway = None
             try:
                 info = await http.request("GET", "/gateway/bot")

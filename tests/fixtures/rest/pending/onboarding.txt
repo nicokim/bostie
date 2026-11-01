@@ -1,0 +1,2 @@
+PUT /guilds/{guild_id}/onboarding onboarding.edit reason
+GET /guilds/{guild_id}/onboarding onboarding.fetch

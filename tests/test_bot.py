@@ -796,8 +796,9 @@ def test_start_resolves_the_token_and_raises_fatal_errors(
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        with pytest.raises(StateError, match="started"):
-            _ = bot.http
+        for client in ("http", "rest"):
+            with pytest.raises(StateError, match="started"):
+                getattr(bot, client)
         monkeypatch.delenv("BOSTIE_TOKEN", raising=False)
         with pytest.raises(ValueError, match="BOSTIE_TOKEN"):
             await bot.start()

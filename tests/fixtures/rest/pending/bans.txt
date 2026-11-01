@@ -1,0 +1,5 @@
+POST /guilds/{guild_id}/bulk-ban bans.bulk_create reason
+PUT /guilds/{guild_id}/bans/{user_id} bans.create reason
+GET /guilds/{guild_id}/bans/{user_id} bans.fetch
+GET /guilds/{guild_id}/bans bans.list
+DELETE /guilds/{guild_id}/bans/{user_id} bans.remove reason

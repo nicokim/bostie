@@ -1,0 +1,11 @@
+POST /channels/{channel_id}/messages/bulk-delete messages.bulk_delete reason
+POST /channels/{channel_id}/messages messages.create
+POST /channels/{channel_id}/messages/{message_id}/crosspost messages.crosspost
+DELETE /channels/{channel_id}/messages/{message_id} messages.delete reason
+PATCH /channels/{channel_id}/messages/{message_id} messages.edit
+GET /channels/{channel_id}/messages/{message_id} messages.fetch
+GET /channels/{channel_id}/messages messages.list
+GET /channels/{channel_id}/messages/pins messages.list_pins
+PUT /channels/{channel_id}/messages/pins/{message_id} messages.pin reason
+GET /guilds/{guild_id}/messages/search messages.search
+DELETE /channels/{channel_id}/messages/pins/{message_id} messages.unpin reason

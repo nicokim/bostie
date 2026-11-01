@@ -1,0 +1,13 @@
+POST /channels/{channel_id}/webhooks webhooks.create reason
+DELETE /webhooks/{webhook_id} webhooks.delete reason
+DELETE /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.delete_message
+DELETE /webhooks/{webhook_id}/{webhook_token} webhooks.delete_with_token
+PATCH /webhooks/{webhook_id} webhooks.edit reason
+PATCH /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.edit_message
+PATCH /webhooks/{webhook_id}/{webhook_token} webhooks.edit_with_token
+POST /webhooks/{webhook_id}/{webhook_token} webhooks.execute
+GET /webhooks/{webhook_id} webhooks.fetch
+GET /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.fetch_message
+GET /webhooks/{webhook_id}/{webhook_token} webhooks.fetch_with_token
+GET /channels/{channel_id}/webhooks webhooks.list
+GET /guilds/{guild_id}/webhooks webhooks.list_guild

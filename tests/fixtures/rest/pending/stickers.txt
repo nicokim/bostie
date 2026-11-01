@@ -1,0 +1,8 @@
+POST /guilds/{guild_id}/stickers stickers.create reason
+DELETE /guilds/{guild_id}/stickers/{sticker_id} stickers.delete reason
+PATCH /guilds/{guild_id}/stickers/{sticker_id} stickers.edit reason
+GET /stickers/{sticker_id} stickers.fetch
+GET /guilds/{guild_id}/stickers/{sticker_id} stickers.fetch_guild
+GET /sticker-packs/{pack_id} stickers.fetch_pack
+GET /guilds/{guild_id}/stickers stickers.list
+GET /sticker-packs stickers.list_packs

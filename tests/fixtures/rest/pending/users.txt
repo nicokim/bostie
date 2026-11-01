@@ -1,0 +1,3 @@
+PATCH /users/@me users.edit_current
+GET /users/{user_id} users.fetch
+GET /users/@me users.fetch_current

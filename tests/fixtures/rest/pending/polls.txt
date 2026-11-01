@@ -1,0 +1,2 @@
+POST /channels/{channel_id}/polls/{message_id}/expire polls.end
+GET /channels/{channel_id}/polls/{message_id}/answers/{answer_id} polls.list_answer_voters

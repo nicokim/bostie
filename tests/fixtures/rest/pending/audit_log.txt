@@ -1,0 +1,1 @@
+GET /guilds/{guild_id}/audit-logs audit_log.list

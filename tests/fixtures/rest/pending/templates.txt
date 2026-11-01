@@ -1,0 +1,6 @@
+POST /guilds/{guild_id}/templates templates.create
+DELETE /guilds/{guild_id}/templates/{code} templates.delete
+PATCH /guilds/{guild_id}/templates/{code} templates.edit
+GET /guilds/templates/{code} templates.fetch
+GET /guilds/{guild_id}/templates templates.list
+PUT /guilds/{guild_id}/templates/{code} templates.sync

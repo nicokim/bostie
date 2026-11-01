@@ -1,0 +1,201 @@
+PATCH /applications/@me application.edit
+GET /applications/@me application.fetch
+GET /applications/{application_id}/activity-instances/{instance_id} application.fetch_activity_instance
+GET /applications/{application_id}/role-connections/metadata application.list_role_connection_metadata
+PUT /applications/{application_id}/role-connections/metadata application.update_role_connection_metadata
+GET /guilds/{guild_id}/audit-logs audit_log.list
+POST /guilds/{guild_id}/auto-moderation/rules auto_moderation.create reason
+DELETE /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.delete reason
+PATCH /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.edit reason
+GET /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.fetch
+GET /guilds/{guild_id}/auto-moderation/rules auto_moderation.list
+POST /guilds/{guild_id}/bulk-ban bans.bulk_create reason
+PUT /guilds/{guild_id}/bans/{user_id} bans.create reason
+GET /guilds/{guild_id}/bans/{user_id} bans.fetch
+GET /guilds/{guild_id}/bans bans.list
+DELETE /guilds/{guild_id}/bans/{user_id} bans.remove reason
+PUT /channels/{channel_id}/recipients/{user_id} channels.add_recipient
+POST /guilds/{guild_id}/channels channels.create reason
+POST /users/@me/channels channels.create_dm
+POST /users/@me/channels channels.create_group_dm
+DELETE /channels/{channel_id} channels.delete reason
+DELETE /channels/{channel_id}/permissions/{overwrite_id} channels.delete_permission reason
+PATCH /channels/{channel_id} channels.edit reason
+PUT /channels/{channel_id}/permissions/{overwrite_id} channels.edit_permissions reason
+PATCH /guilds/{guild_id}/channels channels.edit_positions reason
+GET /channels/{channel_id} channels.fetch
+GET /channels/{channel_id}/permissions/member/{user_id} channels.fetch_member_permissions
+GET /channels/{channel_id}/permissions/role/{role_id} channels.fetch_role_permissions
+POST /channels/{channel_id}/followers channels.follow reason
+GET /guilds/{guild_id}/channels channels.list
+DELETE /channels/{channel_id}/recipients/{user_id} channels.remove_recipient
+PUT /channels/{channel_id}/voice-status channels.set_voice_status reason
+POST /channels/{channel_id}/typing channels.trigger_typing_indicator
+PUT /applications/{application_id}/commands commands.bulk_overwrite
+PUT /applications/{application_id}/guilds/{guild_id}/commands commands.bulk_overwrite_guild
+POST /applications/{application_id}/commands commands.create
+POST /applications/{application_id}/guilds/{guild_id}/commands commands.create_guild
+DELETE /applications/{application_id}/commands/{command_id} commands.delete
+DELETE /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.delete_guild
+PATCH /applications/{application_id}/commands/{command_id} commands.edit
+PATCH /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.edit_guild
+GET /applications/{application_id}/commands/{command_id} commands.fetch
+GET /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.fetch_guild
+GET /applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions commands.fetch_permissions
+GET /applications/{application_id}/commands commands.list
+GET /applications/{application_id}/guilds/{guild_id}/commands commands.list_guild
+GET /applications/{application_id}/guilds/{guild_id}/commands/permissions commands.list_permissions
+POST /guilds/{guild_id}/emojis emojis.create reason
+POST /applications/{application_id}/emojis emojis.create_application
+DELETE /guilds/{guild_id}/emojis/{emoji_id} emojis.delete reason
+DELETE /applications/{application_id}/emojis/{emoji_id} emojis.delete_application
+PATCH /guilds/{guild_id}/emojis/{emoji_id} emojis.edit reason
+PATCH /applications/{application_id}/emojis/{emoji_id} emojis.edit_application
+GET /guilds/{guild_id}/emojis/{emoji_id} emojis.fetch
+GET /applications/{application_id}/emojis/{emoji_id} emojis.fetch_application
+GET /guilds/{guild_id}/emojis emojis.list
+GET /applications/{application_id}/emojis emojis.list_application
+GET /gateway gateway.fetch
+GET /gateway/bot gateway.fetch_bot
+POST /guilds/{guild_id}/prune guilds.begin_prune reason
+PATCH /guilds/{guild_id} guilds.edit reason
+PUT /guilds/{guild_id}/incident-actions guilds.edit_incident_actions
+PATCH /guilds/{guild_id}/welcome-screen guilds.edit_welcome_screen reason
+PATCH /guilds/{guild_id}/widget guilds.edit_widget reason
+GET /guilds/{guild_id} guilds.fetch
+GET /guilds/{guild_id}/preview guilds.fetch_preview
+GET /guilds/{guild_id}/prune guilds.fetch_prune_count
+GET /guilds/{guild_id}/vanity-url guilds.fetch_vanity_url
+GET /guilds/{guild_id}/welcome-screen guilds.fetch_welcome_screen
+GET /guilds/{guild_id}/widget.json guilds.fetch_widget
+GET /guilds/{guild_id}/widget.png guilds.fetch_widget_image
+GET /guilds/{guild_id}/widget guilds.fetch_widget_settings
+DELETE /users/@me/guilds/{guild_id} guilds.leave
+GET /users/@me/guilds guilds.list
+DELETE /guilds/{guild_id}/integrations/{integration_id} integrations.delete reason
+GET /guilds/{guild_id}/integrations integrations.list
+PUT /invites/{code}/target-users/{user_id} invites.add_target_user
+POST /invites/{code}/target-users/bulk-add invites.bulk_add_target_users
+POST /invites/{code}/target-users/bulk-delete invites.bulk_delete_target_users
+POST /channels/{channel_id}/invites invites.create reason
+DELETE /invites/{code} invites.delete reason
+GET /invites/{code} invites.fetch
+GET /invites/{code}/target-users/job-status invites.fetch_target_users_job_status
+GET /channels/{channel_id}/invites invites.list
+GET /guilds/{guild_id}/invites invites.list_guild
+GET /invites/{code}/target-users invites.list_target_users
+DELETE /invites/{code}/target-users/{user_id} invites.remove_target_user
+PUT /invites/{code}/target-users invites.update_target_users
+PUT /guilds/{guild_id}/members/{user_id} members.add
+PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} members.add_role reason
+PATCH /guilds/{guild_id}/members/{user_id} members.edit reason
+PATCH /guilds/{guild_id}/members/@me members.edit_current reason
+GET /guilds/{guild_id}/members/{user_id} members.fetch
+GET /guilds/{guild_id}/permissions/member/{user_id} members.fetch_permissions
+GET /guilds/{guild_id}/members members.list
+DELETE /guilds/{guild_id}/members/{user_id} members.remove reason
+DELETE /guilds/{guild_id}/members/{user_id}/roles/{role_id} members.remove_role reason
+GET /guilds/{guild_id}/members/search members.search
+POST /channels/{channel_id}/messages/bulk-delete messages.bulk_delete reason
+POST /channels/{channel_id}/messages messages.create
+POST /channels/{channel_id}/messages/{message_id}/crosspost messages.crosspost
+DELETE /channels/{channel_id}/messages/{message_id} messages.delete reason
+PATCH /channels/{channel_id}/messages/{message_id} messages.edit
+GET /channels/{channel_id}/messages/{message_id} messages.fetch
+GET /channels/{channel_id}/messages messages.list
+GET /channels/{channel_id}/messages/pins messages.list_pins
+PUT /channels/{channel_id}/messages/pins/{message_id} messages.pin reason
+GET /guilds/{guild_id}/messages/search messages.search
+DELETE /channels/{channel_id}/messages/pins/{message_id} messages.unpin reason
+POST /applications/{application_id}/entitlements/{entitlement_id}/consume monetization.consume_entitlement
+POST /applications/{application_id}/entitlements monetization.create_test_entitlement
+DELETE /applications/{application_id}/entitlements/{entitlement_id} monetization.delete_test_entitlement
+GET /applications/{application_id}/entitlements/{entitlement_id} monetization.fetch_entitlement
+GET /skus/{sku_id}/subscriptions/{subscription_id} monetization.fetch_subscription
+GET /applications/{application_id}/entitlements monetization.list_entitlements
+GET /applications/{application_id}/skus monetization.list_skus
+GET /skus/{sku_id}/subscriptions monetization.list_subscriptions
+PUT /guilds/{guild_id}/onboarding onboarding.edit reason
+GET /guilds/{guild_id}/onboarding onboarding.fetch
+POST /channels/{channel_id}/polls/{message_id}/expire polls.end
+GET /channels/{channel_id}/polls/{message_id}/answers/{answer_id} polls.list_answer_voters
+PUT /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me reactions.create
+DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/{user_id} reactions.delete
+DELETE /channels/{channel_id}/messages/{message_id}/reactions reactions.delete_all
+DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name} reactions.delete_all_for_emoji
+DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me reactions.delete_own
+GET /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name} reactions.list
+POST /guilds/{guild_id}/roles roles.create reason
+DELETE /guilds/{guild_id}/roles/{role_id} roles.delete reason
+PATCH /guilds/{guild_id}/roles/{role_id} roles.edit reason
+PATCH /guilds/{guild_id}/roles roles.edit_positions reason
+GET /guilds/{guild_id}/roles/{role_id} roles.fetch
+GET /guilds/{guild_id}/roles/member-counts roles.fetch_member_counts
+GET /guilds/{guild_id}/permissions/role/{role_id} roles.fetch_permissions
+GET /guilds/{guild_id}/roles roles.list
+POST /guilds/{guild_id}/scheduled-events scheduled_events.create reason
+DELETE /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.delete
+PATCH /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.edit reason
+GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id} scheduled_events.fetch
+GET /guilds/{guild_id}/scheduled-events scheduled_events.list
+GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/users scheduled_events.list_users
+POST /guilds/{guild_id}/soundboard-sounds soundboard.create reason
+DELETE /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.delete reason
+PATCH /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.edit reason
+GET /guilds/{guild_id}/soundboard-sounds/{sound_id} soundboard.fetch
+GET /guilds/{guild_id}/soundboard-sounds soundboard.list
+GET /soundboard-default-sounds soundboard.list_default
+POST /channels/{channel_id}/send-soundboard-sound soundboard.send
+POST /stage-instances stage_instances.create reason
+DELETE /stage-instances/{channel_id} stage_instances.delete reason
+PATCH /stage-instances/{channel_id} stage_instances.edit reason
+GET /stage-instances/{channel_id} stage_instances.fetch
+POST /guilds/{guild_id}/stickers stickers.create reason
+DELETE /guilds/{guild_id}/stickers/{sticker_id} stickers.delete reason
+PATCH /guilds/{guild_id}/stickers/{sticker_id} stickers.edit reason
+GET /stickers/{sticker_id} stickers.fetch
+GET /guilds/{guild_id}/stickers/{sticker_id} stickers.fetch_guild
+GET /sticker-packs/{pack_id} stickers.fetch_pack
+GET /guilds/{guild_id}/stickers stickers.list
+GET /sticker-packs stickers.list_packs
+POST /guilds/{guild_id}/templates templates.create
+DELETE /guilds/{guild_id}/templates/{code} templates.delete
+PATCH /guilds/{guild_id}/templates/{code} templates.edit
+GET /guilds/templates/{code} templates.fetch
+GET /guilds/{guild_id}/templates templates.list
+PUT /guilds/{guild_id}/templates/{code} templates.sync
+PUT /channels/{channel_id}/thread-members/{user_id} threads.add_member
+GET /channels/{channel_id}/thread-members/{user_id} threads.fetch_member
+PUT /channels/{channel_id}/thread-members/@me threads.join
+DELETE /channels/{channel_id}/thread-members/@me threads.leave
+GET /guilds/{guild_id}/threads/active threads.list_active
+GET /channels/{channel_id}/users/@me/threads/archived/private threads.list_joined_private_archived
+GET /channels/{channel_id}/thread-members threads.list_members
+GET /channels/{channel_id}/threads/archived/private threads.list_private_archived
+GET /channels/{channel_id}/threads/archived/public threads.list_public_archived
+DELETE /channels/{channel_id}/thread-members/{user_id} threads.remove_member
+POST /channels/{channel_id}/threads threads.start reason
+POST /channels/{channel_id}/messages/{message_id}/threads threads.start_from_message reason
+POST /channels/{channel_id}/threads threads.start_in_forum reason
+PATCH /users/@me users.edit_current
+GET /users/{user_id} users.fetch
+GET /users/@me users.fetch_current
+PATCH /guilds/{guild_id}/voice-states/@me voice.edit_current_state
+PATCH /guilds/{guild_id}/voice-states/{user_id} voice.edit_state
+GET /guilds/{guild_id}/voice-states/@me voice.fetch_current_state
+GET /guilds/{guild_id}/voice-states/{user_id} voice.fetch_state
+GET /guilds/{guild_id}/regions voice.list_guild_regions
+GET /voice/regions voice.list_regions
+POST /channels/{channel_id}/webhooks webhooks.create reason
+DELETE /webhooks/{webhook_id} webhooks.delete reason
+DELETE /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.delete_message
+DELETE /webhooks/{webhook_id}/{webhook_token} webhooks.delete_with_token
+PATCH /webhooks/{webhook_id} webhooks.edit reason
+PATCH /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.edit_message
+PATCH /webhooks/{webhook_id}/{webhook_token} webhooks.edit_with_token
+POST /webhooks/{webhook_id}/{webhook_token} webhooks.execute
+GET /webhooks/{webhook_id} webhooks.fetch
+GET /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.fetch_message
+GET /webhooks/{webhook_id}/{webhook_token} webhooks.fetch_with_token
+GET /channels/{channel_id}/webhooks webhooks.list
+GET /guilds/{guild_id}/webhooks webhooks.list_guild

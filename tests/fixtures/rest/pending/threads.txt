@@ -1,0 +1,13 @@
+PUT /channels/{channel_id}/thread-members/{user_id} threads.add_member
+GET /channels/{channel_id}/thread-members/{user_id} threads.fetch_member
+PUT /channels/{channel_id}/thread-members/@me threads.join
+DELETE /channels/{channel_id}/thread-members/@me threads.leave
+GET /guilds/{guild_id}/threads/active threads.list_active
+GET /channels/{channel_id}/users/@me/threads/archived/private threads.list_joined_private_archived
+GET /channels/{channel_id}/thread-members threads.list_members
+GET /channels/{channel_id}/threads/archived/private threads.list_private_archived
+GET /channels/{channel_id}/threads/archived/public threads.list_public_archived
+DELETE /channels/{channel_id}/thread-members/{user_id} threads.remove_member
+POST /channels/{channel_id}/threads threads.start reason
+POST /channels/{channel_id}/messages/{message_id}/threads threads.start_from_message reason
+POST /channels/{channel_id}/threads threads.start_in_forum reason
