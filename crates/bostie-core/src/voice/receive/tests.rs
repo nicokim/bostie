@@ -1431,7 +1431,7 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
 }
 
 #[test]
-fn a_packets_receiver_gets_decrypted_packets_in_arrival_order() {
+fn a_packets_receiver_gets_every_decrypted_packet_in_arrival_order() {
     let mut rig = Rig::dave();
     let mut call = rig.group(&[ALICE]);
     rig.map(ALICE_SSRC, ALICE);

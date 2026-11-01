@@ -1114,7 +1114,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn only_idempotent_server_errors_are_retried() {
+    async fn client_errors_are_returned_and_only_idempotent_server_errors_retried() {
         crate::init_test_tracing();
         let bad_gateway = || reply("502 Bad Gateway", &[], "");
         let mut server = Server::start(vec![
