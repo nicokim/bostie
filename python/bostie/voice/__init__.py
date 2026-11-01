@@ -11,6 +11,7 @@ from bostie.errors import (
     VoiceNotConnected,
 )
 from bostie.voice.connection import (
+    ConnectOptions,
     ContextVoice,
     Dave,
     ExternalVoice,
@@ -68,6 +69,7 @@ __all__ = [
     "BufferFull",
     "Bytes",
     "ClosedReason",
+    "ConnectOptions",
     "ContextVoice",
     "Dave",
     "DaveTransition",

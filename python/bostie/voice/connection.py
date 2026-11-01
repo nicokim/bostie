@@ -6,7 +6,7 @@ from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
 
 from bostie import _native
 from bostie.cache import Cache
@@ -158,6 +158,20 @@ class VoiceCore(Protocol):
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
     def voice_user_stats(self, guild_id: int) -> dict[int, dict[str, int]]: ...
+
+
+class ConnectOptions(TypedDict, total=False):
+    """Settings for one connect() call; each overrides the bot's voice.Defaults."""
+
+    self_deaf: bool
+    self_mute: bool
+    timeout: float
+    server_change_delay: float
+    encoder: EncoderSettings
+    speaking_flags: SpeakingFlags
+    stage: StageRole
+    speech_hangover: float
+    speech_activity: bool
 
 
 class _HasCore(Protocol):
@@ -319,35 +333,14 @@ class VoiceManager:
         return self._connections.get(guild_id)
 
     async def connect(
-        self,
-        channel_id: int,
-        *,
-        self_deaf: bool | None = None,
-        self_mute: bool | None = None,
-        timeout: float | None = None,
-        server_change_delay: float | None = None,
-        encoder: EncoderSettings | None = None,
-        speaking_flags: SpeakingFlags | None = None,
-        stage: StageRole | None = None,
-        speech_hangover: float | None = None,
-        speech_activity: bool | None = None,
+        self, channel_id: int, **options: Unpack[ConnectOptions]
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
         In a guild where the bot is already connected, this moves it.
         """
         user = self._running_user("bot.voice.connect()")
-        settings = self._settings(
-            self_deaf=self_deaf,
-            self_mute=self_mute,
-            timeout=timeout,
-            server_change_delay=server_change_delay,
-            encoder=encoder,
-            speaking_flags=speaking_flags,
-            stage=stage,
-            speech_hangover=speech_hangover,
-            speech_activity=speech_activity,
-        )
+        settings = self._settings(**options)
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
         if vc is None:
@@ -1269,19 +1262,7 @@ class ContextVoice:
         """The bot's connection in this guild, or None."""
         return None if self._guild_id is None else self._manager.get(self._guild_id)
 
-    async def connect(
-        self,
-        *,
-        self_deaf: bool | None = None,
-        self_mute: bool | None = None,
-        timeout: float | None = None,
-        server_change_delay: float | None = None,
-        encoder: EncoderSettings | None = None,
-        speaking_flags: SpeakingFlags | None = None,
-        stage: StageRole | None = None,
-        speech_hangover: float | None = None,
-        speech_activity: bool | None = None,
-    ) -> VoiceConnection:
+    async def connect(self, **options: Unpack[ConnectOptions]) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
@@ -1302,18 +1283,7 @@ class ContextVoice:
                 f"user {self._user_id} is not in a voice channel of guild "
                 f"{self._guild_id}"
             )
-        return await self._manager.connect(
-            int(channel_id),
-            self_deaf=self_deaf,
-            self_mute=self_mute,
-            timeout=timeout,
-            server_change_delay=server_change_delay,
-            encoder=encoder,
-            speaking_flags=speaking_flags,
-            stage=stage,
-            speech_hangover=speech_hangover,
-            speech_activity=speech_activity,
-        )
+        return await self._manager.connect(int(channel_id), **options)
 
 
 def _pick(names: frozenset[str], counters: Mapping[str, int]) -> dict[str, int]:
