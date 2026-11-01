@@ -590,7 +590,7 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
     });
 }
 
-fn panic_message(payload: &(dyn Any + Send)) -> &str {
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
     payload
         .downcast_ref::<&str>()
         .copied()

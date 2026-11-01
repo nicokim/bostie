@@ -684,6 +684,7 @@ fn first_nonce(media: &Media) -> u32 {
 pub struct Faults {
     pub nonce_start: std::sync::atomic::AtomicU32,
     pub encrypt: Mutex<Option<EncryptFailure>>,
+    pub receive_panic: AtomicBool,
 }
 
 fn send(

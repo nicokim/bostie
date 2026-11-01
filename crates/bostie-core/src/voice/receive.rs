@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use bytes::{Bytes, BytesMut};
 use opus::{Channels, SoftClip};
 use parking_lot::MutexGuard;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::ids::{Handle, UserId};
 use crate::inbox::Delivery;
@@ -21,6 +21,7 @@ use crate::voice::crypto::ReplayWindow;
 use crate::voice::dave::{self, Dave, DecryptFailure};
 use crate::voice::media::{Arrival, Media, Transport, UserCounters, bump};
 use crate::voice::pacer::Tick;
+use crate::voice::panic_message;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, to_samples};
 use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
@@ -352,7 +353,20 @@ impl Reception {
                 self.epoch,
             ))
         });
-        state.run(now, skipped, deadline)
+        match panic::catch_unwind(AssertUnwindSafe(|| state.run(now, skipped, deadline))) {
+            Ok(alive) => alive,
+            Err(payload) => {
+                bump(&self.media.receive.rx_panics);
+                error!(
+                    panic = panic_message(payload.as_ref()),
+                    "the voice receive phase panicked and starts over"
+                );
+                if let Some(mut state) = self.state.take() {
+                    state.expire_speech(i64::MAX, 0);
+                }
+                !self.media.closed.load(Ordering::Acquire)
+            }
+        }
     }
 }
 
@@ -415,6 +429,15 @@ impl State {
         if self.media.closed.load(Ordering::Acquire) {
             return false;
         }
+        #[cfg(test)]
+        assert!(
+            !self
+                .media
+                .faults
+                .receive_panic
+                .swap(false, Ordering::Relaxed),
+            "injected receive panic"
+        );
         self.subscribe();
         let now48 = samples_since(self.epoch, now);
         mem::swap(&mut *self.media.arrivals.lock(), &mut self.arrivals);
@@ -3122,6 +3145,36 @@ mod tests {
         assert!(media.closed.load(Ordering::Acquire));
         assert!(media.lost.notified().now_or_never().is_some());
         assert!(!media.add_receiver(&Arc::new(late)));
+    }
+
+    #[test]
+    fn a_panicking_receive_phase_ends_the_speech_and_starts_over_without_closing_the_media() {
+        let mut rig = Rig::new(tuning());
+        rig.map(ALICE_SSRC, ALICE);
+        let receiver = rig.open(options(ReceiveFormat::Opus));
+        let packets = opus(2, 0.3);
+
+        rig.send(ALICE_SSRC, 0, &packets[0]);
+        rig.step();
+        rig.media
+            .faults
+            .receive_panic
+            .store(true, Ordering::Relaxed);
+        rig.step();
+        rig.send(ALICE_SSRC, 1, &packets[1]);
+        rig.step();
+
+        assert_eq!(
+            rig.speech(),
+            [
+                (ALICE, true, Duration::ZERO),
+                (ALICE, false, FRAME),
+                (ALICE, true, Duration::ZERO)
+            ]
+        );
+        assert_eq!(data(&read(&receiver)), packets);
+        assert_eq!(rig.counter("rx_panics"), 1);
+        assert!(!rig.media.closed.load(Ordering::Acquire));
     }
 
     #[test]
