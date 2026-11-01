@@ -19,6 +19,7 @@ from bostie.cache import Cache
 from bostie.commands import (
     AutocompleteCallback,
     Command,
+    ContextMenuCommand,
     Group,
     _python_name,
     autocomplete_choices,
@@ -253,7 +254,7 @@ class Bot(Router):
                     await sync.sync_commands(
                         http,
                         self.application_id,
-                        list(self.commands.values()),
+                        [*self.commands.values(), *self.context_menus.values()],
                         self._dev_guilds,
                     )
                 self._warn_about_privileged_intents()
@@ -312,13 +313,13 @@ class Bot(Router):
                 self._refresh_filter()
 
     async def sync_commands(self) -> list[sync.SyncResult]:
-        """Overwrite the slash commands on Discord now and return what differed."""
+        """Overwrite the commands on Discord now and return what differed."""
         if self.application_id is None:
             raise RuntimeError("sync_commands() needs a running bot")
         return await sync.sync_commands(
             self.http,
             self.application_id,
-            list(self.commands.values()),
+            [*self.commands.values(), *self.context_menus.values()],
             self._dev_guilds,
             always_put=True,
         )
@@ -459,7 +460,7 @@ class Bot(Router):
             return None
         if self._caching:
             names |= Cache.NAMES
-        if self.commands or self.component_routes:
+        if self.commands or self.context_menus or self.component_routes:
             names.add(InteractionCreate.NAME)
         return sorted(names)
 
@@ -646,10 +647,16 @@ class Bot(Router):
     def _command_handler(
         self, interaction: CommandInteraction, received: float
     ) -> Coroutine[Any, Any, None] | None:
-        found = self._command(interaction.data)
-        if found is None:
+        data = interaction.data
+        command: Command | ContextMenuCommand
+        found = self._command(data)
+        if found is not None:
+            command, options = found
+            arguments = partial(command.bind, options, data.resolved)
+        elif (menu := self.context_menus.get((data.type, data.name))) is not None:
+            command, arguments = menu, partial(menu.bind, interaction)
+        else:
             return None
-        command, options = found
         ctx = Context(
             interaction,
             self,
@@ -658,12 +665,7 @@ class Bot(Router):
             auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
-        return self._run_handler(
-            ctx,
-            command.router,
-            command.callback,
-            partial(command.bind, options, interaction.data.resolved),
-        )
+        return self._run_handler(ctx, command.router, command.callback, arguments)
 
     def _command(
         self, data: CommandData

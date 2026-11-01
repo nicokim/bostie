@@ -34,15 +34,20 @@ from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
     Channel,
+    CommandInteraction,
     InteractionDataOption,
     Member,
+    Message,
     PartialChannel,
+    PartialMessage,
     PartialUser,
     Resolved,
     Role,
     User,
+    WebhookMessage,
 )
 from bostie.models.base import check_keys
+from bostie.models.message import in_guild
 
 if TYPE_CHECKING:
     from typing import Annotated as Range
@@ -57,6 +62,8 @@ __all__ = [
     "Command",
     "CommandCallback",
     "CommandSettings",
+    "ContextMenuCommand",
+    "ContextMenuSettings",
     "Group",
     "GroupSettings",
     "Option",
@@ -72,6 +79,8 @@ type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
 type OptionModel = type[User | Member | Role | PartialChannel | Attachment]
+type TargetModel = type[User | Member | Message | WebhookMessage]
+type TargetType = Literal[CommandType.USER, CommandType.MESSAGE]
 type Scope = Literal["global", "guild"]
 
 LIBRARY_DIRECTORY = str(Path(__file__).parent)
@@ -129,6 +138,10 @@ MODEL_ADVICE: dict[type, str] = {
     Channel: "a channel option is a PartialChannel",
     PartialUser: "a user option is a User or a Member",
 }
+TARGET_MODELS: dict[CommandType, tuple[TargetModel, ...]] = {
+    CommandType.USER: (User, Member),
+    CommandType.MESSAGE: (Message, WebhookMessage),
+}
 
 
 class GroupSettings(TypedDict, total=False):
@@ -154,9 +167,17 @@ class CommandSettings(SubcommandSettings, GroupSettings, total=False):
     """Settings of a top-level slash command."""
 
 
+class ContextMenuSettings(GroupSettings, total=False):
+    """Settings of a user or message command; `auto_defer` defaults to the bot's."""
+
+    ephemeral: bool
+    auto_defer: float | None
+
+
 GROUP_SETTINGS = GroupSettings.__optional_keys__
 SUBCOMMAND_SETTINGS = SubcommandSettings.__optional_keys__
 COMMAND_SETTINGS = CommandSettings.__optional_keys__
+CONTEXT_MENU_SETTINGS = ContextMenuSettings.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,7 +275,48 @@ class _Parameter:
         )
 
 
-class _Node(ABC):
+class _Registered:
+    def __init__(
+        self,
+        type: CommandType,
+        name: str,
+        *,
+        router: "Router",
+        settings: GroupSettings,
+    ) -> None:
+        self.type = type
+        self.name = name
+        self.router = router
+        self.default_permissions = settings.get("default_permissions")
+        self.guild_only = settings.get("guild_only", False)
+        self.nsfw = settings.get("nsfw", False)
+        self.extra = dict(settings.get("extra", {}))
+
+    def payload(self, scope: Scope) -> dict[str, Any]:
+        """The JSON that registers this top-level command in the given scope."""
+        permissions = self.default_permissions
+        payload: dict[str, Any] = {
+            "type": self.type,
+            "name": self.name,
+            **self._fields(),
+            "default_member_permissions": None
+            if permissions is None
+            else str(permissions.value),
+            "nsfw": self.nsfw,
+        }
+        if scope == "global":
+            payload["contexts"] = (
+                [InteractionContextType.GUILD]
+                if self.guild_only
+                else [InteractionContextType.GUILD, InteractionContextType.BOT_DM]
+            )
+        return payload | self.extra
+
+    def _fields(self) -> dict[str, Any]:
+        return {}
+
+
+class _Node(_Registered, ABC):
     _option_type: ClassVar[OptionType]
 
     def __init__(
@@ -268,14 +330,9 @@ class _Node(ABC):
     ) -> None:
         _check_name(name)
         _check_description(description)
-        self.name = name
+        super().__init__(CommandType.CHAT_INPUT, name, router=router, settings=settings)
         self.description = description
-        self.router = router
         self.parent = parent
-        self.default_permissions = settings.get("default_permissions")
-        self.guild_only = settings.get("guild_only", False)
-        self.nsfw = settings.get("nsfw", False)
-        self.extra = dict(settings.get("extra", {}))
 
     @property
     def qualified_name(self) -> str:
@@ -284,26 +341,9 @@ class _Node(ABC):
             return self.name
         return f"{self.parent.qualified_name} {self.name}"
 
-    def payload(self, scope: Scope) -> dict[str, Any]:
-        """The JSON that registers this top-level command in the given scope."""
-        permissions = self.default_permissions
-        payload: dict[str, Any] = {
-            "type": CommandType.CHAT_INPUT,
-            "name": self.name,
-            "description": self.description,
-            "options": self._options(),
-            "default_member_permissions": None
-            if permissions is None
-            else str(permissions.value),
-            "nsfw": self.nsfw,
-        }
-        if scope == "global":
-            payload["contexts"] = (
-                [InteractionContextType.GUILD]
-                if self.guild_only
-                else [InteractionContextType.GUILD, InteractionContextType.BOT_DM]
-            )
-        return payload | self.extra
+    @override
+    def _fields(self) -> dict[str, Any]:
+        return {"description": self.description, "options": self._options()}
 
     def _as_option(self) -> dict[str, Any]:
         return {
@@ -363,9 +403,7 @@ class Command(_Node):
     @property
     def auto_defer(self) -> float | None:
         """Seconds before an unanswered call is deferred; the bot's unless set here."""
-        if "auto_defer" in self._settings:
-            return self._settings["auto_defer"]
-        return self.router.bot.auto_defer
+        return _auto_defer(self._settings, self.router)
 
     def bind(
         self, options: Sequence[InteractionDataOption], resolved: Resolved
@@ -467,6 +505,53 @@ class Group(_Node):
         return [node._as_option() for node in self.commands.values()]
 
 
+class ContextMenuCommand(_Registered):
+    """A user or message command, run from the context menu of its target."""
+
+    def __init__(
+        self,
+        type: TargetType,
+        name: str,
+        callback: CommandCallback,
+        *,
+        router: "Router",
+        **settings: Unpack[ContextMenuSettings],
+    ) -> None:
+        check_keys(settings, CONTEXT_MENU_SETTINGS, "settings")
+        try:
+            _check_name(name, spaced=True)
+            self._target, self._models = _target(callback, TARGET_MODELS[type])
+        except CommandDefinitionError as error:
+            raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
+        super().__init__(type, name, router=router, settings=settings)
+        self.callback = callback
+        self.ephemeral = settings.get("ephemeral", False)
+        self._settings = settings
+
+    @property
+    def auto_defer(self) -> float | None:
+        """Seconds before an unanswered call is deferred; the bot's unless set here."""
+        return _auto_defer(self._settings, self.router)
+
+    def bind(self, interaction: CommandInteraction) -> dict[str, Any]:
+        """Resolve the user or message the command was run on into its argument."""
+        data = interaction.data
+        for model in self._models:
+            found = (
+                None
+                if data.target_id is None
+                else model.from_resolved(data.resolved, data.target_id)
+            )
+            if isinstance(found, PartialMessage):
+                found = in_guild(found, interaction.guild_id)
+            if found is not None:
+                return {self._target: found}
+        expected = " or ".join(model.__name__ for model in self._models)
+        raise OptionConversionError(
+            f"the target {data.target_id} of {self.name!r} resolves to no {expected}"
+        )
+
+
 def autocomplete_choices(
     result: Iterable[ChoiceValue | Choice], function: Callable[..., object]
 ) -> list[dict[str, Any]]:
@@ -511,6 +596,38 @@ def _parameters(callback: CommandCallback) -> list[_Parameter]:
             raise CommandDefinitionError(f"two options are named {parameter.name!r}")
         seen.add(parameter.name)
     return sorted(parameters, key=lambda parameter: not parameter.required)
+
+
+def _target(
+    callback: CommandCallback, allowed: tuple[TargetModel, ...]
+) -> tuple[str, tuple[TargetModel, ...]]:
+    match list(inspect.signature(callback).parameters.values()):
+        case [context, target] if (
+            context.kind in CONTEXT_POSITIONAL and target.kind in OPTION_KEYWORD
+        ):
+            hints = typing.get_type_hints(callback, include_extras=True)
+            members, optional, _ = _unwrap(hints.get(target.name))
+            models = tuple(
+                model for member in members for model in allowed if member is model
+            )
+            if not optional and len(models) == len(members):
+                return target.name, models
+            expected = " or a ".join(model.__name__ for model in allowed)
+            raise CommandDefinitionError(
+                f"parameter {target.name!r} must be a {expected}"
+            )
+        case _:
+            raise CommandDefinitionError(
+                "the function must take the context positionally, then the target"
+            )
+
+
+def _auto_defer(
+    settings: SubcommandSettings | ContextMenuSettings, router: "Router"
+) -> float | None:
+    if "auto_defer" in settings:
+        return settings["auto_defer"]
+    return router.bot.auto_defer
 
 
 def _parameter(parameter: inspect.Parameter, hints: Mapping[str, object]) -> _Parameter:
@@ -728,18 +845,21 @@ def _check_bounds(option_type: OptionType, payload: Mapping[str, Any]) -> None:
             raise CommandDefinitionError(f"{low} is greater than {high}")
 
 
-def _check_name(name: str) -> None:
-    if not (1 <= len(name) <= MAX_NAME and all(map(_is_name_character, name))):
+def _check_name(name: str, *, spaced: bool = False) -> None:
+    if not (
+        1 <= len(name) <= MAX_NAME
+        and all(_is_name_character(character, spaced=spaced) for character in name)
+    ):
+        letters = "letters, digits, spaces" if spaced else "lowercase letters, digits"
         raise CommandDefinitionError(
-            f"{name!r} is not a valid name: use 1-32 lowercase letters, "
-            "digits, '-' or '_'"
+            f"{name!r} is not a valid name: use 1-32 {letters}, '-' or '_'"
         )
 
 
-def _is_name_character(character: str) -> bool:
-    if character in NAME_SYMBOLS:
+def _is_name_character(character: str, *, spaced: bool) -> bool:
+    if character in NAME_SYMBOLS or (spaced and character == " "):
         return True
-    if character != character.lower():
+    if not spaced and character != character.lower():
         return False
     return unicodedata.category(character)[0] in "LN" or any(
         ord(character) in script for script in NAME_SCRIPTS

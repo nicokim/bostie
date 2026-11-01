@@ -19,6 +19,7 @@ from bostie.models.message import (
     Message,
     PartialMessage,
     WebhookMessage,
+    message_model,
     nested_message,
 )
 from bostie.models.user import User
@@ -41,8 +42,16 @@ class Resolved(Model, kw_only=True):
     members: dict[int, PartialMember] = {}
     roles: dict[int, Role] = {}
     channels: dict[int, PartialChannel] = {}
-    messages: dict[int, PartialMessage] = {}
+    _messages: dict[int, msgspec.Raw] = msgspec.field(default={}, name="messages")
     attachments: dict[int, Attachment] = {}
+
+    @property
+    def messages(self) -> dict[int, PartialMessage]:
+        """The messages by id, decoded on each access."""
+        return {
+            id: decoder(PartialMessage).decode(raw)
+            for id, raw in self._messages.items()
+        }
 
     def member(self, id: int) -> Member | None:
         """The member with this id, with its user."""
@@ -51,6 +60,11 @@ class Resolved(Model, kw_only=True):
         if member is None or user is None:
             return None
         return with_user(member, user)
+
+    def message(self, id: int) -> Message | WebhookMessage | None:
+        """The whole message with this id, as a message command's target carries it."""
+        raw = self._messages.get(id)
+        return None if raw is None else decoder(message_model(raw)).decode(raw)
 
 
 class CommandData(Model, kw_only=True):
@@ -120,7 +134,7 @@ class _Interaction(Model, kw_only=True):
 
 
 class CommandInteraction(_Interaction, kw_only=True):
-    """A slash command run."""
+    """A slash, user or message command run."""
 
     data: CommandData
 

@@ -10,11 +10,11 @@ import pytest
 from fakediscord import FakeDiscord
 
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie.commands import Choice, Command, Group, Option, Range
+from bostie.commands import Choice, Command, ContextMenuCommand, Group, Option, Range
 from bostie.enums import Permissions
 from bostie.errors import BadRequest, CommandSyncError
 from bostie.http import HTTPClient
-from bostie.models import Attachment, PartialChannel, Role, User
+from bostie.models import Attachment, Message, PartialChannel, Role, User
 from bostie.router import Router
 from bostie.sync import SyncResult, sync_commands
 
@@ -77,7 +77,12 @@ async def search(
     """Search the bostie docs."""
 
 
-COMMANDS: list[Command | Group] = [kit, search]
+@router.user_command("User Info", guild_only=True)
+async def user_info(ctx: object, user: User) -> None:
+    pass
+
+
+COMMANDS: list[Command | Group | ContextMenuCommand] = [kit, search, user_info]
 
 
 def ignore(delivery: GatewayDelivery, received: float) -> None:
@@ -132,43 +137,36 @@ def test_explicit_sync_puts_ours_then_other_types_verbatim() -> None:
 
         put = fake.requests[1]
         assert put.method == "PUT"
-        assert put.json[:2] == [kit.payload("global"), search.payload("global")]
-        user_info, launch = put.json[2:]
-        assert user_info["id"] == "1544285690265731075"
-        assert user_info["name_localizations"] == {"de": "Benutzerinfo"}
+        assert put.json[:3] == [command.payload("global") for command in COMMANDS]
+        (launch,) = put.json[3:]
+        assert launch["id"] == "1329027302293635073"
         assert launch["handler"] == 2
-        for passthrough in (user_info, launch):
-            assert not {"version", "application_id", "guild_id"} & passthrough.keys()
+        assert not {"version", "application_id", "guild_id"} & launch.keys()
 
     run(scenario)
 
 
-def test_pass_through_commands_drop_deprecated_keys_and_keep_settings() -> None:
-    deprecated: dict[str, dict[str, Any]] = {
-        "User Info": {
-            "dm_permission": False,
-            "contexts": None,
-            "default_permission": False,
-        },
-        "launch": {"dm_permission": True, "default_permission": True},
-    }
-
+@pytest.mark.parametrize(
+    ("deprecated", "kept"),
+    [
+        (
+            {"dm_permission": False, "contexts": None, "default_permission": False},
+            ([0], "0"),
+        ),
+        ({"dm_permission": True, "default_permission": True}, ([0, 1, 2], None)),
+    ],
+)
+def test_pass_through_commands_drop_deprecated_keys_and_keep_settings(
+    deprecated: dict[str, Any], kept: tuple[list[int], str | None]
+) -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        fake.commands = remote(**deprecated)
+        fake.commands = remote(launch=deprecated)
 
         await sync_commands(http, fake.application_id, COMMANDS, (), always_put=True)
 
-        user_info, launch = fake.requests[1].json[2:]
-        for passthrough in (user_info, launch):
-            assert not {"dm_permission", "default_permission"} & passthrough.keys()
-        assert (user_info["contexts"], user_info["default_member_permissions"]) == (
-            [0],
-            "0",
-        )
-        assert (launch["contexts"], launch["default_member_permissions"]) == (
-            [0, 1, 2],
-            None,
-        )
+        (launch,) = fake.requests[1].json[3:]
+        assert not {"dm_permission", "default_permission"} & launch.keys()
+        assert (launch["contexts"], launch["default_member_permissions"]) == kept
 
     run(scenario)
 
@@ -177,13 +175,13 @@ def test_guild_pass_through_commands_drop_dm_permission_as_is() -> None:
     hidden_in_dms = {"guild_id": "11", "dm_permission": False, "contexts": None}
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        fake.guild_commands["11"] = remote(**{"User Info": hidden_in_dms})
+        fake.guild_commands["11"] = remote(launch=hidden_in_dms)
 
         await sync_commands(http, fake.application_id, COMMANDS, [11], always_put=True)
 
-        user_info = fake.requests[1].json[2]
-        assert "dm_permission" not in user_info
-        assert user_info["contexts"] is None
+        (launch,) = fake.requests[1].json[3:]
+        assert "dm_permission" not in launch
+        assert launch["contexts"] is None
 
     run(scenario)
 
@@ -225,16 +223,16 @@ def test_a_difference_sends_one_put_with_the_other_types(
     run(scenario)
 
 
-def test_missing_and_extra_slash_commands_are_reported() -> None:
+def test_missing_and_extra_commands_are_matched_by_type_and_name() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        stale = copy.deepcopy(REMOTE[1]) | {"name": "old"}
-        fake.commands = [c for c in remote() if c["name"] != "kit"] + [stale]
+        user_search = copy.deepcopy(REMOTE[2]) | {"name": "search"}
+        fake.commands = [c for c in remote() if c["name"] != "kit"] + [user_search]
 
         (result,) = await sync_commands(http, fake.application_id, COMMANDS, ())
 
         assert (result.added, result.removed, result.changed) == (
             ("kit",),
-            ("old",),
+            ("search",),
             (),
         )
         assert put_names(fake) == ["kit", "search", "User Info", "launch"]
@@ -299,32 +297,49 @@ def test_a_400_names_the_command_option_and_function() -> None:
     run(scenario)
 
 
-def test_a_400_on_a_passthrough_command_names_it() -> None:
-    errors = {"2": {"name": {"_errors": [{"code": "X", "message": "Bad name."}]}}}
+@pytest.mark.parametrize(
+    ("index", "command"),
+    [("2", f"User Info ({__name__}.user_info)"), ("3", "launch")],
+)
+def test_a_400_on_a_command_without_a_slash_names_it_as_is(
+    index: str, command: str
+) -> None:
+    errors = {index: {"name": {"_errors": [{"code": "X", "message": "Bad name."}]}}}
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote(kit={"description": "Old text"})
         route = f"/applications/{fake.application_id}/commands"
         fake.fail("PUT", route, 400, {"code": 50035, "errors": errors})
 
-        with pytest.raises(CommandSyncError, match=r"^/User Info: name: Bad name\.$"):
+        with pytest.raises(CommandSyncError) as raised:
             await sync_commands(http, fake.application_id, COMMANDS, ())
+
+        assert str(raised.value) == f"{command}: name: Bad name."
 
     run(scenario)
 
 
-def test_more_than_100_commands_warns() -> None:
+def test_more_commands_of_a_type_than_discord_allows_warns() -> None:
     many = Router()
 
     async def handler(ctx: object) -> None:
         pass
 
-    commands: list[Command | Group] = [
+    async def on_message(ctx: object, message: Message) -> None:
+        pass
+
+    commands: list[Command | Group | ContextMenuCommand] = [
         many.command(name=f"c{index}")(handler) for index in range(101)
     ]
+    commands += [many.message_command(f"m{index}")(on_message) for index in range(16)]
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        with pytest.warns(UserWarning, match="101 slash commands"):
+        with pytest.warns(UserWarning, match="commands; Discord allows") as warned:
             await sync_commands(http, fake.application_id, commands, ())
+
+        assert [str(warning.message) for warning in warned] == [
+            "101 slash commands; Discord allows 100 per scope",
+            "16 message commands; Discord allows 15 per scope",
+        ]
 
     run(scenario)

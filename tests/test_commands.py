@@ -10,23 +10,28 @@ from fakediscord import payloads
 from bostie.commands import (
     Choice,
     Command,
+    CommandCallback,
     Option,
     Range,
     autocomplete_choices,
 )
-from bostie.enums import ChannelType, OptionType, Permissions
+from bostie.enums import ChannelType, CommandType, OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
     Channel,
+    CommandInteraction,
     InteractionDataOption,
     Member,
+    Message,
     PartialChannel,
     PartialUser,
     Resolved,
     Role,
     User,
+    WebhookMessage,
     decode,
+    decode_interaction,
 )
 from bostie.router import Router
 
@@ -706,3 +711,140 @@ def test_autocomplete_choices_fixes_what_discord_would_reject() -> None:
     assert any("dropped" in message for message in messages)
     assert any("were cut" in message for message in messages)
     assert any("first 25" in message for message in messages)
+
+
+async def on_user(ctx: object, user: User) -> None:
+    pass
+
+
+async def on_member(ctx: object, member: Member) -> None:
+    pass
+
+
+async def on_message(ctx: object, message: Message) -> None:
+    pass
+
+
+async def on_any_message(ctx: object, message: Message | WebhookMessage) -> None:
+    pass
+
+
+async def no_target(ctx: object) -> None:
+    pass
+
+
+async def two_targets(ctx: object, user: User, other: User) -> None:
+    pass
+
+
+async def positional_target(ctx: object, user: User, /) -> None:
+    pass
+
+
+async def optional_user(ctx: object, user: User | None) -> None:
+    pass
+
+
+async def message_for_user(ctx: object, user: Message) -> None:
+    pass
+
+
+def test_context_menu_payloads_carry_no_description_or_options() -> None:
+    router = Router()
+    stats = router.user_command(
+        "View Stats", default_permissions=Permissions.MANAGE_ROLES, nsfw=True
+    )(on_member)
+    pin = router.message_command("Pin it", guild_only=True)(on_message)
+
+    assert stats.payload("global") == {
+        "type": 2,
+        "name": "View Stats",
+        "default_member_permissions": "268435456",
+        "nsfw": True,
+        "contexts": [0, 1],
+    }
+    assert pin.payload("guild") == {
+        "type": 3,
+        "name": "Pin it",
+        "default_member_permissions": None,
+        "nsfw": False,
+    }
+
+
+TAKES_TARGET = "the function must take the context positionally, then the target"
+USER_TARGET = "parameter 'user' must be a User or a Member"
+
+
+@pytest.mark.parametrize(
+    ("name", "callback", "problem"),
+    [
+        ("Inspect", no_target, TAKES_TARGET),
+        ("Inspect", two_targets, TAKES_TARGET),
+        ("Inspect", positional_target, TAKES_TARGET),
+        ("Inspect", optional_user, USER_TARGET),
+        ("Inspect", message_for_user, USER_TARGET),
+        ("x" * 33, on_user, "not a valid name"),
+        ("Who?", on_user, "not a valid name"),
+    ],
+)
+def test_context_menu_definition_errors_name_the_function(
+    name: str, callback: CommandCallback, problem: str
+) -> None:
+    prefix = f"^test_commands\\.{callback.__name__}: .*"
+    with pytest.raises(CommandDefinitionError, match=prefix + problem):
+        Router().user_command(name)(callback)
+
+
+def run_on(kind: CommandType, target_id: str, resolved: Any) -> CommandInteraction:
+    data = payloads.context_menu(kind, "Inspect", target_id, resolved)
+    interaction = decode_interaction(msgspec.json.encode(payloads.interaction(2, data)))
+    assert isinstance(interaction, CommandInteraction)
+    return interaction
+
+
+def resolved_message(**fields: Any) -> dict[str, Any]:
+    message = payloads.message(**fields)
+    del message["guild_id"], message["member"]
+    return {"messages": {message["id"]: message}}
+
+
+WEBHOOK_MESSAGE = resolved_message(webhook_id="1")
+
+
+@pytest.mark.parametrize(
+    ("callback", "kind", "resolved", "expected"),
+    [
+        (on_user, CommandType.USER, payloads.resolved(), User),
+        (on_member, CommandType.USER, payloads.resolved(), Member),
+        (on_message, CommandType.MESSAGE, resolved_message(), Message),
+        (on_any_message, CommandType.MESSAGE, WEBHOOK_MESSAGE, WebhookMessage),
+        (on_member, CommandType.USER, {"users": payloads.resolved()["users"]}, None),
+        (on_message, CommandType.MESSAGE, WEBHOOK_MESSAGE, None),
+    ],
+)
+def test_bind_resolves_the_target_to_its_hint(
+    callback: CommandCallback,
+    kind: CommandType,
+    resolved: dict[str, Any],
+    expected: type | None,
+) -> None:
+    command = (
+        Router().user_command("Inspect")
+        if kind is CommandType.USER
+        else Router().message_command("Inspect")
+    )(callback)
+    target_id = next(iter(resolved.get("messages") or resolved["users"]))
+    interaction = run_on(kind, target_id, resolved)
+
+    if expected is None:
+        with pytest.raises(OptionConversionError, match="resolves to no"):
+            command.bind(interaction)
+        return
+    (target,) = command.bind(interaction).values()
+    assert type(target) is expected
+    assert isinstance(target, User | Member | Message | WebhookMessage)
+    if isinstance(target, Member):
+        target = target.user
+    assert target.id == int(target_id)
+    if isinstance(target, Message | WebhookMessage):
+        assert target.guild_id == interaction.guild_id

@@ -18,10 +18,14 @@ from bostie.commands import (
     Command,
     CommandCallback,
     CommandSettings,
+    ContextMenuCommand,
+    ContextMenuSettings,
     Group,
     GroupSettings,
+    TargetType,
 )
 from bostie.custom_id import ComponentRoute
+from bostie.enums import CommandType
 from bostie.errors import CommandDefinitionError
 from bostie.events import Event, RawEvent
 from bostie.voice.events import VoiceEvent
@@ -45,12 +49,19 @@ class Listener:
     event: type[AnyEvent] | None
 
 
+@dataclass(frozen=True, slots=True)
+class _Registry[K, V]:
+    of: Callable[["Router"], dict[K, V]]
+    taken: Callable[[K], Exception]
+
+
 class Router:
     """Commands, listeners, component routes and error hooks; a bot is a router."""
 
     def __init__(self) -> None:
         self.parent: Router | None = None
         self.commands: dict[str, Command | Group] = {}
+        self.context_menus: dict[tuple[CommandType, str], ContextMenuCommand] = {}
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.error_handlers: dict[type[BaseException], ErrorHandler] = {}
@@ -80,7 +91,7 @@ class Router:
 
         def register(callback: CommandCallback) -> Command:
             command = Command(callback, router=self, **settings)
-            self._add_command(command)
+            self._add(COMMANDS, command.name, command)
             return command
 
         return register if callback is None else register(callback)
@@ -90,8 +101,20 @@ class Router:
     ) -> Group:
         """Register a slash command made of subcommands."""
         group = Group(name, description, router=self, **settings)
-        self._add_command(group)
+        self._add(COMMANDS, group.name, group)
         return group
+
+    def user_command(
+        self, name: str, **settings: Unpack[ContextMenuSettings]
+    ) -> Callable[[CommandCallback], ContextMenuCommand]:
+        """Register `async def f(ctx, user: User)` in the context menu of users."""
+        return self._context_menu(CommandType.USER, name, settings)
+
+    def message_command(
+        self, name: str, **settings: Unpack[ContextMenuSettings]
+    ) -> Callable[[CommandCallback], ContextMenuCommand]:
+        """Register `async def f(ctx, message: Message)` in messages' context menu."""
+        return self._context_menu(CommandType.MESSAGE, name, settings)
 
     @overload
     def listen[E: AnyEvent](
@@ -145,7 +168,7 @@ class Router:
             handler: Callable[P, Coroutine[Any, Any, None]],
         ) -> ComponentRoute[P]:
             route = ComponentRoute(template, handler, router=self)
-            self._add_route(route)
+            self._add(COMPONENT_ROUTES, template, route)
             return route
 
         return register
@@ -178,18 +201,16 @@ class Router:
         """Add a router's commands, listeners and routes, including later ones."""
         if router.parent is not None or router in self._chain():
             raise ValueError("a router can be included once, and never into itself")
-        for name in router.commands:
-            self._check_command(name)
-        for template in router.component_routes:
-            self._check_route(template)
+        for registry in REGISTRIES:
+            for key in registry.of(router):
+                self._check(registry, key)
         router.parent = self
-        for node in router.commands.values():
-            self._add_command(node)
+        for registry in REGISTRIES:
+            for key, value in registry.of(router).items():
+                self._add(registry, key, value)
         for name, listeners in router.listeners.items():
             for listener in listeners:
                 self._add_listener(name, listener)
-        for route in router.component_routes.values():
-            self._add_route(route)
 
     def match_component(
         self, custom_id: str
@@ -250,22 +271,24 @@ class Router:
             yield router
             router = router.parent
 
-    def _check_command(self, name: str) -> None:
-        if any(name in router.commands for router in self._chain()):
-            raise CommandDefinitionError(
-                f"a command named {name!r} is already registered"
-            )
+    def _context_menu(
+        self, type: TargetType, name: str, settings: ContextMenuSettings
+    ) -> Callable[[CommandCallback], ContextMenuCommand]:
+        def register(callback: CommandCallback) -> ContextMenuCommand:
+            command = ContextMenuCommand(type, name, callback, router=self, **settings)
+            self._add(CONTEXT_MENUS, (type, name), command)
+            return command
 
-    def _check_route(self, template: str) -> None:
-        if any(template in router.component_routes for router in self._chain()):
-            raise ValueError(
-                f"the component template {template!r} is already registered"
-            )
+        return register
 
-    def _add_command(self, node: Command | Group) -> None:
-        self._check_command(node.name)
+    def _check[K](self, registry: _Registry[K, Any], key: K) -> None:
+        if any(key in registry.of(router) for router in self._chain()):
+            raise registry.taken(key)
+
+    def _add[K](self, registry: _Registry[K, Any], key: K, value: object) -> None:
+        self._check(registry, key)
         for router in self._chain():
-            router.commands[node.name] = node
+            registry.of(router)[key] = value
             router._registered()
 
     def _add_listener(self, name: str, listener: Listener) -> None:
@@ -273,14 +296,33 @@ class Router:
             router.listeners.setdefault(name, []).append(listener)
             router._registered()
 
-    def _add_route(self, route: ComponentRoute[...]) -> None:
-        self._check_route(route.template)
-        for router in self._chain():
-            router.component_routes[route.template] = route
-            router._registered()
-
     def _registered(self) -> None:
         pass
+
+
+COMMANDS: _Registry[str, Command | Group] = _Registry(
+    lambda router: router.commands,
+    lambda name: CommandDefinitionError(
+        f"a command named {name!r} is already registered"
+    ),
+)
+CONTEXT_MENUS: _Registry[tuple[CommandType, str], ContextMenuCommand] = _Registry(
+    lambda router: router.context_menus,
+    lambda key: CommandDefinitionError(
+        f"a {key[0].name.lower()} command named {key[1]!r} is already registered"
+    ),
+)
+COMPONENT_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
+    lambda router: router.component_routes,
+    lambda template: ValueError(
+        f"the component template {template!r} is already registered"
+    ),
+)
+REGISTRIES: tuple[_Registry[Any, Any], ...] = (
+    COMMANDS,
+    CONTEXT_MENUS,
+    COMPONENT_ROUTES,
+)
 
 
 def _annotated_events(listener: Callable[..., object]) -> tuple[Any, ...]:

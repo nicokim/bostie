@@ -401,6 +401,43 @@ def test_buttons_are_routed_by_custom_id_template() -> None:
     run(scenario)
 
 
+def test_context_menu_commands_sync_and_route_by_type_and_name() -> None:
+    message = payloads.message(content="hello")
+    on_message = payloads.context_menu(
+        3, "Inspect", message["id"], {"messages": {message["id"]: message}}
+    )
+    on_user = payloads.context_menu(2, "Inspect", MEMBER_ID, payloads.resolved())
+
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.user_command("Inspect")
+        async def inspect_member(ctx: Context, member: Member) -> None:
+            await ctx.respond(f"member {member.mention}")
+
+        @bot.message_command("Inspect", ephemeral=True)
+        async def inspect_message(ctx: Context, message: Message) -> None:
+            await ctx.respond(f"message {message.content}")
+
+        async with running(bot, fake):
+            user_answer = await fake.interaction(2, on_user)
+            message_answer = await fake.interaction(2, on_message)
+
+        (put,) = [request for request in fake.requests if request.method == "PUT"]
+        assert [(command["type"], command["name"]) for command in put.json] == [
+            (2, "Inspect"),
+            (3, "Inspect"),
+        ]
+        assert user_answer.json["data"]["content"] == f"member <@{MEMBER_ID}>"
+        assert message_answer.json["data"] == {
+            "content": "message hello",
+            "allowed_mentions": MENTIONS,
+            "flags": EPHEMERAL,
+        }
+
+    run(scenario)
+
+
 def test_a_bot_with_only_component_routes_answers_clicks() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)

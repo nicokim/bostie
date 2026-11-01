@@ -1,9 +1,17 @@
 import logging
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from bostie.commands import Command, Group, Scope, _python_name, _warn
+from bostie.commands import (
+    Command,
+    ContextMenuCommand,
+    Group,
+    Scope,
+    _python_name,
+    _warn,
+)
 from bostie.enums import CommandType, InteractionContextType, OptionType
 from bostie.errors import BadRequest, CommandSyncError
 
@@ -18,10 +26,14 @@ DROPPED_REMOTE_KEYS = frozenset(
     {"application_id", "version", "guild_id", "dm_permission", "default_permission"}
 )
 NESTING_TYPES = frozenset({OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP})
-MAX_COMMANDS = 100
+LIMITS = {
+    CommandType.CHAT_INPUT: ("slash", 100),
+    CommandType.USER: ("user", 15),
+    CommandType.MESSAGE: ("message", 15),
+}
 COMMAND_DEFAULTS: dict[str, Any] = {
     "name": None,
-    "description": None,
+    "description": "",
     "options": [],
     "default_member_permissions": None,
     "nsfw": False,
@@ -44,7 +56,7 @@ OPTION_DEFAULTS: dict[str, Any] = {
 
 @dataclass(frozen=True, slots=True)
 class SyncResult:
-    """Slash commands that differed in one scope; `guild_id` is None for global."""
+    """Commands that differed in one scope; `guild_id` is None for global."""
 
     guild_id: int | None
     added: tuple[str, ...]
@@ -55,16 +67,22 @@ class SyncResult:
 async def sync_commands(
     http: "HTTPClient",
     application_id: int,
-    commands: Sequence[Command | Group],
+    commands: Sequence[Command | Group | ContextMenuCommand],
     guild_ids: Iterable[int],
     *,
     always_put: bool = False,
 ) -> list[SyncResult]:
-    """Make Discord's slash commands match `commands`, one PUT per differing scope."""
+    """Make Discord's commands match `commands`, one PUT per differing scope.
+
+    Commands of a type bostie does not define, such as an Activity's entry point,
+    are kept as they are.
+    """
     if not commands and not always_put:
         return []
-    if len(commands) > MAX_COMMANDS:
-        _warn(f"{len(commands)} slash commands; Discord allows 100 per scope")
+    for type, count in Counter(command.type for command in commands).items():
+        label, limit = LIMITS[type]
+        if count > limit:
+            _warn(f"{count} {label} commands; Discord allows {limit} per scope")
     scopes: list[int | None] = [*guild_ids] or [None]
     return [
         await _sync_scope(
@@ -77,7 +95,7 @@ async def sync_commands(
 async def _sync_scope(
     http: "HTTPClient",
     application_id: int,
-    commands: Sequence[Command | Group],
+    commands: Sequence[Command | Group | ContextMenuCommand],
     guild_id: int | None,
     *,
     always_put: bool,
@@ -94,15 +112,9 @@ async def _sync_scope(
     remote = await http.request(
         "GET", route, query={"with_localizations": True}, **params
     )
-    ours = {
-        command["name"]: command
-        for command in remote
-        if command.get("type", CommandType.CHAT_INPUT) == CommandType.CHAT_INPUT
-    }
+    ours = {_key(command): command for command in remote if _key(command)[0] in LIMITS}
     passthrough = [
-        _passthrough(command)
-        for command in remote
-        if command.get("type", CommandType.CHAT_INPUT) != CommandType.CHAT_INPUT
+        _passthrough(command) for command in remote if _key(command)[0] not in LIMITS
     ]
     result = _diff(guild_id, local, ours)
     if not (result.added or result.removed or result.changed or always_put):
@@ -141,21 +153,25 @@ def _passthrough(command: Mapping[str, Any]) -> dict[str, Any]:
     return kept
 
 
+def _key(command: Mapping[str, Any]) -> tuple[int, str]:
+    return command.get("type", CommandType.CHAT_INPUT), command["name"]
+
+
 def _diff(
     guild_id: int | None,
     local: Sequence[Mapping[str, Any]],
-    remote: Mapping[str, Mapping[str, Any]],
+    remote: Mapping[tuple[int, str], Mapping[str, Any]],
 ) -> SyncResult:
-    by_name = {command["name"]: command for command in local}
+    by_key = {_key(command): command for command in local}
     return SyncResult(
         guild_id,
-        added=tuple(name for name in by_name if name not in remote),
-        removed=tuple(name for name in remote if name not in by_name),
+        added=tuple(key[1] for key in by_key if key not in remote),
+        removed=tuple(key[1] for key in remote if key not in by_key),
         changed=tuple(
-            name
-            for name, command in by_name.items()
-            if name in remote
-            and _canonical_command(remote[name], command)
+            key[1]
+            for key, command in by_key.items()
+            if key in remote
+            and _canonical_command(remote[key], command)
             != _canonical_command(command, command)
         ),
     )
@@ -208,13 +224,14 @@ def _project(
 def _sync_error(
     error: BadRequest,
     body: Sequence[Mapping[str, Any]],
-    commands: Sequence[Command | Group],
+    commands: Sequence[Command | Group | ContextMenuCommand],
 ) -> CommandSyncError:
     path, message = _first_error(error.errors) or ((), error.message)
     if not path:
         return CommandSyncError("", "", message)
     index, rest = int(path[0]), path[1:]
     node = body[index]
+    slash = _key(node)[0] == CommandType.CHAT_INPUT
     names = [node["name"]]
     option = ""
     while len(rest) > 1 and rest[0] == "options":
@@ -224,7 +241,7 @@ def _sync_error(
             names.append(node["name"])
         else:
             option = f"option {node['name']!r}"
-    command = "/" + " ".join(names)
+    command = ("/" if slash else "") + " ".join(names)
     callback_name = (
         _callback_name(commands[index], names[1:]) if index < len(commands) else None
     )
@@ -248,7 +265,9 @@ def _first_error(
     return None
 
 
-def _callback_name(node: Command | Group, names: Sequence[str]) -> str | None:
+def _callback_name(
+    node: Command | Group | ContextMenuCommand, names: Sequence[str]
+) -> str | None:
     for name in names:
         if not isinstance(node, Group):
             return None

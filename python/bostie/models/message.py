@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, override
 
 import msgspec
 
@@ -199,6 +199,12 @@ class _Message(PartialMessage, kw_only=True):
     embeds: tuple[Embed, ...]
     pinned: bool
     type: MessageType
+
+    @classmethod
+    @override
+    def from_resolved(cls, resolved: "Resolved", id: int) -> Self | None:
+        message = resolved.message(id)
+        return message if isinstance(message, cls) else None
 
 
 class Message(_Message, kw_only=True):

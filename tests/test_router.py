@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from bostie import Bot
+from bostie import Bot, CommandType, Message, User
 from bostie.errors import CommandDefinitionError
 from bostie.events import MessageCreate, MessageUpdate, RawEvent
 from bostie.router import Listener, Router
@@ -40,6 +40,14 @@ async def component(ctx: object, **params: object) -> None:
 
 
 async def command(ctx: object) -> None:
+    pass
+
+
+async def on_user(ctx: object, user: User) -> None:
+    pass
+
+
+async def on_target_message(ctx: object, message: Message) -> None:
     pass
 
 
@@ -142,6 +150,22 @@ def test_command_names_are_unique_across_included_routers() -> None:
         bot.include(music)
     with pytest.raises(CommandDefinitionError, match="already registered"):
         bot.command(command)
+
+
+def test_a_name_is_unique_per_command_type_across_routers() -> None:
+    bot = Router()
+    bot.command(name="inspect")(command)
+    bot.user_command("inspect")(on_user)
+    plugin = Router()
+    pin = plugin.message_command("inspect")(on_target_message)
+    clashing = Router()
+    clashing.user_command("inspect")(on_user)
+
+    bot.include(plugin)
+
+    assert bot.context_menus[CommandType.MESSAGE, "inspect"] is pin
+    with pytest.raises(CommandDefinitionError, match="user command named 'inspect'"):
+        bot.include(clashing)
 
 
 def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:

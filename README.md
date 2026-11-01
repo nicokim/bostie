@@ -6,7 +6,7 @@
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
-> **Status:** pre-alpha. Text bots work: slash commands, buttons and selects, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
+> **Status:** pre-alpha. Text bots work: slash, user and message commands, buttons and selects, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
 
 ## Install
 
@@ -84,6 +84,7 @@ A few things the example takes for granted:
 - A handler that has not answered after 2.5 s is deferred for you.
 - Every handler and listener runs in its own task, which starts at once: its code up to the first `await` runs before the next event is handled.
 - Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `PartialChannel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
+- `@bot.user_command("Show avatar")` and `@bot.message_command("Bookmark")` add a command to the context menu of a user or a message. The handler takes the target after the context, typed `User` or `Member`, or `Message`, `WebhookMessage` or both.
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.

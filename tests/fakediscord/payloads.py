@@ -79,6 +79,17 @@ def command(name: str, *options: Json, resolved: Json | None = None) -> Json:
     return data
 
 
+def context_menu(type: int, name: str, target_id: str, resolved: Json) -> Json:
+    """The ``data`` of a user (2) or message (3) command run on ``target_id``."""
+    return {
+        "id": snowflake(),
+        "name": name,
+        "type": type,
+        "target_id": target_id,
+        "resolved": resolved,
+    }
+
+
 def group(name: str, *subcommands: Json) -> Json:
     """A subcommand group option."""
     return {"name": name, "type": 2, "options": list(subcommands)}

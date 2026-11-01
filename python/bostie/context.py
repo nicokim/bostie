@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Unpack, override
 import msgspec
 
 from bostie.enums import (
+    CommandType,
     InteractionCallbackType,
     JSONErrorCode,
     MessageFlags,
@@ -413,7 +414,7 @@ class _ReplyingContext[
 
 
 class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
-    """The context of a slash command: who ran it, where, and how to answer."""
+    """The context of a command run: who ran it, where, and how to answer."""
 
     @property
     def command_name(self) -> str:
@@ -427,7 +428,9 @@ class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
     @property
     @override
     def _label(self) -> str:
-        return f"/{self.command_name}"
+        if self.interaction.data.type is CommandType.CHAT_INPUT:
+            return f"/{self.command_name}"
+        return self.command_name
 
 
 class ComponentContext(
