@@ -631,7 +631,6 @@ impl Harness {
             .counters
             .snapshot()
             .into_iter()
-            .chain(media.receive.snapshot())
             .find(|(key, _)| *key == name)
             .unwrap_or_else(|| panic!("no counter {name}"))
             .1
@@ -2790,14 +2789,13 @@ async fn a_peer_heard_before_its_op_5_is_received_under_its_user_id() {
         harness.say(70, sequence, packet);
     }
     harness
-        .settle(|harness| harness.counter("packets_received") == 10)
+        .settle(|harness| harness.media().arrivals.lock().len() == 10)
         .await;
     harness.tick(2);
     harness.speaking(EARLY_PEER, 70).await;
     let heard = harness.hear(&receiver, 10).await;
 
     assert_eq!(frames(&heard), spoken(EARLY_PEER, &packets));
-    assert_eq!(harness.counter("unmapped"), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2812,7 +2810,7 @@ async fn a_reassigned_ssrc_keeps_its_new_owner_when_op_5_repeats() {
     harness.speaking(LATE_PEER, 70).await;
     harness.say(70, 0, &packets[0]);
     harness
-        .settle(|harness| harness.counter("packets_received") == 1)
+        .settle(|harness| harness.media().arrivals.lock().len() == 1)
         .await;
     harness.speaking(LATE_PEER, 70).await;
     let heard = harness.hear(&receiver, 1).await;
@@ -2847,7 +2845,6 @@ async fn dave_audio_from_a_peer_decrypts_across_a_member_joining() {
         frames(&[before, after].concat()),
         spoken(LATE_PEER, &packets)
     );
-    assert_eq!(harness.counter("undecryptable"), 0);
     assert_eq!(harness.dave_counters().receive_recoveries, 0);
     assert_eq!(receiver.stats().unwrap()[2], ("lost", 0));
 }

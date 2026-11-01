@@ -61,25 +61,8 @@ counters!(SendCounters {
     invalid_frames,
     keepalives_sent,
     keepalives_answered,
-    packets_received,
     resumes,
     rejoins,
-});
-
-counters!(ReceiveCounters {
-    transport_failures,
-    replays,
-    own_echoes,
-    unmapped,
-    duplicates,
-    late_packets,
-    undecryptable,
-    invalid_payloads,
-    invalid_extensions,
-    decrypt_busy,
-    receive_deferred,
-    arrivals_dropped,
-    rx_panics,
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +134,7 @@ pub struct Media {
     self_receivers: AtomicUsize,
     speech_hangover: AtomicU64,
     speech_activity: AtomicBool,
-    pub receive: ReceiveCounters,
+    transport_failures: AtomicU64,
 }
 
 impl Media {
@@ -189,7 +172,7 @@ impl Media {
             self_receivers: AtomicUsize::new(0),
             speech_hangover: AtomicU64::new(nanos(DEFAULT_SPEECH_HANGOVER)),
             speech_activity: AtomicBool::new(true),
-            receive: ReceiveCounters::default(),
+            transport_failures: AtomicU64::new(0),
         }
     }
 
@@ -207,8 +190,8 @@ impl Media {
 
     pub fn arrive(&self, arrival: Arrival) {
         let mut arrivals = self.arrivals.lock();
-        if arrivals.len() >= self.arrival_limit && arrivals.pop_front().is_some() {
-            bump(&self.receive.arrivals_dropped);
+        if arrivals.len() >= self.arrival_limit {
+            arrivals.pop_front();
         }
         arrivals.push_back(arrival);
     }
@@ -285,6 +268,14 @@ impl Media {
 
     pub fn set_speech_activity(&self, enabled: bool) {
         self.speech_activity.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn transport_failed(&self) {
+        self.transport_failures.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn transport_failures(&self) -> u64 {
+        self.transport_failures.load(Ordering::Relaxed)
     }
 
     fn count_receiver(&self, receiver: &Receiver, change: impl Fn(&AtomicUsize)) {

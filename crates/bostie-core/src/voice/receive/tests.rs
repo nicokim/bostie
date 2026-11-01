@@ -299,13 +299,34 @@ impl Rig {
         assert!(self.reception.restart(self.now, &"boom"));
     }
 
-    fn counter(&self, name: &str) -> u64 {
-        let counters = self.media.receive.snapshot();
-        counters
-            .into_iter()
-            .find(|(key, _)| *key == name)
-            .unwrap()
-            .1
+    fn run_unguarded(&mut self, now: Instant, skipped: u32) -> bool {
+        let Reception {
+            media,
+            info,
+            user,
+            tuning,
+            epoch,
+            state,
+            ..
+        } = &mut self.reception;
+        state
+            .get_or_insert_with(|| {
+                Box::new(State::new(
+                    Arc::clone(media),
+                    Arc::clone(info),
+                    *user,
+                    *tuning,
+                    *epoch,
+                ))
+            })
+            .run(now, skipped, now + FRAME)
+    }
+
+    fn undecryptable(&self) -> u64 {
+        self.reception
+            .state
+            .as_ref()
+            .map_or(0, |state| state.undecryptable)
     }
 
     fn recovered(&self) -> bool {
@@ -420,12 +441,9 @@ fn an_unmapped_ssrc_is_held_until_op_5_and_dropped_after_the_hold() {
         ..tuning()
     });
     let receiver = rig.open(options(ReceiveFormat::Opus));
-    let packets = opus(3, 0.3);
-    for sequence in 0..4 {
-        rig.send(BOB_SSRC, sequence, &packets[0]);
-    }
+    let packets = opus(4, 0.3);
+    rig.send(BOB_SSRC, 0, &packets[0]);
     rig.step();
-    let over_the_packet_bound = rig.counter("unmapped");
     for (sequence, packet) in (0..).zip(&packets) {
         rig.send(ALICE_SSRC, sequence, packet);
         rig.step();
@@ -433,19 +451,19 @@ fn an_unmapped_ssrc_is_held_until_op_5_and_dropped_after_the_hold() {
     rig.send(STRANGER_SSRC, 0, &packets[0]);
     rig.step();
     let before_op_5 = read(&receiver);
-    let over_the_ssrc_bound = rig.counter("unmapped");
 
     rig.map(ALICE_SSRC, ALICE);
+    rig.map(BOB_SSRC, BOB);
     rig.step();
     let after_op_5 = read(&receiver);
     rig.now += rig.reception.tuning.hold;
     rig.step();
+    rig.map(STRANGER_SSRC, STRANGER);
+    rig.step();
 
     assert!(before_op_5.is_empty());
-    assert_eq!((over_the_packet_bound, over_the_ssrc_bound), (1, 4));
     assert_eq!(senders(&after_op_5), [Some(ALICE); 3]);
-    assert_eq!(data(&after_op_5), packets);
-    assert_eq!(rig.counter("unmapped"), 5);
+    assert_eq!(data(&after_op_5), packets[1..]);
     assert!(read(&receiver).is_empty());
 }
 
@@ -496,7 +514,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
             (BOB, Speaking::Stopped(FRAME))
         ]
     );
-    assert_eq!(rig.counter("undecryptable"), 1);
+    assert_eq!(rig.undecryptable(), 1);
 }
 
 #[test]
@@ -545,7 +563,7 @@ fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
         let first = read(&receiver);
         rig.step();
         let rest = read(&receiver);
-        let still_held = rig.counter("undecryptable");
+        let still_held = rig.undecryptable();
         rig.now += rig.reception.tuning.hold;
         rig.step();
 
@@ -554,8 +572,7 @@ fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
         assert_eq!((first.len(), rest.len()), (10, 2), "{speaker}");
         assert_eq!(data(&[first, rest].concat()), spoken, "{speaker}");
         assert_eq!(still_held, 0, "{speaker}");
-        assert_eq!(rig.counter("undecryptable"), 1, "{speaker}");
-        assert_eq!(rig.counter("duplicates"), 1, "{speaker}");
+        assert_eq!(rig.undecryptable(), 1, "{speaker}");
         assert!(read(&receiver).is_empty(), "{speaker}");
         assert!(!rig.recovered(), "{speaker}");
     }
@@ -635,10 +652,6 @@ fn dave_frames_wait_in_user_order_and_decrypt_in_slices() {
             vec![(ALICE, 4), (ALICE, 5)]
         ]
     );
-    assert_eq!(
-        ["decrypt_busy", "undecryptable"].map(|name| rig.counter(name)),
-        [1, 0]
-    );
 }
 
 #[test]
@@ -658,25 +671,24 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
             per_user,
             vec![vec![(BOB, 0), (ALICE, 0), (ALICE, 1), (ALICE, 2)]],
             vec![(BOB, 0), (ALICE, 1), (ALICE, 2)],
-            "undecryptable",
+            false,
         ),
         (
             "in total",
             in_total,
             vec![vec![(BOB, 0), (ALICE, 0), (ALICE, 1)], vec![(ALICE, 2)]],
             vec![(ALICE, 0), (ALICE, 1), (ALICE, 2)],
-            "undecryptable",
+            false,
         ),
         (
             "waiting behind a busy lock",
             in_total,
             (0..4).map(|sequence| vec![(ALICE, sequence)]).collect(),
             vec![(ALICE, 1), (ALICE, 2), (ALICE, 3)],
-            "arrivals_dropped",
+            true,
         ),
     ];
-    let counters = ["undecryptable", "arrivals_dropped"];
-    for (bound, tuning, ticks, kept, counted_in) in rows {
+    for (bound, tuning, ticks, kept, busy) in rows {
         let mut rig = Rig::new(tuning);
         let mut call = rig.group(&[ALICE]);
         rig.map(ALICE_SSRC, ALICE);
@@ -684,7 +696,7 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
         let receiver = rig.open(options(ReceiveFormat::Opus));
         join_behind_the_bot(&mut call, BOB);
         let media = Arc::clone(&rig.media);
-        let busy = (counted_in == "arrivals_dropped").then(|| media.dave.lock());
+        let lock = busy.then(|| media.dave.lock());
         for tick in ticks {
             for (speaker, sequence) in tick {
                 let ssrc = if speaker == ALICE {
@@ -697,8 +709,8 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
             }
             rig.step();
         }
-        drop(busy);
-        let dropped = counters.map(|name| rig.counter(name));
+        drop(lock);
+        let dropped = rig.undecryptable();
         rig.deliver(&mut call);
         rig.step();
 
@@ -714,8 +726,7 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
             .collect();
         expected.sort();
         assert_eq!(heard, expected, "{bound}");
-        let counted = counters.map(|name| u64::from(name == counted_in));
-        assert_eq!(dropped, counted, "{bound}");
+        assert_eq!(dropped, u64::from(!busy), "{bound}");
     }
 }
 
@@ -770,7 +781,7 @@ fn a_failure_streak_requests_spaced_and_capped_recoveries() {
         }
         let reached = send(&mut rig, ALICE, 1, false);
         if case == "plaintext" {
-            assert_eq!(rig.counter("undecryptable"), u64::from(tolerance));
+            assert_eq!(rig.undecryptable(), u64::from(tolerance));
         }
         if case == "garbage" {
             assert!(!send(&mut rig, BOB, tolerance, false));
@@ -860,16 +871,14 @@ fn a_failure_streak_requests_spaced_and_capped_recoveries() {
         }
         rig.step();
         assert!(!rig.recovered(), "{case}");
-        let dropped_at_once = match case {
-            "empty or unparseable" => ("invalid_payloads", tolerance * 2),
-            "protocol version 0" => ("undecryptable", tolerance * 2),
-            _ => ("invalid_payloads", 0),
+        let sent = tolerance * 2;
+        let beyond_the_hold = sent - u32::try_from(rig.reception.tuning.hold_packets).unwrap();
+        let dropped = match case {
+            "empty or unparseable" => 0,
+            "protocol version 0" => sent,
+            _ => beyond_the_hold,
         };
-        assert_eq!(
-            rig.counter(dropped_at_once.0),
-            u64::from(dropped_at_once.1),
-            "{case}"
-        );
+        assert_eq!(rig.undecryptable(), u64::from(dropped), "{case}");
     }
 }
 
@@ -971,14 +980,7 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
     assert_eq!(shapes, [(1, false, true), (2, true, true)]);
     assert_eq!(arrivals[0].extension, None);
     assert_eq!(arrivals[1].extension, Some((rtp::ONE_BYTE_PROFILE, body)));
-    assert_eq!(
-        ["transport_failures", "replays", "own_echoes"].map(|name| rig.counter(name)),
-        [2, 1, 1]
-    );
-    assert_eq!(
-        rig.media.counters.packets_received.load(Ordering::Relaxed),
-        8
-    );
+    assert_eq!(rig.media.transport_failures(), 2);
 }
 
 #[test]
@@ -1003,7 +1005,6 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
     }
 
     assert_eq!(rig.media.arrivals.lock().len(), 2);
-    assert_eq!(rig.counter("replays"), 0);
 }
 
 #[test]
@@ -1092,7 +1093,6 @@ fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
         ]
     );
     assert_eq!(data(&read(&receiver)), packets);
-    assert_eq!(rig.counter("rx_panics"), 1);
     assert!(!rig.media.closed.load(Ordering::Acquire));
 }
 
@@ -1157,12 +1157,14 @@ fn each_packet_goes_to_the_owner_of_its_ssrc_at_arrival() {
     let after_a_new_owner = read(&receiver);
     rig.now += hold;
     rig.step();
+    rig.map(ALICE_SSRC, ALICE);
+    rig.step();
 
     assert_eq!(senders(&after_op_13), [Some(ALICE), Some(ALICE)]);
     let mut owners = senders(&after_a_new_owner);
     owners.sort_unstable();
     assert_eq!(owners, [Some(ALICE), Some(BOB)]);
-    assert_eq!(rig.counter("unmapped"), 1);
+    assert!(read(&receiver).is_empty());
 }
 
 #[test]
@@ -1204,7 +1206,6 @@ fn a_new_transport_resets_stream_state_and_keeps_receivers() {
 
     assert!(!recovered);
     assert_eq!(data(&read(&receiver)), packets);
-    assert_eq!(rig.counter("late_packets"), 0);
     assert_eq!(receiver.ended(), None);
 }
 
@@ -1237,7 +1238,6 @@ fn streams_and_failure_streaks_unheard_for_the_stream_idle_are_forgotten() {
 
     assert_eq!(data(&read(&receiver)), packets);
     assert!(!recovered);
-    assert_eq!(rig.counter("late_packets"), 0);
 }
 
 #[test]
@@ -1364,7 +1364,6 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
     assert!(offset >= before_the_gap + 960 * 5, "{offset}");
     assert_eq!(offset % 960, 0);
     assert_eq!(concealed, [false, true, false]);
-    assert_eq!(rig.counter("receive_deferred"), 1);
 }
 
 #[test]
@@ -1494,8 +1493,6 @@ fn a_packets_receiver_gets_every_decrypted_packet_in_arrival_order() {
             packet(20_000, 6, Vec::new()),
         ]
     );
-    assert_eq!(rig.counter("invalid_extensions"), 1);
-    assert_eq!(rig.counter("late_packets"), 2);
 }
 
 #[test]
@@ -1509,13 +1506,10 @@ fn release_and_decode_stop_at_the_deadline_and_resume_next_tick() {
 
     rig.run(0, rig.reception.epoch);
     let deferred = read(&receiver);
-    let counted = rig.counter("receive_deferred");
     rig.step();
 
     assert!(deferred.is_empty());
-    assert_eq!(counted, 1);
     assert_eq!(senders(&read(&receiver)), [Some(ALICE); 3]);
-    assert_eq!(rig.counter("receive_deferred"), 1);
 }
 
 #[test]
@@ -1596,19 +1590,14 @@ proptest! {
             let payload = if real { valid[usize::from(sequence) % valid.len()].to_vec() } else { payload };
             let sealing = Sealing { extension, padding, csrcs: padding, marker: real };
             let mut packet = sfu::seal(&cipher, nonce, ssrcs[which], sequence, timestamp, &payload, &sealing);
-            intake.rtp(&mut packet);
+            intake.open(&mut packet);
             if nonce % 4 == 0 {
-                let now = Instant::now();
-                let tick = Tick { now, skipped: nonce % 3 };
-                prop_assert!(rig.reception.tick(tick, now + FRAME));
+                prop_assert!(rig.run_unguarded(Instant::now(), nonce % 3));
             }
         }
         for _ in 0..3 {
-            let now = Instant::now();
-            let tick = Tick { now, skipped: 0 };
-            prop_assert!(rig.reception.tick(tick, now + FRAME));
+            prop_assert!(rig.run_unguarded(Instant::now(), 0));
         }
-        prop_assert_eq!(rig.counter("rx_panics"), 0);
         for receiver in &receivers {
             prop_assert!(receiver.read(256).is_ok());
         }

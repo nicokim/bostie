@@ -740,5 +740,4 @@ fn the_arrival_queue_drops_the_oldest_beyond_its_bound() {
         .map(|arrival| arrival.sequence)
         .collect();
     assert_eq!(kept, [1, 2]);
-    assert_eq!(media.receive.arrivals_dropped.load(Ordering::Relaxed), 1);
 }

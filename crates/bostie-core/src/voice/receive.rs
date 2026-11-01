@@ -7,7 +7,7 @@ use std::net::UdpSocket;
 use std::num::NonZeroUsize;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
@@ -21,7 +21,7 @@ use crate::voice::codec::{self, Decoder};
 use crate::voice::connection::Info;
 use crate::voice::crypto::ReplayWindow;
 use crate::voice::dave::{self, Dave, DecryptFailure};
-use crate::voice::media::{Arrival, Media, Stall, Transport, bump};
+use crate::voice::media::{Arrival, Media, Stall, Transport};
 use crate::voice::pacer::Tick;
 use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, is_before, to_samples};
 use crate::voice::receiver::{Item, Receiver};
@@ -76,20 +76,18 @@ impl Intake {
     }
 
     pub fn rtp(&mut self, packet: &mut [u8]) {
-        if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(|| self.open(packet))) {
-            bump(&self.media.receive.rx_panics);
-            if self.panicked.allows(Instant::now()) {
-                error!(
-                    panic = panic_message(payload.as_ref()),
-                    "opening a received voice packet panicked and it was dropped"
-                );
-            }
+        if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(|| self.open(packet)))
+            && self.panicked.allows(Instant::now())
+        {
+            error!(
+                panic = panic_message(payload.as_ref()),
+                "opening a received voice packet panicked and it was dropped"
+            );
         }
     }
 
     fn open(&mut self, packet: &mut [u8]) {
         let media = &self.media;
-        bump(&media.counters.packets_received);
         if !media.speech_activity() && media.open_receivers() == 0 {
             return;
         }
@@ -100,11 +98,11 @@ impl Intake {
                 installed.filter(|transport| Arc::ptr_eq(&transport.socket, &self.socket));
         }
         let Some(transport) = &self.transport else {
-            bump(&media.receive.transport_failures);
+            media.transport_failed();
             return;
         };
         let Ok(opened) = transport.cipher.open(packet) else {
-            bump(&media.receive.transport_failures);
+            media.transport_failed();
             return;
         };
         let header = opened.header;
@@ -120,12 +118,7 @@ impl Intake {
             .entry(header.ssrc)
             .or_insert_with(|| ReplayWindow::new(replay_window));
         let counter = u32::from_le_bytes(opened.nonce);
-        if !window.accept(counter) {
-            bump(&media.receive.replays);
-            return;
-        }
-        if header.ssrc == transport.ssrc {
-            bump(&media.receive.own_echoes);
+        if !window.accept(counter) || header.ssrc == transport.ssrc {
             return;
         }
         let payload = (media.open_receivers() > 0).then(|| Bytes::copy_from_slice(opened.payload));
@@ -173,7 +166,6 @@ struct Feed {
     own: bool,
     stream: Stream,
     created: i64,
-    trimmed: Option<u16>,
 }
 
 #[derive(Debug, Default)]
@@ -268,7 +260,6 @@ struct Subscriber {
 }
 
 struct Context<'a> {
-    media: &'a Media,
     scratch: &'a mut Vec<f32>,
     epoch: Instant,
     now: Instant,
@@ -327,6 +318,7 @@ struct State {
     forget_at: Option<i64>,
     member_count: usize,
     undecryptable: u64,
+    warned_up_to: u64,
     warned: Throttle,
     next_feed: u64,
     turn: usize,
@@ -377,7 +369,6 @@ impl Reception {
     }
 
     fn restart(&mut self, now: Instant, payload: &(dyn Any + Send)) -> bool {
-        bump(&self.media.receive.rx_panics);
         if self.panicked.allows(now) {
             error!(
                 panic = panic_message(payload),
@@ -439,6 +430,7 @@ impl State {
             forget_at: None,
             member_count: 0,
             undecryptable: 0,
+            warned_up_to: 0,
             warned: Throttle::default(),
             next_feed: 0,
             turn: 0,
@@ -608,9 +600,7 @@ impl State {
     }
 
     fn hold_unmapped(&mut self, arrival: Arrival) {
-        let counter = &self.media.receive.unmapped;
         if self.tuning.hold_packets == 0 || self.tuning.unmapped_ssrcs == 0 {
-            bump(counter);
             return;
         }
         if !self.unmapped.contains_key(&arrival.ssrc)
@@ -620,13 +610,12 @@ impl State {
                 .iter()
                 .min_by_key(|(_, queue)| queue.front().map(|arrival| arrival.at))
                 .map(|(&ssrc, _)| ssrc)
-            && let Some(dropped) = self.unmapped.remove(&oldest)
         {
-            add(counter, dropped.len());
+            self.unmapped.remove(&oldest);
         }
         let queue = self.unmapped.entry(arrival.ssrc).or_default();
-        if queue.len() >= self.tuning.hold_packets && queue.pop_front().is_some() {
-            bump(counter);
+        if queue.len() >= self.tuning.hold_packets {
+            queue.pop_front();
         }
         queue.push_back(arrival);
     }
@@ -719,7 +708,6 @@ impl State {
             feed.stream.check(arrival.sequence)
         };
         if check == Check::Duplicate {
-            bump(&self.media.receive.duplicates);
             return;
         }
         self.admitted.insert(admitted);
@@ -729,7 +717,6 @@ impl State {
                 && !dave::has_marker(payload)
                 && codec::packet_samples(payload).is_none());
         if refused {
-            bump(&self.media.receive.invalid_payloads);
             return;
         }
         let plain = (own
@@ -756,7 +743,6 @@ impl State {
     fn decrypt(&mut self, work: &mut [Work], now: Instant, deadline: Instant) -> usize {
         let media = Arc::clone(&self.media);
         let Some(mut dave) = media.dave.try_lock() else {
-            bump(&media.receive.decrypt_busy);
             return 0;
         };
         let settling = dave.settling(now);
@@ -798,7 +784,7 @@ impl State {
         let mut spent = false;
         {
             let Self {
-                media,
+                undecryptable,
                 held,
                 held_users,
                 plain,
@@ -832,7 +818,7 @@ impl State {
                         held.tried = generation;
                         let kept = failure != DecryptFailure::Unencrypted && protocol_version > 0;
                         if !kept {
-                            bump(&media.receive.undecryptable);
+                            *undecryptable = undecryptable.saturating_add(1);
                             unhold(held_users, held.user);
                         }
                         kept
@@ -863,7 +849,7 @@ impl State {
                         streak.failures = streak.failures.saturating_add(1);
                     }
                     if failure == DecryptFailure::Unencrypted || protocol_version == 0 {
-                        bump(&self.media.receive.undecryptable);
+                        self.count_undecryptable();
                     } else {
                         self.hold(item, generation);
                     }
@@ -877,9 +863,8 @@ impl State {
     }
 
     fn hold(&mut self, item: &Work, tried: u64) {
-        let undecryptable = &self.media.receive.undecryptable;
         if self.tuning.hold_packets == 0 || self.tuning.arrivals == 0 {
-            bump(undecryptable);
+            self.count_undecryptable();
             return;
         }
         let count = self.held_users.entry(item.user).or_default();
@@ -887,7 +872,7 @@ impl State {
             if let Some(index) = self.held.iter().position(|held| held.user == item.user)
                 && self.held.remove(index).is_some()
             {
-                bump(undecryptable);
+                self.count_undecryptable();
             }
         } else {
             *count = count.saturating_add(1);
@@ -896,7 +881,7 @@ impl State {
             && let Some(oldest) = self.held.pop_front()
         {
             unhold(&mut self.held_users, oldest.user);
-            bump(undecryptable);
+            self.count_undecryptable();
         }
         self.held.push_back(Held {
             user: item.user,
@@ -933,8 +918,8 @@ impl State {
         let samples = item.plain.as_deref().and_then(codec::received_samples);
         self.hear(&item, samples);
         item.fresh = false;
-        if self.waiting.len() >= self.tuning.arrivals && self.waiting.pop_front().is_some() {
-            bump(&self.media.receive.arrivals_dropped);
+        if self.waiting.len() >= self.tuning.arrivals {
+            self.waiting.pop_front();
         }
         self.waiting.push_back(item);
     }
@@ -972,7 +957,6 @@ impl State {
             return;
         };
         let Some(samples) = samples else {
-            bump(&self.media.receive.invalid_payloads);
             return;
         };
         let Some(feed) = self.streams.get_mut(&(arrival.ssrc, user)) else {
@@ -994,8 +978,6 @@ impl State {
             if !played {
                 feed.stream.release_before(arrival.sequence.wrapping_add(1));
             }
-        } else {
-            bump(&self.media.receive.late_packets);
         }
         self.deliver(user, &arrival, &plain, samples, at48, hangover);
     }
@@ -1056,10 +1038,7 @@ impl State {
                 .into_iter()
                 .map(|(id, data)| (id, body.slice_ref(data)))
                 .collect(),
-            Err(_) => {
-                bump(&self.media.receive.invalid_extensions);
-                Vec::new()
-            }
+            Err(_) => Vec::new(),
         }
     }
 
@@ -1122,7 +1101,6 @@ impl State {
         rotate(&mut self.keys, self.turn);
         self.turn = self.turn.wrapping_add(1);
         let mut context = Context {
-            media: &self.media,
             scratch: &mut self.scratch,
             epoch: self.epoch,
             now,
@@ -1142,9 +1120,6 @@ impl State {
             deferred = !subscriber.play(&mut self.streams, &self.keys, &mut context, deadline);
         }
         self.heard |= context.heard;
-        if deferred {
-            bump(&self.media.receive.receive_deferred);
-        }
         for subscriber in self.subscribers.values_mut() {
             let out = &mut subscriber.out;
             if out.lost > 0 {
@@ -1191,11 +1166,7 @@ impl State {
     }
 
     fn watch(&mut self, now: Instant) {
-        let failures = self
-            .media
-            .receive
-            .transport_failures
-            .load(Ordering::Relaxed);
+        let failures = self.media.transport_failures();
         let failing = mem::replace(&mut self.watchdog.failures, failures) != failures;
         if self.subscribers.is_empty() {
             self.resume(now);
@@ -1235,11 +1206,9 @@ impl State {
         });
         let hold = self.tuning.hold;
         let expired = |at: Instant| now.saturating_duration_since(at) > hold;
-        let unmapped = &self.media.receive.unmapped;
         self.unmapped.retain(|_, queue| {
             while queue.front().is_some_and(|arrival| expired(arrival.at)) {
                 queue.pop_front();
-                bump(unmapped);
             }
             !queue.is_empty()
         });
@@ -1250,7 +1219,7 @@ impl State {
         {
             if let Some(held) = self.held.pop_front() {
                 unhold(&mut self.held_users, held.user);
-                bump(&self.media.receive.undecryptable);
+                self.count_undecryptable();
             }
         }
         self.owners.retain(|_, spans| {
@@ -1271,15 +1240,18 @@ impl State {
         self.member_count = members.len();
     }
 
+    fn count_undecryptable(&mut self) {
+        self.undecryptable = self.undecryptable.saturating_add(1);
+    }
+
     fn warn_undecryptable(&mut self, now: Instant) {
-        let dropped = self.media.receive.undecryptable.load(Ordering::Relaxed);
-        if dropped > self.undecryptable && self.warned.allows(now) {
+        if self.undecryptable > self.warned_up_to && self.warned.allows(now) {
             warn!(
                 guild = %self.media.guild(),
-                dropped = dropped.saturating_sub(self.undecryptable),
+                dropped = self.undecryptable.saturating_sub(self.warned_up_to),
                 "dropped received voice frames that could not be decrypted"
             );
-            self.undecryptable = dropped;
+            self.warned_up_to = self.undecryptable;
         }
     }
 
@@ -1317,7 +1289,6 @@ impl Feed {
             own,
             stream: Stream::new(user),
             created: now48,
-            trimmed: None,
         }
     }
 }
@@ -1427,14 +1398,6 @@ impl Output {
         let user = feed.stream.user();
         match release {
             Release::Packet { slot, due, samples } => {
-                if samples < slot.samples
-                    && feed
-                        .trimmed
-                        .is_none_or(|trimmed| is_before(trimmed, slot.sequence))
-                {
-                    feed.trimmed = Some(slot.sequence);
-                    bump(&context.media.receive.invalid_payloads);
-                }
                 let Some(payload) = &slot.payload else {
                     return;
                 };
@@ -1522,7 +1485,6 @@ impl Output {
                     Some(Ok(decoded)) => decoded,
                     Some(Err(error)) => {
                         debug!(%error, %user, "a received packet did not decode");
-                        bump(&context.media.receive.invalid_payloads);
                         let lost = FrameHeader {
                             at: context.now,
                             lost: true,
@@ -1867,10 +1829,6 @@ fn unhold(held_users: &mut HashMap<UserId, usize>, user: UserId) {
             held_users.remove(&user);
         }
     }
-}
-
-fn add(counter: &AtomicU64, count: usize) {
-    counter.fetch_add(u64::try_from(count).unwrap_or(u64::MAX), Ordering::Relaxed);
 }
 
 fn rotate<T>(items: &mut [T], turn: usize) {
