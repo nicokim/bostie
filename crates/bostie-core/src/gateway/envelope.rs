@@ -178,6 +178,8 @@ fn invalid(what: &str, error: EnvelopeError) -> CoreError {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     pub(crate) const SESSION: &str = include_str!("testdata/session.jsonl");
@@ -240,19 +242,61 @@ pub(crate) mod tests {
         ));
     }
 
-    #[test]
-    fn key_order_does_not_matter() {
-        let frame = r#"{"d":{"id":"1"},"op":0,"s":5,"t":"GUILD_DELETE"}"#;
+    fn json() -> impl Strategy<Value = String> {
+        let text = "[a-z\"\\\\:{}d ]{0,6}";
+        let leaf = prop_oneof![
+            Just("null".to_owned()),
+            any::<bool>().prop_map(|flag| flag.to_string()),
+            any::<i64>().prop_map(|number| number.to_string()),
+            text.prop_map(|text| sonic_rs::to_string(&text).unwrap()),
+        ];
+        leaf.prop_recursive(3, 16, 4, move |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4)
+                    .prop_map(|items| format!("[{}]", items.join(","))),
+                prop::collection::vec((text, inner), 0..4).prop_map(|fields| {
+                    let fields: Vec<String> = fields
+                        .iter()
+                        .map(|(key, value)| {
+                            format!("{}:{value}", sonic_rs::to_string(key).unwrap())
+                        })
+                        .collect();
+                    format!("{{{}}}", fields.join(","))
+                }),
+            ]
+        })
+    }
 
-        let Frame::Dispatch {
-            seq: 5,
-            forward: Some(forward),
-        } = forward_all(frame)
-        else {
-            panic!("expected a dispatch");
-        };
-        assert_eq!(&*forward.name, "GUILD_DELETE");
-        assert_eq!(&forward.data[..], br#"{"id":"1"}"#);
+    proptest! {
+        #[test]
+        fn a_dispatch_in_any_key_order_reads_like_a_full_parse(
+            fields in (any::<u64>(), "[A-Z_\"\\\\:{}d]{1,12}", json())
+                .prop_map(|(seq, name, data)| vec![
+                    ("op".to_owned(), "0".to_owned()),
+                    ("s".to_owned(), seq.to_string()),
+                    ("t".to_owned(), sonic_rs::to_string(&name).unwrap()),
+                    ("d".to_owned(), data),
+                ])
+                .prop_shuffle(),
+        ) {
+            let pairs: Vec<String> = fields.iter().map(|(key, value)| format!(r#""{key}":{value}"#)).collect();
+            let frame = format!("{{{}}}", pairs.join(","));
+            let expected: Value = sonic_rs::from_str(&frame).unwrap();
+
+            let Frame::Dispatch { seq, forward: Some(forward) } = forward_all(&frame) else {
+                panic!("expected a dispatch from {frame}");
+            };
+
+            prop_assert_eq!(Some(seq), expected["s"].as_u64());
+            prop_assert_eq!(Some(&*forward.name), expected["t"].as_str());
+            let data: Value = sonic_rs::from_slice(&forward.data).unwrap();
+            prop_assert_eq!(&data, &expected["d"]);
+        }
+
+        #[test]
+        fn any_bytes_parse_or_fail_without_panicking(frame in prop::collection::vec(any::<u8>(), 0..256)) {
+            let _ = Frame::parse(&frame, |_| true);
+        }
     }
 
     #[test]
@@ -284,6 +328,11 @@ pub(crate) mod tests {
                 r#"{"t":null,"s":null,"op":10,"d":{}}"#,
                 "d.heartbeat_interval",
             ),
+            (
+                r#"{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":4294967296}}"#,
+                "d.heartbeat_interval",
+            ),
+            (r#"{"t":null,"s":null,"op":"1","d":null}"#, "op"),
             (r#"{"t":"READY","s":1,"op":0}"#, "d"),
             (r#"{"t":null,"s":null,"op":9}"#, "d"),
         ];
@@ -298,6 +347,21 @@ pub(crate) mod tests {
             Frame::parse(br#"{"t":null,"op":"#, |_| true),
             Err(EnvelopeError::Json { .. })
         ));
+    }
+
+    #[test]
+    fn a_hello_takes_any_interval_from_1_ms_to_u32_max() {
+        for millis in [1, u32::MAX] {
+            let frame =
+                format!(r#"{{"t":null,"s":null,"op":10,"d":{{"heartbeat_interval":{millis}}}}}"#);
+
+            let parsed = Frame::parse(frame.as_bytes(), |_| true).unwrap();
+
+            assert!(
+                matches!(parsed, Frame::Hello { heartbeat_interval } if heartbeat_interval == Duration::from_millis(millis.into())),
+                "{millis}"
+            );
+        }
     }
 
     #[test]

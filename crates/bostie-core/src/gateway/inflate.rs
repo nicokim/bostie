@@ -51,6 +51,8 @@ impl Inflater {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use proptest::collection::vec;
+    use proptest::prelude::*;
     use zstd_safe::zstd_sys::ZSTD_EndDirective;
     use zstd_safe::{CCtx, CParameter};
 
@@ -83,34 +85,39 @@ pub(crate) mod tests {
         }
     }
 
-    fn message_create(seq: u64, content: &str) -> String {
-        format!(r#"{{"t":"MESSAGE_CREATE","s":{seq},"op":0,"d":{{"content":"{content}"}}}}"#)
-    }
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(16))]
 
-    #[test]
-    fn one_stream_spans_many_messages_of_any_size() {
-        let mut compressor = discord_compressor();
-        let mut inflater = Inflater::new(MAX_DECOMPRESSED).unwrap();
-        let frames = [
-            message_create(1, "small"),
-            message_create(2, &"large".repeat(60_000)),
-            message_create(3, "small again"),
-        ];
+        #[test]
+        fn one_stream_inflates_messages_of_any_size(
+            messages in vec(vec(any::<u8>(), 0..300_000), 1..4),
+        ) {
+            let mut compressor = discord_compressor();
+            let mut inflater = Inflater::new(MAX_DECOMPRESSED).unwrap();
 
-        for frame in &frames {
-            let message = compress(&mut compressor, frame.as_bytes());
-            assert_eq!(inflater.inflate(&message).unwrap(), frame.as_bytes());
+            for message in &messages {
+                let compressed = compress(&mut compressor, message);
+                prop_assert_eq!(inflater.inflate(&compressed).unwrap(), &message[..]);
+            }
+        }
+
+        #[test]
+        fn garbage_is_an_error_not_a_panic(garbage in vec(any::<u8>(), 0..512)) {
+            let _ = Inflater::new(MAX_DECOMPRESSED).unwrap().inflate(&garbage);
         }
     }
 
     #[test]
-    fn rejects_messages_over_the_limit_and_garbage() {
+    fn accepts_messages_up_to_the_limit_and_rejects_larger_or_garbage() {
         let mut compressor = discord_compressor();
         let mut inflater = Inflater::new(MAX_DECOMPRESSED).unwrap();
-        let huge = message_create(1, &"z".repeat(MAX_DECOMPRESSED));
+        let largest = vec![b'z'; MAX_DECOMPRESSED];
 
+        let inflated = inflater.inflate(&compress(&mut compressor, &largest));
+        assert_eq!(inflated.unwrap(), &largest[..]);
+        let too_large = compress(&mut compressor, &[&largest[..], b"z"].concat());
         assert!(matches!(
-            inflater.inflate(&compress(&mut compressor, huge.as_bytes())),
+            inflater.inflate(&too_large),
             Err(InflateError::TooLarge(MAX_DECOMPRESSED))
         ));
         assert!(matches!(

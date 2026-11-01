@@ -118,19 +118,22 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_budget_waits_for_the_reset_and_refills() {
+    fn an_empty_budget_refuses_without_a_slot_until_the_reset_refills_it() {
         let start = Instant::now();
-        let reset = Duration::from_secs(30);
+        let reset = SPACING / 5;
         let gate = seeded(1, reset, start);
 
         assert_eq!(gate.exhausted_until(start), None);
         assert_eq!(gate.reserve(start), Some(start));
-        assert_eq!(gate.reserve(start), None);
+        for _ in 0..3 {
+            assert_eq!(gate.reserve(start), None);
+        }
         assert_eq!(gate.exhausted_until(start), Some(start + reset));
 
         let after_reset = start + reset;
         assert_eq!(gate.exhausted_until(after_reset), None);
-        for _ in 0..1000 {
+        assert_eq!(gate.reserve(after_reset), Some(start + SPACING));
+        for _ in 1..1000 {
             assert!(gate.reserve(after_reset).is_some());
         }
         assert_eq!(gate.reserve(after_reset), None);
