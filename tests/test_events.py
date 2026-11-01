@@ -17,11 +17,14 @@ from bostie.events import (
     AutoModerationRuleCreate,
     ChannelInfo,
     ChannelUpdate,
+    CommandPermissionsUpdate,
     EntitlementCreate,
     Event,
+    GatewayRateLimited,
     GuildCreate,
     GuildDelete,
     GuildUpdate,
+    IntegrationCreate,
     InteractionCreate,
     MemberJoin,
     MemberRemove,
@@ -34,6 +37,7 @@ from bostie.events import (
     Ready,
     ScheduledEventCreate,
     SoundboardSoundCreate,
+    StageInstanceCreate,
     SubscriptionCreate,
     ThreadCreate,
     ThreadDelete,
@@ -50,6 +54,7 @@ from bostie.models import (
     AuditLogEntry,
     CommandInteraction,
     Guild,
+    Integration,
     Member,
     Message,
     Model,
@@ -105,7 +110,7 @@ def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
 def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
     names = {path.name.split(".")[0] for path in EVENT_FIXTURES.glob("*.json")}
 
-    assert names - EVENTS.keys() == {"RATE_LIMITED"}
+    assert names <= EVENTS.keys()
 
 
 @pytest.mark.parametrize(
@@ -123,6 +128,12 @@ def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
         (EntitlementCreate, "ENTITLEMENT_CREATE", "entitlement"),
         (SubscriptionCreate, "SUBSCRIPTION_CREATE", "subscription"),
         (UserUpdate, "USER_UPDATE", "user"),
+        (StageInstanceCreate, "STAGE_INSTANCE_CREATE", "stage_instance"),
+        (
+            CommandPermissionsUpdate,
+            "APPLICATION_COMMAND_PERMISSIONS_UPDATE",
+            "permissions",
+        ),
     ],
 )
 def test_an_event_that_is_one_entity_shares_its_payload_with_it(
@@ -240,6 +251,7 @@ def test_guild_delete_reads_the_guild_id_from_id() -> None:
         (AuditLogEntryCreate, "GUILD_AUDIT_LOG_ENTRY_CREATE", "entry", AuditLogEntry),
         (PresenceUpdate, "PRESENCE_UPDATE", "presence", Presence),
         (ThreadMemberUpdate, "THREAD_MEMBER_UPDATE", "thread_member", ThreadMember),
+        (IntegrationCreate, "INTEGRATION_CREATE", "integration", Integration),
     ],
 )
 def test_an_entity_with_a_guild_id_is_split_from_it(
@@ -362,6 +374,22 @@ def test_typing_start_reads_the_unix_timestamp_and_the_member() -> None:
     assert event.timestamp == datetime(2026, 10, 27, 12, tzinfo=UTC)
     assert event.member is not None
     assert event.member.id == event.user_id == 820774541721731073
+
+
+def test_rate_limit_metadata_is_decoded_for_request_guild_members_only() -> None:
+    document = json.loads((EVENT_FIXTURES / "RATE_LIMITED.json").read_bytes())
+    other = document | {"opcode": 3, "meta": {"since": 0}}
+
+    members = decode(GatewayRateLimited, "RATE_LIMITED")
+    presence = GatewayRateLimited.decode(0, msgspec.json.encode(other))
+
+    assert members.meta is not None
+    assert (members.meta.guild_id, members.meta.nonce) == (
+        1335172792320131073,
+        "chunk-1",
+    )
+    assert presence.retry_after == members.retry_after
+    assert presence.meta is None
 
 
 def test_voice_session_start_times_read_unix_seconds() -> None:

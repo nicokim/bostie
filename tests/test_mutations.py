@@ -60,6 +60,8 @@ ENUM_KEYS = {
     "day",
     "status_display_type",
     "animation_type",
+    "target_type",
+    "expire_behavior",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {
@@ -247,7 +249,7 @@ def test_unknown_enum_values_and_flag_bits_are_kept(
                 value[key] = 9999
             elif key in ENUM_LIST_KEYS:
                 value[key] = [9999]
-            elif key in FLAG_KEYS:
+            elif key in FLAG_KEYS and not isinstance(item, list):
                 value[key] = (
                     str(UNKNOWN_FLAGS) if isinstance(item, str) else UNKNOWN_FLAGS
                 )

@@ -1,0 +1,27 @@
+{
+  "id": "1335190021849331073",
+  "application_id": "1329027298099331073",
+  "guild_id": "1335172792320131073",
+  "permissions": [
+    {
+      "id": "1335174302269571073",
+      "type": 1,
+      "permission": true
+    },
+    {
+      "id": "820774541721731073",
+      "type": 2,
+      "permission": false
+    },
+    {
+      "id": "1335172792320131072",
+      "type": 3,
+      "permission": false
+    },
+    {
+      "id": "1335173295636611073",
+      "type": 3,
+      "permission": true
+    }
+  ]
+}

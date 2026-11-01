@@ -1,0 +1,19 @@
+{
+  "id": "1565170412839731073",
+  "name": "ada_plays",
+  "type": "twitch",
+  "enabled": true,
+  "syncing": false,
+  "role_id": "1565170413577931073",
+  "enable_emoticons": true,
+  "expire_behavior": 0,
+  "expire_grace_period": 7,
+  "account": {
+    "id": "81723491",
+    "name": "ada_plays"
+  },
+  "synced_at": "2026-11-01T08:00:00.000000+00:00",
+  "subscriber_count": 12,
+  "revoked": false,
+  "guild_id": "1335172792320131073"
+}

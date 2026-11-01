@@ -1,0 +1,27 @@
+{
+  "channel_id": "1335173547294851073",
+  "code": "lyreJam",
+  "created_at": "2026-11-01T09:40:00.000000+00:00",
+  "guild_id": "1335172792320131073",
+  "inviter": {
+    "id": "308882807193731073",
+    "username": "ada_owner",
+    "global_name": "Ada",
+    "discriminator": "0",
+    "avatar": "a_173d406e7b4073210e72cabee9602253",
+    "public_flags": 576
+  },
+  "max_age": 86400,
+  "max_uses": 10,
+  "target_type": 2,
+  "target_application": {
+    "id": "880218394199220334",
+    "flags": 0
+  },
+  "temporary": false,
+  "uses": 0,
+  "expires_at": "2026-11-02T09:40:00.000000+00:00",
+  "role_ids": [
+    "1335174302269571073"
+  ]
+}

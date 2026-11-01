@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 import msgspec
 
 from bostie.enums import (
+    IntegrationExpireBehavior,
     MemberFlags,
     NSFWLevel,
     Permissions,
@@ -145,3 +146,44 @@ class VoiceState(Model, kw_only=True):
     self_video: bool
     suppress: bool
     request_to_speak_timestamp: datetime | None
+
+
+class IntegrationAccount(Model, kw_only=True):
+    id: str
+    name: str
+
+
+class IntegrationApplication(Model, kw_only=True):
+    id: int
+    name: str
+    icon: str | None
+    description: str
+    bot: User | None = None
+
+
+class Integration(Model, kw_only=True):
+    """A guild integration; bot integrations leave the subscriber fields None."""
+
+    id: int
+    name: str
+    type: str
+    enabled: bool
+    syncing: bool | None = None
+    role_id: int | None = None
+    enable_emoticons: bool | None = None
+    expire_behavior: IntegrationExpireBehavior | None = None
+    expire_grace_period: int | None = None
+    user: User | None = None
+    account: IntegrationAccount
+    synced_at: datetime | None = None
+    subscriber_count: int | None = None
+    revoked: bool | None = None
+    application: IntegrationApplication | None = None
+    scopes: tuple[str, ...] = ()
+
+
+class RequestGuildMembersRateLimit(Model, kw_only=True):
+    """The metadata of a rate limited Request Guild Members."""
+
+    guild_id: int
+    nonce: str | None = None

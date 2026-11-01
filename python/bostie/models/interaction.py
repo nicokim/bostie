@@ -4,6 +4,7 @@ import msgspec
 
 from bostie.enums import (
     ApplicationFlags,
+    CommandPermissionType,
     CommandType,
     ComponentType,
     InteractionContextType,
@@ -100,6 +101,23 @@ class PartialApplication(Model, kw_only=True):
         return ApplicationFlags(
             self._flags if self._flags_new is None else int(self._flags_new)
         )
+
+
+class CommandPermission(Model, kw_only=True):
+    """Whether a role, a user or a channel may use a command."""
+
+    id: int
+    type: CommandPermissionType
+    permission: bool
+
+
+class GuildCommandPermissions(Model, kw_only=True):
+    """A command's permissions in a guild, or every command's if `id` is the app's."""
+
+    id: int
+    application_id: int
+    guild_id: int
+    permissions: tuple[CommandPermission, ...]
 
 
 class _Interaction(Model, kw_only=True):

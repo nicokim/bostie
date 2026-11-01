@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Literal, Unpack, cast, override
 
-import msgspec
-
 from bostie import sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
@@ -38,6 +36,7 @@ from bostie.errors import StateError, TransportError
 from bostie.events import (
     EVENTS,
     Event,
+    GatewayRateLimited,
     InteractionCreate,
     RawEvent,
     Ready,
@@ -458,7 +457,7 @@ class Bot(Router):
                 future.set_exception(StateError("the bot stopped before READY"))
 
     def _dispatch_names(self) -> list[str] | None:
-        names = {*self.listeners, *self._waiters, "RATE_LIMITED"} - LOCAL_NAMES
+        names = {*self.listeners, *self._waiters, GatewayRateLimited.NAME} - LOCAL_NAMES
         if RAW_EVENT_NAME in names:
             return None
         if self._caching:
@@ -591,13 +590,14 @@ class Bot(Router):
             update = dispatch.event(UserUpdate)
             if update is not None:
                 self.user = update.user
-        elif dispatch.name == "RATE_LIMITED":
-            limit = msgspec.json.decode(dispatch.data)
-            log.warning(
-                "the gateway rate limited opcode %s; retry after %s s",
-                limit.get("opcode"),
-                limit.get("retry_after"),
-            )
+        elif dispatch.name == GatewayRateLimited.NAME:
+            limit = dispatch.event(GatewayRateLimited)
+            if limit is not None:
+                log.warning(
+                    "the gateway rate limited opcode %s; retry after %s s",
+                    limit.opcode,
+                    limit.retry_after,
+                )
 
     def _route(self, interaction: Interaction, received: float, shard_id: int) -> None:
         anchor = received

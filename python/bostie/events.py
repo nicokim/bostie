@@ -9,6 +9,7 @@ from bostie.enums import (
     AutoModerationTriggerType,
     ChannelType,
     Intents,
+    InviteTargetType,
     MemberFlags,
     ReactionType,
 )
@@ -21,6 +22,8 @@ from bostie.models import (
     Emoji,
     Entitlement,
     Guild,
+    GuildCommandPermissions,
+    Integration,
     Interaction,
     Member,
     Message,
@@ -28,9 +31,11 @@ from bostie.models import (
     PartialApplication,
     PartialEmoji,
     Presence,
+    RequestGuildMembersRateLimit,
     Role,
     ScheduledEvent,
     SoundboardSound,
+    StageInstance,
     Sticker,
     Subscription,
     ThreadMember,
@@ -45,6 +50,8 @@ from bostie.models.interaction import decode_interaction
 from bostie.models.message import decode_message
 
 logger = logging.getLogger("bostie.events")
+
+REQUEST_GUILD_MEMBERS = 8
 
 _undecodable: set[str] = set()
 
@@ -104,6 +111,7 @@ class _GuildCreatePayload(Guild, kw_only=True):
     threads: tuple[Channel, ...]
     roles: tuple[Role, ...]
     voice_states: tuple[VoiceState, ...]
+    stage_instances: tuple[StageInstance, ...]
     guild_scheduled_events: tuple[ScheduledEvent, ...]
     soundboard_sounds: tuple[SoundboardSound, ...]
     _members: msgspec.Raw = msgspec.field(name="members")
@@ -121,6 +129,7 @@ class GuildCreate(Event, kw_only=True):
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
     voice_states: tuple[VoiceState, ...] = ()
+    stage_instances: tuple[StageInstance, ...] = ()
     guild_scheduled_events: tuple[ScheduledEvent, ...] = ()
     soundboard_sounds: tuple[SoundboardSound, ...] = ()
     _members: msgspec.Raw = msgspec.Raw(b"[]")
@@ -156,6 +165,7 @@ class GuildCreate(Event, kw_only=True):
             threads=payload.threads,
             roles=payload.roles,
             voice_states=payload.voice_states,
+            stage_instances=payload.stage_instances,
             guild_scheduled_events=payload.guild_scheduled_events,
             soundboard_sounds=payload.soundboard_sounds,
             _members=payload._members,
@@ -838,6 +848,167 @@ class UserUpdate(Event, kw_only=True):
         return cls(shard_id=shard_id, raw_json=data, user=decode(User, data))
 
 
+class CommandPermissionsUpdate(Event, kw_only=True):
+    NAME = "APPLICATION_COMMAND_PERMISSIONS_UPDATE"
+
+    permissions: GuildCommandPermissions
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            permissions=decode(GuildCommandPermissions, data),
+        )
+
+
+class GuildIntegrationsUpdate(Event, kw_only=True):
+    NAME = "GUILD_INTEGRATIONS_UPDATE"
+    INTENTS = Intents.GUILD_INTEGRATIONS
+
+    guild_id: int
+
+
+class _IntegrationPayload(Integration, kw_only=True):
+    guild_id: int
+
+
+class _IntegrationEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_INTEGRATIONS
+
+    guild_id: int
+    integration: Integration
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _IntegrationPayload = decoder(_IntegrationPayload).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            guild_id=payload.guild_id,
+            integration=_narrow(Integration, payload),
+        )
+
+
+class IntegrationCreate(_IntegrationEvent, kw_only=True):
+    NAME = "INTEGRATION_CREATE"
+
+
+class IntegrationUpdate(_IntegrationEvent, kw_only=True):
+    NAME = "INTEGRATION_UPDATE"
+
+
+class IntegrationDelete(Event, kw_only=True):
+    NAME = "INTEGRATION_DELETE"
+    INTENTS = Intents.GUILD_INTEGRATIONS
+
+    id: int
+    guild_id: int
+    application_id: int | None = None
+
+
+class InviteCreate(Event, kw_only=True):
+    NAME = "INVITE_CREATE"
+    INTENTS = Intents.GUILD_INVITES
+
+    channel_id: int
+    code: str
+    created_at: datetime
+    guild_id: int | None = None
+    inviter: User | None = None
+    max_age: int
+    max_uses: int
+    target_type: InviteTargetType | None = None
+    target_user: User | None = None
+    target_application: PartialApplication | None = None
+    temporary: bool
+    uses: int
+    expires_at: datetime | None
+    role_ids: tuple[int, ...] = ()
+
+
+class InviteDelete(Event, kw_only=True):
+    NAME = "INVITE_DELETE"
+    INTENTS = Intents.GUILD_INVITES
+
+    channel_id: int
+    guild_id: int | None = None
+    code: str
+
+
+class _StageInstanceEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILDS
+
+    stage_instance: StageInstance
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            stage_instance=decode(StageInstance, data),
+        )
+
+
+class StageInstanceCreate(_StageInstanceEvent, kw_only=True):
+    NAME = "STAGE_INSTANCE_CREATE"
+
+
+class StageInstanceUpdate(_StageInstanceEvent, kw_only=True):
+    NAME = "STAGE_INSTANCE_UPDATE"
+
+
+class StageInstanceDelete(_StageInstanceEvent, kw_only=True):
+    NAME = "STAGE_INSTANCE_DELETE"
+
+
+class WebhooksUpdate(Event, kw_only=True):
+    """A webhook of the channel was created, updated or deleted."""
+
+    NAME = "WEBHOOKS_UPDATE"
+    INTENTS = Intents.GUILD_WEBHOOKS
+
+    guild_id: int
+    channel_id: int
+
+
+class _RateLimit(msgspec.Struct):
+    opcode: int
+    retry_after: float
+
+
+class _RequestGuildMembersMeta(msgspec.Struct):
+    meta: RequestGuildMembersRateLimit
+
+
+class GatewayRateLimited(Event, kw_only=True):
+    """A gateway command was rate limited; only Request Guild Members has `meta`."""
+
+    NAME = "RATE_LIMITED"
+
+    opcode: int
+    retry_after: float
+    meta: RequestGuildMembersRateLimit | None = None
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        limit: _RateLimit = decoder(_RateLimit).decode(data)
+        meta: RequestGuildMembersRateLimit | None = None
+        if limit.opcode == REQUEST_GUILD_MEMBERS:
+            meta = decoder(_RequestGuildMembersMeta).decode(data).meta
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            opcode=limit.opcode,
+            retry_after=limit.retry_after,
+            meta=meta,
+        )
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -917,6 +1088,18 @@ EVENTS: dict[str, type[Event]] = {
         VoiceChannelStatusUpdate,
         VoiceChannelStartTimeUpdate,
         ChannelInfo,
+        CommandPermissionsUpdate,
+        GuildIntegrationsUpdate,
+        IntegrationCreate,
+        IntegrationUpdate,
+        IntegrationDelete,
+        InviteCreate,
+        InviteDelete,
+        StageInstanceCreate,
+        StageInstanceUpdate,
+        StageInstanceDelete,
+        WebhooksUpdate,
+        GatewayRateLimited,
     )
 }
 

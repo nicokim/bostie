@@ -1,0 +1,30 @@
+{
+  "id": "1335180342067331079",
+  "name": "bostie-test",
+  "type": "discord",
+  "enabled": true,
+  "account": {
+    "id": "1329027298099331073",
+    "name": "bostie-test"
+  },
+  "application": {
+    "id": "1329027298099331073",
+    "name": "bostie-test",
+    "icon": "5c124ba11265959c2963ff22abc5ee5e",
+    "description": "Fixture bot for bostie",
+    "bot": {
+      "id": "1329027298099331073",
+      "username": "bostie-test",
+      "global_name": null,
+      "discriminator": "4821",
+      "avatar": "5c124ba11265959c2963ff22abc5ee5e",
+      "bot": true,
+      "public_flags": 0
+    }
+  },
+  "scopes": [
+    "bot",
+    "applications.commands"
+  ],
+  "guild_id": "1335172792320131073"
+}

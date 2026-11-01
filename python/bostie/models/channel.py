@@ -3,7 +3,13 @@ from typing import TYPE_CHECKING
 
 import msgspec
 
-from bostie.enums import ChannelFlags, ChannelType, OverwriteType, Permissions
+from bostie.enums import (
+    ChannelFlags,
+    ChannelType,
+    OverwriteType,
+    Permissions,
+    StagePrivacyLevel,
+)
 from bostie.models.base import Model, permissions_from
 from bostie.models.guild import Member
 from bostie.models.presence import Presence
@@ -119,3 +125,15 @@ class VoiceChannelInfo(Model, kw_only=True):
     id: int
     status: str | None = None
     voice_start_time: datetime | None = None
+
+
+class StageInstance(Model, kw_only=True):
+    """A live stage; `discoverable_disabled` is deprecated."""
+
+    id: int
+    guild_id: int
+    channel_id: int
+    topic: str
+    privacy_level: StagePrivacyLevel
+    discoverable_disabled: bool
+    guild_scheduled_event_id: int | None

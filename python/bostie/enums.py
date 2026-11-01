@@ -439,6 +439,27 @@ class AnimationType(DiscordIntEnum):
     BASIC = 1
 
 
+class CommandPermissionType(DiscordIntEnum):
+    ROLE = 1
+    USER = 2
+    CHANNEL = 3
+
+
+class IntegrationExpireBehavior(DiscordIntEnum):
+    REMOVE_ROLE = 0
+    KICK = 1
+
+
+class InviteTargetType(DiscordIntEnum):
+    STREAM = 1
+    EMBEDDED_APPLICATION = 2
+
+
+class StagePrivacyLevel(DiscordIntEnum):
+    PUBLIC = 1
+    GUILD_ONLY = 2
+
+
 class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1
