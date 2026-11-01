@@ -256,6 +256,16 @@ class CommandType(DiscordIntEnum):
     PRIMARY_ENTRY_POINT = 4
 
 
+class EntryPointCommandHandlerType(DiscordIntEnum):
+    APP_HANDLER = 1
+    DISCORD_LAUNCH_ACTIVITY = 2
+
+
+class ApplicationIntegrationType(DiscordIntEnum):
+    GUILD_INSTALL = 0
+    USER_INSTALL = 1
+
+
 class AutoModerationTriggerType(DiscordIntEnum):
     KEYWORD = 1
     SPAM = 3

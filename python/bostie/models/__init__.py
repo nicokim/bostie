@@ -77,6 +77,9 @@ from bostie.models.guild import (
     WelcomeScreenChannel,
 )
 from bostie.models.interaction import (
+    ApplicationCommand,
+    ApplicationCommandOption,
+    ApplicationCommandOptionChoice,
     AutocompleteInteraction,
     CommandData,
     CommandInteraction,
@@ -167,6 +170,9 @@ __all__ = [
     "ActivityTimestamps",
     "AddedThreadMember",
     "AllowedMentions",
+    "ApplicationCommand",
+    "ApplicationCommandOption",
+    "ApplicationCommandOptionChoice",
     "Attachment",
     "AuditLogChange",
     "AuditLogEntry",

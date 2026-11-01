@@ -4,15 +4,18 @@ import msgspec
 
 from bostie.enums import (
     ApplicationFlags,
+    ApplicationIntegrationType,
+    ChannelType,
     CommandPermissionType,
     CommandType,
     ComponentType,
+    EntryPointCommandHandlerType,
     InteractionContextType,
     InteractionType,
     OptionType,
     Permissions,
 )
-from bostie.models.base import Model, decode, decoder
+from bostie.models.base import Builder, Model, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.components import SubmittedComponent, decode_submitted
 from bostie.models.guild import Member, PartialMember, Role, with_user
@@ -101,6 +104,52 @@ class PartialApplication(Model, kw_only=True):
         return ApplicationFlags(
             self._flags if self._flags_new is None else int(self._flags_new)
         )
+
+
+class ApplicationCommandOptionChoice(Builder, kw_only=True):
+    name: str
+    name_localizations: dict[str, str] | None = None
+    value: str | int | float
+
+
+class ApplicationCommandOption(Builder, kw_only=True):
+    """An option of a slash command; subcommands and groups nest their options."""
+
+    type: OptionType
+    name: str
+    name_localizations: dict[str, str] | None = None
+    description: str
+    description_localizations: dict[str, str] | None = None
+    required: bool | None = None
+    choices: tuple[ApplicationCommandOptionChoice, ...] = ()
+    options: tuple["ApplicationCommandOption", ...] = ()
+    channel_types: tuple[ChannelType, ...] = ()
+    min_value: int | float | None = None
+    max_value: int | float | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    autocomplete: bool | None = None
+    file_types: tuple[str, ...] = ()
+
+
+class ApplicationCommand(Model, kw_only=True):
+    """A command of the app, global or in the guild of `guild_id`."""
+
+    id: int
+    type: CommandType = CommandType.CHAT_INPUT
+    application_id: int
+    guild_id: int | None = None
+    name: str
+    name_localizations: dict[str, str] | None = None
+    description: str
+    description_localizations: dict[str, str] | None = None
+    options: tuple[ApplicationCommandOption, ...] = ()
+    default_member_permissions: Permissions | None
+    nsfw: bool = False
+    integration_types: tuple[ApplicationIntegrationType, ...] = ()
+    contexts: tuple[InteractionContextType, ...] | None = None
+    version: int
+    handler: EntryPointCommandHandlerType | None = None
 
 
 class CommandPermission(Model, kw_only=True):
