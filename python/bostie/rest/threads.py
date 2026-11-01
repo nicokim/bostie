@@ -3,8 +3,6 @@ from datetime import datetime
 from functools import partial
 from typing import Any, Required, TypedDict, Unpack
 
-import msgspec
-
 from bostie.enums import ChannelType, MessageFlags
 from bostie.errors import UnexpectedResponse
 from bostie.file import File
@@ -17,7 +15,7 @@ from bostie.models import (
     ThreadMember,
     decode,
 )
-from bostie.models.base import Model, check_keys, decoder
+from bostie.models.base import Model, check_keys
 from bostie.models.message import message_body
 from bostie.rest.base import Group, each, paginate, wire
 
@@ -78,10 +76,6 @@ class ThreadListJoinedPrivateArchived(TypedDict, total=False):
 
 
 FORUM_THREAD_MESSAGE = ForumThreadMessage.__optional_keys__
-
-
-class _Threads(msgspec.Struct):
-    threads: tuple[msgspec.Raw, ...]
 
 
 class Threads(Group):
@@ -258,7 +252,7 @@ class Threads(Group):
             self._http,
             route,
             options,
-            decode=_threads,
+            decode=each(partial(decode, Channel), "threads"),
             items=tuple,
             cursor=cursor,
             page_size=ARCHIVED_PAGE,
@@ -277,11 +271,6 @@ async def _first(
                 return
             count += 1
             yield thread
-
-
-def _threads(data: bytes) -> tuple[Channel, ...]:
-    page: _Threads = decoder(_Threads).decode(data)
-    return tuple(decode(Channel, bytes(thread)) for thread in page.threads)
 
 
 def _archived_at(thread: Channel) -> datetime:

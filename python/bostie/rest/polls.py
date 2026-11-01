@@ -2,20 +2,13 @@ from collections.abc import AsyncIterator
 from functools import partial
 from typing import TypedDict, Unpack
 
-import msgspec
-
 from bostie.models import Message, User, decode
-from bostie.models.base import decoder
-from bostie.rest.base import Group, paginate, wire
+from bostie.rest.base import Group, each, paginate, wire
 
 
 class PollListAnswerVoters(TypedDict, total=False):
     after: int
     limit: int
-
-
-class _Voters(msgspec.Struct):
-    users: tuple[msgspec.Raw, ...]
 
 
 class Polls(Group):
@@ -41,7 +34,7 @@ class Polls(Group):
             self._http,
             "/channels/{channel_id}/polls/{message_id}/answers/{answer_id}",
             wire(options, PollListAnswerVoters),
-            decode=_voters,
+            decode=each(partial(decode, User), "users"),
             items=tuple,
             cursor=lambda user: user.id,
             page_size=100,
@@ -51,8 +44,3 @@ class Polls(Group):
             answer_id=answer_id,
         )
         return (user async for page in pages for user in page)
-
-
-def _voters(data: bytes) -> tuple[User, ...]:
-    voters: _Voters = decoder(_Voters).decode(data)
-    return tuple(decode(User, bytes(user)) for user in voters.users)

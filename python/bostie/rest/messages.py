@@ -91,10 +91,6 @@ class _Pin(msgspec.Struct):
     message: msgspec.Raw
 
 
-class _Pins(msgspec.Struct):
-    items: tuple[msgspec.Raw, ...]
-
-
 class _Indexing(msgspec.Struct):
     code: int = 0
     retry_after: float = 0
@@ -232,7 +228,7 @@ class Messages(Group):
             self._http,
             "/channels/{channel_id}/messages/pins",
             wire(options, MessageListPins),
-            decode=self._pins,
+            decode=each(self._pin, "items"),
             items=tuple,
             cursor=lambda pin: pin.pinned_at,
             page_size=50,
@@ -281,10 +277,6 @@ class Messages(Group):
 
     def _message(self, data: bytes) -> Message | WebhookMessage:
         return self._in_guild(decode_message(data))
-
-    def _pins(self, data: bytes) -> tuple[MessagePin, ...]:
-        pins: _Pins = decoder(_Pins).decode(data)
-        return tuple(self._pin(bytes(item)) for item in pins.items)
 
     def _pin(self, data: bytes) -> MessagePin:
         pin: _Pin = decoder(_Pin).decode(data)
