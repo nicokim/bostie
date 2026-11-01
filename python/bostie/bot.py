@@ -34,7 +34,7 @@ from bostie.context import (
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents
-from bostie.errors import TransportError
+from bostie.errors import StateError, TransportError
 from bostie.events import (
     EVENTS,
     Event,
@@ -181,14 +181,14 @@ class Bot(Router):
     def http(self) -> HTTPClient:
         """The REST client, for any endpoint; it exists once `start()` runs."""
         if self._http is None:
-            raise RuntimeError("bot.http exists once the bot has started")
+            raise StateError("bot.http exists once the bot has started")
         return self._http
 
     @property
     def gateway(self) -> GatewayClient:
         """The gateway connection, for any opcode; it exists once `start()` runs."""
         if self._gateway is None:
-            raise RuntimeError("bot.gateway exists once the bot has started")
+            raise StateError("bot.gateway exists once the bot has started")
         return self._gateway
 
     @property
@@ -215,7 +215,7 @@ class Bot(Router):
         The token defaults to the BOSTIE_TOKEN environment variable.
         """
         if self._bridge is not None:
-            raise RuntimeError("the bot is already running")
+            raise StateError("the bot is already running")
         try:
             token = _resolve_token(token)
             bridge = Bridge(
@@ -280,7 +280,7 @@ class Bot(Router):
         await asyncio.shield(self._closing)
 
     async def wait_until_ready(self) -> None:
-        """Wait until every shard got READY since `start()`; RuntimeError if it ends."""
+        """Wait until every shard got READY since `start()`; StateError if it ends."""
         if self._ready:
             return
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -317,7 +317,7 @@ class Bot(Router):
     async def sync_commands(self) -> list[sync.SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""
         if self.application_id is None:
-            raise RuntimeError("sync_commands() needs a running bot")
+            raise StateError("sync_commands() needs a running bot")
         return await sync.sync_commands(
             self.http,
             self.application_id,
@@ -454,7 +454,7 @@ class Bot(Router):
     def _stop_ready_waiters(self) -> None:
         for future in self._ready_waiters:
             if not future.done():
-                future.set_exception(RuntimeError("the bot stopped before READY"))
+                future.set_exception(StateError("the bot stopped before READY"))
 
     def _dispatch_names(self) -> list[str] | None:
         names = {*self.listeners, *self._waiters, "RATE_LIMITED"} - LOCAL_NAMES

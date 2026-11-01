@@ -35,6 +35,7 @@ from bostie import (
     PrivilegedIntentsRequired,
     Range,
     Router,
+    StateError,
     UnexpectedResponse,
     WebhookMessage,
     ui,
@@ -705,7 +706,7 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
         waiting = asyncio.create_task(bot.wait_until_ready())
         await bot.close()
         await started
-        with pytest.raises(RuntimeError, match="stopped before READY"):
+        with pytest.raises(StateError, match="stopped before READY"):
             await waiting
         assert not fake.connections
 
@@ -715,7 +716,7 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
         ]
         for token, error in failures:
             started = asyncio.create_task(bot.start(token))
-            with pytest.raises(RuntimeError, match="stopped before READY"):
+            with pytest.raises(StateError, match="stopped before READY"):
                 await bot.wait_until_ready()
             with pytest.raises(error):
                 await started
@@ -769,7 +770,7 @@ def test_start_resolves_the_token_and_raises_fatal_errors(
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
-        with pytest.raises(RuntimeError, match="started"):
+        with pytest.raises(StateError, match="started"):
             _ = bot.http
         monkeypatch.delenv("BOSTIE_TOKEN", raising=False)
         with pytest.raises(ValueError, match="BOSTIE_TOKEN"):

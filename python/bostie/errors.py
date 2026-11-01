@@ -6,7 +6,18 @@ from bostie.enums import DisconnectReason
 
 
 class BostieError(Exception):
-    """Base class of every error bostie raises."""
+    """Base of errors about Discord, the network and the bot's state.
+
+    A bad argument raises ValueError or TypeError instead.
+    """
+
+
+class StateError(BostieError, RuntimeError):
+    """The object is not in a state that allows the call."""
+
+
+class MissingIntent(BostieError, ValueError):
+    """A feature needs an intent the bot did not ask for."""
 
 
 class TransportError(BostieError):
@@ -189,6 +200,10 @@ class NotInVoice(VoiceError):
 
 class VoiceNotConnected(VoiceError):
     """The voice connection has ended."""
+
+
+class AlreadyConnected(VoiceError, StateError):
+    """bostie already runs a voice connection in this guild."""
 
 
 class SinkClosed(VoiceError):

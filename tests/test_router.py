@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from bostie import Bot, CommandType, Message, User
-from bostie.errors import CommandDefinitionError
+from bostie.errors import CommandDefinitionError, StateError
 from bostie.events import MessageCreate, MessageUpdate, RawEvent
 from bostie.router import Listener, Router
 
@@ -144,7 +144,7 @@ def test_a_router_reaches_its_bot_once_it_is_included() -> None:
     bot = Bot()
     plugin, nested = Router(), Router()
     plugin.include(nested)
-    with pytest.raises(RuntimeError, match="included in a Bot"):
+    with pytest.raises(StateError, match="included in a Bot"):
         _ = nested.bot
 
     bot.include(plugin)

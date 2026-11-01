@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, Self, override
 from urllib.parse import urlsplit
 
 from bostie._aio import Wake
-from bostie.errors import SourceError
+from bostie.errors import SourceError, StateError
 from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE, Format, Opus
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class Source(ABC):
     @property
     def format(self) -> Format:
         if self._format is None:
-            raise RuntimeError("open() the source first")
+            raise StateError("open() the source first")
         return self._format
 
     @property
@@ -84,7 +84,7 @@ class Source(ABC):
 
     def _check_opened(self) -> None:
         if self._format is None:
-            raise RuntimeError("open() the source first")
+            raise StateError("open() the source first")
 
     def _check_unused(self) -> None:
         if self._done:
@@ -142,7 +142,7 @@ class _DecodedSource(Source):
     async def seek(self, position: float) -> None:
         native = self._opened()
         if self._closed:
-            raise RuntimeError("the source is closed")
+            raise StateError("the source is closed")
         if not self._seekable:
             raise SourceError(repr(self), "not seekable")
         native.seek(position)
@@ -161,7 +161,7 @@ class _DecodedSource(Source):
 
     def _opened(self) -> NativeSource:
         if self._native is None or self._format is None:
-            raise RuntimeError("open() the source first")
+            raise StateError("open() the source first")
         return self._native
 
     def _wake(self) -> None:
@@ -237,7 +237,7 @@ class Stream(Source):
     @override
     async def __anext__(self) -> bytes:
         if self._iterator is None:
-            raise RuntimeError("open() the source first")
+            raise StateError("open() the source first")
         if self._done:
             raise StopAsyncIteration
         try:
@@ -292,7 +292,7 @@ class FFmpeg(Source):
     async def __anext__(self) -> bytes:
         process = self._process
         if process is None or process.stdout is None:
-            raise RuntimeError("open() the source first")
+            raise StateError("open() the source first")
         if self._done:
             raise StopAsyncIteration
         try:

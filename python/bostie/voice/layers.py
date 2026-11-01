@@ -20,6 +20,7 @@ from bostie.errors import (
     ReceiverClosed,
     SinkClosed,
     SourceError,
+    StateError,
     VoiceNotConnected,
 )
 from bostie.models.base import check_keys
@@ -114,9 +115,9 @@ class Track:
 
     @property
     def sink(self) -> "Sink":
-        """The sink this track is written to; RuntimeError until it starts."""
+        """The sink this track is written to; StateError until it starts."""
         if self._entry.sink is None:
-            raise RuntimeError("the track has not started")
+            raise StateError("the track has not started")
         return self._entry.sink
 
     @property
@@ -293,7 +294,7 @@ class _Player:
 
     async def seek(self, entry: _Entry, position: float) -> None:
         if not self.is_current(entry):
-            raise RuntimeError("only the current track can seek")
+            raise StateError("only the current track can seek")
         if not entry.source.seekable:
             raise SourceError(repr(entry.source), "not seekable")
         previous = self._feeder

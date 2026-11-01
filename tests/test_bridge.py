@@ -17,6 +17,7 @@ from bostie.errors import (
     BostieError,
     InvalidToken,
     RequestBudgetExhausted,
+    StateError,
     TransportError,
 )
 from bostie.gateway import GatewayClient
@@ -255,7 +256,7 @@ def test_delivery_failure_stops_the_bridge(
             with pytest.raises(TransportError) as raised:
                 await me(running)
             assert isinstance(raised.value.__cause__, RuntimeError)
-            with pytest.raises(RuntimeError, match="stopped"):
+            with pytest.raises(StateError, match="stopped"):
                 await me(running)
 
     run(main())
@@ -303,7 +304,7 @@ def test_rejects_use_from_another_loop(run: Runner) -> None:
             def use_from_another_loop() -> None:
                 asyncio.run(me(running))
 
-            with pytest.raises(RuntimeError, match="another event loop"):
+            with pytest.raises(StateError, match="another event loop"):
                 await asyncio.to_thread(use_from_another_loop)
 
     run(main())

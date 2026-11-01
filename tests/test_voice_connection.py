@@ -32,7 +32,7 @@ from voice_fakes import Call as CoreCall
 
 from bostie import voice
 from bostie.enums import Intents, SpeakingFlags
-from bostie.errors import Forbidden, NotFound
+from bostie.errors import Forbidden, MissingIntent, NotFound
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
 from bostie.models import VoiceState, decode
 from bostie.voice import connection as connection_module
@@ -181,7 +181,7 @@ def test_voice_needs_the_guild_voice_states_intent(call: str) -> None:
             if call == "connect"
             else bot.voice.connect_external(GUILD_ID, VOICE)
         )
-        with pytest.raises(RuntimeError, match=r"Intents\.GUILD_VOICE_STATES"):
+        with pytest.raises(MissingIntent, match=r"Intents\.GUILD_VOICE_STATES"):
             await attempt
         assert (bot.core.sent, bot.rest.requests) == ([], [])
 

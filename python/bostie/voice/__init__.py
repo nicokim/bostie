@@ -1,5 +1,6 @@
 from bostie.enums import ClosedReason, Direction, DisconnectReason, State
 from bostie.errors import (
+    AlreadyConnected,
     BufferFull,
     Empty,
     NotInVoice,
@@ -74,6 +75,7 @@ from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Url
 __all__ = [
     "DECODE_RATES",
     "PCM",
+    "AlreadyConnected",
     "BufferFull",
     "Bytes",
     "ClosedReason",

@@ -11,6 +11,7 @@ from bostie.errors import (
     BostieError,
     InvalidToken,
     RequestBudgetExhausted,
+    StateError,
     TransportError,
 )
 
@@ -75,7 +76,7 @@ class Bridge:
 
     async def close(self) -> None:
         if self._loop is not None and asyncio.get_running_loop() is not self._loop:
-            raise RuntimeError("the bridge belongs to another event loop")
+            raise StateError("the bridge belongs to another event loop")
         self._stop(None)
         if self._fallback_pump is not None:
             await asyncio.wait([self._fallback_pump])
@@ -115,9 +116,9 @@ class Bridge:
                 "the bridge is not running; use 'async with Bridge(...)'"
             )
         if self._stopped:
-            raise RuntimeError("the bridge stopped") from self._failure
+            raise StateError("the bridge stopped") from self._failure
         if loop is not self._loop:
-            raise RuntimeError("the bridge belongs to another event loop")
+            raise StateError("the bridge belongs to another event loop")
         return loop
 
     def _on_bell(self) -> None:

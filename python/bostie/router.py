@@ -26,7 +26,7 @@ from bostie.commands import (
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType
-from bostie.errors import CommandDefinitionError
+from bostie.errors import CommandDefinitionError, StateError
 from bostie.events import Event, RawEvent
 from bostie.voice.events import VoiceEvent
 
@@ -69,9 +69,9 @@ class Router:
 
     @property
     def bot(self) -> "Bot":
-        """The bot this router is included in; RuntimeError until then."""
+        """The bot this router is included in; StateError until then."""
         if self.parent is None:
-            raise RuntimeError("router.bot exists once the router is included in a Bot")
+            raise StateError("router.bot exists once the router is included in a Bot")
         return self.parent.bot
 
     @overload

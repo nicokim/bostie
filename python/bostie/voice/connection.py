@@ -22,9 +22,12 @@ from bostie.enums import (
     State,
 )
 from bostie.errors import (
+    AlreadyConnected,
     BostieError,
+    MissingIntent,
     NotFound,
     NotInVoice,
+    StateError,
     VoiceConnectError,
     VoiceNotConnected,
 )
@@ -334,7 +337,7 @@ class VoiceManager:
         """
         user = self._running_user("bot.voice.connect_external()")
         if guild_id in self._connections:
-            raise RuntimeError(
+            raise AlreadyConnected(
                 f"bostie already runs a voice connection in guild {guild_id}"
             )
         settings = self._settings(options, EXTERNAL_CONNECT_OPTIONS)
@@ -413,9 +416,9 @@ class VoiceManager:
     def _running_user(self, call: str) -> User:
         user = self._bot.user
         if user is None or self._bot._bridge is None:
-            raise RuntimeError(f"{call} needs a running bot")
+            raise StateError(f"{call} needs a running bot")
         if not self._bot._intents & Intents.GUILD_VOICE_STATES:
-            raise RuntimeError(
+            raise MissingIntent(
                 "voice needs Intents.GUILD_VOICE_STATES; add it to Bot(intents=...)"
             )
         return user
@@ -423,7 +426,7 @@ class VoiceManager:
     def _core(self) -> VoiceCore:
         bridge = self._bot._bridge
         if bridge is None:
-            raise RuntimeError("voice needs a running bot")
+            raise StateError("voice needs a running bot")
         return bridge.core
 
     def _settings(
