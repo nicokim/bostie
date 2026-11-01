@@ -1,0 +1,30 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 comes with p256 0.13, which davey and openmls_rust_crypto (0.6 too) use; the fix in crypto-bigint 0.7 needs both on p256 0.14" },
+    { id = "RUSTSEC-2026-0207", reason = "hpke-rs 0.6 pins libcrux-sha3 0.0.8 through openmls_rust_crypto 0.5; the fix needs davey on openmls 0.9" },
+    { id = "RUSTSEC-2026-0208", reason = "hpke-rs 0.6 pins libcrux-sha3 0.0.8 through openmls_rust_crypto 0.5; the fix needs davey on openmls 0.9" },
+    { id = "RUSTSEC-2026-0212", reason = "libcrux-traits 0.0.6 pins libcrux-secrets 0.0.5 through hpke-rs 0.6; the fix needs davey on openmls 0.9" },
+    { id = "RUSTSEC-2024-0384", reason = "instant comes with parking_lot 0.11 in fluvio-wasm-timer, which openmls 0.8 uses and 0.9 drops; needs davey on openmls 0.9" },
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
