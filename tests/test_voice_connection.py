@@ -369,16 +369,42 @@ def test_a_second_connect_keeps_the_state_and_applies_only_its_options(
     run(scenario)
 
 
-def test_a_second_connect_requests_the_stage_it_passes() -> None:
+@pytest.mark.parametrize(
+    ("default", "start", "entry", "options", "patches"),
+    [
+        ("listen", STAGE, "connect", {"stage": "speak"}, [{"suppress": False}]),
+        ("speak", STAGE, "connect", {"stage": "listen"}, [{"suppress": True}]),
+        ("speak", VOICE, "connect", {}, [{"suppress": False}]),
+        ("speak", VOICE, "move", {}, [{"suppress": False}]),
+        ("listen", VOICE, "move", {}, []),
+    ],
+)
+def test_entering_a_stage_asks_for_the_connections_stage_role(
+    default: StageRole,
+    start: int,
+    entry: str,
+    options: voice.ConnectOptions,
+    patches: list[dict[str, bool]],
+) -> None:
     async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot, STAGE)
-        assert await bot.voice.connect(STAGE, stage="speak") is vc
-        (patch,) = [
-            request for request in bot.rest.requests if request.method == "PATCH"
+        vc = await connected(bot, start)
+        before = len(bot.rest.requests)
+        task = asyncio.ensure_future(
+            bot.voice.connect(STAGE, **options)
+            if entry == "connect"
+            else vc.move(STAGE)
+        )
+        await settle()
+        if start != STAGE:
+            bot.deliver(("voice_moved", GUILD_ID, start, STAGE, True))
+            bot.deliver(ready())
+        await task
+        sent = [r for r in bot.rest.requests[before:] if r.method == "PATCH"]
+        assert [r.json for r in sent] == [
+            {"channel_id": str(STAGE)} | patch for patch in patches
         ]
-        assert patch.json == {"channel_id": str(STAGE), "suppress": False}
 
-    run(scenario)
+    run(scenario, defaults=voice.Defaults(stage=default))
 
 
 def test_concurrent_connects_both_get_the_ready_connection() -> None:

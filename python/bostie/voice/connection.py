@@ -795,6 +795,7 @@ class VoiceConnection:
             self_mute=mute,
             self_deaf=deaf,
             timeout=options.get("timeout", self._settings.timeout),
+            restage=False,
         )
 
     async def edit(self, **options: Unpack[EditOptions]) -> None:
@@ -874,11 +875,14 @@ class VoiceConnection:
 
     async def _connect_again(self, channel: Channel, options: ConnectOptions) -> None:
         mute, deaf = self._requested
+        if "stage" in options:
+            self._settings = replace(self._settings, stage=options["stage"])
         await self._join(
             channel,
             self_mute=options.get("self_mute", mute),
             self_deaf=options.get("self_deaf", deaf),
             timeout=options.get("timeout", self._settings.timeout),
+            restage="stage" in options,
         )
         if "encoder" in options:
             self.encoder = options["encoder"]
@@ -892,11 +896,15 @@ class VoiceConnection:
             self._core().voice_server_change_delay(
                 self.guild_id, options["server_change_delay"]
             )
-        if "stage" in options and channel.type is ChannelType.GUILD_STAGE_VOICE:
-            await self._request_stage(options["stage"])
 
     async def _join(
-        self, channel: Channel, *, self_mute: bool, self_deaf: bool, timeout: float
+        self,
+        channel: Channel,
+        *,
+        self_mute: bool,
+        self_deaf: bool,
+        timeout: float,
+        restage: bool,
     ) -> None:
         moving = channel.id != self._channel_id
         if moving or (self_mute, self_deaf) != self._requested:
@@ -918,6 +926,11 @@ class VoiceConnection:
             raise VoiceConnectError(DisconnectReason.TIMEOUT, None, detail) from None
         if not reached:
             raise self._failure()
+        role = self._settings.stage
+        if channel.type is ChannelType.GUILD_STAGE_VOICE and (
+            restage or (moving and role != "listen")
+        ):
+            await self._request_stage(role)
 
     async def _until_ready(self) -> None:
         if not await self._until(lambda: self._state is State.READY):

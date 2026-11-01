@@ -140,7 +140,7 @@ bot.run()
 - `voice.File`, `voice.Bytes` and `voice.Url` decode Ogg Opus and Vorbis, WebM, FLAC, WAV, MP3 and AAC in M4A in Rust. `voice.FFmpeg(args)` plays anything ffmpeg reads, and `voice.Stream(chunks, format)` plays an async iterator. `vc.play(source)` plays a source on its own, mixed with whatever else plays. `voice.Queue` plays tracks back to back without gaps.
 - `vc.sink(format)` is what they all build on: a bounded writer of PCM (16-bit or float, 8 to 192 kHz, mono or stereo) or Opus packets. `await sink.write(data)` waits while `buffer` seconds are queued. A sink that runs dry sends silence; the stream goes on.
 - `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, speaking flags, sink buffer, stall policy and stage role. Each call can override them.
-- Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`.
+- Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`. A connection asks for its role each time it enters a stage channel.
 - Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
 
 ### Text to speech

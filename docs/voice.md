@@ -2,7 +2,7 @@
 
 ## Connecting again
 
-In a guild where the bot is already connected, `bot.voice.connect()` and `ctx.voice.connect()` move that connection, as `vc.move()` does, and return it. The connection keeps its mute, deafen, encoder, speaking flags, speech settings and `server_change_delay`, and the call changes only the options you pass. `timeout` bounds this call alone. `stage` is requested whenever you pass it and the channel is a stage channel, even when the bot is already there.
+In a guild where the bot is already connected, `bot.voice.connect()` and `ctx.voice.connect()` move that connection, as `vc.move()` does, and return it. The connection keeps its mute, deafen, encoder, speaking flags, speech settings and `server_change_delay`, and the call changes only the options you pass. `timeout` bounds this call alone. The connection asks for its stage role each time it enters a stage channel, through `connect()` or `vc.move()`; a `stage` you pass replaces that role and is requested even when the bot is already there.
 
 ## Voice server changes
 
