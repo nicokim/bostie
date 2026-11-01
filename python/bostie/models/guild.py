@@ -79,8 +79,8 @@ class Member(Model, kw_only=True):
         return None if self.user is None else self.user.mention
 
     @property
-    def display_name(self) -> str | None:
-        return self.nick or (None if self.user is None else self.user.display_name)
+    def display_name(self) -> str:
+        return self.nick or ("" if self.user is None else self.user.display_name)
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Member | None":
