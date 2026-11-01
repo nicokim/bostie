@@ -48,7 +48,8 @@ impl NativeCore {
         content_type: Option<String>,
         reason: Option<String>,
     ) -> Result<u64> {
-        let request = RestRequest::parse(method, route, params, query, body, content_type, reason)?;
+        let request =
+            RestRequest::parse(method, route, &params, query, body, content_type, reason)?;
         let ticket = self.0.request(request)?;
         Ok(ticket.into())
     }
@@ -146,7 +147,7 @@ impl NativeCore {
             encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
             speaking,
         };
-        Ok(self.voice()?.connect(request)?)
+        Ok(self.voice()?.connect(&request)?)
     }
 
     fn voice_update(

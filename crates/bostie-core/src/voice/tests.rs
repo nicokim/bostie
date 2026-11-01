@@ -448,7 +448,7 @@ impl Harness {
     }
 
     fn connect(&self) {
-        self.voice.connect(self.request()).unwrap();
+        self.voice.connect(&self.request()).unwrap();
     }
 
     fn offer_state(&self, guild: GuildId, channel: Option<u64>, extra: &str) {
@@ -961,7 +961,7 @@ async fn unanswered_ip_discovery_times_out_naming_it() {
     harness.server.sfu.ignore_discoveries(usize::MAX);
     harness
         .voice
-        .connect(ConnectRequest {
+        .connect(&ConnectRequest {
             timeout: Duration::from_secs(1),
             ..harness.request()
         })
@@ -1231,7 +1231,7 @@ impl Harness {
         let second = GuildId::from(SECOND_GUILD);
         let mut server = Server::start(second, |_| {}).await;
         self.voice
-            .connect(ConnectRequest {
+            .connect(&ConnectRequest {
                 guild: second,
                 ..self.request()
             })
@@ -1358,7 +1358,7 @@ async fn a_terminated_call_waits_the_server_change_delay_even_past_the_timeout()
     let mut harness = Harness::start().await;
     harness
         .voice
-        .connect(ConnectRequest {
+        .connect(&ConnectRequest {
             timeout: Duration::from_secs(1),
             server_change_delay: delay,
             ..harness.request()
@@ -1384,7 +1384,7 @@ async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
     let mut harness = Harness::start().await;
     harness
         .voice
-        .connect(ConnectRequest {
+        .connect(&ConnectRequest {
             server_change_delay: Duration::from_secs(3_600),
             ..harness.request()
         })
@@ -1480,7 +1480,7 @@ async fn no_voice_events_time_out_naming_the_voice_server_update_and_leave() {
     let mut harness = Harness::start().await;
     harness
         .voice
-        .connect(ConnectRequest {
+        .connect(&ConnectRequest {
             timeout: Duration::from_millis(300),
             ..harness.request()
         })
@@ -1627,7 +1627,7 @@ async fn closing_the_core_ends_the_connection_without_a_leave_and_drops_the_lane
     assert!(sink.is_closed());
     assert_eq!(harness.voice.shared.pacer.lanes(), 0);
     assert!(matches!(
-        harness.voice.connect(harness.request()),
+        harness.voice.connect(&harness.request()),
         Err(CoreError::Closed)
     ));
 }

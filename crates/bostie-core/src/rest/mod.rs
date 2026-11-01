@@ -148,7 +148,7 @@ impl Rest {
         let request = RestRequest::parse(
             "GET",
             "/gateway",
-            HashMap::new(),
+            &HashMap::new(),
             Vec::new(),
             None,
             None,
@@ -567,7 +567,7 @@ pub(crate) mod tests {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
-        RestRequest::parse(method, route, params, Vec::new(), None, None, None).unwrap()
+        RestRequest::parse(method, route, &params, Vec::new(), None, None, None).unwrap()
     }
 
     fn message(channel_id: &str, message_id: &str) -> RestRequest {
@@ -708,7 +708,7 @@ pub(crate) mod tests {
         let webhook = RestRequest::parse(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}",
-            HashMap::from([
+            &HashMap::from([
                 ("webhook_id".to_owned(), "1".to_owned()),
                 ("webhook_token".to_owned(), "secret".to_owned()),
             ]),
@@ -751,7 +751,7 @@ pub(crate) mod tests {
         let upload = RestRequest::parse(
             "POST",
             "/channels/{channel_id}/messages",
-            HashMap::from([("channel_id".to_owned(), "1".to_owned())]),
+            &HashMap::from([("channel_id".to_owned(), "1".to_owned())]),
             Vec::new(),
             Some(b"--x\r\npart\r\n--x--".to_vec()),
             Some("multipart/form-data; boundary=x".to_owned()),

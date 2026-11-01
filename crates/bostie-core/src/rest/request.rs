@@ -43,7 +43,7 @@ impl RestRequest {
     pub fn parse(
         method: &str,
         route: &str,
-        params: HashMap<String, String>,
+        params: &HashMap<String, String>,
         query: Vec<(String, String)>,
         body: Option<Vec<u8>>,
         content_type: Option<String>,
@@ -195,7 +195,7 @@ mod tests {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
-        RestRequest::parse(method, route, params, Vec::new(), None, None, None)
+        RestRequest::parse(method, route, &params, Vec::new(), None, None, None)
     }
 
     #[test]
@@ -232,9 +232,16 @@ mod tests {
         let query = [("id", "1"), ("id", "2"), ("with_counts", "true")]
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
             .to_vec();
-        let request =
-            RestRequest::parse("GET", "/users/@me", HashMap::new(), query, None, None, None)
-                .unwrap();
+        let request = RestRequest::parse(
+            "GET",
+            "/users/@me",
+            &HashMap::new(),
+            query,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let url = request.url(&Url::parse("https://discord.com/api/v10").unwrap());
 
@@ -272,7 +279,7 @@ mod tests {
         let bad_content_type = RestRequest::parse(
             "POST",
             "/users/@me",
-            HashMap::new(),
+            &HashMap::new(),
             Vec::new(),
             Some(Vec::new()),
             Some("text\nplain".to_owned()),

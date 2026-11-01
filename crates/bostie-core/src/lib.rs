@@ -300,7 +300,7 @@ mod tests {
         RestRequest::parse(
             "GET",
             "/users/@me",
-            HashMap::new(),
+            &HashMap::new(),
             Vec::new(),
             None,
             None,
@@ -422,7 +422,7 @@ mod tests {
     fn voice_sends_its_voice_state_through_the_gateway() {
         let (core, _receiver) = core("http://127.0.0.1:1").unwrap();
 
-        let joined = core.voice().unwrap().connect(voice_request());
+        let joined = core.voice().unwrap().connect(&voice_request());
 
         assert!(
             matches!(joined, Err(CoreError::UnknownShard(shard)) if shard == ShardId::from(0)),
@@ -444,7 +444,7 @@ mod tests {
             Err(CoreError::Closed)
         ));
         assert!(matches!(
-            voice.connect(voice_request()),
+            voice.connect(&voice_request()),
             Err(CoreError::Closed)
         ));
     }

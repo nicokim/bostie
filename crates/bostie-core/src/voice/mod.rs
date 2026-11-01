@@ -175,7 +175,7 @@ impl Voice {
         })
     }
 
-    pub fn connect(&self, request: ConnectRequest) -> Result<(), CoreError> {
+    pub fn connect(&self, request: &ConnectRequest) -> Result<(), CoreError> {
         request.encoder.validate()?;
         check_speaking(request.speaking)?;
         if request.timeout.is_zero() {
@@ -234,7 +234,7 @@ impl Voice {
         let (stop, stopped) = watch::channel(false);
         let connection = Connection::new(
             Arc::clone(&self.shared),
-            &request,
+            request,
             Arc::clone(&info),
             Arc::clone(&media),
             Inputs {

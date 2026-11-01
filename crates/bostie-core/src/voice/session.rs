@@ -294,7 +294,10 @@ impl<'c> Session<'c> {
                 () = until(beat) => self.on_beat().await,
                 () = until(keepalive) => self.on_keepalive().await,
                 result = discovered(&mut self.discovery) => self.on_discovered(result).await,
-                alive = answered(&mut self.conn.voice), if listening => self.on_answer(alive),
+                alive = answered(&mut self.conn.voice), if listening => {
+                    self.on_answer(alive);
+                    Ok(())
+                }
                 () = until(speak) => self.speak().await,
                 () = self.conn.media.lost.notified() => Err(SessionEnd::MediaLost),
                 () = self.conn.media.exhausted.notified() => Err(SessionEnd::NonceExhausted),
@@ -762,13 +765,13 @@ impl<'c> Session<'c> {
         Ok(())
     }
 
-    fn on_answer(&mut self, alive: bool) -> Result<(), SessionEnd> {
+    fn on_answer(&mut self, alive: bool) {
         let Some(keepalive) = &mut self.keepalive else {
-            return Ok(());
+            return;
         };
         if !alive {
             keepalive.listening = false;
-            return Ok(());
+            return;
         }
         let answer = self
             .conn
@@ -783,7 +786,6 @@ impl<'c> Session<'c> {
             self.conn.info.set_latency_udp(answer.at - sent);
             bump(&self.conn.media.counters.keepalives_answered);
         }
-        Ok(())
     }
 
     async fn request_speaking(&mut self) -> Result<(), SessionEnd> {
