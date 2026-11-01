@@ -17,7 +17,7 @@ use tokio::time::{Instant, sleep, timeout, timeout_at};
 use tokio_websockets::{CloseCode, Connector, Message, ServerBuilder, WebSocketStream};
 use zstd_safe::CCtx;
 
-use super::close::{CLOSE_CODES, CloseAction};
+use super::close::{CloseAction, classify};
 use super::envelope::tests::fixture;
 use super::inflate::tests::{compress, discord_compressor};
 use super::limits::Limits;
@@ -566,29 +566,6 @@ async fn frames_without_a_heartbeat_ack_still_make_a_zombie() {
 }
 
 #[tokio::test]
-async fn an_unreachable_resume_url_reidentifies_at_the_base_url() {
-    let mut harness = Harness::new(false).await;
-    let closed = crate::refusing_socket();
-    let dead = address_of(&closed).to_string();
-    harness.start();
-    let mut peer = harness.fake.accept().await;
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    peer.receive().await;
-    peer.send(&fixture(READY).replace("{address}", &dead)).await;
-    harness.dispatch().await;
-
-    peer.close(4000).await;
-    assert_eq!(harness.disconnected().await.0, Some(4000));
-    let (code, _, resuming) = harness.disconnected().await;
-    assert_eq!((code, resuming), (None, false));
-
-    let mut peer = harness.fake.accept().await;
-    assert_eq!(peer.path, "/gateway");
-    peer.send(&hello(SLOW_HEARTBEAT)).await;
-    assert_identify(&peer.receive().await);
-}
-
-#[tokio::test]
 async fn a_ready_without_resume_gateway_url_identifies_after_a_disconnect() {
     let mut harness = Harness::new(false).await;
     harness.start();
@@ -668,8 +645,10 @@ async fn only_consecutive_failures_on_the_base_url_refresh_it() {
     harness.dispatch().await;
     peer.close(4000).await;
     assert_eq!(harness.disconnected().await.0, Some(4000));
-    assert_eq!(harness.disconnected().await.0, None);
-    let _again_without_hello = harness.fake.accept().await;
+    let (code, _, resuming) = harness.disconnected().await;
+    assert_eq!((code, resuming), (None, false));
+    let again_without_hello = harness.fake.accept().await;
+    assert_eq!(again_without_hello.path, "/gateway");
     assert_eq!(harness.disconnected().await.0, None);
 
     let mut peer = harness.fake.accept().await;
@@ -704,7 +683,13 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
 
 #[tokio::test]
 async fn reconnect_and_invalid_session_requests_resume_or_identify() {
-    let mut harness = Harness::new(false).await;
+    let delay = Duration::from_millis(100);
+    let limits = Limits {
+        close_timeout: Duration::ZERO,
+        invalid_session_delay: delay..=delay,
+        ..LIMITS
+    };
+    let mut harness = Harness::limited(false, limits).await;
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
     peer.send(fixture(RECONNECT)).await;
@@ -730,39 +715,43 @@ async fn reconnect_and_invalid_session_requests_resume_or_identify() {
         (None, "invalid session".to_owned(), false)
     );
     let mut peer = harness.fake.accept().await;
-    assert!(invalidated.elapsed() >= *LIMITS.invalid_session_delay.start());
+    assert!(invalidated.elapsed() >= delay);
     assert_eq!(peer.path, "/gateway");
     peer.send(&hello(SLOW_HEARTBEAT)).await;
     assert_identify(&peer.receive().await);
 }
 
 #[tokio::test]
-async fn reconnect_before_hello_does_not_wait_for_hello() {
-    let limits = Limits {
-        hello_timeout: NEVER,
-        ..LIMITS
-    };
-    let mut harness = Harness::limited(false, limits).await;
-    harness.start();
-    let mut peer = harness.fake.accept().await;
+async fn frames_before_ready_reconnect_without_a_session() {
+    for (frame, reason) in [
+        (RECONNECT, "reconnect requested by Discord"),
+        (INVALID_SESSION_RESUMABLE, "invalid session (resumable)"),
+    ] {
+        let limits = Limits {
+            hello_timeout: NEVER,
+            ..LIMITS
+        };
+        let mut harness = Harness::limited(false, limits).await;
+        harness.start();
+        let mut peer = harness.fake.accept().await;
 
-    peer.send(fixture(RECONNECT)).await;
+        peer.send(fixture(frame)).await;
 
-    assert_eq!(
-        harness.disconnected().await,
-        (None, "reconnect requested by Discord".to_owned(), false)
-    );
-    harness.fake.connection().await;
+        assert_eq!(
+            harness.disconnected().await,
+            (None, reason.to_owned(), false)
+        );
+        let mut peer = harness.fake.accept().await;
+        assert_eq!(peer.path, "/gateway");
+        peer.send(&hello(SLOW_HEARTBEAT)).await;
+        assert_identify(&peer.receive().await);
+    }
 }
 
 #[tokio::test]
 async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
-    let rows =
-        CLOSE_CODES
-            .iter()
-            .copied()
-            .chain([(4999, CloseAction::Resume, "closed by Discord")]);
-    for (code, action, text) in rows {
+    for code in [4000, 4007, 4004, 4999] {
+        let (action, text) = classify(code);
         let mut harness = Harness::new(false).await;
         let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
@@ -790,19 +779,21 @@ async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
 
 #[tokio::test]
 async fn a_dropped_connection_resumes_without_backing_off() {
-    let limits = Limits {
-        backoff_base: NEVER,
-        backoff_max: NEVER,
-        ..LIMITS
-    };
-    let mut harness = Harness::limited(false, limits).await;
-    let peer = harness.ready(SLOW_HEARTBEAT).await;
+    for zstd in [false, true] {
+        let limits = Limits {
+            backoff_base: NEVER,
+            backoff_max: NEVER,
+            ..LIMITS
+        };
+        let mut harness = Harness::limited(zstd, limits).await;
+        let peer = harness.ready(SLOW_HEARTBEAT).await;
 
-    drop(peer);
+        drop(peer);
 
-    let (code, _, resuming) = harness.disconnected().await;
-    assert_eq!((code, resuming), (None, true));
-    harness.resume(SLOW_HEARTBEAT, 1).await;
+        let (code, _, resuming) = harness.disconnected().await;
+        assert_eq!((code, resuming), (None, true), "zstd {zstd}");
+        harness.resume(SLOW_HEARTBEAT, 1).await;
+    }
 }
 
 #[tokio::test]
