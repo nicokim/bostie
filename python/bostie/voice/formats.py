@@ -22,7 +22,7 @@ DECODE_RATES = frozenset(_native.DECODE_RATES)
 type Overflow = Literal["drop_oldest", "drop_newest"]
 type ReceiveStall = Literal["wait", "end"]
 type SinkStall = Literal["hold", "drop"]
-type Application = Literal["audio", "voip", "lowdelay"]
+type OpusApplication = Literal["audio", "voip", "lowdelay"]
 type Sample = Literal["s16le", "f32le"]
 type StageRole = Literal["listen", "request", "speak"]
 
@@ -78,7 +78,7 @@ class EncoderSettings:
     """Opus encoder settings; `bitrate=None` follows the channel."""
 
     bitrate: int | None = None
-    application: Application = "audio"
+    application: OpusApplication = "audio"
     fec: bool = True
     packet_loss: float = 0.1
     complexity: int = 10

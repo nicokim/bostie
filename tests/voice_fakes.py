@@ -17,7 +17,7 @@ from bostie.http import HTTPClient
 from bostie.models import Channel, User, decode
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
-from bostie.voice.formats import Application, Defaults, Sample, SinkStall
+from bostie.voice.formats import Defaults, OpusApplication, Sample, SinkStall
 
 if TYPE_CHECKING:
     from bostie._native import ReceivedItem
@@ -366,7 +366,7 @@ class FakeCore:
         guild_id: int,
         *,
         bitrate: int,
-        application: Application,
+        application: OpusApplication,
         fec: bool,
         packet_loss: int,
         complexity: int,

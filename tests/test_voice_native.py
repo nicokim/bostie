@@ -12,7 +12,7 @@ import pytest
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie.voice.formats import Application, Sample
+from bostie.voice.formats import OpusApplication, Sample
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 API_URL = "http://127.0.0.1:1/api/v10"
@@ -44,7 +44,7 @@ def connect(
     timeout: float = 60.0,
     server_change_delay: float = 0.0,
     bitrate: int = 64_000,
-    application: Application = "audio",
+    application: OpusApplication = "audio",
     speaking: int = 1,
 ) -> None:
     core.voice_connect(
