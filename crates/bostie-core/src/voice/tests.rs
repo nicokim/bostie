@@ -2574,6 +2574,29 @@ async fn an_acknowledged_heartbeat_restores_the_rejoin_budget() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_close_code_before_an_acknowledged_heartbeat_is_forgotten() {
+    let mut harness = Harness::with(|config| config.heartbeat_interval = QUICK_HEARTBEAT).await;
+    harness.connected().await;
+    harness.server.gateway.close(4004);
+    harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.acknowledged(90).await;
+
+    for failure in 0..4 {
+        harness.offer_server(guild(), "token", Some("http://unusable"));
+        if failure < 3 {
+            harness
+                .settle(|harness| harness.joins(CHANNEL) == failure + 3)
+                .await;
+        }
+    }
+    let (reason, code, _) = harness.ended().await;
+
+    assert_eq!((reason, code), (DisconnectReason::SessionInvalid, None));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn late_announced_clients_hold_media_until_the_group_forms() {
     let mut harness = Harness::dave().await;
     let mut call = dave_call(CHANNEL, &[]);

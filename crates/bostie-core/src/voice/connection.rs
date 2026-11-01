@@ -365,8 +365,7 @@ impl Connection {
     }
 
     pub(super) fn stable(&mut self) {
-        self.failures.rejoins = 0;
-        self.failures.resumes = 0;
+        self.failures = Failures::default();
     }
 
     pub(super) fn is_ready(&self) -> bool {
