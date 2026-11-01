@@ -11,7 +11,7 @@ use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
 use crate::voice::receive::Peak;
-use crate::voice::types::{Overflow, ReceiveOptions};
+use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
@@ -37,10 +37,9 @@ pub enum Item {
     Speech {
         user: UserId,
         ssrc: u32,
-        speaking: bool,
+        speaking: Speaking,
         offset: Option<u64>,
         at: Instant,
-        duration: Duration,
     },
 }
 
@@ -339,10 +338,13 @@ mod tests {
         Item::Speech {
             user: UserId::from(user),
             ssrc: 1,
-            speaking,
+            speaking: if speaking {
+                Speaking::Started
+            } else {
+                Speaking::Stopped(Duration::ZERO)
+            },
             offset: Some(0),
             at,
-            duration: Duration::ZERO,
         }
     }
 

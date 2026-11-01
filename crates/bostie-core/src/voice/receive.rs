@@ -15,7 +15,7 @@ use opus::{Channels, SoftClip};
 use parking_lot::MutexGuard;
 use tracing::{debug, error, warn};
 
-use crate::ids::{Handle, UserId};
+use crate::ids::{GuildId, Handle, UserId};
 use crate::inbox::Delivery;
 use crate::voice::codec::{self, Decoder};
 use crate::voice::connection::Info;
@@ -29,7 +29,7 @@ use crate::voice::rtp;
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
     Direction, FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, ReceiveTuning,
-    SAMPLE_RATE, SILENCE_FRAME,
+    SAMPLE_RATE, SILENCE_FRAME, Speaking,
 };
 use crate::voice::{Throttle, panic_message};
 
@@ -1083,29 +1083,17 @@ impl State {
         }
         let activity = self.speech.entry(user).or_default();
         let speaking = speech::is_speech(payload, silence);
-        if let Some(Edge::Start { ssrc, at }) = activity.packet(ssrc, at48, samples, speaking) {
-            self.media.push(Delivery::VoiceSpeech {
-                guild: self.media.guild(),
-                user,
-                ssrc,
-                speaking: true,
-                at: instant(self.epoch, at),
-                duration: Duration::ZERO,
-            });
+        if let Some(edge) = activity.packet(ssrc, at48, samples, speaking) {
+            self.media
+                .push(speech_delivery(self.media.guild(), self.epoch, user, edge));
         }
     }
 
     fn expire_speech(&mut self, now48: i64, hangover: i64) {
         for (&user, activity) in &mut self.speech {
-            if let Some(Edge::Stop { ssrc, at, duration }) = activity.expire(now48, hangover) {
-                self.media.push(Delivery::VoiceSpeech {
-                    guild: self.media.guild(),
-                    user,
-                    ssrc,
-                    speaking: false,
-                    at: instant(self.epoch, at),
-                    duration: duration_of(duration),
-                });
+            if let Some(edge) = activity.expire(now48, hangover) {
+                self.media
+                    .push(speech_delivery(self.media.guild(), self.epoch, user, edge));
             }
         }
         self.speech.retain(|_, activity| activity.is_speaking());
@@ -1909,23 +1897,35 @@ fn offset_of(due: i64, opened: i64) -> u64 {
 }
 
 fn speech_item(epoch: Instant, user: UserId, edge: Edge, offset: Option<u64>) -> Item {
+    let (ssrc, at, speaking) = speaking(epoch, edge);
+    Item::Speech {
+        user,
+        ssrc,
+        speaking,
+        offset,
+        at,
+    }
+}
+
+fn speech_delivery(guild: GuildId, epoch: Instant, user: UserId, edge: Edge) -> Delivery {
+    let (ssrc, at, speaking) = speaking(epoch, edge);
+    Delivery::VoiceSpeech {
+        guild,
+        user,
+        ssrc,
+        speaking,
+        at,
+    }
+}
+
+fn speaking(epoch: Instant, edge: Edge) -> (u32, Instant, Speaking) {
     match edge {
-        Edge::Start { ssrc, at } => Item::Speech {
-            user,
+        Edge::Start { ssrc, at } => (ssrc, instant(epoch, at), Speaking::Started),
+        Edge::Stop { ssrc, at, duration } => (
             ssrc,
-            speaking: true,
-            offset,
-            at: instant(epoch, at),
-            duration: Duration::ZERO,
-        },
-        Edge::Stop { ssrc, at, duration } => Item::Speech {
-            user,
-            ssrc,
-            speaking: false,
-            offset,
-            at: instant(epoch, at),
-            duration: duration_of(duration),
-        },
+            instant(epoch, at),
+            Speaking::Stopped(duration_of(duration)),
+        ),
     }
 }
 

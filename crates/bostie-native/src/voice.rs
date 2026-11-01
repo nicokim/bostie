@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use bostie_core::voice::types::{
     Application, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall, SampleFormat,
-    SinkFormat, SinkOptions, StallPolicy,
+    SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
     Ended, FrameEncoder, Item, ReceiveRead, Receiver, Sink, Source, SourceRead,
@@ -368,18 +368,27 @@ fn received_item(
             speaking,
             offset,
             at,
-            duration,
-        } => (
-            intern!(py, "speech"),
-            u64::from(user),
-            ssrc,
-            speaking,
-            offset,
-            age(now, at),
-            duration.as_secs_f64(),
-            queued,
-        )
-            .into_bound_py_any(py),
+        } => {
+            let (speaking, duration) = speaking_parts(speaking);
+            (
+                intern!(py, "speech"),
+                u64::from(user),
+                ssrc,
+                speaking,
+                offset,
+                age(now, at),
+                duration,
+                queued,
+            )
+                .into_bound_py_any(py)
+        }
+    }
+}
+
+pub(crate) fn speaking_parts(speaking: Speaking) -> (bool, f64) {
+    match speaking {
+        Speaking::Started => (true, 0.0),
+        Speaking::Stopped(duration) => (false, duration.as_secs_f64()),
     }
 }
 

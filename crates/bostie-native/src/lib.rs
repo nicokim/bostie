@@ -17,7 +17,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString};
 
-use crate::voice::{NativeReceiver, NativeSink, NativeSource};
+use crate::voice::{NativeReceiver, NativeSink, NativeSource, speaking_parts};
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -496,17 +496,19 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
             ssrc,
             speaking,
             at,
-            duration,
-        } => (
-            intern!(py, "voice_speech"),
-            u64::from(guild),
-            u64::from(user),
-            ssrc,
-            speaking,
-            at.elapsed().as_secs_f64(),
-            duration.as_secs_f64(),
-        )
-            .into_bound_py_any(py),
+        } => {
+            let (speaking, duration) = speaking_parts(speaking);
+            (
+                intern!(py, "voice_speech"),
+                u64::from(guild),
+                u64::from(user),
+                ssrc,
+                speaking,
+                at.elapsed().as_secs_f64(),
+                duration,
+            )
+                .into_bound_py_any(py)
+        }
         Delivery::VoiceDeaf { guild, deaf } => {
             (intern!(py, "voice_deaf"), u64::from(guild), deaf).into_bound_py_any(py)
         }

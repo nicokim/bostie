@@ -13,7 +13,7 @@ use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
 use crate::voice::types::{
-    Application, DaveOp, EncoderSettings, Overflow, ReceiveStall, SampleFormat,
+    Application, DaveOp, EncoderSettings, Overflow, ReceiveStall, SampleFormat, Speaking,
 };
 
 const GUILD: u64 = 10;
@@ -151,7 +151,7 @@ fn heard(items: &[Item]) -> Vec<Heard> {
             Item::Speech {
                 speaking, offset, ..
             } => Heard::Speech {
-                speaking: *speaking,
+                speaking: *speaking == Speaking::Started,
                 offset: *offset,
             },
         })
@@ -312,18 +312,13 @@ impl Rig {
         self.media.recover.notified().now_or_never().is_some()
     }
 
-    fn speech(&self) -> Vec<(u64, bool, Duration)> {
+    fn speech(&self) -> Vec<(u64, Speaking)> {
         self.fixture
             .inbox
             .drain()
             .into_iter()
             .filter_map(|delivery| match delivery {
-                Delivery::VoiceSpeech {
-                    user,
-                    speaking,
-                    duration,
-                    ..
-                } => Some((u64::from(user), speaking, duration)),
+                Delivery::VoiceSpeech { user, speaking, .. } => Some((u64::from(user), speaking)),
                 _ => None,
             })
             .collect()
@@ -473,7 +468,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
     rig.now += rig.media.speech_hangover() * 2;
     rig.step();
     let mut stopped = rig.speech();
-    stopped.sort_unstable();
+    stopped.sort_unstable_by_key(|(user, _)| *user);
     rig.send(BOB_SSRC, 1, &garbage(3));
     rig.step();
     let restarted = rig.speech();
@@ -486,17 +481,20 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
     rig.step();
 
     assert!(rig.speech().is_empty());
-    assert_eq!(restarted, [(BOB, true, Duration::ZERO)]);
-    assert_eq!(switched_off, [(BOB, false, FRAME)]);
+    assert_eq!(restarted, [(BOB, Speaking::Started)]);
+    assert_eq!(switched_off, [(BOB, Speaking::Stopped(FRAME))]);
     assert!(queued_before_the_receiver.is_empty());
     assert_eq!(
         speech,
-        [(ALICE, true, Duration::ZERO), (BOB, true, Duration::ZERO)]
+        [(ALICE, Speaking::Started), (BOB, Speaking::Started)]
     );
     let sixty_ms = Duration::from_millis(60);
     assert_eq!(
         stopped,
-        [(ALICE, false, FRAME * 2 + sixty_ms), (BOB, false, FRAME)]
+        [
+            (ALICE, Speaking::Stopped(FRAME * 2 + sixty_ms)),
+            (BOB, Speaking::Stopped(FRAME))
+        ]
     );
     assert_eq!(rig.counter("undecryptable"), 1);
 }
@@ -626,7 +624,7 @@ fn dave_frames_wait_in_user_order_and_decrypt_in_slices() {
     rig.step();
     ticks.push(order(read(&receiver)));
 
-    assert_eq!(started, [(ALICE, true, Duration::ZERO)]);
+    assert_eq!(started, [(ALICE, Speaking::Started)]);
     assert_eq!(
         ticks,
         [
@@ -1088,9 +1086,9 @@ fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
     assert_eq!(
         rig.speech(),
         [
-            (ALICE, true, Duration::ZERO),
-            (ALICE, false, FRAME),
-            (ALICE, true, Duration::ZERO)
+            (ALICE, Speaking::Started),
+            (ALICE, Speaking::Stopped(FRAME)),
+            (ALICE, Speaking::Started)
         ]
     );
     assert_eq!(data(&read(&receiver)), packets);

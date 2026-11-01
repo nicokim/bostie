@@ -8,7 +8,7 @@ use tokio::sync::Notify;
 
 use crate::bell::Bell;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
-use crate::voice::types::{Direction, DisconnectReason, VoiceStatus};
+use crate::voice::types::{Direction, DisconnectReason, Speaking, VoiceStatus};
 
 const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
 const MIN_CAPACITY: usize = 16;
@@ -107,9 +107,8 @@ pub enum Delivery {
         guild: GuildId,
         user: UserId,
         ssrc: u32,
-        speaking: bool,
+        speaking: Speaking,
         at: Instant,
-        duration: Duration,
     },
     VoiceDeaf {
         guild: GuildId,

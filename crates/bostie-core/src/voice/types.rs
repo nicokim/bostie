@@ -99,6 +99,12 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Speaking {
+    Started,
+    Stopped(Duration),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Application {
     Audio,
     Voip,
