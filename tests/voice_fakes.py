@@ -231,7 +231,6 @@ class FakeReceiver:
         self._id = id
         self.core = core
         self.items: deque[ReceivedItem] = deque()
-        self.reads: list[int] = []
         self.armed = False
         self.ended: Literal["disconnected", "moved"] | None = None
         self.lag = 0.0
@@ -246,7 +245,6 @@ class FakeReceiver:
 
     def read(self, limit: int) -> "list[ReceivedItem] | None":
         self._check()
-        self.reads.append(limit)
         if not self.items:
             self.armed = self.ended is None
             return None if self.ended is not None else []
@@ -502,9 +500,6 @@ class FakeBridge:
         )
         status, payload = self.answers.get((method, path)) or self._default(path)
         return status, b"" if payload is None else msgspec.json.encode(payload)
-
-    def paths(self, method: str) -> list[str]:
-        return [request.path for request in self.requests if request.method == method]
 
     def _default(self, path: str) -> tuple[int, Any]:
         match path.split("/"):

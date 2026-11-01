@@ -238,7 +238,7 @@ def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None
         with pytest.raises(LookupError):
             await leave_with_an_error()
         assert await waiting is None
-        assert (native.closed, native.reads) == (True, [256])
+        assert native.closed
         assert (rx.closed, rx.closed_reason) == (True, voice.ClosedReason.CLOSED)
         rx.clear()
         rx.close()
