@@ -2398,7 +2398,7 @@ async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
     let (ticked, on_ticked) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         pacer.tick(5);
-        ticked.send(()).unwrap_or_default();
+        ticked.send(()).unwrap();
     });
     on_ticked
         .recv_timeout(WAIT)

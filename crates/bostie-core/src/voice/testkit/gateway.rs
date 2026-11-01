@@ -263,7 +263,7 @@ impl Server {
                 }
             }
             Control::Configure(change) => change(&mut self.config),
-            Control::Applied(applied) => applied.send(()).unwrap_or_default(),
+            Control::Applied(applied) => drop(applied.send(())),
         }
     }
 

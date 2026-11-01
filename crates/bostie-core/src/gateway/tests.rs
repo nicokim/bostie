@@ -1103,7 +1103,7 @@ impl AsRef<[u8]> for DropWaitsForRelease {
 
 impl Drop for DropWaitsForRelease {
     fn drop(&mut self) {
-        tokio::task::block_in_place(|| self.release.recv()).unwrap_or_default();
+        tokio::task::block_in_place(|| self.release.recv()).unwrap_err();
     }
 }
 
@@ -1125,7 +1125,7 @@ async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds(
     let restarted = harness
         .gateway
         .start(shard(), &harness.fake.url(), IDENTIFY);
-    release.send(()).unwrap();
+    drop(release);
 
     assert!(
         matches!(latency, Err(CoreError::UnknownShard(_))),

@@ -746,7 +746,7 @@ mod tests {
             }
 
             fn sleep_until(&self, deadline: Instant) {
-                self.sleeps.send(deadline).unwrap_or_default();
+                self.sleeps.send(deadline).unwrap();
                 self.clock.sleep_until(deadline);
             }
         }
