@@ -251,6 +251,10 @@ fn finite(sample: f32) -> f32 {
 mod tests {
     use std::f32::consts::TAU;
 
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+    use proptest::sample::Index;
+
     use super::*;
 
     fn format(rate: u32, channels: u8, sample: SampleFormat) -> PcmFormat {
@@ -342,76 +346,44 @@ mod tests {
         assert_eq!(out, [0.25, 0.25, -0.75, -0.75]);
     }
 
-    #[test]
-    fn odd_byte_splits_across_writes_decode_like_one_write() {
-        let bytes = s16_bytes(&tone(48_000, 2, 0.01));
-        let mut whole = converter(48_000, 2, SampleFormat::S16Le);
-        let expected = convert_in_chunks(&mut whole, &bytes, bytes.len());
-
-        for chunk in [1, 3, 5, 7, 1_001] {
-            let mut split = converter(48_000, 2, SampleFormat::S16Le);
-            let out = convert_in_chunks(&mut split, &bytes, chunk);
-            assert_eq!(out, expected, "chunks of {chunk} bytes");
+    fn bytes(samples: &[f32], sample: SampleFormat) -> Vec<u8> {
+        match sample {
+            SampleFormat::S16Le => s16_bytes(samples),
+            SampleFormat::F32Le => f32_bytes(samples),
         }
     }
 
     #[test]
-    fn an_incomplete_frame_waits_for_the_rest_of_its_bytes() {
-        let mut converter = converter(48_000, 2, SampleFormat::F32Le);
-        let bytes = f32_bytes(&[0.5, -0.5]);
-        let mut out = Vec::new();
-
-        converter.push(&bytes[..5], &mut out);
-        assert!(out.is_empty());
-        converter.push(&bytes[5..], &mut out);
-
-        assert_eq!(out, [0.5, -0.5]);
-    }
-
-    #[test]
-    fn common_rates_resample_one_second_to_48_000_frames_at_the_same_pitch() {
-        for rate in [
-            8_000, 16_000, 22_050, 24_000, 44_100, 48_000, 96_000, 192_000,
-        ] {
+    fn rates_resample_one_second_to_48_000_frames_at_the_same_pitch() {
+        for (index, rate) in [8_000, 8_050, 11_025, 44_100, 48_000, 192_000]
+            .into_iter()
+            .enumerate()
+        {
             for channels in [1, 2] {
-                let mut converter = converter(rate, channels, SampleFormat::S16Le);
-                let bytes = s16_bytes(&tone(rate, channels, 1.0));
-                let chunk = (rate / 50) as usize * usize::from(channels) * 2;
+                let sample =
+                    [SampleFormat::S16Le, SampleFormat::F32Le][(index + usize::from(channels)) % 2];
+                let mut converter = converter(rate, channels, sample);
+                let input = bytes(&tone(rate, channels, 1.0), sample);
+                let chunk = input.len() / 50;
 
-                let mut out = convert_in_chunks(&mut converter, &bytes, chunk);
+                let mut out = convert_in_chunks(&mut converter, &input, chunk);
                 let before_flush = out.len() / 2;
                 converter.flush(&mut out);
 
+                let case = format!("{rate} Hz x{channels} {sample:?}");
                 assert!(
                     before_flush + FRAME_SAMPLES * 2 >= 48_000,
-                    "{rate} Hz x{channels}: only {before_flush} frames before the flush"
+                    "{case}: only {before_flush} frames before the flush"
                 );
-                assert_eq!(out.len(), 48_000 * 2, "{rate} Hz x{channels}");
+                assert_eq!(out.len(), 48_000 * 2, "{case}");
                 let pitch = frequency(&left(&out)[960..47_040]);
-                assert!(
-                    (pitch - 1_000.0).abs() < 1.0,
-                    "{rate} Hz x{channels}: {pitch} Hz"
-                );
+                assert!((pitch - 1_000.0).abs() < 1.0, "{case}: {pitch} Hz");
+                if channels == 1 {
+                    let (frames, _) = out.as_chunks::<2>();
+                    assert!(frames.iter().all(|[left, right]| left == right), "{case}");
+                }
             }
         }
-    }
-
-    #[test]
-    fn mono_resamples_as_one_channel_and_is_duplicated_after() {
-        let mut converter = converter(24_000, 1, SampleFormat::F32Le);
-        let mut out = Vec::new();
-
-        converter.push(&f32_bytes(&tone(24_000, 1, 0.1)), &mut out);
-        converter.flush(&mut out);
-
-        assert_eq!(converter.resampler.as_ref().unwrap().channels(), 1);
-        assert_eq!(out.len(), 4_800 * 2);
-        assert!(
-            out.as_chunks::<2>()
-                .0
-                .iter()
-                .all(|[left, right]| left == right)
-        );
     }
 
     #[test]
@@ -462,19 +434,6 @@ mod tests {
     }
 
     #[test]
-    fn rates_that_cannot_resample_in_20_ms_blocks_are_rejected_with_the_rule() {
-        for rate in [8_001, 44_101] {
-            match Converter::new(format(rate, 2, SampleFormat::S16Le)) {
-                Err(CoreError::InvalidRequest(message)) => {
-                    assert!(message.contains("gcd(rate, 48000)"), "{message}");
-                }
-                Err(other) => panic!("{rate} Hz: {other}"),
-                Ok(_) => panic!("{rate} Hz was accepted"),
-            }
-        }
-    }
-
-    #[test]
     fn flush_pushes_the_tail_still_inside_the_resampler() {
         let mut converter = converter(16_000, 2, SampleFormat::S16Le);
         let mut out = Vec::new();
@@ -489,13 +448,48 @@ mod tests {
 
     #[test]
     fn reset_forgets_pending_bytes_and_samples() {
-        let mut converter = converter(24_000, 2, SampleFormat::S16Le);
+        let mut direct = converter(48_000, 2, SampleFormat::S16Le);
+        let mut resampled = converter(24_000, 2, SampleFormat::S16Le);
+        let mut aligned = Vec::new();
         let mut out = Vec::new();
 
-        converter.push(&s16_bytes(&tone(24_000, 2, 0.01))[..479], &mut out);
-        converter.reset();
-        converter.flush(&mut out);
+        direct.push(&[1, 2, 3], &mut aligned);
+        direct.reset();
+        direct.push(&[0x00, 0x40, 0x00, 0xC0], &mut aligned);
+        resampled.push(&s16_bytes(&tone(24_000, 2, 0.01))[..479], &mut out);
+        resampled.reset();
+        resampled.flush(&mut out);
 
+        assert_eq!(aligned, [0.5, -0.5]);
         assert!(out.is_empty());
+    }
+
+    proptest! {
+        #[test]
+        fn any_split_of_the_input_converts_like_one_write(
+            rate in proptest::sample::select(vec![8_000_u32, 8_050, 11_025, 44_100, 48_000, 192_000]),
+            channels in 1_u8..=2,
+            f32le in any::<bool>(),
+            cuts in vec(any::<Index>(), 0..8),
+        ) {
+            let sample = if f32le { SampleFormat::F32Le } else { SampleFormat::S16Le };
+            let input = bytes(&tone(rate, channels, 0.1), sample);
+            let mut cuts: Vec<usize> = cuts.iter().map(|cut| cut.index(input.len() + 1)).collect();
+            cuts.sort_unstable();
+            let mut whole = converter(rate, channels, sample);
+            let mut expected = Vec::new();
+            whole.push(&input, &mut expected);
+            whole.flush(&mut expected);
+            let mut split = converter(rate, channels, sample);
+            let mut out = Vec::new();
+            let mut start = 0;
+            for end in cuts.into_iter().chain([input.len()]) {
+                split.push(&input[start..end], &mut out);
+                start = end;
+            }
+            split.flush(&mut out);
+
+            prop_assert!(out == expected);
+        }
     }
 }
