@@ -11,7 +11,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models.base import Model, decode
+from bostie.models.base import Model, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.guild import Member, PartialMember, Role
 from bostie.models.message import (
@@ -154,18 +154,18 @@ type Interaction = (
     | UnknownInteraction
 )
 
-INTERACTIONS: dict[
-    InteractionType,
-    type[CommandInteraction | ComponentInteraction | AutocompleteInteraction],
-] = {
+INTERACTIONS: dict[InteractionType, type[Interaction]] = {
     InteractionType.APPLICATION_COMMAND: CommandInteraction,
     InteractionType.MESSAGE_COMPONENT: ComponentInteraction,
     InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE: AutocompleteInteraction,
 }
 
 
+class _InteractionKind(msgspec.Struct, gc=False):
+    type: InteractionType
+
+
 def decode_interaction(data: bytes) -> Interaction:
     """Decode an interaction into the model of its type, or `UnknownInteraction`."""
-    unknown = decode(UnknownInteraction, data)
-    model = INTERACTIONS.get(unknown.type)
-    return unknown if model is None else decode(model, data)
+    kind = decoder(_InteractionKind).decode(data).type
+    return decode(INTERACTIONS.get(kind, UnknownInteraction), data)
