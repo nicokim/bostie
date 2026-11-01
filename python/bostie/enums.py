@@ -515,9 +515,22 @@ class OnboardingPromptType(DiscordIntEnum):
     DROPDOWN = 1
 
 
+class InviteType(DiscordIntEnum):
+    GUILD = 0
+    GROUP_DM = 1
+    FRIEND = 2
+
+
 class InviteTargetType(DiscordIntEnum):
     STREAM = 1
     EMBEDDED_APPLICATION = 2
+
+
+class TargetUsersJobStatus(DiscordIntEnum):
+    UNSPECIFIED = 0
+    PROCESSING = 1
+    COMPLETED = 2
+    FAILED = 3
 
 
 class StagePrivacyLevel(DiscordIntEnum):
@@ -659,6 +672,10 @@ class SKUFlags(DiscordIntFlag):
     AVAILABLE = 1 << 2
     GUILD_SUBSCRIPTION = 1 << 7
     USER_SUBSCRIPTION = 1 << 8
+
+
+class GuildInviteFlags(DiscordIntFlag):
+    IS_GUEST_INVITE = 1 << 0
 
 
 class ApplicationFlags(DiscordIntFlag):

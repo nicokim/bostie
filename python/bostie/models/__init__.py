@@ -109,6 +109,14 @@ from bostie.models.interaction import (
     UnknownInteraction,
     decode_interaction,
 )
+from bostie.models.invite import (
+    Invite,
+    InviteGuild,
+    InviteRole,
+    InviteWithMetadata,
+    TargetUsersJob,
+    decode_invite,
+)
 from bostie.models.message import (
     AllowedMentions,
     Attachment,
@@ -252,6 +260,10 @@ __all__ = [
     "IntegrationApplication",
     "Interaction",
     "InteractionDataOption",
+    "Invite",
+    "InviteGuild",
+    "InviteRole",
+    "InviteWithMetadata",
     "MediaGallery",
     "MediaGalleryItem",
     "Member",
@@ -315,6 +327,7 @@ __all__ = [
     "SubmittedUserSelect",
     "SubmittedValues",
     "Subscription",
+    "TargetUsersJob",
     "Team",
     "TeamMember",
     "TextDisplay",
@@ -338,5 +351,6 @@ __all__ = [
     "decode",
     "decode_components",
     "decode_interaction",
+    "decode_invite",
     "decode_message",
 ]
