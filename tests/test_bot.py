@@ -46,6 +46,7 @@ from bostie.events import (
     Ready,
 )
 from bostie.gateway import GatewayClient
+from bostie.sync import SyncResult
 
 STRING = OptionType.STRING
 INTEGER = OptionType.INTEGER
@@ -187,7 +188,7 @@ def test_autosync_puts_only_changed_commands_and_an_explicit_sync_always_puts() 
         again = example_bot(fake)
         async with running(again, fake):
             assert fake.put_count == 1
-            await again.sync_commands()
+            assert await again.sync_commands() == [SyncResult(None, (), (), ())]
         requests = [(request.method, request.path) for request in fake.requests]
         assert requests == first[:3] + first[2:]
         assert fake.put_count == 2

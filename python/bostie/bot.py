@@ -271,11 +271,11 @@ class Bot(Router):
                 del self._waiters[event.NAME]
                 self._refresh_filter()
 
-    async def sync_commands(self) -> None:
-        """Overwrite the slash commands on Discord now, even when nothing changed."""
+    async def sync_commands(self) -> list[sync.SyncResult]:
+        """Overwrite the slash commands on Discord now and return what differed."""
         if self.application_id is None:
             raise RuntimeError("sync_commands() needs a running bot")
-        await sync.sync_commands(
+        return await sync.sync_commands(
             self.http,
             self.application_id,
             list(self.commands.values()),
