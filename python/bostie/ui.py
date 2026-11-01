@@ -21,7 +21,7 @@ __all__ = [
     "thumbnail",
 ]
 
-type Emoji = str | Mapping[str, Any]
+type _Emoji = str | Mapping[str, Any]
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
 ]
@@ -37,7 +37,7 @@ def button(
     *,
     custom_id: str,
     style: InteractiveStyle = ButtonStyle.SECONDARY,
-    emoji: Emoji | None = None,
+    emoji: _Emoji | None = None,
     disabled: bool = False,
 ) -> dict[str, Any]:
     """A button that sends `custom_id` to the bot when clicked."""
@@ -52,7 +52,7 @@ def button(
 
 
 def link_button(
-    label: str | None, url: str, *, emoji: Emoji | None = None, disabled: bool = False
+    label: str | None, url: str, *, emoji: _Emoji | None = None, disabled: bool = False
 ) -> dict[str, Any]:
     """A button that opens `url` and never reaches the bot."""
     return _present(
@@ -91,7 +91,7 @@ def select_option(
     value: str,
     *,
     description: str | None = None,
-    emoji: Emoji | None = None,
+    emoji: _Emoji | None = None,
     default: bool = False,
 ) -> dict[str, Any]:
     """One entry of a select menu; `value` is what the bot receives."""
@@ -174,7 +174,7 @@ def _present(**fields: Any) -> dict[str, Any]:
     return {key: value for key, value in fields.items() if value is not None}
 
 
-def _emoji(emoji: Emoji | None) -> Mapping[str, Any] | None:
+def _emoji(emoji: _Emoji | None) -> Mapping[str, Any] | None:
     return {"name": emoji} if isinstance(emoji, str) else emoji
 
 
