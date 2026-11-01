@@ -361,6 +361,19 @@ fn outbound(message: &ClientMessage) -> Option<Outbound> {
 
 type State = (VoiceStatus, Option<DisconnectReason>, Option<u16>, String);
 
+fn state_of(delivery: &Delivery) -> Option<State> {
+    match delivery {
+        Delivery::VoiceState {
+            guild: got,
+            status,
+            reason,
+            code,
+            detail,
+        } if *got == guild() => Some((*status, *reason, *code, detail.to_string())),
+        _ => None,
+    }
+}
+
 struct Harness {
     voice: Voice,
     pacer: Arc<ManualPacer>,
@@ -530,17 +543,7 @@ impl Harness {
     }
 
     async fn status(&mut self) -> State {
-        self.wait_for(|delivery| match delivery {
-            Delivery::VoiceState {
-                guild: got,
-                status,
-                reason,
-                code,
-                detail,
-            } if *got == guild() => Some((*status, *reason, *code, detail.to_string())),
-            _ => None,
-        })
-        .await
+        self.wait_for(state_of).await
     }
 
     async fn until(&mut self, wanted: VoiceStatus) -> State {
@@ -568,19 +571,7 @@ impl Harness {
 
     fn statuses(&mut self) -> Vec<State> {
         self.drain();
-        self.deliveries
-            .iter()
-            .filter_map(|delivery| match delivery {
-                Delivery::VoiceState {
-                    guild: got,
-                    status,
-                    reason,
-                    code,
-                    detail,
-                } if *got == guild() => Some((*status, *reason, *code, detail.to_string())),
-                _ => None,
-            })
-            .collect()
+        self.deliveries.iter().filter_map(state_of).collect()
     }
 
     fn count(&mut self, wanted: impl Fn(&Delivery) -> bool) -> usize {
@@ -681,17 +672,8 @@ impl Harness {
     }
 
     fn ready(&self) -> bool {
-        let latest = self
-            .deliveries
-            .iter()
-            .rev()
-            .find_map(|delivery| match delivery {
-                Delivery::VoiceState {
-                    guild: got, status, ..
-                } if *got == guild() => Some(*status),
-                _ => None,
-            });
-        latest == Some(VoiceStatus::Ready)
+        let latest = self.deliveries.iter().rev().find_map(state_of);
+        latest.is_some_and(|state| state.0 == VoiceStatus::Ready)
     }
 
     async fn encrypting(&mut self, call: &mut Call) {
