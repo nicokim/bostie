@@ -116,49 +116,23 @@ fn founder(call: &Call) -> UserId {
     call.fake.leaves()[0].1
 }
 
-fn roster(dave: &Dave) -> Vec<u64> {
-    let mut users: Vec<u64> = dave
-        .leaves()
-        .into_iter()
-        .map(|(_, id)| u64::from(id))
-        .collect();
-    users.sort_unstable();
-    users
-}
-
-fn recognized(dave: &Dave) -> Vec<u64> {
-    let mut users = dave.recognized();
-    users.sort_unstable();
-    users
-}
-
 #[test]
 fn send_mode_follows_the_protocol_version_the_members_and_the_key() {
     let (mut plain, _) = started(0);
     plain.clients_connect(&[user(A)]);
     let (alone, _) = started(1);
     let (mut waiting, _) = started(1);
-    waiting.clients_connect(&[user(A)]);
+    waiting.clients_connect(&[user(A), user(B), user(BOT)]);
     let call = group(&[BOT, A]);
 
     assert_eq!(plain.send_mode(), SendMode::Plain);
     assert_eq!(alone.send_mode(), SendMode::Discard);
     assert_eq!(waiting.send_mode(), SendMode::Hold);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-}
-
-#[test]
-fn the_recognized_users_are_the_announced_ones_and_the_bot_itself() {
-    let (mut dave, _) = started(1);
-    dave.clients_connect(&[user(A), user(B), user(BOT)]);
-    assert_eq!(recognized(&dave), [BOT, A, B]);
-    assert_eq!(dave.send_mode(), SendMode::Hold);
-
-    dave.client_disconnect(user(A));
-    assert_eq!(recognized(&dave), [BOT, B]);
-    dave.client_disconnect(user(B));
-    assert_eq!(recognized(&dave), [BOT]);
-    assert_eq!(dave.send_mode(), SendMode::Discard);
+    waiting.client_disconnect(user(A));
+    assert_eq!(waiting.send_mode(), SendMode::Hold);
+    waiting.client_disconnect(user(B));
+    assert_eq!(waiting.send_mode(), SendMode::Discard);
 }
 
 #[test]
@@ -184,19 +158,24 @@ fn alone_in_a_dave_call_the_bot_sends_a_key_package_and_discards_media() {
 }
 
 #[test]
-fn a_refused_external_sender_is_not_cached_and_changes_nothing() {
-    let fake = ExternalSenderFake::new(channel(), 1);
-    let (mut dave, _) = started(1);
-    let mut out = Vec::new();
-    let now = Instant::now();
-    dave.handle(fake.external_sender(), now, &mut out).unwrap();
-    let cached = dave.external_sender.clone();
-
+fn a_refused_external_sender_leaves_the_bot_to_join_by_welcome() {
+    let mut call = call(1);
+    call.join(user(BOT));
+    call.run();
     let garbage = DaveOp::ExternalSender(Bytes::from_static(b"not an external sender"));
-    dave.handle(garbage, now, &mut out).unwrap();
+    call.deliver(user(BOT), garbage);
+    call.run();
 
-    assert!(out.is_empty());
-    assert_eq!(dave.external_sender, cached);
+    call.join(user(A));
+    call.run();
+
+    assert!(matches!(
+        call.sent_by(user(BOT)).as_slice(),
+        [Outbound::KeyPackage(_), Outbound::TransitionReady(_)]
+    ));
+    assert_eq!(founder(&call), user(A));
+    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+    assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
 
 #[test]
@@ -280,7 +259,6 @@ fn a_sole_member_reset_drops_the_old_key_and_holds_until_the_new_group() {
         [Outbound::KeyPackage(_)]
     ));
     assert_eq!(call.executed_by(user(BOT))[0].transition_id, 0);
-    assert!(call.dave(user(BOT)).pending.is_empty());
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
     let mut out = Vec::new();
     assert_eq!(
@@ -364,18 +342,39 @@ fn an_upgrade_from_protocol_zero_stays_plain_until_it_executes() {
 }
 
 #[test]
-fn a_plain_stage_call_only_caches_the_external_sender() {
+fn a_plain_call_answers_no_mls_message() {
     let mut call = call(0);
     call.join(user(BOT));
     call.run();
+    let garbage = Bytes::from_static(b"not mls at all");
+    let ops = [
+        DaveOp::ExternalSender(garbage.clone()),
+        DaveOp::Proposals {
+            operation: ProposalsOp::Append,
+            data: garbage.clone(),
+        },
+        DaveOp::AnnounceCommit {
+            transition_id: 3,
+            commit: garbage.clone(),
+        },
+        DaveOp::Welcome {
+            transition_id: 4,
+            welcome: garbage,
+        },
+    ];
 
-    let dave = call.dave(user(BOT));
+    let now = call.now;
+    let dave = call.dave_mut(user(BOT));
+    let mut out = Vec::new();
+    for op in ops {
+        assert_eq!(dave.handle(op, now, &mut out).unwrap(), None);
+    }
+
+    assert!(out.is_empty());
     assert!(call.sent.is_empty());
-    assert_eq!(dave.send_mode(), SendMode::Plain);
-    assert!(dave.session.is_none());
-    assert!(dave.external_sender.is_some());
+    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
     assert_eq!(
-        dave.info(),
+        call.dave(user(BOT)).info(),
         DaveInfo {
             protocol_version: 0,
             epoch: None,
@@ -509,7 +508,11 @@ fn an_add_proposal_for_an_unannounced_user_is_rejected() {
             .any(|message| matches!(message, Outbound::CommitWelcome(_)))
     );
     assert_eq!(sent_count(&sent, is_flag), 0);
-    assert_eq!(roster(call.dave(user(BOT))), [BOT, A]);
+    assert!(
+        call.dave(user(BOT))
+            .fingerprint_pair(user(STRANGER))
+            .is_err()
+    );
     assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
 
@@ -549,7 +552,7 @@ fn revoked_proposals_are_left_out_of_the_next_commit() {
     call.fake.hold_commits = false;
     call.run();
 
-    assert_eq!(roster(call.dave(user(BOT))), [BOT, A, C]);
+    assert!(call.dave(user(BOT)).fingerprint_pair(user(A)).is_ok());
     assert_eq!(hear(&mut call, BOT, C), OPUS);
     assert!(call.dave(user(BOT)).fingerprint_pair(user(B)).is_err());
 }
@@ -865,25 +868,42 @@ fn receive_recovery_waits_for_the_group_and_never_disconnects() {
 }
 
 #[test]
-fn a_protocol_change_inside_a_group_is_still_answered() {
-    let (mut dave, _) = started(1);
-    let mut out = Vec::new();
-    let with_id = DaveOp::PrepareEpoch {
-        transition_id: Some(4),
-        epoch: 2,
-        protocol_version: 1,
+fn transition_ops_follow_the_epoch_the_version_and_the_id() {
+    let epoch = |transition_id, epoch, protocol_version| DaveOp::PrepareEpoch {
+        transition_id,
+        epoch,
+        protocol_version,
     };
-    let without_id = DaveOp::PrepareEpoch {
-        transition_id: None,
-        epoch: 2,
-        protocol_version: 1,
-    };
+    for (op, answered) in [
+        (epoch(Some(4), 2, 1), vec![Outbound::TransitionReady(4)]),
+        (epoch(None, 2, 1), vec![]),
+        (epoch(Some(4), 1, 0), vec![]),
+    ] {
+        let (mut dave, _) = started(1);
+        let mut out = Vec::new();
 
-    dave.handle(with_id, Instant::now(), &mut out).unwrap();
-    assert_eq!(out, [Outbound::TransitionReady(4)]);
-    out.clear();
-    dave.handle(without_id, Instant::now(), &mut out).unwrap();
+        assert_eq!(dave.handle(op, Instant::now(), &mut out).unwrap(), None);
+        assert_eq!(out, answered);
+    }
+    let (mut dave, _) = started(1);
+    let unsupported = dave.handle(epoch(None, 1, 2), Instant::now(), &mut Vec::new());
+    assert!(matches!(unsupported, Err(DaveError::Session(_))));
+
+    let mut call = group(&[BOT, A]);
+    let now = call.now;
+    let mut out = Vec::new();
+    let immediate = DaveOp::PrepareTransition {
+        transition_id: 0,
+        protocol_version: 0,
+    };
+    let executed = call
+        .dave_mut(user(BOT))
+        .handle(immediate, now, &mut out)
+        .unwrap()
+        .unwrap();
     assert!(out.is_empty());
+    assert_eq!((executed.protocol_version, executed.transition_id), (0, 0));
+    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
 }
 
 #[test]
@@ -948,35 +968,33 @@ fn a_davey_panic_drops_the_session_and_rebuilds_it_from_the_cached_sender() {
 
 #[test]
 fn prepared_transitions_are_forgotten_after_a_reinit_or_a_recovery() {
-    let (mut dave, _) = started(1);
-    let mut out = Vec::new();
-    let now = Instant::now();
-    let prepare = |transition_id| DaveOp::PrepareTransition {
-        transition_id,
-        protocol_version: 1,
-    };
-
-    dave.handle(prepare(3), now, &mut out).unwrap();
-    assert!(dave.pending.contains_key(&3));
-    let epoch = DaveOp::PrepareEpoch {
+    let reinit = DaveOp::PrepareEpoch {
         transition_id: None,
         epoch: 1,
         protocol_version: 1,
     };
-    dave.handle(epoch, now, &mut out).unwrap();
-    assert!(dave.pending.is_empty());
-    let execute = DaveOp::ExecuteTransition { transition_id: 3 };
-    assert_eq!(dave.handle(execute, now, &mut out).unwrap(), None);
-
-    dave.handle(prepare(4), now, &mut out).unwrap();
-    let corrupt = DaveOp::Welcome {
+    let recovery = DaveOp::Welcome {
         transition_id: 5,
         welcome: Bytes::from_static(b"not a welcome"),
     };
-    dave.handle(corrupt, now, &mut out).unwrap();
-    assert!(dave.pending.is_empty());
-    let execute = DaveOp::ExecuteTransition { transition_id: 4 };
-    assert_eq!(dave.handle(execute, now, &mut out).unwrap(), None);
+    for (interruption, executes) in [(None, true), (Some(reinit), false), (Some(recovery), false)] {
+        let (mut dave, _) = started(1);
+        let mut out = Vec::new();
+        let now = Instant::now();
+        let prepare = DaveOp::PrepareTransition {
+            transition_id: 3,
+            protocol_version: 1,
+        };
+        dave.handle(prepare, now, &mut out).unwrap();
+        if let Some(op) = interruption {
+            dave.handle(op, now, &mut out).unwrap();
+        }
+
+        let execute = DaveOp::ExecuteTransition { transition_id: 3 };
+        let executed = dave.handle(execute, now, &mut out).unwrap();
+
+        assert_eq!(executed.is_some(), executes, "{executed:?}");
+    }
 }
 
 fn feed_davey(dave: &mut Dave, bytes: &[u8]) {

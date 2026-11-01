@@ -753,25 +753,6 @@ pub fn has_marker(frame: &[u8]) -> bool {
     frame.ends_with(&MARKER)
 }
 
-#[cfg(test)]
-impl Dave {
-    pub fn leaves(&self) -> Vec<(u32, UserId)> {
-        let group = self.session.as_ref().and_then(DaveSession::group);
-        group
-            .map(|group| {
-                group
-                    .members()
-                    .map(|member| {
-                        let id: [u8; 8] =
-                            member.credential.serialized_content().try_into().unwrap();
-                        (member.index.u32(), UserId::from(u64::from_be_bytes(id)))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
 pub fn verification_code(fingerprints: [Vec<u8>; 2]) -> Result<String, DaveError> {
     let pairwise = davey::pairwise_fingerprints_internal(fingerprints)
         .map_err(|error| DaveError::Verification(error.into()))?;

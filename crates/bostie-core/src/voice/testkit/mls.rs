@@ -840,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fake_places_members_on_the_same_leaves_as_the_group() {
+    fn the_fake_removes_exactly_the_members_who_left() {
         let mut call = Call::new(ChannelId::from(CHANNEL), 1);
         for id in [10, 20, 30, 40] {
             call.join(user(id));
@@ -854,9 +854,23 @@ mod tests {
         call.run();
 
         assert!(call.failures.is_empty());
-        assert_eq!(call.fake.leaves(), call.dave(user(10)).leaves());
-        assert_eq!(call.fake.leaves(), call.dave(user(50)).leaves());
         assert_eq!(call.fake.members(), [user(10), user(30), user(50)]);
+        let opus = [0xFC, 0xFF, 0xFE, 0x10, 0x32, 0x54];
+        for listener in [30, 50] {
+            let frame = call.speak(user(10), &opus);
+            let mut heard = Vec::new();
+            call.dave_mut(user(listener))
+                .receive(user(10), &frame, &mut heard)
+                .unwrap();
+            assert_eq!(heard, opus);
+        }
+        for departed in [20, 40] {
+            assert!(
+                call.dave(user(10))
+                    .fingerprint_pair(user(departed))
+                    .is_err()
+            );
+        }
     }
 
     #[test]
