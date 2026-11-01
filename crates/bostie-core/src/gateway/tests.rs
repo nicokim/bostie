@@ -628,7 +628,7 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
 }
 
 #[tokio::test]
-async fn only_consecutive_failures_on_the_base_url_refresh_it() {
+async fn a_failed_reconnect_resumes_on_the_base_url_without_refreshing_it() {
     let mut api = Server::start(Vec::new()).await;
     let mut harness = Harness::with(FakeGateway::start(false), &api.url, LIMITS, None);
     let closed = crate::refusing_socket();
@@ -645,14 +645,18 @@ async fn only_consecutive_failures_on_the_base_url_refresh_it() {
     peer.close(4000).await;
     assert_eq!(harness.disconnected().await.0, Some(4000));
     let (code, _, resuming) = harness.disconnected().await;
-    assert_eq!((code, resuming), (None, false));
+    assert_eq!((code, resuming), (None, true));
     let again_without_hello = harness.fake.accept().await;
     assert_eq!(again_without_hello.path, "/gateway");
-    assert_eq!(harness.disconnected().await.0, None);
+    assert_eq!(
+        harness.disconnected().await,
+        (None, "no HELLO within 1s".to_owned(), true)
+    );
 
     let mut peer = harness.fake.accept().await;
+    assert_eq!(peer.path, "/gateway");
     peer.send(&hello(SLOW_HEARTBEAT)).await;
-    assert_identify(&peer.receive().await);
+    assert_resume(&peer.receive().await, 1);
     assert_eq!(api.received(), 0);
 }
 

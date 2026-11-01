@@ -63,7 +63,7 @@ impl Signals {
 
 struct Session {
     id: String,
-    resume_url: Url,
+    resume_url: Option<Url>,
     seq: u64,
 }
 
@@ -308,7 +308,8 @@ impl Shard {
         let url = self
             .session
             .as_ref()
-            .map_or(&self.url, |session| &session.resume_url);
+            .and_then(|session| session.resume_url.as_ref())
+            .unwrap_or(&self.url);
         debug!(shard = %self.id, %url, "connecting");
         let socket = tokio::select! {
             biased;
@@ -571,7 +572,7 @@ impl Shard {
         self.session = envelope::ready_session(data).and_then(|ready| {
             Some(Session {
                 id: ready.id,
-                resume_url: gateway_url(&ready.resume_url)?,
+                resume_url: Some(gateway_url(&ready.resume_url)?),
                 seq: 0,
             })
         });
@@ -630,8 +631,12 @@ impl Shard {
                 }
             }
             Ending::Unreachable(error) => {
-                if self.session.take().is_none() {
-                    self.base_url_failures = self.base_url_failures.saturating_add(1);
+                match &mut self.session {
+                    Some(Session {
+                        resume_url: resume_url @ Some(_),
+                        ..
+                    }) => *resume_url = None,
+                    _ => self.base_url_failures = self.base_url_failures.saturating_add(1),
                 }
                 self.disconnected(None, error);
             }
