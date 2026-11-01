@@ -336,7 +336,7 @@ class Direction(StrEnum):
 
 
 class ClosedReason(StrEnum):
-    """Why a receiver ended: you closed it, it disconnected, moved or reconnected."""
+    """Why a receiver ended: closed, disconnected, moved or began reconnecting."""
 
     CLOSED = "closed"
     DISCONNECTED = "disconnected"
