@@ -93,6 +93,13 @@ class _Fault:
     respond: Respond
 
 
+@dataclass
+class _Hold:
+    method: str
+    route_prefix: str
+    release: asyncio.Event
+
+
 RECORD = web.RequestKey("record", Recorded)
 
 
@@ -137,6 +144,7 @@ class FakeDiscord(VoiceGateway):
         }
         self.messages: dict[str, dict[str, Json]] = {}
         self.commands: list[Json] = []
+        self.guild_commands: dict[str, list[Json]] = {}
         self.put_count = 0
         self.requests: list[Recorded] = []
         self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
@@ -145,6 +153,7 @@ class FakeDiscord(VoiceGateway):
         self._zstd_stream = _zstd_streams() if compress else None
         self._hold_acks = False
         self._faults: list[_Fault] = []
+        self._holds: list[_Hold] = []
         self._windows: dict[tuple[str, str], tuple[float, int]] = {}
         self._session_id: str | None = None
         self._buffer: list[bytes] = []
@@ -170,6 +179,14 @@ class FakeDiscord(VoiceGateway):
             ("GET", "/applications/@me", self._application),
             ("GET", "/applications/{application_id}/commands", self._commands),
             ("PUT", "/applications/{application_id}/commands", self._commands),
+            *(
+                (
+                    method,
+                    "/applications/{application_id}/guilds/{guild_id}/commands",
+                    self._commands,
+                )
+                for method in ("GET", "PUT")
+            ),
             (
                 "POST",
                 "/interactions/{interaction_id}/{interaction_token}/callback",
@@ -340,6 +357,12 @@ class FakeDiscord(VoiceGateway):
             _Fault(method, route_prefix, lambda window: _json(json, status, window))
         )
 
+    def hold(self, method: str, route_prefix: str) -> asyncio.Event:
+        """Keep the next matching request waiting until the returned event is set."""
+        release = asyncio.Event()
+        self._holds.append(_Hold(method, route_prefix, release))
+        return release
+
     def _latest(self) -> Connection:
         if not self.connections:
             raise RuntimeError("no gateway connection yet")
@@ -499,6 +522,13 @@ class FakeDiscord(VoiceGateway):
         record = await _record(request)
         request[RECORD] = record
         self.requests.append(record)
+        for hold in self._holds:
+            if hold.method == request.method and record.path.startswith(
+                hold.route_prefix
+            ):
+                self._holds.remove(hold)
+                await hold.release.wait()
+                break
         resource = request.match_info.route.resource
         if resource is None:
             fault = self._take_fault(request.method, record.path)
@@ -563,18 +593,24 @@ class FakeDiscord(VoiceGateway):
     async def _commands(self, request: web.Request) -> web.Response:
         if request.match_info["application_id"] != str(self.application_id):
             return _error(404, 10002, "Unknown Application")
+        guild_id = request.match_info.get("guild_id")
+        commands = (
+            self.commands
+            if guild_id is None
+            else self.guild_commands.setdefault(guild_id, [])
+        )
         if request.method == "PUT":
             known = {
                 (command["type"], command["name"]): command["id"]
-                for command in self.commands
+                for command in commands
             }
-            self.commands = [
+            commands[:] = [
                 self._stored_command(command, known) for command in request[RECORD].json
             ]
             self.put_count += 1
         if request.method == "PUT" or _query_flag(request, "with_localizations"):
-            return _json(self.commands)
-        return _json(_without_localizations(self.commands))
+            return _json(commands)
+        return _json(_without_localizations(commands))
 
     def _stored_command(self, command: Json, known: dict[tuple[int, str], str]) -> Json:
         defaults: Json = {

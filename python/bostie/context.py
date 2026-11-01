@@ -35,7 +35,6 @@ from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
     from bostie.bot import Bot
-    from bostie.http import HTTPClient
 
 logger = logging.getLogger("bostie.context")
 
@@ -76,7 +75,6 @@ class _InteractionContext:
         self,
         interaction: Interaction,
         bot: "Bot",
-        http: "HTTPClient",
         *,
         received: float,
         ephemeral: bool,
@@ -87,7 +85,6 @@ class _InteractionContext:
         self.bot = bot
         self.received = received
         self.state = ResponseState.PENDING
-        self._http = http
         self._ephemeral = ephemeral
         self._auto_defer = auto_defer
         self._allowed_mentions = allowed_mentions
@@ -183,7 +180,7 @@ class _InteractionContext:
 
     async def _send(self, method: str, route: str, **request: Any) -> bytes:
         try:
-            response: bytes = await self._http._request(method, route, **request)
+            response: bytes = await self.bot.http._request(method, route, **request)
         except HTTPException as error:
             if error.status == 401 or (
                 error.status == 404

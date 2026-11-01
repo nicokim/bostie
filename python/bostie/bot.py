@@ -611,7 +611,6 @@ class Bot(Router):
             component = ComponentContext(
                 interaction,
                 self,
-                self.http,
                 received=received,
                 ephemeral=False,
                 auto_defer=self._auto_defer,
@@ -631,7 +630,6 @@ class Bot(Router):
         ctx = Context(
             interaction,
             self,
-            self.http,
             received=received,
             ephemeral=command.ephemeral,
             auto_defer=self._auto_defer
@@ -673,7 +671,6 @@ class Bot(Router):
         ctx = AutocompleteContext(
             interaction,
             self,
-            self.http,
             received=received,
             ephemeral=False,
             auto_defer=None,

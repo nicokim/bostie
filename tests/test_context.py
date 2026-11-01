@@ -1,122 +1,101 @@
 import asyncio
+import itertools
 import logging
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, cast
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Annotated, Any
 
 import msgspec
 import pytest
+from fakediscord import FakeDiscord, Recorded, payloads, run, running
 
-from bostie.context import (
-    CALLBACK_ROUTE,
-    FOLLOWUP_ROUTE,
-    ORIGINAL_ROUTE,
+from bostie import (
+    AllowedMentions,
     AutocompleteContext,
+    Bot,
     ComponentContext,
     Context,
-    ResponseState,
-)
-from bostie.enums import MessageFlags
-from bostie.errors import (
-    CommandError,
+    File,
     HTTPException,
     InteractionExpired,
     InteractionNotAnswered,
     InteractionResponded,
+    MessageFlags,
     NotFound,
+    Option,
 )
-from bostie.file import File
-from bostie.models import AllowedMentions, Interaction, decode
+from bostie.context import ResponseState
 
-FIXTURES = Path(__file__).parent / "fixtures" / "models"
-CALLBACK_BODY = (FIXTURES / "rest" / "interaction_callback.json").read_bytes()
-MESSAGE_BODY = (FIXTURES / "rest" / "message.json").read_bytes()
 EPHEMERAL = 64
+MENTIONS = {"parse": ["users", "roles"]}
+CALLBACK = "/interactions/"
+WEBHOOK = "/webhooks/"
+
+type Call = tuple[str, str, int | None]
+
+_names = itertools.count()
 
 
-@dataclass
-class Request:
-    method: str
-    route: str
-    json: Any
-    files: Sequence[File]
-    query: Mapping[str, Any] | None
-    params: dict[str, object]
+class Interactions:
+    def __init__(self, fake: FakeDiscord, bot: Bot) -> None:
+        self.fake = fake
+        self.bot = bot
 
-
-class RecordingHTTP:
-    def __init__(self) -> None:
-        self.requests: list[Request] = []
-        self.gate = asyncio.Event()
-        self.gate.set()
-        self.callback_body = CALLBACK_BODY
-        self.failures: list[HTTPException] = []
-
-    async def _request(
+    async def answer[C: Context](
         self,
-        method: str,
-        route: str,
-        /,
+        kind: type[C],
+        handler: Callable[[C], Awaitable[None]],
         *,
-        json: Any = None,
-        files: Sequence[File] = (),
-        query: Mapping[str, Any] | None = None,
-        reason: str | None = None,
-        **params: object,
-    ) -> bytes:
-        self.requests.append(Request(method, route, json, files, query, params))
-        await self.gate.wait()
-        if self.failures:
-            raise self.failures.pop(0)
-        if method == "DELETE":
-            return b""
-        return self.callback_body if route == CALLBACK_ROUTE else MESSAGE_BODY
+        ephemeral: bool = False,
+        **fields: Any,
+    ) -> list[Recorded]:
+        """Run `handler` as the handler of a new interaction; return its requests."""
+        name = f"handler{next(_names)}"
+        done: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
-    @property
-    def calls(self) -> list[tuple[str, str, int | None]]:
-        return [
-            (request.method, request.route, (request.json or {}).get("type"))
-            for request in self.requests
-        ]
+        async def handle(ctx: C) -> None:
+            try:
+                await handler(ctx)
+            except Exception as error:
+                done.set_exception(error)
+            else:
+                done.set_result(None)
 
-
-def interaction(name: str) -> Interaction:
-    return decode(Interaction, (FIXTURES / "events" / f"{name}.json").read_bytes())
-
-
-def context[C: Context | AutocompleteContext](
-    kind: type[C],
-    http: RecordingHTTP,
-    *,
-    source: Interaction | None = None,
-    age: float = 0.0,
-    ephemeral: bool = False,
-    auto_defer: float | None = None,
-    allowed_mentions: AllowedMentions | None = None,
-) -> C:
-    fixture = {
-        Context: "INTERACTION_CREATE.command",
-        ComponentContext: "INTERACTION_CREATE.button",
-        AutocompleteContext: "INTERACTION_CREATE.autocomplete",
-    }[kind]
-    return kind(
-        source or interaction(fixture),
-        cast(Any, None),
-        cast(Any, http),
-        received=asyncio.get_running_loop().time() - age,
-        ephemeral=ephemeral,
-        auto_defer=auto_defer,
-        allowed_mentions=allowed_mentions,
-    )
+        if issubclass(kind, ComponentContext):
+            self.bot.on_component(name)(handle)
+            payload = payloads.interaction(3, payloads.button(name), **fields)
+        else:
+            self.bot.command(name=name, ephemeral=ephemeral)(handle)
+            payload = payloads.interaction(2, payloads.command(name), **fields)
+        start = len(self.fake.requests)
+        await self.fake.dispatch("INTERACTION_CREATE", payload)
+        await done
+        return self.fake.requests[start:]
 
 
-def run(
-    scenario: Callable[[RecordingHTTP], Coroutine[Any, Any, None]],
-) -> RecordingHTTP:
-    http = RecordingHTTP()
-    asyncio.run(scenario(http))
-    return http
+def run_bot(
+    scenario: Callable[[Interactions], Coroutine[Any, Any, None]], **options: Any
+) -> None:
+    async def main(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, **({"auto_defer": None} | options))
+        async with running(bot, fake):
+            await scenario(Interactions(fake, bot))
+
+    run(main)
+
+
+def calls(requests: list[Recorded]) -> list[Call]:
+    return [
+        (
+            request.method,
+            "callback"
+            if request.path.endswith("/callback")
+            else "original"
+            if request.path.endswith("/messages/@original")
+            else "followup",
+            (request.json or {}).get("type"),
+        )
+        for request in requests
+    ]
 
 
 ENTER: dict[ResponseState, Callable[[ComponentContext], Awaitable[object]]] = {
@@ -135,13 +114,13 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "delete": lambda ctx: ctx.delete(),
 }
 PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, EXPIRED = ResponseState
-CALLBACK_4 = ("POST", CALLBACK_ROUTE, 4)
-CALLBACK_5 = ("POST", CALLBACK_ROUTE, 5)
-CALLBACK_6 = ("POST", CALLBACK_ROUTE, 6)
-CALLBACK_7 = ("POST", CALLBACK_ROUTE, 7)
-EDIT = ("PATCH", ORIGINAL_ROUTE, None)
-FOLLOWUP = ("POST", FOLLOWUP_ROUTE, None)
-DELETE = ("DELETE", ORIGINAL_ROUTE, None)
+CALLBACK_4 = ("POST", "callback", 4)
+CALLBACK_5 = ("POST", "callback", 5)
+CALLBACK_6 = ("POST", "callback", 6)
+CALLBACK_7 = ("POST", "callback", 7)
+EDIT = ("PATCH", "original", None)
+FOLLOWUP = ("POST", "followup", None)
+DELETE = ("DELETE", "original", None)
 REFUSED = InteractionResponded
 UNANSWERED = InteractionNotAnswered
 NOTHING = ()
@@ -186,367 +165,433 @@ TABLE = [
 def test_response_state_machine(
     state: ResponseState,
     call: str,
-    sent: tuple[str, str, int | None] | tuple[()] | type[CommandError],
+    sent: Call | tuple[()] | type[Exception],
     after: ResponseState,
 ) -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(ComponentContext, http)
-        await ENTER[state](ctx)
-        http.requests.clear()
-
-        if isinstance(sent, type):
-            with pytest.raises(sent):
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ComponentContext) -> None:
+            await ENTER[state](ctx)
+            start = len(on.fake.requests)
+            if isinstance(sent, type):
+                with pytest.raises(sent):
+                    await CALLS[call](ctx)
+                assert on.fake.requests[start:] == []
+            else:
                 await CALLS[call](ctx)
-            assert http.calls == []
-        else:
-            await CALLS[call](ctx)
-            assert http.calls == ([sent] if sent else [])
-        assert ctx.state is after
+                assert calls(on.fake.requests[start:]) == ([sent] if sent else [])
+            assert ctx.state is after
 
-    run(scenario)
+        await on.answer(ComponentContext, handler)
+
+    run_bot(scenario)
 
 
 def test_the_user_is_the_member_in_guilds_the_user_in_dms_and_never_none() -> None:
-    dm = interaction("INTERACTION_CREATE.command_dm")
-    nobody = msgspec.structs.replace(dm, user=None)
+    dm_user = payloads.fixture("events/INTERACTION_CREATE.command_dm")["user"]
+    names: list[str | None] = []
 
-    async def scenario(http: RecordingHTTP) -> None:
-        in_guild = context(Context, http).user
-        in_dm = context(Context, http, source=dm).user
-        assert (in_guild.username, in_dm.username) == ("grace", "grace")
-        with pytest.raises(RuntimeError, match="without a user"):
-            _ = context(Context, http, source=nobody).user
+    async def scenario(on: Interactions) -> None:
+        async def name(ctx: Context) -> None:
+            names.append(ctx.user.username)
 
-    run(scenario)
+        async def nobody(ctx: Context) -> None:
+            with pytest.raises(RuntimeError, match="without a user"):
+                _ = ctx.user
+
+        await on.answer(Context, name)
+        await on.answer(Context, name, guild_id=None, member=None, user=dm_user)
+        await on.answer(Context, nobody, guild_id=None, member=None, user=None)
+
+    run_bot(scenario)
+
+    assert names == ["grace", "grace"]
 
 
 def test_callbacks_target_the_interaction_and_webhooks_the_application() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        await ctx.respond("hi")
-        await ctx.edit("edited")
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.respond("hi")
+            await ctx.edit("edited")
 
-    callback, edit = run(scenario).requests
-    source = interaction("INTERACTION_CREATE.command")
-    assert callback.json == {"type": 4, "data": {"content": "hi"}}
-    assert callback.query == {"with_response": True}
-    assert callback.params == {
-        "interaction_id": source.id,
-        "interaction_token": source.token,
-    }
-    assert edit.json == {"content": "edited"}
-    assert edit.params == {
-        "application_id": source.application_id,
-        "interaction_token": source.token,
-    }
+        callback, edit = await on.answer(Context, handler)
+        assert callback.json == {
+            "type": 4,
+            "data": {"content": "hi", "allowed_mentions": MENTIONS},
+        }
+        assert callback.query == {"with_response": "true"}
+        assert callback.path.startswith(CALLBACK)
+        assert edit.json == {"content": "edited", "allowed_mentions": MENTIONS}
+        assert edit.path.startswith(f"{WEBHOOK}{on.fake.application_id}/")
+
+    run_bot(scenario)
 
 
 def test_message_calls_return_the_message_discord_created() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        answer = await ctx.respond("hi")
-        followup = await ctx.followup("more")
-        await ctx.delete()
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            answer = await ctx.respond("hi")
+            followup = await ctx.followup("more")
+            await ctx.delete()
 
-        assert answer is not None
-        assert answer.content == "Inspected Voice Lounge 7 times (thorough)."
-        assert answer.raw is not None
-        assert answer.raw["id"] == "1564609864741814273"
-        assert followup is not None
-        assert followup.raw_json == MESSAGE_BODY
-        in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
-        assert answer.jump_url.startswith(in_guild)
-        assert followup.jump_url.startswith(in_guild)
+            assert answer is not None and followup is not None
+            assert (answer.content, followup.content) == ("hi", "more")
+            assert answer.raw is not None and followup.raw is not None
+            assert answer.raw["id"] != followup.raw["id"]
+            in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
+            assert answer.jump_url.startswith(in_guild)
+            assert followup.jump_url.startswith(in_guild)
 
-    run(scenario)
+        await on.answer(Context, handler)
+
+    run_bot(scenario)
 
 
 def test_an_accepted_answer_counts_even_when_its_message_fails_to_decode() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        http.callback_body = b'{"resource": {"message": {"id": "1", "mentions": {}}}}'
-        ctx = context(Context, http)
-        with pytest.raises(msgspec.ValidationError):
-            await ctx.respond("hi")
-        await ctx.respond("again")
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            with pytest.raises(msgspec.ValidationError):
+                await ctx.respond(embeds=[{"fields": {}}])
+            await ctx.respond("again")
 
-    assert run(scenario).calls == [CALLBACK_4, FOLLOWUP]
+        requests = await on.answer(Context, handler)
+        assert calls(requests) == [CALLBACK_4, FOLLOWUP]
+
+    run_bot(scenario)
 
 
 def test_ephemeral_defaults_to_the_command_setting() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ephemeral = context(Context, http, ephemeral=True)
-        await ephemeral.respond("secret")
-        await ephemeral.followup("also secret")
-        await ephemeral.followup("public", ephemeral=False)
-        public = context(Context, http)
-        await public.defer()
-        await context(Context, http).defer(ephemeral=True)
+    async def scenario(on: Interactions) -> None:
+        async def secret(ctx: Context) -> None:
+            await ctx.respond("secret")
+            await ctx.followup("also secret")
+            await ctx.followup("public", ephemeral=False)
 
-    answer, followup, public_followup, deferred, ephemeral_defer = run(
-        scenario
-    ).requests
-    assert answer.json["data"]["flags"] == EPHEMERAL
-    assert followup.json["flags"] == EPHEMERAL
-    assert "flags" not in public_followup.json
-    assert deferred.json == {"type": 5}
-    assert ephemeral_defer.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+        async def defer(ctx: Context) -> None:
+            await ctx.defer()
+
+        async def defer_ephemerally(ctx: Context) -> None:
+            await ctx.defer(ephemeral=True)
+
+        answer, followup, public_followup = await on.answer(
+            Context, secret, ephemeral=True
+        )
+        (deferred,) = await on.answer(Context, defer)
+        (ephemeral_defer,) = await on.answer(Context, defer_ephemerally)
+        assert answer.json["data"]["flags"] == EPHEMERAL
+        assert followup.json["flags"] == EPHEMERAL
+        assert "flags" not in public_followup.json
+        assert deferred.json == {"type": 5}
+        assert ephemeral_defer.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+
+    run_bot(scenario)
 
 
 def test_an_ephemeral_flag_that_cannot_apply_logs_one_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        await ctx.defer()
-        with caplog.at_level(logging.WARNING, logger="bostie.context"):
-            await ctx.respond("hi", ephemeral=True)
-            await ctx.edit("again", ephemeral=True)
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.defer()
+            with caplog.at_level(logging.WARNING, logger="bostie.context"):
+                await ctx.respond("hi", ephemeral=True)
+                await ctx.edit("again", ephemeral=True)
 
-    _, answer, edit = run(scenario).requests
-    assert "flags" not in answer.json
-    assert "flags" not in edit.json
-    assert len(caplog.records) == 1
-    assert "kit inspect all" in caplog.records[0].getMessage()
+        _, answer, edit = await on.answer(Context, handler)
+        assert "flags" not in answer.json
+        assert "flags" not in edit.json
+
+    run_bot(scenario)
+
+    warnings = [record for record in caplog.records if record.name == "bostie.context"]
+    assert len(warnings) == 1
+    assert "is ignored because the message being edited is public" in (
+        warnings[0].getMessage()
+    )
 
 
 def test_allowed_mentions_default_to_the_bot_setting() -> None:
-    bot_default = AllowedMentions(parse=("users",))
-    override = AllowedMentions(parse=())
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.respond("hi")
+            await ctx.followup("quiet", allowed_mentions=AllowedMentions(parse=()))
 
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, allowed_mentions=bot_default)
-        await ctx.respond("hi")
-        await ctx.followup("quiet", allowed_mentions=override)
+        answer, followup = await on.answer(Context, handler)
+        assert answer.json["data"]["allowed_mentions"] == {"parse": ["users"]}
+        assert followup.json["allowed_mentions"] == {"parse": []}
 
-    answer, followup = run(scenario).requests
-    assert answer.json["data"]["allowed_mentions"] is bot_default
-    assert followup.json["allowed_mentions"] is override
+    run_bot(scenario, allowed_mentions=AllowedMentions(parse=("users",)))
 
 
-def test_autocomplete_answers_once_with_choices() -> None:
-    choices = [{"name": "bostie", "value": "bostie"}]
+def test_autocomplete_sees_the_options_filled_so_far_and_the_command_name() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        seen: list[tuple[object, str | None]] = []
 
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(AutocompleteContext, http)
-        await ctx._respond(choices)
-        with pytest.raises(InteractionResponded):
-            await ctx._respond(choices)
+        async def suggest(ctx: AutocompleteContext, value: str) -> list[str]:
+            seen.append((ctx.options, ctx.command_name))
+            return [value]
 
-        assert ctx.options == {"limit": 10, "query": "lyre"}
-        assert ctx.command_name == "search"
+        @bot.command
+        async def search(
+            ctx: Context,
+            query: Annotated[str, Option(autocomplete=suggest)],
+            limit: int = 5,
+        ) -> None:
+            pass
 
-    (request,) = run(scenario).requests
-    assert request.json == {"type": 8, "data": {"choices": choices}}
+        data = payloads.command(
+            "search",
+            payloads.option("limit", 4, 10),
+            payloads.option("query", 3, "lyre", focused=True),
+        )
+        async with running(bot, fake):
+            await fake.interaction(4, data)
+
+        assert seen == [({"limit": 10, "query": "lyre"}, "search")]
+
+    run(scenario)
 
 
 def test_command_name_includes_groups_and_subcommands() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        assert context(Context, http).command_name == "kit inspect all"
-        assert context(ComponentContext, http).command_name is None
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        names: list[str | None] = []
+        inspect = bot.group("kit", "Kit").group("inspect", "Inspect")
+
+        @inspect.command(name="all")
+        async def inspect_all(ctx: Context) -> None:
+            names.append(ctx.command_name)
+            await ctx.respond("ok")
+
+        @bot.on_component("tap")
+        async def tap(ctx: ComponentContext) -> None:
+            names.append(ctx.command_name)
+            await ctx.update("ok")
+
+        subcommand = payloads.group("inspect", payloads.subcommand("all"))
+        async with running(bot, fake):
+            await fake.interaction(2, payloads.command("kit", subcommand))
+            await fake.interaction(3, payloads.button("tap"))
+
+        assert names == ["kit inspect all", None]
 
     run(scenario)
 
 
 @pytest.mark.parametrize("call", list(CALLS))
-def test_an_expired_interaction_sends_nothing(call: str) -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(ComponentContext, http, age=15 * 60 + 1)
-        with pytest.raises(InteractionExpired):
-            await CALLS[call](ctx)
+def test_an_expired_interaction_sends_nothing(
+    call: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("bostie.context.TOKEN_LIFETIME", -1)
 
-    assert run(scenario).requests == []
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ComponentContext) -> None:
+            with pytest.raises(InteractionExpired):
+                await CALLS[call](ctx)
+
+        assert await on.answer(ComponentContext, handler) == []
+
+    run_bot(scenario)
 
 
 def test_auto_defer_fires_at_receipt_plus_the_delay() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, ephemeral=True, auto_defer=0.05)
-        with ctx.auto_defer():
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
             await asyncio.sleep(0.01)
-            assert http.requests == []
+            assert on.fake.requests[start:] == []
             await asyncio.sleep(0.15)
+            assert ctx.state is ResponseState.DEFERRED
 
-        assert ctx.state is ResponseState.DEFERRED
+        start = len(on.fake.requests)
+        (request,) = await on.answer(Context, handler, ephemeral=True)
+        assert request.json == {"type": 5, "data": {"flags": EPHEMERAL}}
 
-    (request,) = run(scenario).requests
-    assert request.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+    run_bot(scenario, auto_defer=0.05)
 
 
-@pytest.mark.parametrize(
-    ("kind", "sent", "after"),
-    [
-        (Context, CALLBACK_5, ResponseState.DEFERRED),
-        (ComponentContext, CALLBACK_6, ResponseState.DEFERRED_UPDATE),
-    ],
-)
-def test_auto_defer_fires_at_once_when_the_delay_already_passed(
-    kind: type[Context], sent: tuple[str, str, int], after: ResponseState
-) -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(kind, http, age=10, auto_defer=2.5)
-        with ctx.auto_defer():
-            await asyncio.sleep(0.01)
-            assert http.calls == [sent]
+def test_a_component_auto_defer_acknowledges_without_a_message() -> None:
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ComponentContext) -> None:
+            await asyncio.sleep(0.05)
+            assert ctx.state is ResponseState.DEFERRED_UPDATE
 
-        assert ctx.state is after
+        assert calls(await on.answer(ComponentContext, handler)) == [CALLBACK_6]
 
-    run(scenario)
+    run_bot(scenario, auto_defer=0.01)
 
 
 def test_no_auto_defer_after_a_response() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, auto_defer=0.05)
-        with ctx.auto_defer():
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
             await ctx.respond("fast")
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.1)
 
-    assert run(scenario).calls == [CALLBACK_4]
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_4]
+
+    run_bot(scenario, auto_defer=0.05)
 
 
 def test_no_auto_defer_after_the_handler_finished() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, auto_defer=0.05)
-        with ctx.auto_defer():
-            await asyncio.sleep(0)
-        await asyncio.sleep(0.15)
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            pass
 
-        assert ctx.state is ResponseState.PENDING
+        start = len(on.fake.requests)
+        await on.answer(Context, handler)
+        await asyncio.sleep(0.1)
+        assert on.fake.requests[start:] == []
 
-    assert run(scenario).requests == []
+    run_bot(scenario, auto_defer=0.05)
 
 
 def test_auto_defer_waits_for_a_response_in_flight_and_then_does_nothing() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, age=10, auto_defer=2.5)
-        http.gate.clear()
-        answer = asyncio.create_task(ctx.respond("slow"))
-        await asyncio.sleep(0)
-        with ctx.auto_defer():
-            await asyncio.sleep(0.01)
-            http.gate.set()
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            release = on.fake.hold("POST", CALLBACK)
+            answer = asyncio.create_task(ctx.respond("slow"))
+            await asyncio.sleep(0.05)
+            release.set()
             await answer
             await asyncio.sleep(0.01)
 
-    assert run(scenario).calls == [CALLBACK_4]
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_4]
+
+    run_bot(scenario, auto_defer=0.01)
 
 
 def test_a_response_waits_for_an_auto_defer_in_flight_and_edits_it() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, age=10, auto_defer=2.5)
-        http.gate.clear()
-        with ctx.auto_defer():
-            await asyncio.sleep(0.01)
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            release = on.fake.hold("POST", CALLBACK)
+            await asyncio.sleep(0.05)
             answer = asyncio.create_task(ctx.respond("after the defer"))
             await asyncio.sleep(0.01)
-            http.gate.set()
+            release.set()
             await answer
+            assert ctx.state is ResponseState.RESPONDED
 
-        assert ctx.state is ResponseState.RESPONDED
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_5, EDIT]
 
-    assert run(scenario).calls == [CALLBACK_5, EDIT]
-
-
-def error(status: int, code: int) -> HTTPException:
-    kind = NotFound if status == 404 else HTTPException
-    return kind(status, code, "dead token", {}, b"")
+    run_bot(scenario, auto_defer=0.01)
 
 
-@pytest.mark.parametrize(
-    "dead", [error(404, 10062), error(404, 10015), error(401, 50027)]
-)
+@pytest.mark.parametrize(("status", "code"), [(404, 10062), (404, 10015), (401, 50027)])
 def test_a_dead_token_expires_the_context_and_nothing_is_sent_again(
-    dead: HTTPException,
+    status: int, code: int
 ) -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(ComponentContext, http)
-        http.failures.append(dead)
-        with pytest.raises(HTTPException):
-            await ctx.respond("hi")
-        assert ctx.state is ResponseState.EXPIRED
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ComponentContext) -> None:
+            on.fake.fail("POST", CALLBACK, status, {"code": code, "message": "dead"})
+            with pytest.raises(HTTPException):
+                await ctx.respond("hi")
+            assert ctx.state is ResponseState.EXPIRED
 
-        for call in CALLS.values():
-            with pytest.raises(InteractionExpired):
-                await call(ctx)
+            for call in CALLS.values():
+                with pytest.raises(InteractionExpired):
+                    await call(ctx)
 
-    assert run(scenario).calls == [CALLBACK_4]
+        assert calls(await on.answer(ComponentContext, handler)) == [CALLBACK_4]
+
+    run_bot(scenario)
 
 
 def test_a_dead_token_after_a_defer_is_never_edited_again() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        await ctx.defer()
-        http.failures.append(error(404, 10015))
-        with pytest.raises(NotFound):
-            await ctx.respond("hi")
-        with pytest.raises(InteractionExpired):
-            await ctx.respond("again")
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.defer()
+            on.fake.fail("PATCH", WEBHOOK, 404, {"code": 10015, "message": "gone"})
+            with pytest.raises(NotFound):
+                await ctx.respond("hi")
+            with pytest.raises(InteractionExpired):
+                await ctx.respond("again")
 
-    assert run(scenario).calls == [CALLBACK_5, EDIT]
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_5, EDIT]
+
+    run_bot(scenario)
 
 
 def test_an_unknown_follow_up_message_keeps_the_context_alive() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http)
-        await ctx.respond("hi")
-        http.failures.append(error(404, 10008))
-        with pytest.raises(NotFound):
-            await ctx.followup("gone")
-        await ctx.followup("still works")
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.respond("hi")
+            on.fake.fail("POST", WEBHOOK, 404, {"code": 10008, "message": "gone"})
+            with pytest.raises(NotFound):
+                await ctx.followup("gone")
+            await ctx.followup("still works")
+            assert ctx.state is ResponseState.RESPONDED
 
-        assert ctx.state is ResponseState.RESPONDED
+        requests = await on.answer(Context, handler)
+        assert calls(requests) == [CALLBACK_4, FOLLOWUP, FOLLOWUP]
 
-    assert run(scenario).calls == [CALLBACK_4, FOLLOWUP, FOLLOWUP]
+    run_bot(scenario)
 
 
 def test_a_failed_auto_defer_on_a_dead_token_stops_the_answer() -> None:
-    async def scenario(http: RecordingHTTP) -> None:
-        ctx = context(Context, http, age=10, auto_defer=2.5)
-        http.failures.append(error(404, 10062))
-        with ctx.auto_defer():
-            await asyncio.sleep(0.01)
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            on.fake.fail("POST", CALLBACK, 404, {"code": 10062, "message": "dead"})
+            await asyncio.sleep(0.05)
             with pytest.raises(InteractionExpired):
                 await ctx.respond("late")
 
-    assert run(scenario).calls == [CALLBACK_5]
+        assert calls(await on.answer(Context, handler)) == [CALLBACK_5]
+
+    run_bot(scenario, auto_defer=0.01)
 
 
 def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
     v2 = MessageFlags.IS_COMPONENTS_V2
     text = {"type": 10, "content": "hi"}
 
-    async def scenario(http: RecordingHTTP) -> None:
-        answered = context(ComponentContext, http)
-        await answered.respond(components=[text], ephemeral=True)
-        await answered.followup(flags=MessageFlags.SUPPRESS_NOTIFICATIONS)
-        await answered.edit(components=[text])
-        deferred = context(Context, http)
-        await deferred.defer(ephemeral=True)
-        await deferred.respond(components=[text])
-        await context(ComponentContext, http).update(components=[text])
+    async def scenario(on: Interactions) -> None:
+        async def answered(ctx: ComponentContext) -> None:
+            await ctx.respond(components=[text], ephemeral=True)
+            await ctx.followup(flags=MessageFlags.SUPPRESS_NOTIFICATIONS)
+            await ctx.edit(components=[text])
 
-    answer, followup, edit, _, filled, updated = run(scenario).requests
-    assert answer.json["data"]["flags"] == v2 | EPHEMERAL
-    assert followup.json["flags"] == MessageFlags.SUPPRESS_NOTIFICATIONS
-    assert edit.json["flags"] == v2
-    cleared = {"components": [text], "flags": v2, "content": None, "embeds": []}
-    assert filled.json == cleared
-    assert updated.json["data"] == cleared
+        async def deferred(ctx: Context) -> None:
+            await ctx.defer(ephemeral=True)
+            await ctx.respond(components=[text])
+
+        async def updated(ctx: ComponentContext) -> None:
+            await ctx.update(components=[text])
+
+        answer, followup, edit = await on.answer(ComponentContext, answered)
+        _, filled = await on.answer(Context, deferred)
+        (update,) = await on.answer(ComponentContext, updated)
+        assert answer.json["data"]["flags"] == v2 | EPHEMERAL
+        assert followup.json["flags"] == MessageFlags.SUPPRESS_NOTIFICATIONS
+        assert edit.json["flags"] == v2
+        cleared = {"components": [text], "flags": v2, "content": None, "embeds": []}
+        assert filled.json == cleared | {"allowed_mentions": MENTIONS}
+        assert update.json["data"] == cleared | {"allowed_mentions": MENTIONS}
+
+    run_bot(scenario)
 
 
 def test_answers_send_their_files_and_edits_keep_only_the_listed_attachments() -> None:
     files = [File("new.png", b"png")]
     kept = 1564609863064092673
 
-    async def scenario(http: RecordingHTTP) -> None:
-        await context(ComponentContext, http).update(attachments=[kept])
-        ctx = context(Context, http)
-        await ctx.respond("hi", files=files)
-        await ctx.followup(files=files)
-        await ctx.edit(files=files, attachments=[kept])
+    async def scenario(on: Interactions) -> None:
+        async def updated(ctx: ComponentContext) -> None:
+            await ctx.update(attachments=[kept])
 
-    update, answer, followup, edit = run(scenario).requests
-    new = {"id": 0, "filename": "new.png"}
-    assert [answer.files, followup.files, edit.files] == [files] * 3
-    assert answer.json["data"]["attachments"] == [new]
-    assert followup.json == {"attachments": [new]}
-    assert edit.json["attachments"] == [{"id": kept}, new]
-    assert update.json["data"]["attachments"] == [{"id": kept}]
+        async def answered(ctx: Context) -> None:
+            await ctx.respond("hi", files=files)
+            await ctx.followup(files=files)
+            await ctx.edit(files=files, attachments=[kept])
+
+        (update,) = await on.answer(ComponentContext, updated)
+        answer, followup, edit = await on.answer(Context, answered)
+        new = {"id": 0, "filename": "new.png"}
+        for request in (answer, followup, edit):
+            assert [(part.filename, part.data) for part in request.parts[1:]] == [
+                ("new.png", b"png")
+            ]
+        assert answer.json["data"]["attachments"] == [new]
+        assert followup.json["attachments"] == [new]
+        assert edit.json["attachments"] == [{"id": kept}, new]
+        assert update.json["data"]["attachments"] == [{"id": kept}]
+
+    run_bot(scenario)

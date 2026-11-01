@@ -84,7 +84,7 @@ def test_ping_answers_pong() -> None:
     run(scenario)
 ```
 
-`running(bot, fake)` starts the bot, waits for READY and closes it at the end. `fake.dispatch(name, d)` sends a dispatch, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that status, which also covers routes the fake doesn't model. `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `move_bot` and `kick_bot` move the bot around. It doesn't speak DAVE; the Rust tests cover that. Use these fakes rather than `unittest.mock`.
+`running(bot, fake)` starts the bot, waits for READY and closes it at the end. `fake.dispatch(name, d)` sends a dispatch, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that status, which also covers routes the fake doesn't model. `fake.hold(method, route_prefix)` keeps the next matching request waiting until you set the event it returns. `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `move_bot` and `kick_bot` move the bot around. It doesn't speak DAVE; the Rust tests cover that. Use these fakes rather than `unittest.mock`.
 
 Test what a user could notice: a return value, an event, a packet sent, an error raised. Log text and call order count only when they are the feature. Anything mypy, stubtest or clippy already catches needs no test.
 

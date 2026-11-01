@@ -53,7 +53,7 @@ class SyncResult:
 
 
 async def sync_commands(
-    http: Any,
+    http: "HTTPClient",
     application_id: int,
     commands: Sequence[Command | Group],
     guild_ids: Iterable[int],
