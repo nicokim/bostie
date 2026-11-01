@@ -206,7 +206,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 
 - `intents`: the gateway intents. The default, `Intents.DEFAULT`, is every intent except the privileged ones. A privileged intent must also be turned on in the Developer Portal.
 - `dev_guilds`: guild ids to sync commands to. When set, commands sync to these guilds only and global commands are left alone. Leave it empty to sync globally.
-- `sync_commands`: `False` skips the startup sync. `await bot.sync_commands()` syncs again while the bot is running.
+- `auto_sync`: `False` skips the startup sync. `await bot.sync_commands()` syncs again while the bot is running.
 - `auto_defer`: seconds before an unanswered handler is deferred, or `None` to never defer. `@bot.command(auto_defer=...)` overrides it for one command.
 - `cache`: `False` leaves `bot.cache` empty. By default it keeps guilds, channels, threads and roles current.
 - `allowed_mentions`: who the bot's messages may ping. The default allows users and roles, not `@everyone`.

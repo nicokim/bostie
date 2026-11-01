@@ -104,7 +104,7 @@ class Bot(Router):
         *,
         intents: Intents = Intents.DEFAULT,
         dev_guilds: Iterable[int] = (),
-        sync_commands: bool = True,
+        auto_sync: bool = True,
         auto_defer: float | None = 2.5,
         cache: bool = True,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
@@ -120,7 +120,7 @@ class Bot(Router):
         self.application_id: int | None = None
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
-        self._autosync = sync_commands
+        self._auto_sync = auto_sync
         self._auto_defer = auto_defer
         self._caching = cache
         self._allowed_mentions = allowed_mentions
@@ -210,7 +210,7 @@ class Bot(Router):
                     )
                 application = await http.request("GET", "/applications/@me")
                 self.application_id = int(application["id"])
-                if self._autosync:
+                if self._auto_sync:
                     await sync.sync_commands(
                         http,
                         self.application_id,
