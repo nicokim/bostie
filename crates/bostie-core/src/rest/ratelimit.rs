@@ -159,6 +159,8 @@ impl InteractionBuckets {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::FutureExt;
+    use proptest::prelude::*;
     use reqwest::header::HeaderValue;
     use twilight_http_ratelimiting::Method;
 
@@ -184,29 +186,33 @@ mod tests {
     }
 
     #[test]
-    fn a_route_limit_keeps_the_four_bucket_headers() {
+    fn a_user_unknown_or_missing_scope_is_a_route_limit_with_its_bucket() {
         let now = Instant::now();
-        let response = headers(&[
+        let route = [
             ("retry-after", "65"),
             ("x-ratelimit-limit", "10"),
             ("x-ratelimit-remaining", "0"),
             ("x-ratelimit-reset-after", "64.57"),
             ("x-ratelimit-bucket", "abcd1234"),
-            ("x-ratelimit-scope", "user"),
-        ]);
+        ];
+        for scope in [Some("user"), Some("weird"), None] {
+            let scope = scope.map(|scope| ("x-ratelimit-scope", scope));
+            let response = headers(&[&route[..], scope.as_slice()].concat());
 
-        let parsed = ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, now);
+            let parsed = ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, now);
 
-        assert_eq!(
-            parsed.bucket,
-            Some(RateLimitHeaders {
-                bucket: b"abcd1234".to_vec(),
-                limit: 10,
-                remaining: 0,
-                reset_at: now + Duration::from_secs_f64(64.57),
-            })
-        );
-        assert_eq!(parsed.limited, limited(Scope::Route, 65.0));
+            assert_eq!(
+                parsed.bucket,
+                Some(RateLimitHeaders {
+                    bucket: b"abcd1234".to_vec(),
+                    limit: 10,
+                    remaining: 0,
+                    reset_at: now + Duration::from_secs_f64(64.57),
+                }),
+                "{scope:?}"
+            );
+            assert_eq!(parsed.limited, limited(Scope::Route, 65.0), "{scope:?}");
+        }
     }
 
     #[test]
@@ -257,13 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn a_429_without_retry_after_waits_the_fallback_not_the_bucket_reset() {
+    fn a_429_without_a_readable_retry_after_waits_the_fallback() {
         let now = Instant::now();
         for (response, scope) in [
             (
                 headers(&[("x-ratelimit-reset-after", "64.57")]),
                 Scope::Global,
             ),
+            (headers(&[("retry-after", "soon")]), Scope::Global),
             (
                 headers(&[
                     ("x-ratelimit-limit", "1"),
@@ -282,39 +289,65 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_headers_teach_nothing() {
-        let response = headers(&[
+    fn missing_or_malformed_route_headers_teach_nothing() {
+        let complete = [
             ("x-ratelimit-limit", "5"),
+            ("x-ratelimit-remaining", "4"),
             ("x-ratelimit-reset-after", "1"),
             ("x-ratelimit-bucket", "abcd1234"),
-        ]);
+        ];
+        for (name, value) in [
+            ("x-ratelimit-remaining", None),
+            ("x-ratelimit-remaining", Some("x")),
+            ("x-ratelimit-limit", Some("70000")),
+            ("x-ratelimit-reset-after", Some("-1")),
+        ] {
+            let mut pairs: Vec<_> = complete
+                .iter()
+                .filter(|(key, _)| *key != name)
+                .copied()
+                .collect();
+            pairs.extend(value.map(|value| (name, value)));
 
-        let parsed = ResponseLimits::parse(StatusCode::OK, &response, Instant::now());
+            let parsed = ResponseLimits::parse(StatusCode::OK, &headers(&pairs), Instant::now());
 
-        assert_eq!(parsed.bucket, None);
-        assert_eq!(parsed.limited, None);
+            assert_eq!(parsed.bucket, None, "{name} {value:?}");
+            assert_eq!(parsed.limited, None, "{name} {value:?}");
+        }
     }
 
-    #[test]
-    fn hostile_wait_values_are_bounded() {
-        for (retry_after, expected) in [
-            ("1e300", LONGEST_HONORED_WAIT),
-            ("inf", LONGEST_HONORED_WAIT),
-            ("-1", FALLBACK_RETRY_AFTER),
-            ("NaN", FALLBACK_RETRY_AFTER),
-            ("soon", FALLBACK_RETRY_AFTER),
-        ] {
-            let response = headers(&[("retry-after", retry_after)]);
+    proptest! {
+        #[test]
+        fn a_wait_is_any_non_negative_number_capped_at_a_day(seconds in any::<f64>()) {
+            let response: HeaderMap = [(
+                RETRY_AFTER,
+                HeaderValue::from_str(&seconds.to_string()).unwrap(),
+            )]
+            .into_iter()
+            .collect();
+            let expected = (seconds >= 0.0).then(|| {
+                if seconds >= LONGEST_HONORED_WAIT.as_secs_f64() {
+                    LONGEST_HONORED_WAIT
+                } else {
+                    Duration::from_secs_f64(seconds)
+                }
+            });
 
-            let parsed =
-                ResponseLimits::parse(StatusCode::TOO_MANY_REQUESTS, &response, Instant::now());
-
-            assert_eq!(
-                parsed.limited.map(|limited| limited.retry_after),
-                Some(expected),
-                "{retry_after}"
-            );
+            prop_assert_eq!(super::seconds(&response, RETRY_AFTER.as_str()), expected);
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shorter_global_pause_never_shortens_a_longer_one() {
+        let gate = GlobalGate::default();
+
+        gate.pause(Duration::from_millis(500));
+        gate.pause(Duration::from_millis(100));
+
+        tokio::time::advance(Duration::from_millis(200)).await;
+        assert!(gate.wait().now_or_never().is_none());
+        tokio::time::advance(Duration::from_millis(300)).await;
+        assert!(gate.wait().now_or_never().is_some());
     }
 
     #[test]

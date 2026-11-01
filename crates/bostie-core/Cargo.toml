@@ -33,6 +33,7 @@ openmls.workspace = true
 openmls_basic_credential.workspace = true
 openmls_rust_crypto.workspace = true
 proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 tokio-websockets = { workspace = true, features = ["server"] }
 tracing-subscriber.workspace = true
 
