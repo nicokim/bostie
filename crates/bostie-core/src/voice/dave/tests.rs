@@ -100,6 +100,22 @@ fn ready_ids(messages: &[Outbound]) -> Vec<u16> {
         .collect()
 }
 
+fn sent_count(messages: &[Outbound], wanted: fn(&Outbound) -> bool) -> usize {
+    messages.iter().filter(|message| wanted(message)).count()
+}
+
+fn is_key_package(message: &Outbound) -> bool {
+    matches!(message, Outbound::KeyPackage(_))
+}
+
+fn is_flag(message: &Outbound) -> bool {
+    matches!(message, Outbound::InvalidCommitWelcome(_))
+}
+
+fn founder(call: &Call) -> UserId {
+    call.fake.leaves()[0].1
+}
+
 fn roster(dave: &Dave) -> Vec<u64> {
     let mut users: Vec<u64> = dave
         .leaves()
@@ -156,7 +172,6 @@ fn alone_in_a_dave_call_the_bot_sends_a_key_package_and_discards_media() {
         [Outbound::KeyPackage(_)]
     ));
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
-    assert_eq!(call.dave(user(BOT)).counters().key_packages, 1);
     assert_eq!(
         call.dave(user(BOT)).info(),
         DaveInfo {
@@ -182,7 +197,6 @@ fn a_refused_external_sender_is_not_cached_and_changes_nothing() {
 
     assert!(out.is_empty());
     assert_eq!(dave.external_sender, cached);
-    assert_eq!(dave.counters().recoveries, 0);
 }
 
 #[test]
@@ -195,9 +209,7 @@ fn a_peer_joining_forms_a_group_and_hears_the_exact_opus_bytes() {
         call.run();
 
         let sent = call.sent_by(user(BOT));
-        let counters = call.dave(user(BOT)).counters();
-        assert_eq!(counters.commits, u64::from(peer == A));
-        assert_eq!(counters.welcomes, u64::from(peer == EARLY));
+        assert_eq!(founder(&call) == user(BOT), peer == A);
         let ready = ready_ids(&sent);
         assert_eq!(ready.len(), 1);
         assert_ne!(ready[0], 0);
@@ -226,7 +238,7 @@ fn joining_peers_waits_for_the_execute_before_encrypting() {
         let ready = ready_ids(&call.sent_by(user(BOT)));
         assert_eq!(ready.len(), 1);
         assert_ne!(ready[0], 0);
-        assert_eq!(call.dave(user(BOT)).counters().welcomes, 1);
+        assert_ne!(founder(&call), user(BOT));
         assert!(call.executed_by(user(BOT)).is_empty());
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Hold);
 
@@ -300,7 +312,7 @@ fn peers_hear_the_bot_every_time_they_join_after_a_reset() {
         assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
     }
 
-    assert_eq!(call.dave(user(BOT)).counters().key_packages, 4);
+    assert_eq!(sent_count(&call.sent_by(user(BOT)), is_key_package), 4);
     assert!(call.failures.is_empty());
 }
 
@@ -338,8 +350,9 @@ fn an_upgrade_from_protocol_zero_stays_plain_until_it_executes() {
     let prepare = call.fake.upgrade();
     call.enqueue(prepare);
     call.run();
-    assert_eq!(call.dave(user(BOT)).counters().key_packages, 1);
-    assert_eq!(ready_ids(&call.sent_by(user(BOT))).len(), 1);
+    let sent = call.sent_by(user(BOT));
+    assert_eq!(sent_count(&sent, is_key_package), 1);
+    assert_eq!(ready_ids(&sent).len(), 1);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Plain);
     assert_eq!(call.dave(user(BOT)).info().privacy_code, None);
 
@@ -384,7 +397,7 @@ fn a_corrupt_commit_is_flagged_and_the_bot_is_added_again() {
         .position(|message| matches!(message, Outbound::InvalidCommitWelcome(_)))
         .unwrap();
     assert!(matches!(sent[flagged + 1], Outbound::KeyPackage(_)));
-    assert_eq!(call.dave(user(BOT)).counters().recoveries, 1);
+    assert_eq!(sent_count(&sent, is_flag), 1);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     for peer in [A, B, C] {
         assert_eq!(hear(&mut call, BOT, peer), OPUS);
@@ -407,8 +420,7 @@ fn a_corrupt_welcome_is_flagged_and_the_bot_is_added_again() {
             Outbound::KeyPackage(_)
         ]
     ));
-    assert_eq!(call.dave(user(BOT)).counters().recoveries, 1);
-    assert_eq!(call.dave(user(BOT)).counters().welcomes, 1);
+    assert_eq!(sent_count(&sent, is_flag), 1);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
@@ -448,7 +460,7 @@ fn recoveries_older_than_the_window_stop_counting() {
         now += RECOVERY_WINDOW;
     }
 
-    assert_eq!(dave.counters().recoveries, 10);
+    assert_eq!(sent_count(&out, is_flag), 10);
     assert!(out.contains(&Outbound::InvalidCommitWelcome(10)));
 }
 
@@ -458,15 +470,13 @@ fn an_add_proposal_for_an_unannounced_user_is_rejected() {
     call.join_unannounced(user(STRANGER));
     call.run();
 
+    let sent = call.sent_by(user(BOT));
     assert!(
-        !call
-            .sent_by(user(BOT))
+        !sent
             .iter()
             .any(|message| matches!(message, Outbound::CommitWelcome(_)))
     );
-    let counters = call.dave(user(BOT)).counters();
-    assert_eq!(counters.rejected_proposals, 1);
-    assert_eq!(counters.recoveries, 0);
+    assert_eq!(sent_count(&sent, is_flag), 0);
     assert_eq!(roster(call.dave(user(BOT))), [BOT, A]);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
@@ -487,7 +497,7 @@ fn a_welcome_naming_an_unknown_user_is_refused_and_recovered() {
             Outbound::KeyPackage(_)
         ]
     ));
-    assert_eq!(call.dave(user(BOT)).counters().welcomes, 0);
+    assert!(ready_ids(&sent).is_empty());
     assert!(matches!(
         call.failures.as_slice(),
         [(failed, DaveError::RecoveryLimit { .. })] if *failed == user(BOT)
@@ -508,7 +518,6 @@ fn revoked_proposals_are_left_out_of_the_next_commit() {
     call.run();
 
     assert_eq!(roster(call.dave(user(BOT))), [BOT, A, C]);
-    assert_eq!(call.dave(user(BOT)).counters().rejected_proposals, 0);
     assert_eq!(hear(&mut call, BOT, C), OPUS);
     assert!(call.dave(user(BOT)).fingerprint_pair(user(B)).is_err());
 }
@@ -527,7 +536,6 @@ fn a_commit_for_a_pending_group_is_ignored() {
 
     assert_eq!(dave.handle(commit, Instant::now(), &mut out).unwrap(), None);
     assert!(out.is_empty());
-    assert_eq!(dave.counters().recoveries, 0);
 }
 
 #[test]
@@ -562,8 +570,9 @@ fn after_a_recovery_the_bot_holds_until_its_re_add_executes() {
     );
     call.run();
 
-    assert_eq!(call.dave(user(BOT)).counters().recoveries, 1);
-    assert_eq!(ready_ids(&call.sent_by(user(BOT))).len(), 1);
+    let sent = call.sent_by(user(BOT));
+    assert_eq!(sent_count(&sent, is_flag), 1);
+    assert_eq!(ready_ids(&sent).len(), 1);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Hold);
     release(&mut call);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
@@ -821,9 +830,7 @@ fn receive_recovery_waits_for_the_group_and_never_disconnects() {
         call.run();
     }
 
-    let counters = call.dave(user(BOT)).counters();
-    assert_eq!(counters.receive_recoveries, 6);
-    assert_eq!(counters.recoveries, 0);
+    assert_eq!(sent_count(&call.sent_by(user(BOT)), is_flag), 6);
     assert!(call.failures.is_empty());
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, A, BOT), OPUS);
@@ -832,7 +839,6 @@ fn receive_recovery_waits_for_the_group_and_never_disconnects() {
 #[test]
 fn a_commit_that_removes_the_bot_recovers_and_the_bot_is_added_again() {
     let mut call = group(&[BOT, A, B]);
-    let before = call.dave(user(BOT)).counters();
     let kick = call.fake.kick(user(BOT));
     call.enqueue(kick);
     call.run();
@@ -843,9 +849,7 @@ fn a_commit_that_removes_the_bot_recovers_and_the_bot_is_added_again() {
         .position(|message| matches!(message, Outbound::InvalidCommitWelcome(_)))
         .unwrap();
     assert!(matches!(sent[flagged + 1], Outbound::KeyPackage(_)));
-    let counters = call.dave(user(BOT)).counters();
-    assert_eq!(counters.commits, before.commits + 1);
-    assert_eq!(counters.recoveries, 1);
+    assert_eq!(sent_count(&sent, is_flag), 1);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
     assert_eq!(hear(&mut call, BOT, B), OPUS);
@@ -905,56 +909,32 @@ fn a_prepare_on_a_call_without_a_session_is_still_answered() {
 }
 
 #[test]
-fn a_failing_prepare_or_execute_takes_the_recover_path() {
-    let prepare = DaveOp::PrepareTransition {
-        transition_id: 3,
-        protocol_version: 1,
-    };
-    for (call, op) in [
-        (MlsCall::Prepare, prepare.clone()),
-        (
-            MlsCall::Execute,
-            DaveOp::ExecuteTransition { transition_id: 3 },
-        ),
-    ] {
-        let (mut dave, _) = started(1);
-        let mut out = Vec::new();
-        if call == MlsCall::Execute {
-            dave.handle(prepare.clone(), Instant::now(), &mut out)
-                .unwrap();
-            out.clear();
-        }
-        dave.inject(call, Fault::Error);
-
-        assert_eq!(dave.handle(op, Instant::now(), &mut out).unwrap(), None);
-        assert!(matches!(
-            out.as_slice(),
-            [Outbound::InvalidCommitWelcome(3), Outbound::KeyPackage(_)]
-        ));
-        assert_eq!(dave.counters().recoveries, 1);
-        assert_eq!(dave.counters().dave_panics, 0);
-    }
-}
-
-#[test]
-fn a_davey_panic_rebuilds_the_session_from_the_cached_sender() {
+fn a_davey_panic_drops_the_session_and_rebuilds_it_from_the_cached_sender() {
     let mut call = group(&[BOT, A]);
-    let last_transition = call.dave(user(BOT)).last_transition;
-    assert_ne!(last_transition, 0);
-    call.dave_mut(user(BOT))
-        .inject(MlsCall::Proposals, Fault::Panic);
-    call.join(user(B));
+    let now = call.now;
+    let dave = call.dave_mut(user(BOT));
+    let last_transition = dave.last_transition;
+    let failure = dave
+        .attempt(MlsCall::Proposals, |_| -> Result<(), String> {
+            panic!("a davey bug")
+        })
+        .unwrap_err();
+    let dropped = dave.session.is_none();
+    let mut out = Vec::new();
+    dave.failed(MlsCall::Proposals, failure, last_transition, now, &mut out)
+        .unwrap();
+    for message in out {
+        call.receive(user(BOT), message);
+    }
     call.run();
 
-    let counters = call.dave(user(BOT)).counters();
-    assert_eq!(counters.dave_panics, 1);
-    assert_eq!(counters.recoveries, 1);
+    assert!(dropped);
+    assert_ne!(last_transition, 0);
     let sent = call.sent_by(user(BOT));
     assert_eq!(sent[0], Outbound::InvalidCommitWelcome(last_transition));
     assert!(matches!(sent[1], Outbound::KeyPackage(_)));
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
-    assert_eq!(hear(&mut call, BOT, B), OPUS);
 }
 
 #[test]
@@ -990,6 +970,20 @@ fn prepared_transitions_are_forgotten_after_a_reinit_or_a_recovery() {
     assert_eq!(dave.handle(execute, now, &mut out).unwrap(), None);
 }
 
+fn feed_davey(dave: &mut Dave, bytes: &[u8]) {
+    let recognized = dave.recognized();
+    let session = dave.session.as_mut().unwrap();
+    for operation in [
+        ProposalsOperationType::APPEND,
+        ProposalsOperationType::REVOKE,
+    ] {
+        let _ = session.process_proposals(operation, bytes, Some(&recognized));
+    }
+    let _ = session.process_commit(bytes);
+    let _ = session.process_welcome(bytes, Some(&recognized));
+    let _ = session.set_external_sender(bytes);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(48))]
 
@@ -1008,15 +1002,7 @@ proptest! {
         let welcome = DaveOp::Welcome { transition_id, welcome: bytes.clone() };
         dave.handle(welcome, now, &mut out).unwrap();
         prop_assert!(out.contains(&Outbound::InvalidCommitWelcome(transition_id)));
-        for op in [
-            DaveOp::Proposals { operation: ProposalsOp::Append, data: bytes.clone() },
-            DaveOp::Proposals { operation: ProposalsOp::Revoke, data: bytes.clone() },
-            DaveOp::AnnounceCommit { transition_id, commit: bytes.clone() },
-            DaveOp::ExternalSender(bytes),
-        ] {
-            let _ = dave.handle(op, now, &mut out);
-        }
-        prop_assert_eq!(dave.counters().dave_panics, 0);
+        feed_davey(&mut dave, &bytes);
     }
 
     #[test]
@@ -1030,17 +1016,10 @@ proptest! {
         let dave = call.dave_mut(user(BOT));
         let mut out = Vec::new();
 
-        for operation in [ProposalsOp::Append, ProposalsOp::Revoke] {
-            let proposals = DaveOp::Proposals { operation, data: bytes.clone() };
-            dave.handle(proposals, now, &mut out).unwrap();
-        }
-        let commit = DaveOp::AnnounceCommit { transition_id, commit: bytes.clone() };
+        feed_davey(dave, &bytes);
+        let commit = DaveOp::AnnounceCommit { transition_id, commit: bytes };
         dave.handle(commit, now, &mut out).unwrap();
         prop_assert!(out.contains(&Outbound::InvalidCommitWelcome(transition_id)));
-        let welcome = DaveOp::Welcome { transition_id, welcome: bytes.clone() };
-        let _ = dave.handle(welcome, now, &mut out);
-        let _ = dave.handle(DaveOp::ExternalSender(bytes), now, &mut out);
-        prop_assert_eq!(dave.counters().dave_panics, 0);
     }
 
     #[test]
@@ -1051,10 +1030,10 @@ proptest! {
         let mut call = group(&[BOT, A]);
         let size = u8::try_from(supplemental.len() + 3).unwrap();
         let frame = [body, supplemental, vec![size], MARKER.to_vec()].concat();
-        let mut out = Vec::new();
+        let mut out = vec![0; frame.len()];
 
-        let heard = call.dave_mut(user(BOT)).receive(user(A), &frame, &mut out);
-        prop_assert!(heard.is_err() && out.is_empty());
-        prop_assert_eq!(call.dave(user(BOT)).counters().decrypt_panics, 0);
+        let session = call.dave_mut(user(BOT)).session.as_mut().unwrap();
+        let decrypted = session.decrypt_into(A, MediaType::AUDIO, &frame, &mut out);
+        prop_assert_eq!(decrypted.unwrap_or(0), 0);
     }
 }

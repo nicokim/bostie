@@ -55,19 +55,6 @@ pub struct DaveInfo {
     pub privacy_code: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct DaveCounters {
-    pub key_packages: u64,
-    pub commits: u64,
-    pub welcomes: u64,
-    pub transitions_executed: u64,
-    pub recoveries: u64,
-    pub dave_panics: u64,
-    pub rejected_proposals: u64,
-    pub receive_recoveries: u64,
-    pub decrypt_panics: u64,
-}
-
 pub(crate) const RECOVERY_LIMIT: usize = 5;
 const RECOVERY_WINDOW: Duration = Duration::from_secs(60);
 
@@ -111,8 +98,8 @@ pub enum DaveError {
     Verification(#[source] Box<dyn Error + Send + Sync>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MlsCall {
+#[derive(Debug, Clone, Copy)]
+enum MlsCall {
     Create,
     ExternalSender,
     KeyPackage,
@@ -152,10 +139,7 @@ pub struct Dave {
     upgrade_passthrough: u32,
     settled: Option<Instant>,
     generation: u64,
-    counters: DaveCounters,
     decrypt_panicked: Throttle,
-    #[cfg(test)]
-    fault: Option<(MlsCall, Fault)>,
 }
 
 impl Dave {
@@ -177,10 +161,7 @@ impl Dave {
             upgrade_passthrough: tuning.upgrade_passthrough,
             settled: None,
             generation: 0,
-            counters: DaveCounters::default(),
             decrypt_panicked: Throttle::default(),
-            #[cfg(test)]
-            fault: None,
         }
     }
 
@@ -315,7 +296,6 @@ impl Dave {
         })) {
             Ok(result) => result.map_err(|error| decrypt_failure(&error)),
             Err(payload) => {
-                self.counters.decrypt_panics += 1;
                 if self.decrypt_panicked.allows(Instant::now()) {
                     error!(
                         panic = panic_message(payload.as_ref()),
@@ -347,7 +327,6 @@ impl Dave {
         if self.protocol_version == 0 || self.settling(now) {
             return Ok(false);
         }
-        self.counters.receive_recoveries += 1;
         let transition_id = self.last_transition;
         warn!(
             transition_id,
@@ -368,10 +347,6 @@ impl Dave {
                 .and_then(DaveSession::voice_privacy_code)
                 .map(str::to_owned),
         }
-    }
-
-    pub fn counters(&self) -> DaveCounters {
-        self.counters
     }
 
     pub fn fingerprint_pair(&self, user: UserId) -> Result<[Vec<u8>; 2], DaveError> {
@@ -420,8 +395,7 @@ impl Dave {
             Err(Failure::NoSession) if transition_id == 0 => return Ok(None),
             Err(Failure::NoSession) => {}
             Err(failure) => {
-                warn!(transition_id, %failure, "preparing a DAVE transition failed");
-                self.recover(transition_id, now, out)?;
+                self.failed(MlsCall::Prepare, failure, transition_id, now, out)?;
                 return Ok(None);
             }
         }
@@ -451,8 +425,7 @@ impl Dave {
                 Ok(None)
             }
             Err(failure) => {
-                warn!(transition_id, %failure, "executing a DAVE transition failed");
-                self.recover(transition_id, now, out)?;
+                self.failed(MlsCall::Execute, failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
@@ -470,7 +443,6 @@ impl Dave {
         self.recovering = false;
         self.settled = Some(now);
         self.generation = self.generation.wrapping_add(1);
-        self.counters.transitions_executed += 1;
         debug!(transition_id, protocol_version, "DAVE transition executed");
         Executed {
             protocol_version,
@@ -537,11 +509,10 @@ impl Dave {
                 debug!("already in a DAVE group, keeping its external sender");
                 Ok(())
             }
-            Err(Failure::Rejected(reason)) => {
-                warn!(%reason, "the DAVE external sender was refused");
-                Ok(())
+            Err(failure) => {
+                let transition_id = self.last_transition;
+                self.failed(MlsCall::ExternalSender, failure, transition_id, now, out)
             }
-            Err(Failure::Panicked) => self.recover(self.last_transition, now, out),
         }
     }
 
@@ -572,12 +543,10 @@ impl Dave {
                 Ok(())
             }
             Ok(None) | Err(Failure::NoSession) => Ok(()),
-            Err(Failure::Rejected(reason)) => {
-                self.counters.rejected_proposals += 1;
-                warn!(%reason, "DAVE proposals were rejected");
-                Ok(())
+            Err(failure) => {
+                let transition_id = self.last_transition;
+                self.failed(MlsCall::Proposals, failure, transition_id, now, out)
             }
-            Err(Failure::Panicked) => self.recover(self.last_transition, now, out),
         }
     }
 
@@ -599,7 +568,6 @@ impl Dave {
             }))
         }) {
             Ok(Some(kept)) => {
-                self.counters.commits += 1;
                 if kept {
                     return self.prepare(transition_id, self.version.get(), now, out);
                 }
@@ -615,8 +583,7 @@ impl Dave {
                 Ok(None)
             }
             Err(failure) => {
-                warn!(transition_id, %failure, "a DAVE commit was refused");
-                self.recover(transition_id, now, out)?;
+                self.failed(MlsCall::Commit, failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
@@ -635,17 +602,33 @@ impl Dave {
             session.process_welcome(welcome, Some(&recognized))
         }) {
             Ok(()) => {
-                self.counters.welcomes += 1;
                 self.settled = Some(now);
                 self.prepare(transition_id, self.version.get(), now, out)
             }
             Err(Failure::NoSession) => Ok(None),
             Err(failure) => {
-                warn!(transition_id, %failure, "a DAVE welcome was refused");
-                self.recover(transition_id, now, out)?;
+                self.failed(MlsCall::Welcome, failure, transition_id, now, out)?;
                 Ok(None)
             }
         }
+    }
+
+    fn failed(
+        &mut self,
+        call: MlsCall,
+        failure: Failure,
+        transition_id: u16,
+        now: Instant,
+        out: &mut Vec<Outbound>,
+    ) -> Result<(), DaveError> {
+        if let (MlsCall::ExternalSender | MlsCall::Proposals, Failure::Rejected(reason)) =
+            (call, &failure)
+        {
+            warn!(?call, %reason, "a DAVE message was refused and ignored");
+            return Ok(());
+        }
+        warn!(?call, transition_id, %failure, "a DAVE call failed");
+        self.recover(transition_id, now, out)
     }
 
     fn recover(
@@ -654,7 +637,6 @@ impl Dave {
         now: Instant,
         out: &mut Vec<Outbound>,
     ) -> Result<(), DaveError> {
-        self.counters.recoveries += 1;
         while self
             .recoveries
             .front()
@@ -702,7 +684,6 @@ impl Dave {
         }
         match self.attempt(MlsCall::KeyPackage, DaveSession::create_key_package) {
             Ok(key_package) => {
-                self.counters.key_packages += 1;
                 out.push(Outbound::KeyPackage(key_package));
                 Ok(())
             }
@@ -718,7 +699,7 @@ impl Dave {
                 Ok(Ok(session)) => session,
                 Ok(Err(error)) => return Err(DaveError::Session(error.into())),
                 Err(payload) => {
-                    self.panicked(MlsCall::Create, payload.as_ref());
+                    panicked(MlsCall::Create, payload.as_ref());
                     return Err(DaveError::Session(Failure::Panicked.into()));
                 }
             };
@@ -744,16 +725,7 @@ impl Dave {
         let Some(mut session) = self.session.take() else {
             return Err(Failure::NoSession);
         };
-        #[cfg(test)]
-        let fault = self
-            .fault
-            .take_if(|(target, _)| *target == call)
-            .map(|(_, fault)| fault);
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
-            #[cfg(test)]
-            if let Some(result) = fault.and_then(Fault::trigger) {
-                return result;
-            }
             run(&mut session).map_err(|error| error.to_string())
         }));
         match outcome {
@@ -762,20 +734,19 @@ impl Dave {
                 result.map_err(Failure::Rejected)
             }
             Err(payload) => {
-                self.panicked(call, payload.as_ref());
+                panicked(call, payload.as_ref());
                 Err(Failure::Panicked)
             }
         }
     }
+}
 
-    fn panicked(&mut self, call: MlsCall, payload: &(dyn Any + Send)) {
-        self.counters.dave_panics += 1;
-        error!(
-            ?call,
-            panic = panic_message(payload),
-            "a DAVE call panicked, its session is dropped"
-        );
-    }
+fn panicked(call: MlsCall, payload: &(dyn Any + Send)) {
+    error!(
+        ?call,
+        panic = panic_message(payload),
+        "a DAVE call panicked, its session is dropped"
+    );
 }
 
 pub fn has_marker(frame: &[u8]) -> bool {
@@ -783,37 +754,7 @@ pub fn has_marker(frame: &[u8]) -> bool {
 }
 
 #[cfg(test)]
-#[derive(Debug)]
-pub enum Fault {
-    Panic,
-    Error,
-    Park {
-        parked: std::sync::mpsc::Sender<()>,
-        release: std::sync::mpsc::Receiver<()>,
-    },
-}
-
-#[cfg(test)]
-impl Fault {
-    fn trigger<T>(self) -> Option<Result<T, String>> {
-        match self {
-            Self::Panic => panic!("injected DAVE panic"),
-            Self::Error => Some(Err("injected DAVE error".to_owned())),
-            Self::Park { parked, release } => {
-                parked.send(()).unwrap();
-                release.recv().unwrap();
-                None
-            }
-        }
-    }
-}
-
-#[cfg(test)]
 impl Dave {
-    pub fn inject(&mut self, call: MlsCall, fault: Fault) {
-        self.fault = Some((call, fault));
-    }
-
     pub fn leaves(&self) -> Vec<(u32, UserId)> {
         let group = self.session.as_ref().and_then(DaveSession::group);
         group

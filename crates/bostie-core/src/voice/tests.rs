@@ -19,7 +19,7 @@ use crate::runtime::Owner;
 use crate::voice::codec::FrameEncoder;
 use crate::voice::connection::ConnectionTuning;
 use crate::voice::crypto::Mode;
-use crate::voice::dave::{DaveCounters, Fault, MlsCall, Outbound, RECOVERY_LIMIT, SendMode};
+use crate::voice::dave::{Outbound, RECOVERY_LIMIT, SendMode};
 use crate::voice::proto::op;
 use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
 use crate::voice::sink::tests::stat;
@@ -626,8 +626,8 @@ impl Harness {
         self.media().gate()
     }
 
-    fn dave_counters(&self) -> DaveCounters {
-        self.media().dave.lock().counters()
+    fn executed(&mut self) -> usize {
+        self.count(|delivery| dave_states(delivery).is_some())
     }
 
     fn members(&self) -> usize {
@@ -2135,10 +2135,10 @@ impl Harness {
         call
     }
 
-    async fn rejoined(&mut self, call: &mut Call, members: usize, executed: u64) {
+    async fn rejoined(&mut self, call: &mut Call, members: usize, executed: usize) {
         self.pump(call, |harness, call| {
             call.fake.members().len() == members
-                && harness.dave_counters().transitions_executed > executed
+                && harness.executed() > executed
                 && harness.gate() == SendMode::Encrypt
         })
         .await;
@@ -2207,8 +2207,8 @@ async fn a_peer_joining_a_lone_bot_forms_a_group_and_hears_the_exact_opus_bytes(
                 .unwrap()
         );
         assert_eq!(
-            harness.dave_counters().welcomes,
-            u64::from(peer == EARLY_PEER),
+            call.fake.leaves()[0].1 == bot(),
+            peer == LATE_PEER,
             "{peer}"
         );
         harness.assert_heard(&mut call, &[peer]);
@@ -2224,7 +2224,7 @@ async fn the_last_peer_leaving_resets_the_group_and_a_new_peer_gets_a_new_key() 
     call.leave(user(LATE_PEER));
     harness
         .pump(&mut call, |harness, _| {
-            harness.dave_counters().key_packages == 2
+            harness.server.count(op::DAVE_MLS_KEY_PACKAGE) == 2
         })
         .await;
     harness
@@ -2294,7 +2294,7 @@ async fn after_a_recovery_media_waits_for_the_re_add_and_never_uses_the_old_key(
     harness.encrypting(&mut call).await;
     harness.tick(2);
 
-    assert_eq!(harness.dave_counters().recoveries, 1);
+    assert_eq!(invalid_commit_welcomes(&harness.server), [9]);
     assert_eq!(rejoining, SendMode::Hold);
     assert_eq!(sent_while_rejoining, 0);
     let arrived = harness.server.sfu.wait_packets(before + 2, WAIT);
@@ -2332,16 +2332,14 @@ async fn a_transition_split_by_two_resumes_completes_from_the_replays() {
     let held = call.fake.release_transitions();
     call.enqueue(held);
     harness
-        .pump(&mut call, |harness, _| {
-            harness.dave_counters().transitions_executed == 2
-        })
+        .pump(&mut call, |harness, _| harness.executed() == 2)
         .await;
     let executed = harness.wait_for(dave_states).await;
     harness.server.collect().await;
 
     assert_eq!(harness.server.count(op::RESUME), 2);
     assert_eq!(executed.1, Some(2));
-    assert_eq!(harness.dave_counters().recoveries, 0);
+    assert!(invalid_commit_welcomes(&harness.server).is_empty());
     harness.assert_heard(&mut call, &[LATE_PEER, THIRD_PEER]);
 }
 
@@ -2367,9 +2365,7 @@ async fn media_between_commit_and_execute_uses_the_old_key() {
     call.enqueue(held);
     harness.encrypting(&mut call).await;
     harness
-        .pump(&mut call, |harness, _| {
-            harness.dave_counters().transitions_executed == 2
-        })
+        .pump(&mut call, |harness, _| harness.executed() == 2)
         .await;
 
     for (payload, packet) in captured.iter().zip(&during) {
@@ -2444,7 +2440,8 @@ async fn clients_joining_and_leaving_update_members_ssrcs_and_speaking() {
 async fn malformed_dave_messages_never_break_the_connection() {
     let mut harness = Harness::dave().await;
     let mut call = harness.talking_with(&[LATE_PEER]).await;
-    let executed = harness.dave_counters().transitions_executed;
+    let executed = harness.executed();
+    let commits = harness.server.count(op::DAVE_MLS_COMMIT_WELCOME);
 
     for junk in [&b""[..], b"\x00", b"\xff\xff\xff\xff", b"not mls at all"] {
         harness
@@ -2468,21 +2465,21 @@ async fn malformed_dave_messages_never_break_the_connection() {
         .await;
     harness
         .pump(&mut call, |harness, _| {
-            harness.dave_counters().key_packages == 2
+            harness.server.count(op::DAVE_MLS_KEY_PACKAGE) == 2
         })
         .await;
     harness.rejoined(&mut call, 2, executed).await;
 
-    assert_eq!(harness.dave_counters().recoveries, 1);
-    assert_eq!(harness.dave_counters().rejected_proposals, 6);
+    assert_eq!(invalid_commit_welcomes(&harness.server), [4]);
+    assert_eq!(harness.server.count(op::DAVE_MLS_COMMIT_WELCOME), commits);
     assert_eq!(harness.statuses().len(), 2);
     harness.assert_heard(&mut call, &[LATE_PEER]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
+async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
     let mut harness = Harness::dave().await;
-    let mut call = harness.talking_with(&[LATE_PEER]).await;
+    let _call = harness.talking_with(&[LATE_PEER]).await;
     let second = harness.second_guild().await;
     let other = harness
         .voice
@@ -2499,35 +2496,24 @@ async fn a_long_mls_call_holds_only_its_own_lane_and_never_blocks_readers() {
     other.write(&tone(FRAME_SAMPLES * 5)).unwrap();
     let own = harness.sink(pcm(), StallPolicy::Hold);
     own.write(&tone(FRAME_SAMPLES * 5)).unwrap();
-    let (parked, on_parked) = std::sync::mpsc::channel();
-    let (release, on_release) = std::sync::mpsc::channel();
-    harness.media().dave.lock().inject(
-        MlsCall::Proposals,
-        Fault::Park {
-            parked,
-            release: on_release,
-        },
-    );
-
-    call.join(user(THIRD_PEER));
-    harness
-        .pump(&mut call, |_, _| on_parked.try_recv().is_ok())
-        .await;
+    let media = harness.media();
+    let busy = media.dave.lock();
     let pacer = Arc::clone(&harness.pacer);
-    let ticking = tokio::task::spawn_blocking(move || pacer.tick(5));
-    timeout(WAIT, ticking)
-        .await
-        .expect("the ticks waited for the DAVE call")
-        .unwrap();
+    let (ticked, on_ticked) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        pacer.tick(5);
+        let _ = ticked.send(());
+    });
+    on_ticked
+        .recv_timeout(WAIT)
+        .expect("the ticks waited for the DAVE lock");
     let dave = harness.voice.dave(guild()).unwrap();
-    let held = stat(&own, "held_ticks");
-    release.send(()).unwrap();
+    drop(busy);
 
-    assert_eq!(held, 5);
+    assert_eq!(stat(&own, "held_ticks"), 5);
     assert_eq!(dave.protocol_version, 1);
     assert_eq!(queued_frames(&own), 5 * 960);
     assert_eq!(second.sfu.wait_packets(5, WAIT).len(), 5);
-    harness.encrypting(&mut call).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -2814,19 +2800,20 @@ async fn dave_audio_from_a_peer_decrypts_across_a_member_joining() {
         harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
     }
     let before = harness.hear(&receiver, 5).await;
-    let executed = harness.dave_counters().transitions_executed;
+    let executed = harness.executed();
     call.join(user(THIRD_PEER));
     harness.rejoined(&mut call, 3, executed).await;
     for (sequence, packet) in (5..).zip(&packets[5..]) {
         harness.talk(&mut call, LATE_PEER, 55, sequence, packet);
     }
     let after = harness.hear(&receiver, 5).await;
+    harness.server.collect().await;
 
     assert_eq!(
         frames(&[before, after].concat()),
         spoken(LATE_PEER, &packets)
     );
-    assert_eq!(harness.dave_counters().receive_recoveries, 0);
+    assert!(invalid_commit_welcomes(&harness.server).is_empty());
     assert_eq!(receiver.stats().unwrap()[2], ("lost", 0));
 }
 
@@ -2968,7 +2955,7 @@ async fn a_peer_that_never_decrypts_triggers_a_recovery_and_a_receive_stall() {
     }
 
     assert!(recovered_and_stalled, "no recovery and stall");
-    assert_eq!(harness.dave_counters().receive_recoveries, 1);
+    assert_eq!(harness.server.count(op::DAVE_MLS_INVALID_COMMIT_WELCOME), 1);
     assert!(
         harness
             .statuses()

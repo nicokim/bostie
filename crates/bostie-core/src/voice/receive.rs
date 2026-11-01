@@ -776,7 +776,6 @@ impl State {
         now: Instant,
     ) -> (usize, bool) {
         let started = Instant::now();
-        let before = dave.counters();
         let generation = dave.generation();
         let protocol_version = self.media.protocol_version();
         let counting = protocol_version > 0 && !dave.settling(now);
@@ -855,9 +854,6 @@ impl State {
                     }
                 }
             }
-        }
-        if dave.counters() != before {
-            self.media.refresh(dave);
         }
         (cut, spent)
     }
