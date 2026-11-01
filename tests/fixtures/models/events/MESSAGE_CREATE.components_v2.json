@@ -1,0 +1,178 @@
+{
+  "id": "1564609998120714241",
+  "type": 0,
+  "channel_id": "1335173295636611073",
+  "author": {
+    "id": "1329027298099331073",
+    "username": "bostie",
+    "global_name": null,
+    "discriminator": "0000",
+    "avatar": null,
+    "bot": true,
+    "public_flags": 0
+  },
+  "content": "",
+  "timestamp": "2026-10-27T12:00:00.123000+00:00",
+  "edited_timestamp": null,
+  "tts": false,
+  "mention_everyone": false,
+  "mentions": [],
+  "mention_roles": [],
+  "attachments": [
+    {
+      "id": "1564609998347206656",
+      "filename": "manual.pdf",
+      "size": 482113,
+      "url": "https://cdn.discordapp.com/attachments/1335173295636611073/1564609998347206656/manual.pdf?ex=69005f00&is=68ff0d80&hm=4c1f",
+      "proxy_url": "https://media.discordapp.net/attachments/1335173295636611073/1564609998347206656/manual.pdf?ex=69005f00&is=68ff0d80&hm=4c1f",
+      "content_type": "application/pdf"
+    }
+  ],
+  "embeds": [],
+  "components": [
+    {
+      "type": 17,
+      "id": 1,
+      "accent_color": 703487,
+      "spoiler": false,
+      "components": [
+        {
+          "type": 10,
+          "id": 2,
+          "content": "# You have encountered a wild coyote!"
+        },
+        {
+          "type": 12,
+          "id": 3,
+          "items": [
+            {
+              "media": {
+                "url": "https://websitewithopensourceimages/coyote.webp",
+                "proxy_url": "https://images-ext-1.discordapp.net/external/bW9jaw/https/websitewithopensourceimages/coyote.webp",
+                "width": 1600,
+                "height": 900,
+                "placeholder": "HBkSHYSIeHiPiHh8eJd4eTN0EEQG",
+                "placeholder_version": 1,
+                "content_type": "image/webp",
+                "flags": 0
+              },
+              "description": null,
+              "spoiler": false
+            }
+          ]
+        },
+        {
+          "type": 14,
+          "id": 4,
+          "divider": true,
+          "spacing": 2
+        },
+        {
+          "type": 9,
+          "id": 5,
+          "components": [
+            {
+              "type": 10,
+              "id": 6,
+              "content": "What would you like to do?"
+            }
+          ],
+          "accessory": {
+            "type": 11,
+            "id": 7,
+            "media": {
+              "url": "https://websitewithopensourceimages/gamepreview.webp",
+              "proxy_url": "https://images-ext-1.discordapp.net/external/Z2FtZQ/https/websitewithopensourceimages/gamepreview.webp",
+              "width": 256,
+              "height": 256,
+              "placeholder": "3PcNNYSFeXh/d3eld0iHZoZgVwh2",
+              "placeholder_version": 1,
+              "content_type": "image/webp",
+              "flags": 0
+            },
+            "description": "A wild coyote",
+            "spoiler": false
+          }
+        },
+        {
+          "type": 1,
+          "id": 8,
+          "components": [
+            {
+              "type": 2,
+              "id": 9,
+              "custom_id": "pet_coyote",
+              "label": "Pet it!",
+              "style": 1
+            },
+            {
+              "type": 2,
+              "id": 10,
+              "custom_id": "run_away",
+              "label": "Run away!",
+              "style": 4
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "id": 11,
+          "components": [
+            {
+              "type": 8,
+              "id": 12,
+              "custom_id": "where",
+              "channel_types": [
+                2,
+                13
+              ],
+              "placeholder": "Pick a voice channel",
+              "default_values": [
+                {
+                  "id": "1335173547294851073",
+                  "type": "channel"
+                }
+              ],
+              "min_values": 1,
+              "max_values": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": 13,
+      "id": 13,
+      "file": {
+        "url": "attachment://manual.pdf",
+        "proxy_url": "https://media.discordapp.net/attachments/1335173295636611073/1564609998347206656/manual.pdf",
+        "content_type": "application/pdf",
+        "attachment_id": "1564609998347206656",
+        "flags": 0
+      },
+      "spoiler": false,
+      "name": "manual.pdf",
+      "size": 482113
+    }
+  ],
+  "pinned": false,
+  "flags": 32768,
+  "nonce": "1564609997853327360",
+  "channel_type": 0,
+  "guild_id": "1335172792320131073",
+  "member": {
+    "avatar": null,
+    "banner": null,
+    "communication_disabled_until": null,
+    "flags": 2,
+    "joined_at": "2025-04-18T19:03:11.987000+00:00",
+    "nick": null,
+    "premium_since": null,
+    "roles": [],
+    "unusual_dm_activity_until": null,
+    "collectibles": null,
+    "avatar_decoration_data": null,
+    "deaf": false,
+    "mute": false
+  }
+}

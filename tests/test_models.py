@@ -24,17 +24,26 @@ from bostie.models import (
     Attachment,
     Button,
     Channel,
+    ChannelSelect,
+    Container,
     Embed,
     EmbedField,
+    FileComponent,
     Guild,
     Interaction,
+    MediaGallery,
     Member,
     Message,
     Model,
     Role,
-    SelectMenu,
+    Section,
+    Separator,
+    StringSelect,
+    TextDisplay,
+    Thumbnail,
     UnknownComponent,
     User,
+    UserSelect,
     build_message,
     decode,
     decode_components,
@@ -138,7 +147,7 @@ def test_components_decode_known_types_and_keep_unknown_ones() -> None:
     assert docs.url == "https://bostie.dev/docs"
     assert isinstance(selects, ActionRow)
     (select,) = selects.components
-    assert isinstance(select, SelectMenu)
+    assert isinstance(select, StringSelect)
     assert select.type is ComponentType.STRING_SELECT
     assert [option.value for option in select.options] == [
         "ant",
@@ -148,6 +157,45 @@ def test_components_decode_known_types_and_keep_unknown_ones() -> None:
     assert isinstance(hologram, UnknownComponent)
     assert hologram.type == 99
     assert msgspec.json.decode(hologram.raw) == json.loads(data)["components"][2]
+
+
+def test_components_v2_decode_into_their_models() -> None:
+    message = decode(Message, payload("events/MESSAGE_CREATE.components_v2.json"))
+
+    container, file = message.components
+
+    assert isinstance(container, Container)
+    assert (container.type, container.accent_color) == (ComponentType.CONTAINER, 703487)
+    heading, gallery, separator, section, buttons, picker = container.components
+    assert isinstance(heading, TextDisplay)
+    assert heading.content == "# You have encountered a wild coyote!"
+    assert isinstance(gallery, MediaGallery)
+    (item,) = gallery.items
+    assert item.media is not None
+    assert (item.media.width, item.media.content_type) == (1600, "image/webp")
+    assert isinstance(separator, Separator)
+    assert (separator.divider, separator.spacing) == (True, 2)
+    assert isinstance(section, Section)
+    assert [type(child) for child in section.components] == [TextDisplay]
+    assert isinstance(section.accessory, Thumbnail)
+    assert section.accessory.description == "A wild coyote"
+    assert isinstance(buttons, ActionRow)
+    assert [type(child) for child in buttons.components] == [Button, Button]
+    assert isinstance(picker, ActionRow)
+    (where,) = picker.components
+    assert isinstance(where, ChannelSelect)
+    assert where.channel_types == (
+        ChannelType.GUILD_VOICE,
+        ChannelType.GUILD_STAGE_VOICE,
+    )
+    assert where.default_values[0].id == 1335173547294851073
+    assert isinstance(file, FileComponent)
+    assert file.file is not None
+    assert (file.name, file.size, file.file.attachment_id) == (
+        "manual.pdf",
+        482113,
+        message.attachments[0].id,
+    )
 
 
 def test_a_component_with_a_changed_shape_does_not_hide_its_siblings() -> None:
@@ -182,7 +230,7 @@ def test_a_decoded_select_sent_back_keeps_its_default_values() -> None:
     decoded_row = message.components[0]
     assert isinstance(decoded_row, ActionRow)
     child = decoded_row.components[0]
-    assert isinstance(child, SelectMenu)
+    assert isinstance(child, UserSelect)
 
     body, _ = build_message(components=[msgspec.structs.replace(child, disabled=True)])
 

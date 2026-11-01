@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from contextlib import suppress
+from typing import cast
 
 import msgspec
 
@@ -15,9 +15,15 @@ class PartialEmoji(Builder, kw_only=True):
     animated: bool | None = None
 
 
-class ActionRow(Builder, kw_only=True):
-    type: ComponentType
+class _Component(Builder, kw_only=True, tag_field="type"):
     id: int | None = None
+
+    @property
+    def type(self) -> ComponentType:
+        return ComponentType(cast(int, type(self).__struct_config__.tag))
+
+
+class ActionRow(_Component, kw_only=True, tag=ComponentType.ACTION_ROW.value):
     components_json: tuple[msgspec.Raw, ...] = msgspec.field(
         default=(), name="components"
     )
@@ -27,9 +33,7 @@ class ActionRow(Builder, kw_only=True):
         return decode_components(self.components_json)
 
 
-class Button(Builder, kw_only=True):
-    type: ComponentType
-    id: int | None = None
+class Button(_Component, kw_only=True, tag=ComponentType.BUTTON.value):
     style: ButtonStyle | None = None
     label: str | None = None
     emoji: PartialEmoji | None = None
@@ -54,19 +58,114 @@ class SelectDefaultValue(Builder, kw_only=True):
     type: str | None = None
 
 
-class SelectMenu(Builder, kw_only=True):
-    """A string, user, role, mentionable or channel select, told apart by `type`."""
-
-    type: ComponentType
-    id: int | None = None
+class _Select(_Component, kw_only=True):
     custom_id: str | None = None
-    options: tuple[SelectOption, ...] = ()
-    channel_types: tuple[ChannelType, ...] = ()
     placeholder: str | None = None
-    default_values: tuple[SelectDefaultValue, ...] = ()
     min_values: int | None = None
     max_values: int | None = None
     disabled: bool | None = None
+
+
+class StringSelect(_Select, kw_only=True, tag=ComponentType.STRING_SELECT.value):
+    options: tuple[SelectOption, ...] = ()
+
+
+class _EntitySelect(_Select, kw_only=True):
+    default_values: tuple[SelectDefaultValue, ...] = ()
+
+
+class UserSelect(_EntitySelect, kw_only=True, tag=ComponentType.USER_SELECT.value):
+    pass
+
+
+class RoleSelect(_EntitySelect, kw_only=True, tag=ComponentType.ROLE_SELECT.value):
+    pass
+
+
+class MentionableSelect(
+    _EntitySelect, kw_only=True, tag=ComponentType.MENTIONABLE_SELECT.value
+):
+    pass
+
+
+class ChannelSelect(
+    _EntitySelect, kw_only=True, tag=ComponentType.CHANNEL_SELECT.value
+):
+    channel_types: tuple[ChannelType, ...] = ()
+
+
+class UnfurledMediaItem(Builder, kw_only=True):
+    """An image, video or file shown by a component; only `url` is set when sending."""
+
+    url: str | None = None
+    proxy_url: str | None = None
+    height: int | None = None
+    width: int | None = None
+    content_type: str | None = None
+    attachment_id: int | None = None
+
+
+class Section(_Component, kw_only=True, tag=ComponentType.SECTION.value):
+    """Text components with a button or thumbnail beside them."""
+
+    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
+        default=(), name="components"
+    )
+    accessory_json: msgspec.Raw = msgspec.field(default=msgspec.Raw(), name="accessory")
+
+    @property
+    def components(self) -> "tuple[Component, ...]":
+        return decode_components(self.components_json)
+
+    @property
+    def accessory(self) -> "Component | None":
+        return _decode_component(self.accessory_json) if self.accessory_json else None
+
+
+class TextDisplay(_Component, kw_only=True, tag=ComponentType.TEXT_DISPLAY.value):
+    content: str | None = None
+
+
+class Thumbnail(_Component, kw_only=True, tag=ComponentType.THUMBNAIL.value):
+    media: UnfurledMediaItem | None = None
+    description: str | None = None
+    spoiler: bool | None = None
+
+
+class MediaGalleryItem(Builder, kw_only=True):
+    media: UnfurledMediaItem | None = None
+    description: str | None = None
+    spoiler: bool | None = None
+
+
+class MediaGallery(_Component, kw_only=True, tag=ComponentType.MEDIA_GALLERY.value):
+    items: tuple[MediaGalleryItem, ...] = ()
+
+
+class FileComponent(_Component, kw_only=True, tag=ComponentType.FILE.value):
+    """A file attached to the message, shown in its place among the components."""
+
+    file: UnfurledMediaItem | None = None
+    spoiler: bool | None = None
+    name: str | None = None
+    size: int | None = None
+
+
+class Separator(_Component, kw_only=True, tag=ComponentType.SEPARATOR.value):
+    divider: bool | None = None
+    spacing: int | None = None
+
+
+class Container(_Component, kw_only=True, tag=ComponentType.CONTAINER.value):
+    components_json: tuple[msgspec.Raw, ...] = msgspec.field(
+        default=(), name="components"
+    )
+    accent_color: int | None = None
+    spoiler: bool | None = None
+
+    @property
+    def components(self) -> "tuple[Component, ...]":
+        return decode_components(self.components_json)
 
 
 class UnknownComponent(msgspec.Struct, kw_only=True, frozen=True, gc=False):
@@ -76,22 +175,27 @@ class UnknownComponent(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     raw: msgspec.Raw
 
 
-type Component = ActionRow | Button | SelectMenu | UnknownComponent
+type KnownComponent = (
+    ActionRow
+    | Button
+    | StringSelect
+    | UserSelect
+    | RoleSelect
+    | MentionableSelect
+    | ChannelSelect
+    | Section
+    | TextDisplay
+    | Thumbnail
+    | MediaGallery
+    | FileComponent
+    | Separator
+    | Container
+)
+type Component = KnownComponent | UnknownComponent
 
 
 class _ComponentTag(msgspec.Struct):
     type: int | None = None
-
-
-COMPONENT_MODELS: dict[int, type[ActionRow | Button | SelectMenu]] = {
-    ComponentType.ACTION_ROW: ActionRow,
-    ComponentType.BUTTON: Button,
-    ComponentType.STRING_SELECT: SelectMenu,
-    ComponentType.USER_SELECT: SelectMenu,
-    ComponentType.ROLE_SELECT: SelectMenu,
-    ComponentType.MENTIONABLE_SELECT: SelectMenu,
-    ComponentType.CHANNEL_SELECT: SelectMenu,
-}
 
 
 def decode_components(raws: Iterable[msgspec.Raw]) -> tuple[Component, ...]:
@@ -100,13 +204,11 @@ def decode_components(raws: Iterable[msgspec.Raw]) -> tuple[Component, ...]:
 
 
 def _decode_component(raw: msgspec.Raw) -> Component:
-    tag = _component_type(raw)
-    model = None if tag is None else COMPONENT_MODELS.get(tag)
-    if model is not None:
-        with suppress(msgspec.ValidationError):
-            component: Component = decoder(model).decode(raw)
-            return component
-    return UnknownComponent(type=tag, raw=raw)
+    try:
+        component: KnownComponent = decoder(KnownComponent.__value__).decode(raw)
+    except msgspec.ValidationError:
+        return UnknownComponent(type=_component_type(raw), raw=raw)
+    return component
 
 
 def _component_type(raw: msgspec.Raw) -> int | None:
