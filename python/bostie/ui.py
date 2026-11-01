@@ -2,41 +2,54 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from bostie.custom_id import MAX_CUSTOM_ID
-from bostie.enums import ButtonStyle, ComponentType
+from bostie.enums import ButtonStyle, ChannelType, ComponentType
 
 __all__ = [
     "ButtonDict",
     "ButtonStyle",
     "ContainerDict",
+    "EntitySelectDict",
     "FileDict",
     "GalleryItemDict",
     "MediaGalleryDict",
     "RowDict",
     "SectionDict",
-    "SelectDict",
+    "SelectDefaultDict",
     "SelectOptionDict",
     "SeparatorDict",
+    "StringSelectDict",
     "TextDict",
     "ThumbnailDict",
     "button",
+    "channel_select",
     "container",
     "file",
     "gallery_item",
     "link_button",
     "media_gallery",
+    "mentionable_select",
+    "role_select",
     "row",
     "section",
-    "select",
     "select_option",
     "separator",
+    "string_select",
     "text",
     "thumbnail",
+    "user_select",
 ]
 
 type _Emoji = str | Mapping[str, Any]
 type _Raw = Mapping[str, Any]
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
+]
+type _DefaultType = Literal["user", "role", "channel"]
+type _EntitySelectType = Literal[
+    ComponentType.USER_SELECT,
+    ComponentType.ROLE_SELECT,
+    ComponentType.MENTIONABLE_SELECT,
+    ComponentType.CHANNEL_SELECT,
 ]
 
 
@@ -58,7 +71,7 @@ class SelectOptionDict(TypedDict):
     default: bool
 
 
-class SelectDict(TypedDict):
+class StringSelectDict(TypedDict):
     type: Literal[ComponentType.STRING_SELECT]
     custom_id: str
     options: list[SelectOptionDict]
@@ -68,9 +81,28 @@ class SelectDict(TypedDict):
     disabled: bool
 
 
+class SelectDefaultDict(TypedDict):
+    id: int
+    type: _DefaultType
+
+
+class EntitySelectDict(TypedDict):
+    type: _EntitySelectType
+    custom_id: str
+    channel_types: NotRequired[list[ChannelType]]
+    placeholder: NotRequired[str]
+    default_values: list[SelectDefaultDict]
+    min_values: int
+    max_values: int
+    disabled: bool
+
+
+type _RowChild = ButtonDict | StringSelectDict | EntitySelectDict | _Raw
+
+
 class RowDict(TypedDict):
     type: Literal[ComponentType.ACTION_ROW]
-    components: list[ButtonDict | SelectDict | _Raw]
+    components: list[_RowChild]
 
 
 class TextDict(TypedDict):
@@ -132,7 +164,7 @@ class ContainerDict(TypedDict):
     spoiler: bool
 
 
-def row(*components: ButtonDict | SelectDict | _Raw) -> RowDict:
+def row(*components: _RowChild) -> RowDict:
     """An action row holding up to five buttons or one select menu."""
     return {"type": ComponentType.ACTION_ROW, "components": list(components)}
 
@@ -176,7 +208,7 @@ def link_button(
     )
 
 
-def select(
+def string_select(
     custom_id: str,
     options: Iterable[SelectOptionDict],
     *,
@@ -184,20 +216,109 @@ def select(
     min_values: int = 1,
     max_values: int = 1,
     disabled: bool = False,
-) -> SelectDict:
-    """A string select menu; build its options with `select_option`."""
-    return cast(
-        SelectDict,
-        _present(
-            type=ComponentType.STRING_SELECT,
-            custom_id=_checked(custom_id),
-            options=list(options),
-            placeholder=placeholder,
-            min_values=min_values,
-            max_values=max_values,
-            disabled=disabled,
-        ),
+) -> StringSelectDict:
+    """A select menu of fixed options; build them with `select_option`."""
+    select: StringSelectDict = {
+        "type": ComponentType.STRING_SELECT,
+        "custom_id": _checked(custom_id),
+        "options": list(options),
+        "min_values": min_values,
+        "max_values": max_values,
+        "disabled": disabled,
+    }
+    if placeholder is not None:
+        select["placeholder"] = placeholder
+    return select
+
+
+def user_select(
+    custom_id: str,
+    *,
+    defaults: Iterable[int] = (),
+    placeholder: str | None = None,
+    min_values: int = 1,
+    max_values: int = 1,
+    disabled: bool = False,
+) -> EntitySelectDict:
+    """A select menu of users; `defaults` are the ids of users shown as chosen."""
+    return _entity_select(
+        ComponentType.USER_SELECT,
+        custom_id,
+        _defaults(defaults, "user"),
+        placeholder,
+        min_values,
+        max_values,
+        disabled,
     )
+
+
+def role_select(
+    custom_id: str,
+    *,
+    defaults: Iterable[int] = (),
+    placeholder: str | None = None,
+    min_values: int = 1,
+    max_values: int = 1,
+    disabled: bool = False,
+) -> EntitySelectDict:
+    """A select menu of roles; `defaults` are the ids of roles shown as chosen."""
+    return _entity_select(
+        ComponentType.ROLE_SELECT,
+        custom_id,
+        _defaults(defaults, "role"),
+        placeholder,
+        min_values,
+        max_values,
+        disabled,
+    )
+
+
+def mentionable_select(
+    custom_id: str,
+    *,
+    default_users: Iterable[int] = (),
+    default_roles: Iterable[int] = (),
+    placeholder: str | None = None,
+    min_values: int = 1,
+    max_values: int = 1,
+    disabled: bool = False,
+) -> EntitySelectDict:
+    """A select menu of users and roles, with these ids shown as chosen."""
+    return _entity_select(
+        ComponentType.MENTIONABLE_SELECT,
+        custom_id,
+        _defaults(default_users, "user") + _defaults(default_roles, "role"),
+        placeholder,
+        min_values,
+        max_values,
+        disabled,
+    )
+
+
+def channel_select(
+    custom_id: str,
+    *,
+    channel_types: Iterable[ChannelType] = (),
+    defaults: Iterable[int] = (),
+    placeholder: str | None = None,
+    min_values: int = 1,
+    max_values: int = 1,
+    disabled: bool = False,
+) -> EntitySelectDict:
+    """A select menu of channels, of `channel_types` only when given."""
+    select = _entity_select(
+        ComponentType.CHANNEL_SELECT,
+        custom_id,
+        _defaults(defaults, "channel"),
+        placeholder,
+        min_values,
+        max_values,
+        disabled,
+    )
+    types = list(channel_types)
+    if types:
+        select["channel_types"] = types
+    return select
 
 
 def select_option(
@@ -296,6 +417,32 @@ def container(
             spoiler=spoiler,
         ),
     )
+
+
+def _entity_select(
+    type: _EntitySelectType,
+    custom_id: str,
+    defaults: list[SelectDefaultDict],
+    placeholder: str | None,
+    min_values: int,
+    max_values: int,
+    disabled: bool,
+) -> EntitySelectDict:
+    select: EntitySelectDict = {
+        "type": type,
+        "custom_id": _checked(custom_id),
+        "default_values": defaults,
+        "min_values": min_values,
+        "max_values": max_values,
+        "disabled": disabled,
+    }
+    if placeholder is not None:
+        select["placeholder"] = placeholder
+    return select
+
+
+def _defaults(ids: Iterable[int], type: _DefaultType) -> list[SelectDefaultDict]:
+    return [{"id": id, "type": type} for id in ids]
 
 
 def _present(**fields: Any) -> dict[str, Any]:

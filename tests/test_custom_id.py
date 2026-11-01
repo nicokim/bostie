@@ -4,10 +4,12 @@ import re
 import time
 from typing import get_args
 
+import msgspec
 import pytest
 
-from bostie import ui
+from bostie import ChannelSelect, ChannelType, SelectDefaultValue, ui
 from bostie.custom_id import ComponentRoute
+from bostie.models import decode_components
 from bostie.router import Router
 
 
@@ -143,8 +145,8 @@ def test_ui_builders_return_discord_component_dicts() -> None:
     }
 
 
-def test_ui_select_and_options() -> None:
-    menu = ui.select(
+def test_ui_string_select_and_options() -> None:
+    menu = ui.string_select(
         "pick",
         [
             ui.select_option("One", "1", default=True),
@@ -168,12 +170,50 @@ def test_ui_select_and_options() -> None:
     }
 
 
+def test_ui_entity_selects_list_their_defaults_and_decode_back() -> None:
+    who = ui.user_select("who", defaults=[1])
+    mentionable = ui.mentionable_select(
+        "any", default_users=[1], default_roles=[2], placeholder="Anyone"
+    )
+    voice = ui.channel_select(
+        "where", channel_types=[ChannelType.GUILD_VOICE], defaults=[3]
+    )
+
+    assert who == {
+        "type": 5,
+        "custom_id": "who",
+        "default_values": [{"id": 1, "type": "user"}],
+        "min_values": 1,
+        "max_values": 1,
+        "disabled": False,
+    }
+    assert ui.role_select("roles", defaults=[2])["default_values"] == [
+        {"id": 2, "type": "role"}
+    ]
+    assert mentionable["default_values"] == [
+        {"id": 1, "type": "user"},
+        {"id": 2, "type": "role"},
+    ]
+    assert mentionable["placeholder"] == "Anyone"
+    decoded = decode_components([msgspec.Raw(msgspec.json.encode(voice))])
+    assert decoded == (
+        ChannelSelect(
+            custom_id="where",
+            channel_types=(ChannelType.GUILD_VOICE,),
+            default_values=(SelectDefaultValue(id=3, type="channel"),),
+            min_values=1,
+            max_values=1,
+            disabled=False,
+        ),
+    )
+
+
 @pytest.mark.parametrize("custom_id", ["", "x" * 101])
 def test_ui_checks_custom_id_length(custom_id: str) -> None:
     with pytest.raises(ValueError, match="custom_id must be 1-100 characters"):
         ui.button("x", custom_id=custom_id)
     with pytest.raises(ValueError, match="custom_id must be 1-100 characters"):
-        ui.select(custom_id, [])
+        ui.string_select(custom_id, [])
 
 
 def test_ui_buttons_with_a_custom_id_exclude_link_and_premium_styles() -> None:
