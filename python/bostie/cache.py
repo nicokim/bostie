@@ -149,6 +149,7 @@ class Cache:
             self._guilds[guild.id] = msgspec.structs.replace(
                 guild,
                 raw_json=None,
+                joined_at=cached.joined_at,
                 member_count=cached.member_count,
                 large=cached.large,
             )

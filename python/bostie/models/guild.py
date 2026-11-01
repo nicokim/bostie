@@ -118,6 +118,7 @@ class Guild(Model, kw_only=True):
     banner: str | None
     vanity_url_code: str | None
     nsfw_level: NSFWLevel
+    joined_at: datetime | None = None
     member_count: int | None = None
     large: bool | None = None
     unavailable: bool = False

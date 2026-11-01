@@ -22,8 +22,18 @@
   "premium_since": null,
   "roles": [],
   "unusual_dm_activity_until": null,
-  "collectibles": null,
-  "avatar_decoration_data": null,
+  "collectibles": {
+    "nameplate": {
+      "sku_id": "1349849614353829990",
+      "asset": "nameplates/nameplates/twilight/",
+      "label": "",
+      "palette": "cobalt"
+    }
+  },
+  "avatar_decoration_data": {
+    "asset": "a_9cfe55ebd354b2d1a226d267afeb6a71",
+    "sku_id": "1144058844004233369"
+  },
   "deaf": false,
   "mute": false,
   "pending": false

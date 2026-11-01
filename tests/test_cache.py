@@ -95,7 +95,7 @@ def test_a_new_guild_create_replaces_the_guild_children(cache: Cache) -> None:
     assert len(cache.guild_channels(GUILD)) == 6
 
 
-def test_guild_update_replaces_the_header_and_keeps_the_member_count(
+def test_guild_update_replaces_the_header_and_keeps_the_create_fields(
     cache: Cache,
 ) -> None:
     cache.apply(event("GUILD_UPDATE"))
@@ -105,6 +105,7 @@ def test_guild_update_replaces_the_header_and_keeps_the_member_count(
     assert guild.description == "Fixture guild for bostie"
     assert guild.verification_level == 2
     assert guild.member_count == 4
+    assert guild.joined_at is not None
 
 
 def test_guild_delete_for_an_outage_keeps_the_guild(cache: Cache) -> None:

@@ -18,7 +18,9 @@ from bostie.models import (
     AuditLogEntry,
     AutoModerationAction,
     AutoModerationRule,
+    AvatarDecorationData,
     Channel,
+    Collectibles,
     Emoji,
     Entitlement,
     Guild,
@@ -229,8 +231,30 @@ class ChannelPinsUpdate(Event, kw_only=True):
     last_pin_timestamp: datetime | None = None
 
 
+class _ThreadCreateFields(msgspec.Struct):
+    newly_created: bool = False
+    member: ThreadMember | None = None
+
+
 class ThreadCreate(_ChannelEvent, kw_only=True):
+    """A new thread, or one the bot was added to; `member` is then the bot's."""
+
     NAME = "THREAD_CREATE"
+
+    newly_created: bool = False
+    member: ThreadMember | None = None
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        fields: _ThreadCreateFields = decoder(_ThreadCreateFields).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            channel=decode(Channel, data),
+            newly_created=fields.newly_created,
+            member=fields.member,
+        )
 
 
 class ThreadUpdate(_ChannelEvent, kw_only=True):
@@ -435,6 +459,8 @@ class MemberUpdate(Event, kw_only=True):
     pending: bool = False
     communication_disabled_until: datetime | None = None
     flags: MemberFlags = MemberFlags(0)
+    avatar_decoration_data: AvatarDecorationData | None = None
+    collectibles: Collectibles | None = None
 
 
 class MemberRemove(Event, kw_only=True):

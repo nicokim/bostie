@@ -62,6 +62,7 @@ ENUM_KEYS = {
     "animation_type",
     "target_type",
     "expire_behavior",
+    "channel_type",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

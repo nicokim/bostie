@@ -126,7 +126,13 @@ from bostie.models.scheduled_event import (
     ScheduledEvent,
     ScheduledEventEntityMetadata,
 )
-from bostie.models.user import PartialUser, User
+from bostie.models.user import (
+    AvatarDecorationData,
+    Collectibles,
+    Nameplate,
+    PartialUser,
+    User,
+)
 
 __all__ = [
     "ActionRow",
@@ -147,11 +153,13 @@ __all__ = [
     "AutoModerationRule",
     "AutoModerationTriggerMetadata",
     "AutocompleteInteraction",
+    "AvatarDecorationData",
     "Builder",
     "Button",
     "Channel",
     "ChannelSelect",
     "ClientStatus",
+    "Collectibles",
     "CommandData",
     "CommandInteraction",
     "CommandPermission",
@@ -186,6 +194,7 @@ __all__ = [
     "ModalSubmitData",
     "ModalSubmitInteraction",
     "Model",
+    "Nameplate",
     "Overwrite",
     "PartialApplication",
     "PartialChannel",

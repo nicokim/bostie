@@ -24,6 +24,26 @@ class PartialUser(Model, kw_only=True):
         return self.username
 
 
+class AvatarDecorationData(Model, kw_only=True):
+    asset: str
+    sku_id: int
+
+
+class Nameplate(Model, kw_only=True):
+    """`palette` names the background color, such as "crimson"."""
+
+    sku_id: int
+    asset: str
+    label: str
+    palette: str
+
+
+class Collectibles(Model, kw_only=True):
+    """The collectibles of a user or member, avatar decorations aside."""
+
+    nameplate: Nameplate | None = None
+
+
 class User(PartialUser, kw_only=True):
     """A Discord user or bot account."""
 

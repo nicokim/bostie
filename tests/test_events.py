@@ -173,6 +173,7 @@ def test_guild_create_splits_the_guild_from_its_children() -> None:
     assert type(event.guild) is Guild
     assert event.guild.name == "bostie test"
     assert event.guild.member_count == 4
+    assert event.guild.joined_at == datetime(2025, 2, 1, 9, 30, 4, 221000, tzinfo=UTC)
     assert event.guild.system_channel_id == 1335173295636611073
     assert event.guild.raw is None
     assert [channel.name for channel in event.channels] == [
@@ -275,6 +276,22 @@ def test_member_update_decodes_the_documented_fields_without_flags() -> None:
     assert event.nick == "linus (timed out)"
     assert event.communication_disabled_until == datetime(2026, 10, 27, 13, tzinfo=UTC)
     assert event.flags == MemberFlags(0)
+    assert event.avatar_decoration_data is not None
+    assert event.avatar_decoration_data.sku_id == 1144058844004233369
+    assert event.collectibles is not None
+    assert event.collectibles.nameplate is not None
+    assert event.collectibles.nameplate.palette == "cobalt"
+
+
+def test_thread_create_says_whether_it_is_new_or_the_bot_was_added() -> None:
+    created = decode(ThreadCreate, "THREAD_CREATE")
+    added = decode(ThreadCreate, "THREAD_CREATE.added")
+
+    assert (created.newly_created, created.member) == (True, None)
+    assert added.newly_created is False
+    assert added.channel.type is ChannelType.PRIVATE_THREAD
+    assert added.member is not None
+    assert added.member.user_id == 1329027298099331073
 
 
 def test_member_remove_carries_only_the_user() -> None:
@@ -328,6 +345,7 @@ def test_message_and_reaction_events() -> None:
     reaction = decode(ReactionAdd, "MESSAGE_REACTION_ADD")
 
     assert created.message.guild_id == 1335172792320131073
+    assert created.message.channel_type is ChannelType.GUILD_TEXT
     assert reply is not None
     assert reply.jump_url == (
         "https://discord.com/channels/1335172792320131073/"

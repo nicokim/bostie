@@ -6,6 +6,7 @@ import msgspec
 
 from bostie.enums import (
     AttachmentFlags,
+    ChannelType,
     ComponentType,
     MessageFlags,
     MessageReferenceType,
@@ -153,6 +154,7 @@ class PartialMessage(Model, kw_only=True):
     channel_id: int
     guild_id: int | None = None
     member: PartialMember | None = None
+    channel_type: ChannelType | None = None
     reactions: tuple[Reaction, ...] = ()
     nonce: int | str | None = None
     webhook_id: int | None = None

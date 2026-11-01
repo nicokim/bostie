@@ -1,0 +1,29 @@
+{
+  "id": "1564620154837331073",
+  "type": 12,
+  "guild_id": "1335172792320131073",
+  "name": "Moderation notes",
+  "parent_id": "1382046656102531073",
+  "owner_id": "820774541721731073",
+  "last_message_id": "1564620154837331073",
+  "message_count": 0,
+  "member_count": 2,
+  "rate_limit_per_user": 0,
+  "total_message_sent": 0,
+  "applied_tags": [],
+  "flags": 0,
+  "thread_metadata": {
+    "archived": false,
+    "auto_archive_duration": 4320,
+    "archive_timestamp": "2026-10-27T12:30:00.000000+00:00",
+    "locked": false,
+    "create_timestamp": "2026-10-27T12:30:00.000000+00:00",
+    "invitable": false
+  },
+  "member": {
+    "id": "1564620154837331073",
+    "user_id": "1329027298099331073",
+    "join_timestamp": "2026-10-27T12:45:00.000000+00:00",
+    "flags": 1
+  }
+}
