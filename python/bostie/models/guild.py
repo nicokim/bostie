@@ -13,7 +13,7 @@ from bostie.enums import (
     VerificationLevel,
 )
 from bostie.models.base import Model, permissions_from
-from bostie.models.user import User
+from bostie.models.user import AvatarDecorationData, Collectibles, User
 
 if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
@@ -61,12 +61,15 @@ class PartialMember(Model, kw_only=True):
     flags: MemberFlags
     nick: str | None = None
     avatar: str | None = None
+    banner: str | None = None
     premium_since: datetime | None = None
     deaf: bool | None = None
     mute: bool | None = None
     pending: bool = False
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
+    avatar_decoration_data: AvatarDecorationData | None = None
+    collectibles: Collectibles | None = None
 
     @property
     def permissions(self) -> Permissions | None:

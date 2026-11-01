@@ -131,6 +131,7 @@ from bostie.models.user import (
     Collectibles,
     Nameplate,
     PartialUser,
+    PrimaryGuild,
     User,
 )
 
@@ -204,6 +205,7 @@ __all__ = [
     "PartialUser",
     "Presence",
     "PresenceUser",
+    "PrimaryGuild",
     "Reaction",
     "RecurrenceRule",
     "RecurrenceRuleNWeekday",

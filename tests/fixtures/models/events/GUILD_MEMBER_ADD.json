@@ -7,11 +7,26 @@
     "discriminator": "0",
     "avatar": "0087afaeae2e8564b64339c33637261d",
     "public_flags": 0,
-    "avatar_decoration_data": null,
-    "collectibles": null,
+    "avatar_decoration_data": {
+      "asset": "a_fed43ab12698df65902ba06727e20c0e",
+      "sku_id": "1144058522808614923"
+    },
+    "collectibles": {
+      "nameplate": {
+        "sku_id": "1349849614353829990",
+        "asset": "nameplates/nameplates/twilight/",
+        "label": "",
+        "palette": "cobalt"
+      }
+    },
     "display_name_styles": null,
     "clan": null,
-    "primary_guild": null
+    "primary_guild": {
+      "identity_guild_id": "1335172792320131073",
+      "identity_enabled": true,
+      "tag": "BOST",
+      "badge": "7d1734ae5a615e82bc7a4033b98fade8"
+    }
   },
   "avatar": null,
   "banner": null,
@@ -22,8 +37,18 @@
   "premium_since": null,
   "roles": [],
   "unusual_dm_activity_until": null,
-  "collectibles": null,
-  "avatar_decoration_data": null,
+  "collectibles": {
+    "nameplate": {
+      "sku_id": "1349849614353829990",
+      "asset": "nameplates/nameplates/twilight/",
+      "label": "",
+      "palette": "cobalt"
+    }
+  },
+  "avatar_decoration_data": {
+    "asset": "a_fed43ab12698df65902ba06727e20c0e",
+    "sku_id": "1144058522808614923"
+  },
   "deaf": false,
   "mute": false,
   "pending": false

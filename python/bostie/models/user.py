@@ -44,6 +44,15 @@ class Collectibles(Model, kw_only=True):
     nameplate: Nameplate | None = None
 
 
+class PrimaryGuild(Model, kw_only=True):
+    """The guild whose server tag a user shows."""
+
+    identity_guild_id: int | None = None
+    identity_enabled: bool | None = None
+    tag: str | None = None
+    badge: str | None = None
+
+
 class User(PartialUser, kw_only=True):
     """A Discord user or bot account."""
 
@@ -53,6 +62,9 @@ class User(PartialUser, kw_only=True):
     banner: str | None = None
     accent_color: int | None = None
     public_flags: UserFlags = UserFlags(0)
+    avatar_decoration_data: AvatarDecorationData | None = None
+    collectibles: Collectibles | None = None
+    primary_guild: PrimaryGuild | None = None
 
     @property
     @override
