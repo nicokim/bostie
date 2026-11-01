@@ -279,6 +279,7 @@ pub struct Reception {
     tuning: ReceiveTuning,
     epoch: Instant,
     state: Option<Box<State>>,
+    panicked: Option<Instant>,
 }
 
 struct State {
@@ -339,6 +340,7 @@ impl Reception {
             tuning,
             epoch: Instant::now(),
             state: None,
+            panicked: None,
         }
     }
 
@@ -366,12 +368,19 @@ impl Reception {
             Ok(alive) => alive,
             Err(payload) => {
                 bump(&self.media.receive.rx_panics);
-                error!(
-                    panic = panic_message(payload.as_ref()),
-                    "the voice receive phase panicked and starts over"
-                );
+                if self
+                    .panicked
+                    .is_none_or(|at| now.saturating_duration_since(at) >= WARN_EVERY)
+                {
+                    self.panicked = Some(now);
+                    error!(
+                        panic = panic_message(payload.as_ref()),
+                        "the voice receive phase panicked and starts over"
+                    );
+                }
                 if let Some(mut state) = self.state.take() {
                     state.expire_speech(i64::MAX, 0);
+                    state.resume(now);
                 }
                 !self.media.closed.load(Ordering::Acquire)
             }
@@ -1205,35 +1214,18 @@ impl State {
             .transport_failures
             .load(Ordering::Relaxed);
         let failing = mem::replace(&mut self.watchdog.failures, failures) != failures;
-        let watchdog = &mut self.watchdog;
         if self.subscribers.is_empty() {
-            let since = watchdog.since.take();
-            if mem::take(&mut watchdog.reported)
-                && let Some(since) = since
-            {
-                self.media.stalled(
-                    Direction::Receive,
-                    false,
-                    now.saturating_duration_since(since),
-                );
-            }
+            self.resume(now);
             return;
         }
         if self.arrived || failing {
-            watchdog.media = Some(now);
+            self.watchdog.media = Some(now);
         }
         if self.heard {
-            if let Some(since) = watchdog.since.take()
-                && mem::take(&mut watchdog.reported)
-            {
-                self.media.stalled(
-                    Direction::Receive,
-                    false,
-                    now.saturating_duration_since(since),
-                );
-            }
+            self.resume(now);
             return;
         }
+        let watchdog = &mut self.watchdog;
         let reaching = watchdog
             .media
             .is_some_and(|at| now.saturating_duration_since(at) <= MEDIA_RECENT);
@@ -1246,6 +1238,19 @@ impl State {
             }
         } else if !watchdog.reported {
             watchdog.since = None;
+        }
+    }
+
+    fn resume(&mut self, now: Instant) {
+        let since = self.watchdog.since.take();
+        if mem::take(&mut self.watchdog.reported)
+            && let Some(since) = since
+        {
+            self.media.stalled(
+                Direction::Receive,
+                false,
+                now.saturating_duration_since(since),
+            );
         }
     }
 

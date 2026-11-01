@@ -1080,6 +1080,41 @@ fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
 }
 
 #[test]
+fn a_receive_panic_ends_the_stall_it_reported() {
+    let mut rig = Rig::new(tuning());
+    let _receiver = rig.open(options(ReceiveFormat::Opus));
+    let stale = Cipher::new(Mode::Aes256GcmRtpSize, &[1; 32]);
+    let mut intake = rig.intake();
+    for sequence in 0..7 {
+        let sealing = Sealing::default();
+        let nonce = u32::from(sequence);
+        let mut packet = sfu::seal(
+            &stale,
+            nonce,
+            ALICE_SSRC,
+            sequence,
+            0,
+            &SILENCE_FRAME,
+            &sealing,
+        );
+        intake.rtp(&mut packet);
+        rig.step();
+    }
+    let stalled = rig.stalls();
+    rig.media
+        .faults
+        .receive_panic
+        .store(true, Ordering::Relaxed);
+    rig.step();
+
+    assert_eq!(stalled, [(Direction::Receive, true, STALL)]);
+    assert_eq!(
+        rig.stalls(),
+        [(Direction::Receive, false, STALL + FRAME * 2)]
+    );
+}
+
+#[test]
 fn each_packet_goes_to_the_owner_of_its_ssrc_at_arrival() {
     let mut rig = Rig::new(tuning());
     let receiver = rig.open(options(ReceiveFormat::Opus));
