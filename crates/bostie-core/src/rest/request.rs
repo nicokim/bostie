@@ -188,6 +188,9 @@ fn header_value(value: String) -> Result<HeaderValue, CoreError> {
 
 #[cfg(test)]
 mod tests {
+    use percent_encoding::percent_decode_str;
+    use proptest::prelude::*;
+
     use super::*;
 
     fn parse(method: &str, route: &str, params: &[(&str, &str)]) -> Result<RestRequest, CoreError> {
@@ -391,6 +394,26 @@ mod tests {
 
             assert_eq!(class_of, class, "{route}");
             assert_eq!(class_of.waits_for_the_global_gate(), gated, "{route}");
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn any_allowed_param_comes_back_from_its_url_segment(value in any::<String>()) {
+            prop_assume!(!matches!(value.as_str(), "" | "." | ".."));
+            prop_assume!(!value.contains(['\t', '\n', '\r']));
+            let request = parse(
+                "GET",
+                "/channels/{channel_id}/messages/{message_id}",
+                &[("channel_id", "1"), ("message_id", &value)],
+            )
+            .unwrap();
+
+            let url = request.url(&Url::parse("https://discord.com/api/v10").unwrap());
+
+            let segments: Vec<&str> = url.path_segments().unwrap().collect();
+            prop_assert_eq!(segments.len(), 6);
+            prop_assert_eq!(percent_decode_str(segments[5]).decode_utf8().unwrap(), value);
         }
     }
 }

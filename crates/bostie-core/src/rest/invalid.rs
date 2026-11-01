@@ -99,15 +99,14 @@ mod tests {
         let start = Instant::now();
         let minute = |minutes: u32| start + SLOT * minutes;
         let mut invalid = InvalidRequests::default();
-        record(&mut invalid, 300, minute(0));
-        record(&mut invalid, 400, minute(1));
-        record(&mut invalid, 8_799, minute(2));
-        assert_eq!(invalid.refusal(minute(2)), None);
+        record(&mut invalid, 500, minute(0));
+        record(&mut invalid, 8_999, minute(1));
+        assert_eq!(invalid.refusal(minute(1)), None);
 
-        invalid.record(minute(2));
+        invalid.record(minute(1));
 
-        assert_eq!(invalid.refusal(minute(2)), Some(WINDOW - SLOT));
-        assert_eq!(invalid.count(minute(11)), 9_200);
+        assert_eq!(invalid.refusal(minute(1)), Some(WINDOW));
+        assert_eq!(invalid.count(minute(11)), 9_000);
         assert_eq!(invalid.refusal(minute(11)), Some(SLOT));
         assert_eq!(invalid.refusal(minute(12)), None);
     }
