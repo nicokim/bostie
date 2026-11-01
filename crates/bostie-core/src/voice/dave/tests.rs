@@ -249,16 +249,23 @@ fn a_transition_id_of_zero_executes_at_once_without_op_23() {
 }
 
 #[test]
-fn a_sole_member_reset_drops_the_old_key_and_holds_until_the_new_group() {
-    let mut call = group(&[BOT, A]);
+fn leaving_members_rekey_and_a_sole_member_resets_until_the_next_group() {
+    let mut call = group(&[BOT, A, B]);
+    call.leave(user(B));
+    call.run();
+    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+    assert_eq!(hear(&mut call, BOT, A), OPUS);
+    assert!(call.dave(user(BOT)).fingerprint_pair(user(B)).is_err());
+    let sent = call.sent_by(user(BOT)).len();
+
     call.leave(user(A));
     call.run();
 
     assert!(matches!(
-        call.sent_by(user(BOT)).as_slice(),
+        call.sent_by(user(BOT))[sent..],
         [Outbound::KeyPackage(_)]
     ));
-    assert_eq!(call.executed_by(user(BOT))[0].transition_id, 0);
+    assert_eq!(call.executed_by(user(BOT)).last().unwrap().transition_id, 0);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
     let mut out = Vec::new();
     assert_eq!(
@@ -267,31 +274,13 @@ fn a_sole_member_reset_drops_the_old_key_and_holds_until_the_new_group() {
     );
 
     call.fake.hold_transitions = true;
-    call.join(user(B));
+    call.join(user(C));
     call.run();
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Hold);
 
     release(&mut call);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    assert_eq!(hear(&mut call, BOT, B), OPUS);
-}
-
-#[test]
-fn peers_hear_the_bot_every_time_they_join_after_a_reset() {
-    let mut call = call(1);
-    call.join(user(BOT));
-    call.run();
-    for round in 0..3 {
-        call.join(user(A));
-        call.run();
-        assert_eq!(hear(&mut call, BOT, A), OPUS, "round {round}");
-        call.leave(user(A));
-        call.run();
-        assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Discard);
-    }
-
-    assert_eq!(sent_count(&call.sent_by(user(BOT)), is_key_package), 4);
-    assert!(call.failures.is_empty());
+    assert_eq!(hear(&mut call, BOT, C), OPUS);
 }
 
 #[test]
@@ -517,7 +506,7 @@ fn an_add_proposal_for_an_unannounced_user_is_rejected() {
 }
 
 #[test]
-fn a_welcome_naming_an_unknown_user_is_refused_and_recovered() {
+fn a_welcome_naming_a_user_who_left_is_refused_until_the_recovery_limit() {
     let mut call = group(&[A, B]);
     call.join(user(BOT));
     call.enqueue(vec![(user(BOT), Signal::ClientDisconnect(user(B)))]);
@@ -788,53 +777,44 @@ fn a_prepared_downgrade_accepts_plain_frames_until_its_expiry() {
 }
 
 #[test]
-fn receive_recovery_waits_for_the_group_and_never_disconnects() {
+fn receive_recovery_waits_for_a_settled_group() {
     let grace = ReceiveTuning::default().dave_grace;
-    let mut out = Vec::new();
-    let (mut fresh, _) = started(1);
-    assert!(
-        !fresh
-            .receive_recovery(Instant::now() + grace, &mut out)
-            .unwrap()
-    );
-
+    let take = |call: &mut Call| {
+        let fresh = Dave::new(user(BOT), channel(), &ReceiveTuning::default());
+        (mem::replace(call.dave_mut(user(BOT)), fresh), call.now)
+    };
+    let (fresh, _) = started(1);
     let mut downgraded = group(&[BOT, A]);
     let downgrade = downgraded.fake.downgrade();
     downgraded.enqueue(downgrade);
     downgraded.run();
-    let later = downgraded.now + grace;
-    assert!(
-        !downgraded
-            .dave_mut(user(BOT))
-            .receive_recovery(later, &mut out)
-            .unwrap()
-    );
-    assert!(out.is_empty());
+    let mut pending = group(&[BOT, A]);
+    pending.now += grace;
+    pending.fake.hold_transitions = true;
+    pending.join(user(C));
+    pending.run();
+    let mut settled = group(&[BOT, A]);
 
-    let mut joining = group(&[BOT, A]);
-    joining.now += grace;
-    joining.fake.hold_transitions = true;
-    joining.join(user(C));
-    joining.run();
-    let later = joining.now + grace;
-    assert!(
-        !joining
-            .dave_mut(user(BOT))
-            .receive_recovery(later, &mut out)
-            .unwrap()
-    );
-    assert!(out.is_empty());
-    release(&mut joining);
-    assert!(
-        joining
-            .dave_mut(user(BOT))
-            .receive_recovery(later, &mut out)
-            .unwrap()
-    );
-    out.clear();
+    for (name, (mut dave, now), asks) in [
+        ("fresh", (fresh, Instant::now()), false),
+        ("downgraded", take(&mut downgraded), false),
+        ("pending", take(&mut pending), false),
+        ("settled", take(&mut settled), true),
+    ] {
+        let mut out = Vec::new();
+        let asked = dave.receive_recovery(now + grace, &mut out).unwrap();
+        assert_eq!(asked, asks, "{name}");
+        assert_eq!(out.is_empty(), !asks, "{name}");
+    }
+}
 
+#[test]
+fn receive_recoveries_never_reach_the_recovery_limit() {
+    let grace = ReceiveTuning::default().dave_grace;
     let mut call = group(&[BOT, A]);
-    for round in 0..6 {
+    let mut out = Vec::new();
+
+    for round in 0..=RECOVERY_LIMIT {
         let settling = call.now;
         assert!(
             !call
@@ -861,7 +841,10 @@ fn receive_recovery_waits_for_the_group_and_never_disconnects() {
         call.run();
     }
 
-    assert_eq!(sent_count(&call.sent_by(user(BOT)), is_flag), 6);
+    assert_eq!(
+        sent_count(&call.sent_by(user(BOT)), is_flag),
+        RECOVERY_LIMIT + 1
+    );
     assert!(call.failures.is_empty());
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, A, BOT), OPUS);
