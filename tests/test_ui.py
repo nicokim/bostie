@@ -176,3 +176,109 @@ def test_ui_v2_builders_return_discord_component_dicts() -> None:
         "accent_color": 0x5865F2,
         "spoiler": False,
     }
+
+
+def test_ui_modal_builders_return_discord_modal_dicts() -> None:
+    explanation = ui.text_input(
+        "bug_explanation",
+        style=ui.TextInputStyle.PARAGRAPH,
+        min_length=1000,
+        max_length=4000,
+        placeholder="Write your explanation here...",
+    )
+    classes = [
+        ui.group_option("Warrior", "warrior", description="Strong and brave"),
+        ui.group_option("Rogue", "rogue", default=True),
+    ]
+    form = ui.modal(
+        "bug_modal",
+        "Bug Report",
+        ui.text("Thanks for helping!"),
+        ui.label(
+            "Why is it your favorite?",
+            explanation,
+            description="Please provide as much detail as possible!",
+        ),
+        ui.label("Who saw it?", ui.user_select("seen_by", required=False)),
+        ui.label("Screenshots", ui.file_upload("shots", max_values=10)),
+        ui.label("Your class", ui.radio_group("class_radio", classes)),
+    )
+
+    assert form == {
+        "custom_id": "bug_modal",
+        "title": "Bug Report",
+        "components": [
+            {"type": 10, "content": "Thanks for helping!"},
+            {
+                "type": 18,
+                "label": "Why is it your favorite?",
+                "description": "Please provide as much detail as possible!",
+                "component": {
+                    "type": 4,
+                    "custom_id": "bug_explanation",
+                    "style": 2,
+                    "min_length": 1000,
+                    "max_length": 4000,
+                    "placeholder": "Write your explanation here...",
+                    "required": True,
+                },
+            },
+            {
+                "type": 18,
+                "label": "Who saw it?",
+                "component": {
+                    "type": 5,
+                    "custom_id": "seen_by",
+                    "default_values": [],
+                    "min_values": 1,
+                    "max_values": 1,
+                    "required": False,
+                    "disabled": False,
+                },
+            },
+            {
+                "type": 18,
+                "label": "Screenshots",
+                "component": {
+                    "type": 19,
+                    "custom_id": "shots",
+                    "min_values": 1,
+                    "max_values": 10,
+                    "required": True,
+                },
+            },
+            {
+                "type": 18,
+                "label": "Your class",
+                "component": {
+                    "type": 21,
+                    "custom_id": "class_radio",
+                    "options": [
+                        {
+                            "value": "warrior",
+                            "label": "Warrior",
+                            "description": "Strong and brave",
+                            "default": False,
+                        },
+                        {"value": "rogue", "label": "Rogue", "default": True},
+                    ],
+                    "required": True,
+                },
+            },
+        ],
+    }
+    assert ui.checkbox_group("days", [], min_values=0, max_values=3) == {
+        "type": 22,
+        "custom_id": "days",
+        "options": [],
+        "min_values": 0,
+        "max_values": 3,
+        "required": True,
+    }
+    assert ui.checkbox("agree", default=True) == {
+        "type": 23,
+        "custom_id": "agree",
+        "default": True,
+    }
+    assert ui.file_upload("doc", file_types=[".pdf"])["file_types"] == [".pdf"]
+    assert ui.text_input("name", value="Ann")["value"] == "Ann"

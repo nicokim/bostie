@@ -2,17 +2,24 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Literal, NewType, NotRequired, TypedDict
 
 from bostie.custom_id import MAX_CUSTOM_ID
-from bostie.enums import ButtonStyle, ChannelType, ComponentType
+from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
 from bostie.models.components import SelectDefaultType
 
 __all__ = [
     "ButtonDict",
     "ButtonStyle",
+    "CheckboxDict",
+    "CheckboxGroupDict",
     "ContainerDict",
     "EntitySelectDict",
     "FileDict",
+    "FileUploadDict",
     "GalleryItemDict",
+    "GroupOptionDict",
+    "LabelDict",
     "MediaGalleryDict",
+    "ModalDict",
+    "RadioGroupDict",
     "RawComponent",
     "RowDict",
     "SectionDict",
@@ -21,15 +28,24 @@ __all__ = [
     "SeparatorDict",
     "StringSelectDict",
     "TextDict",
+    "TextInputDict",
+    "TextInputStyle",
     "ThumbnailDict",
     "button",
     "channel_select",
+    "checkbox",
+    "checkbox_group",
     "container",
     "file",
+    "file_upload",
     "gallery_item",
+    "group_option",
+    "label",
     "link_button",
     "media_gallery",
     "mentionable_select",
+    "modal",
+    "radio_group",
     "raw",
     "role_select",
     "row",
@@ -38,6 +54,7 @@ __all__ = [
     "separator",
     "string_select",
     "text",
+    "text_input",
     "thumbnail",
     "user_select",
 ]
@@ -80,6 +97,7 @@ class StringSelectDict(TypedDict):
     placeholder: NotRequired[str]
     min_values: int
     max_values: int
+    required: NotRequired[bool]
     disabled: bool
 
 
@@ -96,6 +114,7 @@ class EntitySelectDict(TypedDict):
     default_values: list[SelectDefaultDict]
     min_values: int
     max_values: int
+    required: NotRequired[bool]
     disabled: bool
 
 
@@ -166,6 +185,83 @@ class ContainerDict(TypedDict):
     spoiler: bool
 
 
+class TextInputDict(TypedDict):
+    type: Literal[ComponentType.TEXT_INPUT]
+    custom_id: str
+    style: TextInputStyle
+    min_length: NotRequired[int]
+    max_length: NotRequired[int]
+    required: bool
+    value: NotRequired[str]
+    placeholder: NotRequired[str]
+
+
+class FileUploadDict(TypedDict):
+    type: Literal[ComponentType.FILE_UPLOAD]
+    custom_id: str
+    min_values: int
+    max_values: int
+    required: bool
+    file_types: NotRequired[list[str]]
+
+
+class GroupOptionDict(TypedDict):
+    value: str
+    label: str
+    description: NotRequired[str]
+    default: bool
+
+
+class RadioGroupDict(TypedDict):
+    type: Literal[ComponentType.RADIO_GROUP]
+    custom_id: str
+    options: list[GroupOptionDict]
+    required: bool
+
+
+class CheckboxGroupDict(TypedDict):
+    type: Literal[ComponentType.CHECKBOX_GROUP]
+    custom_id: str
+    options: list[GroupOptionDict]
+    min_values: int
+    max_values: NotRequired[int]
+    required: bool
+
+
+class CheckboxDict(TypedDict):
+    type: Literal[ComponentType.CHECKBOX]
+    custom_id: str
+    default: bool
+
+
+type _LabelChild = (
+    TextInputDict
+    | StringSelectDict
+    | EntitySelectDict
+    | FileUploadDict
+    | RadioGroupDict
+    | CheckboxGroupDict
+    | CheckboxDict
+    | RawComponent
+)
+
+
+class LabelDict(TypedDict):
+    type: Literal[ComponentType.LABEL]
+    label: str
+    description: NotRequired[str]
+    component: _LabelChild
+
+
+type _ModalChild = LabelDict | TextDict | RawComponent
+
+
+class ModalDict(TypedDict):
+    custom_id: str
+    title: str
+    components: list[_ModalChild]
+
+
 def raw(component: Mapping[str, Any]) -> RawComponent:
     """A component ui has no builder for, sent as given."""
     return RawComponent(dict(component))
@@ -214,6 +310,7 @@ def string_select(
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
+    required: bool = True,
     disabled: bool = False,
 ) -> StringSelectDict:
     """A select menu of fixed options; build them with `select_option`."""
@@ -227,6 +324,8 @@ def string_select(
     }
     if placeholder is not None:
         select["placeholder"] = placeholder
+    if not required:
+        select["required"] = required
     return select
 
 
@@ -237,6 +336,7 @@ def user_select(
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
+    required: bool = True,
     disabled: bool = False,
 ) -> EntitySelectDict:
     """A select menu of users; `defaults` are the ids of users shown as chosen."""
@@ -247,6 +347,7 @@ def user_select(
         placeholder=placeholder,
         min_values=min_values,
         max_values=max_values,
+        required=required,
         disabled=disabled,
     )
 
@@ -258,6 +359,7 @@ def role_select(
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
+    required: bool = True,
     disabled: bool = False,
 ) -> EntitySelectDict:
     """A select menu of roles; `defaults` are the ids of roles shown as chosen."""
@@ -268,6 +370,7 @@ def role_select(
         placeholder=placeholder,
         min_values=min_values,
         max_values=max_values,
+        required=required,
         disabled=disabled,
     )
 
@@ -280,6 +383,7 @@ def mentionable_select(
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
+    required: bool = True,
     disabled: bool = False,
 ) -> EntitySelectDict:
     """A select menu of users and roles, with these ids shown as chosen."""
@@ -290,6 +394,7 @@ def mentionable_select(
         placeholder=placeholder,
         min_values=min_values,
         max_values=max_values,
+        required=required,
         disabled=disabled,
     )
 
@@ -302,6 +407,7 @@ def channel_select(
     placeholder: str | None = None,
     min_values: int = 1,
     max_values: int = 1,
+    required: bool = True,
     disabled: bool = False,
 ) -> EntitySelectDict:
     """A select menu of channels, of `channel_types` only when given."""
@@ -312,6 +418,7 @@ def channel_select(
         placeholder=placeholder,
         min_values=min_values,
         max_values=max_values,
+        required=required,
         disabled=disabled,
     )
     types = list(channel_types)
@@ -413,6 +520,131 @@ def container(
     return container
 
 
+def modal(custom_id: str, title: str, *components: _ModalChild) -> ModalDict:
+    """A popup form of one to five `label` and `text` components."""
+    return {
+        "custom_id": _checked(custom_id),
+        "title": title,
+        "components": list(components),
+    }
+
+
+def label(
+    label: str, component: _LabelChild, *, description: str | None = None
+) -> LabelDict:
+    """A modal field: `label` and `description` over one input, select or upload."""
+    field: LabelDict = {
+        "type": ComponentType.LABEL,
+        "label": label,
+        "component": component,
+    }
+    if description is not None:
+        field["description"] = description
+    return field
+
+
+def text_input(
+    custom_id: str,
+    *,
+    style: TextInputStyle = TextInputStyle.SHORT,
+    placeholder: str | None = None,
+    value: str | None = None,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    required: bool = True,
+) -> TextInputDict:
+    """A text box in a `label`; `value` fills it in beforehand."""
+    text_input: TextInputDict = {
+        "type": ComponentType.TEXT_INPUT,
+        "custom_id": _checked(custom_id),
+        "style": style,
+        "required": required,
+    }
+    if min_length is not None:
+        text_input["min_length"] = min_length
+    if max_length is not None:
+        text_input["max_length"] = max_length
+    if value is not None:
+        text_input["value"] = value
+    if placeholder is not None:
+        text_input["placeholder"] = placeholder
+    return text_input
+
+
+def file_upload(
+    custom_id: str,
+    *,
+    min_values: int = 1,
+    max_values: int = 1,
+    required: bool = True,
+    file_types: Iterable[str] = (),
+) -> FileUploadDict:
+    """Up to ten files uploaded in a `label`; `file_types` such as "image" or ".pdf"."""
+    upload: FileUploadDict = {
+        "type": ComponentType.FILE_UPLOAD,
+        "custom_id": _checked(custom_id),
+        "min_values": min_values,
+        "max_values": max_values,
+        "required": required,
+    }
+    types = list(file_types)
+    if types:
+        upload["file_types"] = types
+    return upload
+
+
+def radio_group(
+    custom_id: str, options: Iterable[GroupOptionDict], *, required: bool = True
+) -> RadioGroupDict:
+    """Two to ten options in a `label`, of which one is picked."""
+    return {
+        "type": ComponentType.RADIO_GROUP,
+        "custom_id": _checked(custom_id),
+        "options": list(options),
+        "required": required,
+    }
+
+
+def checkbox_group(
+    custom_id: str,
+    options: Iterable[GroupOptionDict],
+    *,
+    min_values: int = 1,
+    max_values: int | None = None,
+    required: bool = True,
+) -> CheckboxGroupDict:
+    """Checkboxes in a `label`; without `max_values` all of them can be ticked."""
+    group: CheckboxGroupDict = {
+        "type": ComponentType.CHECKBOX_GROUP,
+        "custom_id": _checked(custom_id),
+        "options": list(options),
+        "min_values": min_values,
+        "required": required,
+    }
+    if max_values is not None:
+        group["max_values"] = max_values
+    return group
+
+
+def group_option(
+    label: str, value: str, *, description: str | None = None, default: bool = False
+) -> GroupOptionDict:
+    """One entry of a `radio_group` or `checkbox_group`."""
+    option: GroupOptionDict = {"value": value, "label": label, "default": default}
+    if description is not None:
+        option["description"] = description
+    return option
+
+
+def checkbox(custom_id: str, *, default: bool = False) -> CheckboxDict:
+    """A single yes or no box in a `label`."""
+    return {
+        "type": ComponentType.CHECKBOX,
+        "custom_id": _checked(custom_id),
+        "default": default,
+    }
+
+
 def _entity_select(
     type: _EntitySelectType,
     custom_id: str,
@@ -421,6 +653,7 @@ def _entity_select(
     placeholder: str | None,
     min_values: int,
     max_values: int,
+    required: bool,
     disabled: bool,
 ) -> EntitySelectDict:
     select: EntitySelectDict = {
@@ -433,6 +666,8 @@ def _entity_select(
     }
     if placeholder is not None:
         select["placeholder"] = placeholder
+    if not required:
+        select["required"] = required
     return select
 
 

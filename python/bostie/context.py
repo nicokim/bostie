@@ -45,6 +45,7 @@ from bostie.models import (
 )
 from bostie.models.base import check_keys, decoder
 from bostie.models.message import in_guild, message_body
+from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ class ResponseState(Enum):
     DEFERRED = "deferred"
     DEFERRED_UPDATE = "deferred_update"
     RESPONDED = "responded"
+    MODAL = "modal"
     EXPIRED = "expired"
 
 
@@ -151,6 +153,10 @@ class _InteractionContext[
         if self._loop.time() - self.received > TOKEN_LIFETIME:
             raise InteractionExpired(
                 "interactions can only be answered within 15 minutes"
+            )
+        if self.state is ResponseState.MODAL:
+            raise InteractionResponded(
+                "the interaction was answered with a modal; answer its submit instead"
             )
 
     async def _callback(
@@ -311,6 +317,14 @@ class _ReplyingContext[
             await self._webhook("DELETE", ORIGINAL_ROUTE)
             self._finish_deferred()
 
+    async def _open_modal(self, modal: ModalDict) -> None:
+        async with self._lock:
+            self._ensure_alive()
+            if self.state is not ResponseState.PENDING:
+                raise InteractionResponded("a modal can only be the first answer")
+            await self._callback(InteractionCallbackType.MODAL, modal)
+            self.state = ResponseState.MODAL
+
     def _ensure_answered(self, action: str) -> None:
         if self.state is ResponseState.PENDING:
             raise InteractionNotAnswered(
@@ -421,6 +435,10 @@ class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
         """The invoked command with its subcommands, such as `"role color set"`."""
         return _command_name(self.interaction.data)
 
+    async def modal(self, modal: ModalDict) -> None:
+        """Answer with a modal built by `ui.modal`; nothing can answer after it."""
+        await self._open_modal(modal)
+
     @override
     def _decode_original(self, body: bytes) -> WebhookMessage:
         return _webhook_message(body)
@@ -446,6 +464,10 @@ class ComponentContext(
     def values(self) -> tuple[str, ...]:
         """The values picked in a select menu."""
         return self.interaction.data.values
+
+    async def modal(self, modal: ModalDict) -> None:
+        """Answer with a modal built by `ui.modal`; nothing can answer after it."""
+        await self._open_modal(modal)
 
     async def defer_update(self) -> None:
         """Acknowledge silently; edit the component's message later with `update`."""

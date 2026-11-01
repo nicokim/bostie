@@ -24,6 +24,7 @@ from bostie import (
     Option,
     UnexpectedResponse,
     WebhookMessage,
+    ui,
 )
 from bostie.context import ResponseState
 
@@ -35,6 +36,7 @@ WEBHOOK = "/webhooks/"
 type Call = tuple[str, str, int | None]
 
 _names = itertools.count()
+FORM = ui.modal("form", "Form", ui.label("Name", ui.text_input("name")))
 
 
 class Interactions:
@@ -105,6 +107,7 @@ ENTER: dict[ResponseState, Callable[[ComponentContext], Awaitable[object]]] = {
     ResponseState.DEFERRED: lambda ctx: ctx.defer(),
     ResponseState.DEFERRED_UPDATE: lambda ctx: ctx.defer_update(),
     ResponseState.RESPONDED: lambda ctx: ctx.respond("first"),
+    ResponseState.MODAL: lambda ctx: ctx.modal(FORM),
 }
 CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "respond": lambda ctx: ctx.respond("hi"),
@@ -114,12 +117,14 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "edit": lambda ctx: ctx.edit("hi"),
     "followup": lambda ctx: ctx.followup("hi"),
     "delete": lambda ctx: ctx.delete(),
+    "modal": lambda ctx: ctx.modal(FORM),
 }
-PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, EXPIRED = ResponseState
+PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, MODAL, EXPIRED = ResponseState
 CALLBACK_4 = ("POST", "callback", 4)
 CALLBACK_5 = ("POST", "callback", 5)
 CALLBACK_6 = ("POST", "callback", 6)
 CALLBACK_7 = ("POST", "callback", 7)
+CALLBACK_9 = ("POST", "callback", 9)
 EDIT = ("PATCH", "original", None)
 FOLLOWUP = ("POST", "followup", None)
 DELETE = ("DELETE", "original", None)
@@ -156,6 +161,11 @@ TABLE = [
     (RESPONDED, "edit", EDIT, RESPONDED),
     (RESPONDED, "followup", FOLLOWUP, RESPONDED),
     (RESPONDED, "delete", DELETE, RESPONDED),
+    (PENDING, "modal", CALLBACK_9, MODAL),
+    (DEFERRED, "modal", REFUSED, DEFERRED),
+    (DEFERRED_UPDATE, "modal", REFUSED, DEFERRED_UPDATE),
+    (RESPONDED, "modal", REFUSED, RESPONDED),
+    *[(MODAL, call, REFUSED, MODAL) for call in CALLS],
 ]
 
 
@@ -186,6 +196,18 @@ def test_response_state_machine(
         await on.answer(ComponentContext, handler)
 
     run_bot(scenario)
+
+
+def test_a_modal_answers_a_command_and_stops_its_auto_defer() -> None:
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.modal(FORM)
+            await settle()
+
+        (callback,) = await on.answer(Context, handler)
+        assert callback.json == {"type": 9, "data": FORM}
+
+    run_bot(scenario, auto_defer=0.0)
 
 
 def test_callbacks_target_the_interaction_and_webhooks_the_application() -> None:

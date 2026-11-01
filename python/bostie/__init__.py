@@ -25,6 +25,7 @@ from bostie.enums import (
     PremiumTier,
     RoleFlags,
     StickerFormatType,
+    TextInputStyle,
     UserFlags,
     VerificationLevel,
 )
@@ -219,6 +220,7 @@ __all__ = [
     "StringSelect",
     "SyncResult",
     "TextDisplay",
+    "TextInputStyle",
     "ThreadMetadata",
     "Thumbnail",
     "TransportError",

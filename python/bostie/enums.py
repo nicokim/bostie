@@ -194,6 +194,11 @@ class ButtonStyle(DiscordIntEnum):
     PREMIUM = 6
 
 
+class TextInputStyle(DiscordIntEnum):
+    SHORT = 1
+    PARAGRAPH = 2
+
+
 class OptionType(DiscordIntEnum):
     SUB_COMMAND = 1
     SUB_COMMAND_GROUP = 2
