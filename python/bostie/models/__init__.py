@@ -50,6 +50,8 @@ from bostie.models.components import (
 )
 from bostie.models.expressions import Emoji, SoundboardSound, Sticker
 from bostie.models.guild import (
+    Ban,
+    BulkBan,
     CurrentUserGuild,
     Guild,
     GuildPreview,
@@ -165,7 +167,9 @@ __all__ = [
     "AutoModerationTriggerMetadata",
     "AutocompleteInteraction",
     "AvatarDecorationData",
+    "Ban",
     "Builder",
+    "BulkBan",
     "Button",
     "Channel",
     "ChannelSelect",

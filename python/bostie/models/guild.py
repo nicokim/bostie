@@ -217,6 +217,18 @@ class IncidentsData(Model, kw_only=True):
     raid_detected_at: datetime | None = None
 
 
+class Ban(Model, kw_only=True):
+    reason: str | None
+    user: User
+
+
+class BulkBan(Model, kw_only=True):
+    """The ids of the users a bulk ban banned, and of those it did not."""
+
+    banned_users: tuple[int, ...]
+    failed_users: tuple[int, ...]
+
+
 class UnavailableGuild(Model, kw_only=True):
     """A guild Discord has not sent yet, or one it lost to an outage."""
 

@@ -1,0 +1,47 @@
+{
+  "reason": "mentioning b1nzy",
+  "user": {
+    "id": "308882807193731073",
+    "username": "ada_owner",
+    "global_name": "Ada",
+    "discriminator": "0",
+    "avatar": "a_173d406e7b4073210e72cabee9602253",
+    "public_flags": 576,
+    "avatar_decoration_data": {
+      "asset": "a_9cfe55ebd354b2d1a226d267afeb6a71",
+      "sku_id": "1144058844004233369",
+      "expires_at": null
+    },
+    "collectibles": {
+      "nameplate": {
+        "sku_id": "1349849614353829990",
+        "asset": "nameplates/nameplates/twilight/",
+        "label": "",
+        "palette": "cobalt",
+        "expires_at": null
+      }
+    },
+    "display_name_styles": {
+      "font_id": 3,
+      "effect_id": 4,
+      "colors": [
+        16777215
+      ]
+    },
+    "clan": {
+      "identity_guild_id": "1335172792320131073",
+      "identity_enabled": true,
+      "tag": "LYRE",
+      "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+    },
+    "primary_guild": {
+      "identity_guild_id": "1335172792320131073",
+      "identity_enabled": true,
+      "tag": "LYRE",
+      "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+    },
+    "banner": "9e9b9873477d67d20efa45b832f0f882",
+    "accent_color": 5793266,
+    "banner_color": "#5865f2"
+  }
+}
