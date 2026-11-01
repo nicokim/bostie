@@ -54,10 +54,10 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
             include_self=True,
             buffer=5.0,
             markers=True,
-            overflow="drop_newest",
-            stall="end",
+            overflow="drop_oldest",
+            stall="wait",
         )
-        mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.3, mix=True)
+        mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.0, mix=True)
         vc.receive(voice.Opus(), users=())
         assert_type(
             packets, voice.Receiver[voice.Packet | voice.SpeechStart | voice.SpeechStop]
@@ -74,8 +74,8 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
             "jitter": 0.06,
             "markers": False,
             "mix": False,
-            "overflow": "drop_oldest",
-            "stall": "wait",
+            "overflow": "drop_newest",
+            "stall": "end",
         }
         assert [call[2] for call in bot.calls("voice_receive")] == [
             {**common, "kind": "pcm"},
@@ -87,8 +87,8 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
                 "include_self": True,
                 "buffer": 5.0,
                 "markers": True,
-                "overflow": "drop_newest",
-                "stall": "end",
+                "overflow": "drop_oldest",
+                "stall": "wait",
             },
             {
                 **common,
@@ -96,7 +96,7 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
                 "rate": 16_000,
                 "channels": 1,
                 "sample": "f32le",
-                "jitter": 0.3,
+                "jitter": 0.0,
                 "mix": True,
             },
             {**common, "kind": "opus", "users": []},
@@ -108,7 +108,15 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
             5.0,
         )
 
-    run(scenario, defaults=voice.Defaults(receive_buffer=1.5, jitter=0.06))
+    run(
+        scenario,
+        defaults=voice.Defaults(
+            receive_buffer=1.5,
+            jitter=0.06,
+            overflow="drop_newest",
+            receive_stall="end",
+        ),
+    )
 
 
 def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> None:
@@ -151,23 +159,7 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
     run(scenario)
 
 
-@pytest.mark.parametrize(
-    ("ended", "ending", "reason"),
-    [
-        ("disconnected", disconnected("removed"), voice.ClosedReason.DISCONNECTED),
-        (
-            "moved",
-            ("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, False),
-            voice.ClosedReason.MOVED,
-        ),
-        (None, disconnected("removed"), voice.ClosedReason.DISCONNECTED),
-    ],
-)
-def test_iteration_yields_after_full_batches_and_ends_after_the_queued_items(
-    ended: Literal["disconnected", "moved"] | None,
-    ending: VoiceDelivery,
-    reason: voice.ClosedReason,
-) -> None:
+def test_iteration_lets_other_tasks_run_after_each_full_batch() -> None:
     async def scenario(bot: FakeBot) -> None:
         rx, native = await open_receiver(bot)
         offsets: list[int] = []
@@ -187,20 +179,44 @@ def test_iteration_yields_after_full_batches_and_ends_after_the_queued_items(
         await settle()
         native.feed(*(frame(960 * index) for index in range(600)))
         await settle()
-        native.items.extend(frame(960 * index) for index in range(600, 603))
-        native.counters = {"delivered": 603, "dropped": 1, "lost": 2}
+        bot.deliver(disconnected("removed"))
+        await consumer
+        watcher.cancel()
+        assert offsets == [960 * index for index in range(600)]
+        assert 256 in seen
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("ended", "ending", "reason"),
+    [
+        ("disconnected", disconnected("removed"), voice.ClosedReason.DISCONNECTED),
+        (
+            "moved",
+            ("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, False),
+            voice.ClosedReason.MOVED,
+        ),
+        (None, disconnected("removed"), voice.ClosedReason.DISCONNECTED),
+    ],
+)
+def test_iteration_ends_after_the_queued_items_with_the_reason(
+    ended: Literal["disconnected", "moved"] | None,
+    ending: VoiceDelivery,
+    reason: voice.ClosedReason,
+) -> None:
+    async def scenario(bot: FakeBot) -> None:
+        rx, native = await open_receiver(bot)
+        native.items.extend(frame(960 * index) for index in range(3))
+        native.counters = {"delivered": 3, "dropped": 1, "lost": 2}
         if ended is not None:
             native.end(ended)
         bot.deliver(ending)
-        await consumer
-        watcher.cancel()
-        assert offsets == [960 * index for index in range(603)]
-        assert 256 in seen
-        assert native.reads == [256] * 7
+        assert [item.offset async for item in rx] == [0, 960, 1920]
         assert (rx.closed, rx.closed_reason, rx.stats()) == (
             True,
             reason,
-            voice.ReceiverStats(603, 1, 2),
+            voice.ReceiverStats(3, 1, 2),
         )
 
     run(scenario)
@@ -404,19 +420,3 @@ def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
         assert (vc.speech_hangover, vc.speech_activity) == (0.75, True)
 
     run(scenario, defaults=voice.Defaults(speech_hangover=0.3, speech_activity=False))
-
-
-def test_after_the_end_receive_raises_and_ssrcs_keep_the_last_value() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        bot.core.ssrc_map = {4242: USER_ID}
-        assert vc.ssrcs == {4242: USER_ID}
-        bot.deliver(disconnected("removed"))
-        with pytest.raises(voice.VoiceNotConnected):
-            vc.receive()
-        with pytest.raises(voice.VoiceNotConnected):
-            vc.speech_hangover = 1.0
-        assert vc.ssrcs == {4242: USER_ID}
-        assert bot.calls("voice_receive") == []
-
-    run(scenario)

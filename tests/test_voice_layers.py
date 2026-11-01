@@ -476,11 +476,14 @@ def test_two_plays_open_two_sinks_that_both_play() -> None:
 def test_sink_settings_reach_the_connection() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
-        await play(vc, FakeSource(clock, "a", 5), volume=0.5, buffer=0.4, stall="drop")
+        track = await play(
+            vc, FakeSource(clock, "a", 5), volume=0.5, buffer=0.4, stall="drop", meta=7
+        )
         add(queue(vc, volume=0.7, buffer=0.1, stall="drop"), FakeSource(clock, "b", 5))
         await clock.until(lambda: len(vc.sinks) == 2)
         settings = [(sink.volume, sink.buffer, sink.stall) for sink in vc.sinks]
         assert settings == [(0.5, 0.4, "drop"), (0.7, 0.1, "drop")]
+        assert track.meta == 7
 
     run(scenario)
 
@@ -1294,7 +1297,7 @@ def test_stopping_a_recorder_writes_what_was_still_queued(tmp_path: Path) -> Non
         await settle()
         vc.rx.feed(*(opus(index) for index in range(5)))
         stopping = asyncio.create_task(recorder.stop())
-        await asyncio.sleep(vc.rx.jitter / 2)
+        await settle()
         vc.rx.feed(opus(5))
         await stopping
         packets, _ = read_ogg(tmp_path / "42.ogg")

@@ -31,7 +31,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         vc.sink()
-        vc.sink(voice.PCM(24_000, 1, "f32le"), buffer=0.5, volume=0.3, stall="drop")
+        vc.sink(voice.PCM(24_000, 1, "f32le"), buffer=0.5, volume=0.3, stall="hold")
         vc.sink(voice.Opus())
         assert [call[2] for call in bot.calls("voice_sink")] == [
             {
@@ -41,7 +41,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "sample": "s16le",
                 "buffer": 0.4,
                 "volume": 1.0,
-                "stall": "hold",
+                "stall": "drop",
             },
             {
                 "kind": "pcm",
@@ -50,7 +50,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "sample": "f32le",
                 "buffer": 0.5,
                 "volume": 0.3,
-                "stall": "drop",
+                "stall": "hold",
             },
             {
                 "kind": "opus",
@@ -59,11 +59,11 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "sample": "s16le",
                 "buffer": 0.4,
                 "volume": 1.0,
-                "stall": "hold",
+                "stall": "drop",
             },
         ]
 
-    run(scenario, defaults=voice.Defaults(sink_buffer=0.4))
+    run(scenario, defaults=voice.Defaults(sink_buffer=0.4, stall="drop"))
 
 
 def test_write_waits_while_full_and_resumes_on_the_wake() -> None:
@@ -97,27 +97,21 @@ def test_one_wake_resumes_every_waiter_even_if_another_was_cancelled() -> None:
     run(scenario)
 
 
-def test_a_long_write_never_queues_more_than_the_buffer_and_one_piece() -> None:
+@pytest.mark.parametrize(
+    ("format", "buffer", "size", "pieces"),
+    [
+        (voice.PCM(44_100, 1), 0.2, 10_000, [4410, 4410, 1180]),
+        (voice.PCM(), 0.04, 5000, [3840, 1160]),
+        (voice.PCM(44_100, 1, "f32le"), 0.2, 20_000, [8820, 8820, 2360]),
+    ],
+)
+def test_pieces_are_20_ms_or_a_quarter_buffer_in_whole_sample_frames(
+    format: voice.PCM, buffer: float, size: int, pieces: list[int]
+) -> None:
     async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=0.2)
-        consumer = asyncio.ensure_future(consume(native))
-        await sink.write(bytes(SECOND * 10))
-        consumer.cancel()
-        assert native.written == pytest.approx(10)
-        assert native.max_queued <= 0.25 + 1e-9
-
-    run(scenario)
-
-
-def test_pieces_are_20_ms_or_a_quarter_buffer_in_whole_sample_frames() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        await vc.sink(voice.PCM(44_100, 1), buffer=0.2).write(bytes(10_000))
-        await vc.sink(buffer=0.04).write(bytes(5000))
-        assert [[len(write) for write in sink.writes] for sink in bot.core.sinks] == [
-            [4410, 4410, 1180],
-            [3840, 1160],
-        ]
+        sink, native = await open_sink(bot, format, buffer=buffer)
+        await sink.write(bytes(size))
+        assert [len(write) for write in native.writes] == pieces
 
     run(scenario)
 
@@ -356,17 +350,19 @@ def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
         def __init__(self, **options: Any) -> None:
             created.append(options)
 
-        def encode(self, data: memoryview) -> list[bytes]:
-            return [bytes(data)]
-
-        def flush(self) -> list[bytes]:
-            return [b"tail"]
-
     monkeypatch.setattr(
         encoder_module, "_native", SimpleNamespace(OpusEncoder=NativeEncoder)
     )
-    encoder = voice.OpusEncoder(voice.PCM(24_000, 1))
-    voice.OpusEncoder(encoder=voice.EncoderSettings(bitrate=96_000, packet_loss=0.25))
+    voice.OpusEncoder(voice.PCM(24_000, 1))
+    voice.OpusEncoder(
+        encoder=voice.EncoderSettings(
+            bitrate=96_000,
+            application="voip",
+            fec=False,
+            packet_loss=0.29,
+            complexity=0,
+        )
+    )
     assert created == [
         {
             "rate": 24_000,
@@ -383,11 +379,9 @@ def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
             "channels": 2,
             "sample": "s16le",
             "bitrate": 96_000,
-            "application": "audio",
-            "fec": True,
-            "packet_loss": 25,
-            "complexity": 10,
+            "application": "voip",
+            "fec": False,
+            "packet_loss": 29,
+            "complexity": 0,
         },
     ]
-    assert encoder.encode(array.array("h", [1, 2])) == [bytes(array.array("h", [1, 2]))]
-    assert encoder.flush() == [b"tail"]

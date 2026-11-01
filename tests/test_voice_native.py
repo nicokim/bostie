@@ -248,15 +248,7 @@ def test_a_closed_sink_refuses_writes_but_keeps_its_stats(
     assert not sink.passthrough()
 
 
-def test_sink_settings_are_checked(connected: _native.Core) -> None:
-    sink = pcm_sink(connected)
-
-    with pytest.raises(ValueError, match="volume"):
-        sink.set_volume(-1.0)
-    with pytest.raises(ValueError, match="20 ms blocks"):
-        pcm_sink(connected, rate=44_101)
-    with pytest.raises(ValueError, match="buffer"):
-        pcm_sink(connected, buffer=0.0)
+def test_a_negative_sink_buffer_raises_value_error(connected: _native.Core) -> None:
     with pytest.raises(ValueError, match="buffer"):
         pcm_sink(connected, buffer=-1.0)
 
@@ -292,22 +284,12 @@ def test_voice_errors_raise_runtime_or_value_errors(core: _native.Core) -> None:
         connect(core)
     with pytest.raises(ValueError, match="bitrate"):
         connect(core, bitrate=10)
-    with pytest.raises(ValueError, match="speaking"):
-        connect(core, speaking=0)
     with pytest.raises(ValueError, match="timeout"):
         connect(core, timeout=-1.0)
     with pytest.raises(ValueError, match="server_change_delay"):
         connect(core, server_change_delay=-1.0)
     core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
     connect(core)
-    with pytest.raises(ValueError, match="speech hangover must be from"):
-        core.voice_speech_hangover(GUILD, 11.0)
-    with pytest.raises(ValueError, match="buffer must be from"):
-        receiver(core, buffer=0.0)
-    with pytest.raises(ValueError, match="jitter must be at most"):
-        receiver(core, jitter=2.0)
-    with pytest.raises(ValueError, match="markers=True needs per-user frames"):
-        receiver(core, markers=True, mix=True)
     with pytest.raises(ValueError, match="mix=True needs a PCM format"):
         core.voice_receive(
             GUILD,

@@ -35,6 +35,7 @@ from bostie.errors import Forbidden, NotFound
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
 from bostie.models import VoiceState, decode
 from bostie.voice import connection as connection_module
+from bostie.voice.formats import StageRole
 
 PATCH_ME = f"/guilds/{GUILD_ID}/voice-states/@me"
 
@@ -43,12 +44,18 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(
             bot,
-            self_mute=True,
-            server_change_delay=0.5,
+            self_mute=False,
+            timeout=3.0,
+            server_change_delay=0.0,
             encoder=voice.EncoderSettings(
-                bitrate=50_000, packet_loss=0.25, complexity=7
+                bitrate=50_000,
+                application="lowdelay",
+                fec=False,
+                packet_loss=0.29,
+                complexity=0,
             ),
             speaking_flags=SpeakingFlags.SOUNDSHARE,
+            speech_activity=False,
         )
         assert bot.calls("voice_connect") == [
             (
@@ -57,28 +64,42 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
                 {
                     "shard_id": 0,
                     "user_id": BOT_ID,
-                    "self_mute": True,
+                    "self_mute": False,
                     "self_deaf": True,
-                    "timeout": 15.0,
-                    "server_change_delay": 0.5,
+                    "timeout": 3.0,
+                    "server_change_delay": 0.0,
                     "bitrate": 50_000,
-                    "application": "audio",
-                    "fec": True,
-                    "packet_loss": 25,
-                    "complexity": 7,
+                    "application": "lowdelay",
+                    "fec": False,
+                    "packet_loss": 29,
+                    "complexity": 0,
                     "speaking": 2,
                 },
             )
+        ]
+        assert [call[1] for call in bot.calls("voice_speech_activity")] == [
+            (GUILD_ID, False)
         ]
 
     run(
         scenario,
         defaults=voice.Defaults(
             self_deaf=True,
+            self_mute=True,
             timeout=15.0,
+            server_change_delay=0.3,
             encoder=voice.EncoderSettings(application="voip"),
         ),
     )
+
+
+def test_invalid_connect_options_raise_before_anything_is_sent() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        with pytest.raises(ValueError, match="timeout"):
+            await bot.voice.connect(VOICE, timeout=0.0)
+        assert (bot.core.sent, bot.rest.requests) == ([], [])
+
+    run(scenario)
 
 
 def test_bitrate_follows_the_channel_and_falls_back_to_64_kbps() -> None:
@@ -148,27 +169,35 @@ def test_only_guild_voice_and_stage_channels_connect(channel_id: int) -> None:
     run(scenario)
 
 
-def test_stage_is_ignored_on_a_voice_channel() -> None:
+@pytest.mark.parametrize(
+    ("default", "channel", "options", "patches"),
+    [
+        ("listen", VOICE, {"stage": "speak"}, []),
+        ("listen", STAGE, {"stage": "speak"}, [{"suppress": False}]),
+        ("listen", STAGE, {}, []),
+        ("speak", STAGE, {}, [{"suppress": False}]),
+        ("speak", STAGE, {"stage": "listen"}, []),
+    ],
+)
+def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
+    default: StageRole,
+    channel: int,
+    options: voice.ConnectOptions,
+    patches: list[dict[str, bool]],
+) -> None:
     async def scenario(bot: FakeBot) -> None:
-        await connected(bot, VOICE, stage="speak")
-        assert bot.rest.paths("PATCH") == []
+        await connected(bot, channel, **options)
+        sent = [request for request in bot.rest.requests if request.method == "PATCH"]
+        assert [request.path for request in sent] == [PATCH_ME] * len(patches)
+        assert [request.json for request in sent] == [
+            {"channel_id": str(channel)} | patch for patch in patches
+        ]
 
-    run(scenario)
+    run(scenario, defaults=voice.Defaults(stage=default))
 
 
-def test_stage_speak_and_request_patch_the_bots_voice_state() -> None:
+def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
     async def scenario(bot: FakeBot) -> None:
-        speaking = await connected(bot, STAGE, stage="speak")
-        speak = bot.rest.requests[-1]
-        assert (speak.method, speak.path, speak.json) == (
-            "PATCH",
-            PATCH_ME,
-            {"channel_id": str(STAGE), "suppress": False},
-        )
-        await speaking.disconnect()
-        listening = await connected(bot, STAGE)
-        assert bot.rest.paths("PATCH") == [PATCH_ME]
-        await listening.disconnect()
         await connected(bot, STAGE, stage="request")
         request = bot.rest.requests[-1]
         assert request.json.keys() == {"channel_id", "request_to_speak_timestamp"}
@@ -526,6 +555,21 @@ async def set_speaking_flags(vc: voice.VoiceConnection) -> None:
     vc.speaking_flags = SpeakingFlags.SOUNDSHARE
 
 
+@after_the_end("receive")
+async def receive(vc: voice.VoiceConnection) -> None:
+    vc.receive()
+
+
+@after_the_end("speech_hangover")
+async def set_speech_hangover(vc: voice.VoiceConnection) -> None:
+    vc.speech_hangover = 1.0
+
+
+@after_the_end("speech_activity")
+async def set_speech_activity(vc: voice.VoiceConnection) -> None:
+    vc.speech_activity = False
+
+
 @after_the_end("wait_until")
 async def wait_until_ready(vc: voice.VoiceConnection) -> None:
     await vc.wait_until(voice.State.READY)
@@ -552,11 +596,12 @@ def test_after_the_end_calls_raise_voice_not_connected(name: str) -> None:
 def test_after_the_end_reads_return_the_last_values() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        dave = vc.dave
+        bot.core.ssrc_map = {4242: USER_ID}
+        ssrcs, dave = vc.ssrcs, vc.dave
         bot.deliver(disconnected("requested"))
         await vc.disconnect()
         assert vc.latency == voice.Latency(None, None)
-        assert vc.dave == dave
+        assert (vc.ssrcs, vc.dave) == (ssrcs, dave)
         assert bot.voice.connections == ()
 
     run(scenario)
@@ -581,12 +626,11 @@ def test_live_reads_come_from_the_core() -> None:
 def test_assigning_an_encoder_applies_it_with_the_channels_bitrate() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
-        vc.encoder = voice.EncoderSettings(
-            application="voip", packet_loss=0.0, complexity=5
+        encoder = voice.EncoderSettings(
+            application="voip", fec=False, packet_loss=1.0, complexity=5
         )
-        assert vc.encoder == voice.EncoderSettings(
-            application="voip", packet_loss=0.0, complexity=5
-        )
+        vc.encoder = encoder
+        assert vc.encoder == encoder
         assert bot.calls("voice_encoder") == [
             (
                 "voice_encoder",
@@ -594,8 +638,8 @@ def test_assigning_an_encoder_applies_it_with_the_channels_bitrate() -> None:
                 {
                     "bitrate": 96_000,
                     "application": "voip",
-                    "fec": True,
-                    "packet_loss": 0,
+                    "fec": False,
+                    "packet_loss": 100,
                     "complexity": 5,
                 },
             )
@@ -852,22 +896,6 @@ def test_context_voice_lets_other_not_found_errors_through() -> None:
             await context_voice(bot).connect()
 
     run(scenario)
-
-
-def test_play_opens_a_sink_with_its_options_and_the_connection_defaults() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        track = await vc.play(voice.File("a.ogg"), volume=0.5, stall="drop", meta=7)
-        sink = track.sink
-        assert (track.meta, sink.volume, sink.stall, sink.buffer) == (
-            7,
-            0.5,
-            "drop",
-            0.4,
-        )
-        track.stop()
-
-    run(scenario, defaults=voice.Defaults(sink_buffer=0.4))
 
 
 def test_handles_of_unknown_ids_and_guilds_are_ignored() -> None:

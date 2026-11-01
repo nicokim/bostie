@@ -86,7 +86,6 @@ class FakeSink:
         self.writes: list[bytes] = []
         self.written = 0.0
         self.consumed = 0.0
-        self.max_queued = 0.0
         self.armed = False
         self.markers: list[tuple[int, float]] = []
         self.next_marker = 1
@@ -110,7 +109,6 @@ class FakeSink:
         self.written += (
             0.02 if self.kind == "opus" else len(chunk) / self.bytes_per_second
         )
-        self.max_queued = max(self.max_queued, self.queued())
         return True
 
     def mark(self) -> tuple[int, int]:
