@@ -385,83 +385,115 @@ fn a_plain_stage_call_only_caches_the_external_sender() {
 }
 
 #[test]
-fn a_corrupt_commit_is_flagged_and_the_bot_is_added_again() {
-    let mut call = group(&[BOT, A, B]);
-    call.fake.corrupt_next(user(BOT), Corruption::Commit);
-    call.join(user(C));
-    call.run();
+fn a_refused_commit_or_welcome_is_flagged_and_the_bot_is_added_again() {
+    fn corrupt_commit(call: &mut Call) {
+        call.fake.corrupt_next(user(BOT), Corruption::Commit);
+        call.join(user(C));
+    }
+    fn corrupt_welcome(call: &mut Call) {
+        call.fake.corrupt_next(user(BOT), Corruption::Welcome);
+        call.join(user(BOT));
+    }
+    fn replayed_commit(call: &mut Call) {
+        let commit = Bytes::from_static(b"a replayed commit");
+        let op = DaveOp::AnnounceCommit {
+            transition_id: 9,
+            commit,
+        };
+        call.deliver(user(BOT), op);
+    }
+    fn replayed_welcome(call: &mut Call) {
+        let welcome = Bytes::from_static(b"a replayed welcome");
+        let op = DaveOp::Welcome {
+            transition_id: 9,
+            welcome,
+        };
+        call.deliver(user(BOT), op);
+    }
+    fn removing_the_bot(call: &mut Call) {
+        let kick = call.fake.kick(user(BOT));
+        call.enqueue(kick);
+    }
+    type Case = (&'static str, &'static [u64], fn(&mut Call));
+    let cases: [Case; 5] = [
+        ("corrupt commit", &[BOT, A, B], corrupt_commit),
+        ("corrupt welcome", &[A, B], corrupt_welcome),
+        ("replayed commit", &[BOT, A], replayed_commit),
+        ("replayed welcome", &[BOT, A], replayed_welcome),
+        ("commit removing the bot", &[BOT, A, B], removing_the_bot),
+    ];
 
-    let sent = call.sent_by(user(BOT));
-    let flagged = sent
-        .iter()
-        .position(|message| matches!(message, Outbound::InvalidCommitWelcome(_)))
-        .unwrap();
-    assert!(matches!(sent[flagged + 1], Outbound::KeyPackage(_)));
-    assert_eq!(sent_count(&sent, is_flag), 1);
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    for peer in [A, B, C] {
-        assert_eq!(hear(&mut call, BOT, peer), OPUS);
+    for (name, members, trigger) in cases {
+        let mut call = group(members);
+        call.fake.hold_transitions = true;
+        trigger(&mut call);
+        call.run();
+        let sent = call.sent_by(user(BOT));
+        let flagged = sent
+            .iter()
+            .position(|message| matches!(message, Outbound::InvalidCommitWelcome(_)))
+            .unwrap();
+        let held = call.dave(user(BOT)).send_mode();
+        release(&mut call);
+
+        assert!(
+            matches!(sent[flagged + 1], Outbound::KeyPackage(_)),
+            "{name}"
+        );
+        assert_eq!(sent_count(&sent, is_flag), 1, "{name}");
+        assert_eq!(held, SendMode::Hold, "{name}");
+        assert_eq!(
+            call.dave(user(BOT)).send_mode(),
+            SendMode::Encrypt,
+            "{name}"
+        );
+        let peers: Vec<u64> = call
+            .fake
+            .members()
+            .into_iter()
+            .map(u64::from)
+            .filter(|&id| id != BOT)
+            .collect();
+        for peer in peers {
+            assert_eq!(hear(&mut call, BOT, peer), OPUS, "{name} {peer}");
+        }
     }
 }
 
 #[test]
-fn a_corrupt_welcome_is_flagged_and_the_bot_is_added_again() {
-    let mut call = group(&[A, B]);
-    call.fake.corrupt_next(user(BOT), Corruption::Welcome);
-    call.join(user(BOT));
-    call.run();
-
-    let sent = call.sent_by(user(BOT));
-    assert!(matches!(
-        sent[..3],
-        [
-            Outbound::KeyPackage(_),
-            Outbound::InvalidCommitWelcome(_),
-            Outbound::KeyPackage(_)
-        ]
-    ));
-    assert_eq!(sent_count(&sent, is_flag), 1);
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    assert_eq!(hear(&mut call, BOT, A), OPUS);
-}
-
-#[test]
-fn more_recoveries_than_the_limit_within_the_window_end_the_session() {
-    let (mut dave, _) = started(1);
-    let now = Instant::now();
-    let mut out = Vec::new();
+fn recoveries_count_toward_the_limit_for_exactly_the_window() {
     let corrupt = |transition_id| DaveOp::Welcome {
         transition_id,
         welcome: Bytes::from_static(b"not a welcome"),
     };
+    let limit = u16::try_from(RECOVERY_LIMIT).unwrap();
 
-    for transition_id in 1..=u16::try_from(RECOVERY_LIMIT).unwrap() {
-        dave.handle(corrupt(transition_id), now, &mut out).unwrap();
+    for (after, flagged) in [
+        (RECOVERY_WINDOW / 2, false),
+        (RECOVERY_WINDOW - Duration::from_nanos(1), false),
+        (RECOVERY_WINDOW, true),
+    ] {
+        let (mut dave, _) = started(1);
+        let now = Instant::now();
+        let mut out = Vec::new();
+        for transition_id in 1..=limit {
+            dave.handle(corrupt(transition_id), now, &mut out).unwrap();
+        }
+        out.clear();
+
+        let next = dave.handle(corrupt(limit + 1), now + after, &mut out);
+
+        if flagged {
+            assert!(next.is_ok(), "{after:?}");
+            assert!(out.contains(&Outbound::InvalidCommitWelcome(limit + 1)));
+        } else {
+            assert!(
+                matches!(next, Err(DaveError::RecoveryLimit { .. })),
+                "{after:?}"
+            );
+            assert!(out.is_empty(), "{after:?}");
+        }
     }
-    out.clear();
-    let past_limit = dave.handle(corrupt(9), now + RECOVERY_WINDOW / 2, &mut out);
-
-    assert!(matches!(past_limit, Err(DaveError::RecoveryLimit { .. })));
-    assert!(out.is_empty());
-}
-
-#[test]
-fn recoveries_older_than_the_window_stop_counting() {
-    let (mut dave, _) = started(1);
-    let mut now = Instant::now();
-    let mut out = Vec::new();
-
-    for transition_id in 1..=10 {
-        let welcome = DaveOp::Welcome {
-            transition_id,
-            welcome: Bytes::from_static(b"not a welcome"),
-        };
-        dave.handle(welcome, now, &mut out).unwrap();
-        now += RECOVERY_WINDOW;
-    }
-
-    assert_eq!(sent_count(&out, is_flag), 10);
-    assert!(out.contains(&Outbound::InvalidCommitWelcome(10)));
 }
 
 #[test]
@@ -536,47 +568,6 @@ fn a_commit_for_a_pending_group_is_ignored() {
 
     assert_eq!(dave.handle(commit, Instant::now(), &mut out).unwrap(), None);
     assert!(out.is_empty());
-}
-
-#[test]
-fn a_commit_without_queued_proposals_in_an_established_group_recovers() {
-    let mut call = group(&[BOT, A]);
-    call.deliver(
-        user(BOT),
-        DaveOp::AnnounceCommit {
-            transition_id: 9,
-            commit: Bytes::from_static(b"a replayed commit"),
-        },
-    );
-    call.run();
-
-    let sent = call.sent_by(user(BOT));
-    assert_eq!(sent[0], Outbound::InvalidCommitWelcome(9));
-    assert!(matches!(sent[1], Outbound::KeyPackage(_)));
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    assert_eq!(hear(&mut call, BOT, A), OPUS);
-}
-
-#[test]
-fn after_a_recovery_the_bot_holds_until_its_re_add_executes() {
-    let mut call = group(&[BOT, A]);
-    call.fake.hold_transitions = true;
-    call.deliver(
-        user(BOT),
-        DaveOp::AnnounceCommit {
-            transition_id: 9,
-            commit: Bytes::from_static(b"a replayed commit"),
-        },
-    );
-    call.run();
-
-    let sent = call.sent_by(user(BOT));
-    assert_eq!(sent_count(&sent, is_flag), 1);
-    assert_eq!(ready_ids(&sent).len(), 1);
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Hold);
-    release(&mut call);
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
 
 #[test]
@@ -757,6 +748,36 @@ fn passthrough_survives_a_downgrade_and_an_upgrade() {
 }
 
 #[test]
+fn a_prepared_downgrade_accepts_plain_frames_until_its_expiry() {
+    for (closed_upgrade, downgrade_expiry, expected) in [
+        (false, 24, Ok(OPUS)),
+        (true, 24, Ok(OPUS)),
+        (false, 0, Err(DecryptFailure::Unencrypted)),
+    ] {
+        let receive = ReceiveTuning {
+            upgrade_passthrough: 0,
+            downgrade_expiry,
+            ..ReceiveTuning::default()
+        };
+        let mut call = group_with(&[BOT, A], receive);
+        if closed_upgrade {
+            for transition in [call.fake.downgrade(), call.fake.upgrade()] {
+                call.enqueue(transition);
+                call.run();
+            }
+            assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
+        }
+        call.fake.hold_transitions = true;
+        let downgrade = call.fake.downgrade();
+        call.enqueue(downgrade);
+        call.run();
+
+        check(call.dave_mut(user(BOT)), &[(A, OPUS, expected)]);
+        assert!(call.failures.is_empty());
+    }
+}
+
+#[test]
 fn receive_recovery_waits_for_the_group_and_never_disconnects() {
     let grace = ReceiveTuning::default().dave_grace;
     let mut out = Vec::new();
@@ -834,25 +855,6 @@ fn receive_recovery_waits_for_the_group_and_never_disconnects() {
     assert!(call.failures.is_empty());
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, A, BOT), OPUS);
-}
-
-#[test]
-fn a_commit_that_removes_the_bot_recovers_and_the_bot_is_added_again() {
-    let mut call = group(&[BOT, A, B]);
-    let kick = call.fake.kick(user(BOT));
-    call.enqueue(kick);
-    call.run();
-
-    let sent = call.sent_by(user(BOT));
-    let flagged = sent
-        .iter()
-        .position(|message| matches!(message, Outbound::InvalidCommitWelcome(_)))
-        .unwrap();
-    assert!(matches!(sent[flagged + 1], Outbound::KeyPackage(_)));
-    assert_eq!(sent_count(&sent, is_flag), 1);
-    assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
-    assert_eq!(hear(&mut call, BOT, A), OPUS);
-    assert_eq!(hear(&mut call, BOT, B), OPUS);
 }
 
 #[test]
