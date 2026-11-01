@@ -326,7 +326,7 @@ fn a_downgrade_keeps_encrypting_until_the_execute_then_sends_plain_opus() {
 }
 
 #[test]
-fn an_upgrade_from_protocol_zero_sends_plain_opus_until_the_transition_executes() {
+fn an_upgrade_from_protocol_zero_stays_plain_until_it_executes() {
     let mut call = call(0);
     call.join(user(BOT));
     call.join(user(A));
@@ -351,7 +351,7 @@ fn an_upgrade_from_protocol_zero_sends_plain_opus_until_the_transition_executes(
 }
 
 #[test]
-fn a_stage_call_at_protocol_zero_is_plain_and_only_caches_the_external_sender() {
+fn a_plain_stage_call_only_caches_the_external_sender() {
     let mut call = call(0);
     call.join(user(BOT));
     call.run();
@@ -453,7 +453,7 @@ fn recoveries_older_than_the_window_stop_counting() {
 }
 
 #[test]
-fn an_add_proposal_for_an_unannounced_user_is_rejected_and_the_group_stays() {
+fn an_add_proposal_for_an_unannounced_user_is_rejected() {
     let mut call = group(&[BOT, A]);
     call.join_unannounced(user(STRANGER));
     call.run();
@@ -472,7 +472,7 @@ fn an_add_proposal_for_an_unannounced_user_is_rejected_and_the_group_stays() {
 }
 
 #[test]
-fn a_welcome_listing_a_user_the_bot_never_heard_of_is_refused_and_recovered() {
+fn a_welcome_naming_an_unknown_user_is_refused_and_recovered() {
     let mut call = group(&[A, B]);
     call.join(user(BOT));
     call.enqueue(vec![(user(BOT), Signal::ClientDisconnect(user(B)))]);
@@ -582,7 +582,7 @@ fn an_execute_for_an_unknown_transition_is_ignored() {
 }
 
 #[test]
-fn frames_between_the_commit_and_the_execute_use_the_old_key_and_still_decrypt() {
+fn frames_between_commit_and_execute_use_the_old_key() {
     let mut call = group(&[BOT, A]);
     call.fake.hold_transitions = true;
     call.join(user(B));
@@ -772,7 +772,7 @@ fn passthrough_survives_a_downgrade_and_an_upgrade() {
 }
 
 #[test]
-fn receive_recovery_waits_until_the_group_is_established_and_never_ends_the_connection() {
+fn receive_recovery_waits_for_the_group_and_never_disconnects() {
     let grace = ReceiveTuning::default().dave_grace;
     let mut out = Vec::new();
     let (mut fresh, _) = started(1);
@@ -961,7 +961,7 @@ fn a_failing_prepare_or_execute_takes_the_recover_path() {
 }
 
 #[test]
-fn a_panic_inside_davey_replaces_the_session_with_one_built_from_the_cached_sender() {
+fn a_davey_panic_rebuilds_the_session_from_the_cached_sender() {
     let mut call = group(&[BOT, A]);
     let last_transition = call.dave(user(BOT)).last_transition;
     assert_ne!(last_transition, 0);

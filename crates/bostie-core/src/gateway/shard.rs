@@ -698,7 +698,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_first_beat_falls_within_one_interval_after_hello_and_later_beats_follow_the_interval() {
+    fn heartbeats_start_within_one_interval_then_follow_it() {
         let interval = Duration::from_millis(41_250);
         let hello_at = Instant::now();
         for fraction in [0.0, 0.5, 0.999] {

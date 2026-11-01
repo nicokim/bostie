@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn sent_packets_reach_the_last_discovered_client_sealed_with_the_newest_key() {
+    fn packets_reach_the_last_discovered_client_with_the_newest_key() {
         let sfu = Sfu::start();
         sfu.key(Mode::XChaCha20Poly1305RtpSize, &[1; KEY_LEN]);
         sfu.key(Mode::Aes256GcmRtpSize, &KEY);

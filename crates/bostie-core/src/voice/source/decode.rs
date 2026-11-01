@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn pcm_seeks_drop_the_decoded_audio_before_the_position_to_within_a_few_samples() {
+    fn pcm_seeks_land_within_a_few_samples_of_the_position() {
         let frames = |chunks: &[Bytes]| chunks.iter().map(|chunk| chunk.len() / 8).sum::<usize>();
         for name in [
             "tone.ogg",

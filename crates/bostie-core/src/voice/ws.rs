@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_wait_one_heartbeat_interval_and_the_connect_timeout_before_hello() {
+    fn write_patience_is_the_connect_timeout_then_the_interval() {
         let heartbeat = Heartbeat::new(INTERVAL, Instant::now());
 
         assert_eq!(TIMEOUTS.patience(None), TIMEOUTS.connect);
@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_message_over_the_limit_is_an_invalid_frame_and_then_a_lost_connection() {
+    async fn an_oversized_message_is_invalid_then_loses_the_connection() {
         let mut gateway = FakeVoiceGateway::start(Config::default()).await;
         let mut socket = identified(&mut gateway).await;
 

@@ -801,7 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_tick_reanchors_once_on_the_grid_with_the_missed_frames_and_no_burst() {
+    fn a_long_tick_reanchors_on_the_grid_without_a_burst() {
         let clock = Synthetic::new();
         let (lane, ticks) = synthetic_recorder(&clock, 3, Duration::from_millis(110));
         let _pacer = pace_on(&clock, vec![lane]);
@@ -859,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn a_panicking_lane_is_dropped_and_counted_while_its_neighbours_keep_ticking() {
+    fn a_panicking_lane_is_dropped_and_its_neighbours_keep_ticking() {
         struct Dropped(Arc<AtomicBool>);
         impl Drop for Dropped {
             fn drop(&mut self) {
@@ -905,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn a_lane_handed_over_while_its_thread_sleeps_runs_on_the_tick_it_wakes_for() {
+    fn a_lane_handed_to_a_sleeping_thread_runs_on_the_next_tick() {
         struct Handing {
             clock: Synthetic,
             handover: Mutex<Option<(Sender<Assignment>, Assignment)>>,
@@ -1166,7 +1166,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_lane_goes_to_the_thread_lightest_in_lanes_and_receive_and_never_to_a_heavy_one() {
+    fn a_new_lane_goes_to_the_lightest_thread_never_a_heavy_one() {
         let placement = Placement {
             epoch: Instant::now(),
             tuning: PacerTuning::default(),
@@ -1181,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    fn a_moving_connection_goes_where_it_stays_light_and_ticks_before_its_old_thread_would() {
+    fn a_moving_connection_goes_to_a_light_thread_that_ticks_sooner() {
         let epoch = Instant::now();
         let placement = Placement {
             epoch,
@@ -1203,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn a_thread_sheds_only_after_its_receive_work_stays_heavy_for_the_whole_window() {
+    fn a_thread_sheds_only_after_a_whole_heavy_window() {
         let tuning = PacerTuning::default();
         let heavy = tuning.rebalance_above;
         let start = Instant::now();
@@ -1219,8 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn a_heavy_thread_moves_a_connection_with_its_receive_work_and_its_state_even_when_that_work_ends_past_the_new_threads_tick()
-     {
+    fn a_heavy_thread_moves_a_connection_with_its_receive_work() {
         let pool = PacerPool::tuned(PacerTuning {
             rebalance_above: Duration::from_millis(3),
             rebalance_after: FRAME * 5,

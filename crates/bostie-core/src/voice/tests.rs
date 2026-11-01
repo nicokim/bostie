@@ -883,7 +883,7 @@ async fn only_xchacha_offered_selects_xchacha_and_its_packets_decrypt() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn no_supported_mode_ends_with_a_protocol_error_naming_the_offer_and_leaves() {
+async fn no_supported_mode_ends_with_a_protocol_error_and_leaves() {
     let mut harness =
         Harness::with(|config| config.modes = vec!["xsalsa20_poly1305_lite".to_owned()]).await;
     harness.connect();
@@ -1256,7 +1256,7 @@ impl Harness {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_move_by_someone_else_reconnects_in_the_new_channel_and_keeps_the_sinks() {
+async fn a_move_by_someone_else_reconnects_and_keeps_the_sinks() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
@@ -1283,7 +1283,7 @@ async fn a_move_by_someone_else_reconnects_in_the_new_channel_and_keeps_the_sink
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_move_announced_server_first_keeps_the_attempt_and_joins_the_new_channel_group() {
+async fn a_server_first_move_joins_the_new_channel_group() {
     let mut harness = Harness::with(|config| config.dave_protocol_version = 1).await;
     harness.connected().await;
     harness.server.expect_op(op::IDENTIFY).await;
@@ -1403,7 +1403,7 @@ async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_server_without_an_endpoint_holds_media_until_the_next_server_takes_over() {
+async fn an_endpointless_server_holds_media_until_the_next_one() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
@@ -1613,7 +1613,7 @@ async fn across_a_move_hold_sinks_keep_their_audio_and_drop_sinks_skip_ahead() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn closing_the_core_ends_the_connection_without_a_leave_and_drops_the_lane() {
+async fn closing_the_core_ends_without_a_leave_and_drops_the_lane() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
@@ -1835,7 +1835,7 @@ async fn a_session_description_with_another_mode_ends_with_a_protocol_error() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn resume_sockets_closed_before_resumed_count_as_failed_attempts_then_rejoin() {
+async fn resumes_closed_before_resumed_count_as_failures_then_rejoin() {
     let mut harness = Harness::start().await;
     let proxy = harness.via_proxy().await;
     proxy.refusals.store(2, Ordering::SeqCst);
@@ -1898,7 +1898,7 @@ async fn resumes_that_drop_before_their_first_ack_fall_back_to_a_rejoin() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_lane_that_stops_ends_its_connection_while_the_other_lanes_keep_ticking() {
+async fn a_stopped_lane_ends_its_connection_and_spares_the_others() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let second = harness.second_guild().await;
@@ -2350,7 +2350,7 @@ async fn a_transition_split_by_two_resumes_completes_from_the_replays() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn media_sent_between_a_commit_and_its_execute_uses_the_old_key_and_still_decrypts() {
+async fn media_between_commit_and_execute_uses_the_old_key() {
     let mut harness = Harness::dave().await;
     let mut call = harness.talking_with(&[LATE_PEER]).await;
     call.fake.hold_transitions = true;
@@ -2620,7 +2620,7 @@ async fn an_acknowledged_heartbeat_restores_the_rejoin_budget() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn clients_announced_after_the_session_description_hold_media_until_the_group_forms() {
+async fn late_announced_clients_hold_media_until_the_group_forms() {
     let mut harness = Harness::dave().await;
     let mut call = dave_call(CHANNEL, &[]);
     harness.in_call(&mut call).await;
@@ -2813,7 +2813,7 @@ async fn a_peer_heard_before_its_op_5_is_received_under_its_user_id() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn audio_after_an_ssrc_changes_hands_stays_with_the_new_owner_when_op_5_repeats() {
+async fn a_reassigned_ssrc_keeps_its_new_owner_when_op_5_repeats() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let receiver = harness.receiver(receiving(ReceiveFormat::Opus));

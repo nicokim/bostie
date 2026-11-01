@@ -428,7 +428,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn frame_encoder_turns_24_khz_mono_into_20_ms_packets_and_pads_the_last_one() {
+    fn frame_encoder_packs_24_khz_mono_and_pads_the_last_packet() {
         let format = PcmFormat {
             rate: 24_000,
             channels: 1,
@@ -509,7 +509,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_lost_frame_uses_fec_from_the_next_packet_else_plc_of_the_previous_duration() {
+    fn a_lost_frame_uses_fec_from_the_next_packet_or_plc() {
         let packets = speech(12);
         let lost = 8;
         let mut scratch = Vec::new();

@@ -655,7 +655,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn server_errors_are_retried_twice_with_growing_jittered_waits_unless_posted() {
+    fn server_errors_retry_twice_with_jittered_backoff_unless_posted() {
         let mut retries = Retries::new(LIMITS);
 
         let first = retries.after_response(&Method::GET, StatusCode::BAD_GATEWAY, None);
@@ -684,7 +684,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn transport_errors_are_retried_when_nothing_was_sent_or_the_method_is_idempotent() {
+    fn transport_errors_retry_when_unsent_or_idempotent() {
         for (method, before_sending, retried) in [
             (Method::POST, true, true),
             (Method::POST, false, false),
@@ -805,7 +805,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn an_exhausted_followup_bucket_delays_its_token_but_not_others_or_callbacks() {
+    async fn an_exhausted_followup_bucket_delays_only_its_own_token() {
         crate::init_test_tracing();
         let exhausted = reply(
             "200 OK",
@@ -975,7 +975,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_long_shared_rate_limit_is_delivered_to_queued_and_later_requests_on_its_route() {
+    async fn a_long_shared_rate_limit_reaches_queued_and_later_requests() {
         crate::init_test_tracing();
         let shared = too_many(&[
             ("Retry-After", "120"),
@@ -1029,7 +1029,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn a_rejected_token_stops_queued_and_later_bot_requests_but_not_interactions() {
+    async fn a_rejected_token_stops_bot_requests_but_not_interactions() {
         crate::init_test_tracing();
         let mut server = Server::start(vec![reply("401 Unauthorized", &[], "{}")]).await;
         let (rest, _receiver) = rest(&server.url);
@@ -1078,7 +1078,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_requests_warn_at_a_threshold_and_stop_every_request_at_the_hard_limit() {
+    async fn invalid_requests_warn_then_block_everything_at_the_limit() {
         crate::init_test_tracing();
         let mut server = Server::start(vec![reply("403 Forbidden", &[], "{}")]).await;
         let (rest, _receiver) = rest(&server.url);
@@ -1114,7 +1114,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn client_errors_are_delivered_and_server_errors_retried_only_when_idempotent() {
+    async fn only_idempotent_server_errors_are_retried() {
         crate::init_test_tracing();
         let bad_gateway = || reply("502 Bad Gateway", &[], "");
         let mut server = Server::start(vec![

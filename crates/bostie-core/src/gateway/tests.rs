@@ -492,7 +492,7 @@ async fn filtered_dispatches_are_not_delivered_but_count_for_resume() {
 }
 
 #[tokio::test]
-async fn heartbeat_requests_are_answered_with_the_last_seq_and_acks_set_the_latency() {
+async fn heartbeat_requests_get_the_last_seq_and_acks_set_latency() {
     let mut harness = Harness::new(false).await;
     harness.start();
     let mut peer = harness.fake.accept().await;
@@ -598,7 +598,7 @@ async fn a_ready_without_resume_gateway_url_identifies_after_a_disconnect() {
 }
 
 #[tokio::test]
-async fn a_refusing_base_url_is_replaced_by_get_gateway_even_after_one_never_answers() {
+async fn a_refusing_base_url_falls_back_to_get_gateway() {
     let fake = FakeGateway::start(false).await;
     let gateway = format!(r#"{{"url":"{}"}}"#, fake.url());
     let mut api = Server::start(vec![NO_REPLY, reply("200 OK", &[], &gateway)]).await;
@@ -887,7 +887,7 @@ async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
 }
 
 #[tokio::test]
-async fn a_write_that_never_finishes_ends_the_connection_and_does_not_hold_back_close() {
+async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
     let mut harness = Harness::new(false).await;
     harness.start();
     let mut peer = harness.fake.accept().await;
@@ -1250,7 +1250,7 @@ impl Wake for SendOnWake {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_later_ready_reaches_the_voice_tap_after_the_stale_commands_are_dropped() {
+async fn a_later_ready_reaches_the_voice_tap_after_stale_commands() {
     let mut harness = Harness::new(false).await;
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
     let mut slot = harness

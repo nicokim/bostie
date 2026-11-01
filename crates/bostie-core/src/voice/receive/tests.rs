@@ -512,7 +512,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
 }
 
 #[test]
-fn frames_failing_during_a_late_commit_are_retried_when_the_dave_state_changes() {
+fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
     for speaker in [BOB, ALICE] {
         let mut rig = Rig::new(ReceiveTuning {
             dave_retries: 10,
@@ -576,19 +576,22 @@ fn frames_failing_during_a_late_commit_are_retried_when_the_dave_state_changes()
 }
 
 #[test]
-fn dave_frames_wait_in_their_users_order_behind_a_busy_lock_or_past_the_deadline_and_decrypt_in_slices_before_it()
- {
+fn a_busy_dave_lock_does_not_hold_plain_frames() {
     let plain_ending_in_the_marker = Bytes::from_static(&[0xFC, 0x01, 0x02, 0xFA, 0xFA]);
-    let mut without_dave = Rig::new(tuning());
-    without_dave.map(ALICE_SSRC, ALICE);
-    let unencrypted = without_dave.open(options(ReceiveFormat::Opus));
-    let media = Arc::clone(&without_dave.media);
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(options(ReceiveFormat::Opus));
+    let media = Arc::clone(&rig.media);
     let busy = media.dave.lock();
-    without_dave.send(ALICE_SSRC, 0, &plain_ending_in_the_marker);
-    without_dave.step();
+    rig.send(ALICE_SSRC, 0, &plain_ending_in_the_marker);
+    rig.step();
     drop(busy);
-    let while_busy = data(&read(&unencrypted));
 
+    assert_eq!(data(&read(&receiver)), [plain_ending_in_the_marker]);
+}
+
+#[test]
+fn dave_frames_wait_in_user_order_and_decrypt_in_slices() {
     let mut rig = Rig::new(ReceiveTuning {
         dave_budget: Duration::ZERO,
         ..tuning()
@@ -635,7 +638,6 @@ fn dave_frames_wait_in_their_users_order_behind_a_busy_lock_or_past_the_deadline
     rig.step();
     ticks.push(order(read(&receiver)));
 
-    assert_eq!(while_busy, [plain_ending_in_the_marker]);
     assert_eq!(started, [(ALICE, true, Duration::ZERO)]);
     assert_eq!(
         ticks,
@@ -732,7 +734,7 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
 }
 
 #[test]
-fn a_failure_streak_requests_recoveries_an_interval_apart_and_stops_after_two_per_user() {
+fn a_failure_streak_requests_spaced_and_capped_recoveries() {
     let tolerance = ReceiveTuning::default().decrypt_tolerance;
     let interval = RECOVERY_INTERVAL;
     for case in ["garbage", "plaintext", "unknown epoch"] {
@@ -980,7 +982,7 @@ fn each_user_counts_packets_losses_duplicates_and_invalid_payloads() {
 }
 
 #[test]
-fn the_intake_opens_with_this_sessions_key_drops_replays_and_echoes_and_skips_the_unheard() {
+fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
     let mut rig = Rig::new(tuning());
     let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
     let stranger = Cipher::new(Mode::Aes256GcmRtpSize, &[1; 32]);
@@ -1064,7 +1066,7 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
 }
 
 #[test]
-fn the_intake_forgets_the_replay_windows_of_ssrcs_that_left_when_a_new_one_arrives() {
+fn the_intake_forgets_replay_windows_of_departed_ssrcs() {
     let mut rig = Rig::new(tuning());
     let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
     let mut intake = rig.intake();
@@ -1089,7 +1091,7 @@ fn the_intake_forgets_the_replay_windows_of_ssrcs_that_left_when_a_new_one_arriv
 }
 
 #[test]
-fn dropping_the_reception_closes_the_media_to_new_receivers_and_wakes_the_connection() {
+fn dropping_the_reception_closes_media_and_wakes_the_connection() {
     let rig = Rig::new(tuning());
     let media = Arc::clone(&rig.media);
     let inbox = Arc::clone(&rig.fixture.inbox);
@@ -1103,7 +1105,7 @@ fn dropping_the_reception_closes_the_media_to_new_receivers_and_wakes_the_connec
 }
 
 #[test]
-fn a_panicking_receive_phase_ends_the_speech_and_starts_over_without_closing_the_media() {
+fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
     let mut rig = Rig::new(tuning());
     rig.map(ALICE_SSRC, ALICE);
     let receiver = rig.open(options(ReceiveFormat::Opus));
@@ -1171,7 +1173,7 @@ fn each_packet_goes_to_the_owner_of_its_ssrc_at_arrival() {
 }
 
 #[test]
-fn a_new_transport_resets_the_streams_holds_and_streaks_and_keeps_the_receivers() {
+fn a_new_transport_resets_stream_state_and_keeps_receivers() {
     let tolerance = ReceiveTuning::default().decrypt_tolerance;
     let mut rig = Rig::dave();
     let mut call = rig.group(&[ALICE]);
@@ -1477,7 +1479,7 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
 }
 
 #[test]
-fn a_packets_receiver_gets_decrypted_packets_in_arrival_order_with_extensions() {
+fn a_packets_receiver_gets_decrypted_packets_in_arrival_order() {
     let mut rig = Rig::dave();
     let mut call = rig.group(&[ALICE]);
     rig.map(ALICE_SSRC, ALICE);

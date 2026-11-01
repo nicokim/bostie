@@ -258,7 +258,7 @@ fn a_held_gate_keeps_hold_sinks_and_drains_drop_sinks() {
 }
 
 #[test]
-fn alone_in_a_dave_call_every_sink_drains_one_frame_per_tick_and_nothing_is_sent() {
+fn alone_in_a_dave_call_sinks_drain_and_nothing_is_sent() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
     rig.media.with_dave(|dave| {
@@ -329,7 +329,7 @@ fn new_audio_cancels_a_running_silence_tail() {
 }
 
 #[test]
-fn an_encrypting_lane_sends_only_dave_frames_and_a_silence_tail_of_encoded_frames() {
+fn an_encrypting_lane_sends_dave_frames_and_an_encoded_silence_tail() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
     let mut call = encrypting(&mut rig);
@@ -541,7 +541,7 @@ fn a_frame_dave_cannot_encrypt_is_dropped_and_counted_never_sent_plain() {
 }
 
 #[test]
-fn the_watchdog_reports_a_stall_with_queued_audio_and_a_listener_then_its_end() {
+fn the_watchdog_reports_a_stall_and_its_end() {
     let mut rig = Rig::new();
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 20)).unwrap();
