@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Mapping
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, Literal, NewType, NotRequired, TypedDict
 
 from bostie.custom_id import MAX_CUSTOM_ID
 from bostie.enums import ButtonStyle, ChannelType, ComponentType
@@ -13,6 +13,7 @@ __all__ = [
     "FileDict",
     "GalleryItemDict",
     "MediaGalleryDict",
+    "RawComponent",
     "RowDict",
     "SectionDict",
     "SelectDefaultDict",
@@ -29,6 +30,7 @@ __all__ = [
     "link_button",
     "media_gallery",
     "mentionable_select",
+    "raw",
     "role_select",
     "row",
     "section",
@@ -41,7 +43,7 @@ __all__ = [
 ]
 
 type _Emoji = str | Mapping[str, Any]
-type _Raw = Mapping[str, Any]
+RawComponent = NewType("RawComponent", dict[str, Any])
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
 ]
@@ -97,7 +99,7 @@ class EntitySelectDict(TypedDict):
     disabled: bool
 
 
-type _RowChild = ButtonDict | StringSelectDict | EntitySelectDict | _Raw
+type _RowChild = ButtonDict | StringSelectDict | EntitySelectDict | RawComponent
 
 
 class RowDict(TypedDict):
@@ -119,8 +121,8 @@ class ThumbnailDict(TypedDict):
 
 class SectionDict(TypedDict):
     type: Literal[ComponentType.SECTION]
-    components: list[TextDict | _Raw]
-    accessory: ButtonDict | ThumbnailDict | _Raw
+    components: list[TextDict | RawComponent]
+    accessory: ButtonDict | ThumbnailDict | RawComponent
 
 
 class GalleryItemDict(TypedDict):
@@ -131,7 +133,7 @@ class GalleryItemDict(TypedDict):
 
 class MediaGalleryDict(TypedDict):
     type: Literal[ComponentType.MEDIA_GALLERY]
-    items: list[GalleryItemDict | _Raw]
+    items: list[GalleryItemDict | RawComponent]
 
 
 class FileDict(TypedDict):
@@ -153,7 +155,7 @@ type _ContainerChild = (
     | MediaGalleryDict
     | FileDict
     | SeparatorDict
-    | _Raw
+    | RawComponent
 )
 
 
@@ -162,6 +164,11 @@ class ContainerDict(TypedDict):
     components: list[_ContainerChild]
     accent_color: NotRequired[int]
     spoiler: bool
+
+
+def raw(component: Mapping[str, Any]) -> RawComponent:
+    """A component ui has no builder for, sent as given."""
+    return RawComponent(dict(component))
 
 
 def row(*components: _RowChild) -> RowDict:
@@ -336,7 +343,8 @@ def text(content: str) -> TextDict:
 
 
 def section(
-    *texts: TextDict | _Raw, accessory: ButtonDict | ThumbnailDict | _Raw
+    *texts: TextDict | RawComponent,
+    accessory: ButtonDict | ThumbnailDict | RawComponent,
 ) -> SectionDict:
     """One to three `text` components with a `button` or `thumbnail` beside them."""
     return {
@@ -360,7 +368,7 @@ def thumbnail(
     return thumbnail
 
 
-def media_gallery(*items: GalleryItemDict | _Raw) -> MediaGalleryDict:
+def media_gallery(*items: GalleryItemDict | RawComponent) -> MediaGalleryDict:
     """One to ten images or videos built with `gallery_item`."""
     return {"type": ComponentType.MEDIA_GALLERY, "items": list(items)}
 

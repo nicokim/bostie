@@ -125,6 +125,7 @@ def test_ui_v2_builders_return_discord_component_dicts() -> None:
         ),
         ui.file("notes.pdf"),
         ui.row(ui.link_button("Docs", "https://example.com")),
+        ui.raw({"type": 99, "future": True}),
         accent_color=0x5865F2,
     )
 
@@ -170,6 +171,7 @@ def test_ui_v2_builders_return_discord_component_dicts() -> None:
                     }
                 ],
             },
+            {"type": 99, "future": True},
         ],
         "accent_color": 0x5865F2,
         "spoiler": False,
