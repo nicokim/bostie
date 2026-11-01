@@ -501,24 +501,30 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
 
 #[test]
 fn the_watchdog_reports_a_stall_and_its_end() {
-    let mut rig = Rig::new();
-    let sink = rig.pcm_sink(StallPolicy::Hold);
-    sink.write(&tone(FRAME_SAMPLES * 20)).unwrap();
-    rig.media.others.store(1, Ordering::Relaxed);
+    for (others, version) in [(1, 1), (0, 0)] {
+        let mut rig = Rig::new();
+        let sink = rig.pcm_sink(StallPolicy::Hold);
+        sink.write(&tone(FRAME_SAMPLES * 20)).unwrap();
+        rig.media.others.store(others, Ordering::Relaxed);
+        rig.media.with_dave(|dave| {
+            let mut out = Vec::new();
+            dave.start(version, &mut out).unwrap();
+        });
 
-    rig.tick(5);
-    assert!(stalls(&rig.deliveries()).is_empty());
-    rig.tick(1);
-    assert_eq!(stalls(&rig.deliveries()), [(true, STALL)]);
-    rig.tick(3);
-    assert!(stalls(&rig.deliveries()).is_empty());
-    rig.connect(&KEY);
-    rig.plain();
-    rig.tick(1);
+        rig.tick(5);
+        assert!(stalls(&rig.deliveries()).is_empty());
+        rig.tick(1);
+        assert_eq!(stalls(&rig.deliveries()), [(true, STALL)], "{others}");
+        rig.tick(3);
+        assert!(stalls(&rig.deliveries()).is_empty());
+        rig.connect(&KEY);
+        rig.plain();
+        rig.tick(1);
 
-    assert_eq!(stalls(&rig.deliveries()), [(false, FRAME * 9)]);
-    rig.tick(1);
-    assert!(stalls(&rig.deliveries()).is_empty());
+        assert_eq!(stalls(&rig.deliveries()), [(false, FRAME * 9)]);
+        rig.tick(1);
+        assert!(stalls(&rig.deliveries()).is_empty());
+    }
 }
 
 #[test]
