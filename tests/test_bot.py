@@ -377,31 +377,16 @@ def test_only_slash_interactions_run_a_command_and_unanswered_ones_are_logged(
     assert ".thinking " in warnings[1].getMessage()
 
 
-def test_buttons_and_modal_submits_are_routed_by_custom_id_template() -> None:
+def test_buttons_are_routed_by_custom_id_template() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = example_bot(fake)
-        submitted: list[tuple[int, Any]] = []
-
-        @bot.on_component("feedback:{ticket:int}")
-        async def feedback(ctx: ComponentContext, ticket: int) -> None:
-            submitted.append((ticket, ctx.interaction.raw["data"]["components"]))
-            await ctx.respond("Thanks!", ephemeral=True)
-
-        rows = [
-            {"type": 1, "components": [{"type": 4, "custom_id": "text", "value": "ok"}]}
-        ]
         async with running(bot, fake):
             clicked = await fake.interaction(3, payloads.button("vote:rules:1"))
-            modal = await fake.interaction(
-                5, {"custom_id": "feedback:7", "components": rows}
-            )
 
         assert clicked.json == {
             "type": 7,
             "data": {"content": "rules 1", "allowed_mentions": MENTIONS},
         }
-        assert modal.json["type"] == 4
-        assert submitted == [(7, rows)]
 
     run(scenario)
 

@@ -85,9 +85,6 @@ COMMAND_INTERACTIONS = frozenset(
         InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE,
     }
 )
-COMPONENT_INTERACTIONS = frozenset(
-    {InteractionType.MESSAGE_COMPONENT, InteractionType.MODAL_SUBMIT}
-)
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
 
@@ -604,7 +601,7 @@ class Bot(Router):
         data = interaction.data
         if data is None:
             return None
-        if interaction.type in COMPONENT_INTERACTIONS:
+        if interaction.type is InteractionType.MESSAGE_COMPONENT:
             found = self.match_component(data.custom_id or "")
             if found is None:
                 return None
