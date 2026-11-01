@@ -2,7 +2,7 @@ mod voice;
 
 use std::collections::HashMap;
 use std::num::NonZeroU16;
-use std::time::Duration;
+use std::path::PathBuf;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{ConnectRequest, DisconnectReason, ReceiveOptions, SourceSpec};
@@ -31,8 +31,8 @@ impl NativeCore {
         token: &str,
         api_url: &str,
         global_limit: NonZeroU16,
-    ) -> PyResult<(Self, RawBellHandle)> {
-        let (core, bell) = Core::new(token, api_url, global_limit).map_err(to_python_error)?;
+    ) -> Result<(Self, RawBellHandle)> {
+        let (core, bell) = Core::new(token, api_url, global_limit)?;
         Ok((Self(core), bell.into_raw()))
     }
 
@@ -47,81 +47,69 @@ impl NativeCore {
         body: Option<Vec<u8>>,
         content_type: Option<String>,
         reason: Option<String>,
-    ) -> PyResult<u64> {
-        let request = RestRequest::parse(method, route, params, query, body, content_type, reason)
-            .map_err(to_python_error)?;
-        let ticket = self.0.request(request).map_err(to_python_error)?;
+    ) -> Result<u64> {
+        let request = RestRequest::parse(method, route, params, query, body, content_type, reason)?;
+        let ticket = self.0.request(request)?;
         Ok(ticket.into())
     }
 
-    fn gateway_identify_limit(&self, remaining: u32, total: u32, reset_after: f64) -> PyResult<()> {
-        let reset_after = Duration::try_from_secs_f64(reset_after).map_err(|error| {
-            to_python_error(CoreError::InvalidRequest(format!("reset_after: {error}")))
-        })?;
-        self.0
-            .gateway_identify_limit(IdentifyLimit {
-                remaining,
-                total,
-                reset_after,
-            })
-            .map_err(to_python_error)
+    fn gateway_identify_limit(&self, remaining: u32, total: u32, reset_after: f64) -> Result<()> {
+        let reset_after = voice::seconds("reset_after", reset_after)?;
+        Ok(self.0.gateway_identify_limit(IdentifyLimit {
+            remaining,
+            total,
+            reset_after,
+        })?)
     }
 
-    fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> PyResult<()> {
-        self.0
-            .gateway_start(ShardId::from(shard_id), url, identify.into())
-            .map_err(to_python_error)
-    }
-
-    fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> PyResult<()> {
-        self.0
-            .gateway_send(ShardId::from(shard_id), payload.into())
-            .map_err(to_python_error)
-    }
-
-    fn gateway_filter(&self, names: Option<Vec<String>>) -> PyResult<()> {
-        self.0.gateway_filter(names).map_err(to_python_error)
-    }
-
-    fn gateway_reconnect(&self, shard_id: u32) -> PyResult<()> {
-        self.0
-            .gateway_reconnect(ShardId::from(shard_id))
-            .map_err(to_python_error)
-    }
-
-    fn gateway_close(&self, shard_id: u32) -> PyResult<()> {
-        self.0
-            .gateway_close(ShardId::from(shard_id))
-            .map_err(to_python_error)
-    }
-
-    fn gateway_latency(&self, shard_id: u32) -> PyResult<Option<f64>> {
-        let latency = self
+    fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> Result<()> {
+        Ok(self
             .0
-            .gateway_latency(ShardId::from(shard_id))
-            .map_err(to_python_error)?;
+            .gateway_start(ShardId::from(shard_id), url, identify.into())?)
+    }
+
+    fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> Result<()> {
+        Ok(self
+            .0
+            .gateway_send(ShardId::from(shard_id), payload.into())?)
+    }
+
+    fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<()> {
+        Ok(self.0.gateway_filter(names)?)
+    }
+
+    fn gateway_reconnect(&self, shard_id: u32) -> Result<()> {
+        Ok(self.0.gateway_reconnect(ShardId::from(shard_id))?)
+    }
+
+    fn gateway_close(&self, shard_id: u32) -> Result<()> {
+        Ok(self.0.gateway_close(ShardId::from(shard_id))?)
+    }
+
+    fn gateway_latency(&self, shard_id: u32) -> Result<Option<f64>> {
+        let latency = self.0.gateway_latency(ShardId::from(shard_id))?;
         Ok(latency.map(|latency| latency.as_secs_f64()))
     }
 
-    fn cancel(&self, ticket: u64) -> PyResult<()> {
-        self.0.cancel(Ticket::from(ticket)).map_err(to_python_error)
+    fn cancel(&self, ticket: u64) -> Result<()> {
+        Ok(self.0.cancel(Ticket::from(ticket))?)
     }
 
-    fn drain<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
-        let deliveries = self.0.drain().map_err(to_python_error)?;
+    fn drain<'py>(&self, py: Python<'py>) -> Result<Bound<'py, PyList>> {
+        let deliveries = self.0.drain()?;
         let items = deliveries
             .into_iter()
             .map(|delivery| to_python_delivery(py, delivery))
             .collect::<PyResult<Vec<_>>>()?;
-        PyList::new(py, items)
+        Ok(PyList::new(py, items)?)
     }
 
-    fn inflight(&self) -> PyResult<usize> {
-        self.0.inflight().map_err(to_python_error)
+    fn inflight(&self) -> Result<usize> {
+        Ok(self.0.inflight()?)
     }
 
-    fn close(&self) -> PyResult<()> {
-        self.0.close().map_err(to_python_error)
+    fn close(&self) -> Result<()> {
+        Ok(self.0.close()?)
     }
 
     #[pyo3(signature = (
@@ -145,7 +133,7 @@ impl NativeCore {
         packet_loss: u8,
         complexity: u8,
         speaking: u8,
-    ) -> PyResult<()> {
+    ) -> Result<()> {
         let request = ConnectRequest {
             guild: GuildId::from(guild_id),
             channel: ChannelId::from(channel_id),
@@ -158,7 +146,7 @@ impl NativeCore {
             encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
             speaking,
         };
-        self.voice()?.connect(request).map_err(to_python_error)
+        Ok(self.voice()?.connect(request)?)
     }
 
     fn voice_update(
@@ -167,27 +155,21 @@ impl NativeCore {
         channel_id: u64,
         self_mute: bool,
         self_deaf: bool,
-    ) -> PyResult<()> {
-        self.voice()?
-            .update(
-                GuildId::from(guild_id),
-                ChannelId::from(channel_id),
-                self_mute,
-                self_deaf,
-            )
-            .map_err(to_python_error)
+    ) -> Result<()> {
+        Ok(self.voice()?.update(
+            GuildId::from(guild_id),
+            ChannelId::from(channel_id),
+            self_mute,
+            self_deaf,
+        )?)
     }
 
-    fn voice_disconnect(&self, guild_id: u64) -> PyResult<()> {
-        self.voice()?
-            .disconnect(GuildId::from(guild_id))
-            .map_err(to_python_error)
+    fn voice_disconnect(&self, guild_id: u64) -> Result<()> {
+        Ok(self.voice()?.disconnect(GuildId::from(guild_id))?)
     }
 
-    fn voice_reconnect(&self, guild_id: u64) -> PyResult<()> {
-        self.voice()?
-            .reconnect(GuildId::from(guild_id))
-            .map_err(to_python_error)
+    fn voice_reconnect(&self, guild_id: u64) -> Result<()> {
+        Ok(self.voice()?.reconnect(GuildId::from(guild_id))?)
     }
 
     #[pyo3(signature = (guild_id, *, bitrate, application, fec, packet_loss, complexity))]
@@ -199,35 +181,27 @@ impl NativeCore {
         fec: bool,
         packet_loss: u8,
         complexity: u8,
-    ) -> PyResult<()> {
+    ) -> Result<()> {
         let settings = voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?;
-        self.voice()?
-            .set_encoder(GuildId::from(guild_id), settings)
-            .map_err(to_python_error)
-    }
-
-    fn voice_speaking(&self, guild_id: u64, flags: u8) -> PyResult<()> {
-        self.voice()?
-            .set_speaking(GuildId::from(guild_id), flags)
-            .map_err(to_python_error)
-    }
-
-    fn voice_latency(&self, guild_id: u64) -> PyResult<(Option<f64>, Option<f64>)> {
-        let (ws, udp) = self
+        Ok(self
             .voice()?
-            .latency(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
+            .set_encoder(GuildId::from(guild_id), settings)?)
+    }
+
+    fn voice_speaking(&self, guild_id: u64, flags: u8) -> Result<()> {
+        Ok(self.voice()?.set_speaking(GuildId::from(guild_id), flags)?)
+    }
+
+    fn voice_latency(&self, guild_id: u64) -> Result<(Option<f64>, Option<f64>)> {
+        let (ws, udp) = self.voice()?.latency(GuildId::from(guild_id))?;
         Ok((
             ws.map(|latency| latency.as_secs_f64()),
             udp.map(|latency| latency.as_secs_f64()),
         ))
     }
 
-    fn voice_dave(&self, guild_id: u64) -> PyResult<(u16, Option<u64>, Option<String>)> {
-        let dave = self
-            .voice()?
-            .dave(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
+    fn voice_dave(&self, guild_id: u64) -> Result<(u16, Option<u64>, Option<String>)> {
+        let dave = self.voice()?.dave(GuildId::from(guild_id))?;
         Ok((dave.protocol_version, dave.epoch, dave.privacy_code))
     }
 
@@ -236,30 +210,19 @@ impl NativeCore {
         py: Python<'_>,
         guild_id: u64,
         user_id: u64,
-    ) -> PyResult<String> {
+    ) -> Result<String> {
         let voice = self.voice()?;
-        py.detach(|| voice.verification_code(GuildId::from(guild_id), UserId::from(user_id)))
-            .map_err(to_python_error)
+        Ok(py.detach(|| voice.verification_code(GuildId::from(guild_id), UserId::from(user_id)))?)
     }
 
-    fn voice_stats(&self, guild_id: u64) -> PyResult<HashMap<&'static str, u64>> {
-        let stats = self
-            .voice()?
-            .stats(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
+    fn voice_stats(&self, guild_id: u64) -> Result<HashMap<&'static str, u64>> {
+        let stats = self.voice()?.stats(GuildId::from(guild_id))?;
         Ok(stats.into_iter().collect())
     }
 
-    fn voice_diagnostics<'py>(
-        &self,
-        py: Python<'py>,
-        guild_id: u64,
-    ) -> PyResult<Bound<'py, PyDict>> {
-        let diagnostics = self
-            .voice()?
-            .diagnostics(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
-        voice::diagnostics(py, diagnostics)
+    fn voice_diagnostics<'py>(&self, py: Python<'py>, guild_id: u64) -> Result<Bound<'py, PyDict>> {
+        let diagnostics = self.voice()?.diagnostics(GuildId::from(guild_id))?;
+        Ok(voice::diagnostics(py, diagnostics)?)
     }
 
     #[pyo3(signature = (guild_id, *, kind, rate, channels, sample, buffer, volume, stall))]
@@ -274,26 +237,26 @@ impl NativeCore {
         buffer: f64,
         volume: f32,
         stall: &str,
-    ) -> PyResult<NativeSink> {
+    ) -> Result<NativeSink> {
         let options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
-        self.voice()?
+        Ok(self
+            .voice()?
             .open_sink(GuildId::from(guild_id), options)
-            .map(NativeSink)
-            .map_err(to_python_error)
+            .map(NativeSink)?)
     }
 
-    fn voice_file(&self, path: &str) -> PyResult<NativeSource> {
-        self.open_source(voice::file(path))
+    fn voice_file(&self, path: PathBuf) -> Result<NativeSource> {
+        self.open_source(SourceSpec::File(path))
     }
 
-    fn voice_bytes(&self, data: &[u8], hint: Option<String>) -> PyResult<NativeSource> {
+    fn voice_bytes(&self, data: &[u8], hint: Option<String>) -> Result<NativeSource> {
         self.open_source(SourceSpec::Bytes {
             data: data.to_vec().into(),
             hint,
         })
     }
 
-    fn voice_url(&self, url: String, headers: Vec<(String, String)>) -> PyResult<NativeSource> {
+    fn voice_url(&self, url: String, headers: Vec<(String, String)>) -> Result<NativeSource> {
         self.open_source(SourceSpec::Url { url, headers })
     }
 
@@ -318,7 +281,7 @@ impl NativeCore {
         mix: bool,
         overflow: &str,
         stall: &str,
-    ) -> PyResult<NativeReceiver> {
+    ) -> Result<NativeReceiver> {
         let options = ReceiveOptions {
             format: voice::receive_format(kind, rate, channels, sample)?,
             users: users.map(voice::users),
@@ -331,44 +294,35 @@ impl NativeCore {
             overflow: voice::overflow(overflow)?,
             stall: voice::receive_stall(stall)?,
         };
-        self.voice()?
-            .open_receiver(GuildId::from(guild_id), options)
-            .map(NativeReceiver)
-            .map_err(to_python_error)
-    }
-
-    fn voice_speech_hangover(&self, guild_id: u64, seconds: f64) -> PyResult<()> {
-        let hangover = voice::seconds("speech_hangover", seconds)?;
-        self.voice()?
-            .set_speech_hangover(GuildId::from(guild_id), hangover)
-            .map_err(to_python_error)
-    }
-
-    fn voice_speech_activity(&self, guild_id: u64, enabled: bool) -> PyResult<()> {
-        self.voice()?
-            .set_speech_activity(GuildId::from(guild_id), enabled)
-            .map_err(to_python_error)
-    }
-
-    fn voice_ssrcs(&self, guild_id: u64) -> PyResult<HashMap<u32, u64>> {
-        let ssrcs = self
+        Ok(self
             .voice()?
-            .ssrcs(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
+            .open_receiver(GuildId::from(guild_id), options)
+            .map(NativeReceiver)?)
+    }
+
+    fn voice_speech_hangover(&self, guild_id: u64, seconds: f64) -> Result<()> {
+        let hangover = voice::seconds("speech_hangover", seconds)?;
+        Ok(self
+            .voice()?
+            .set_speech_hangover(GuildId::from(guild_id), hangover)?)
+    }
+
+    fn voice_speech_activity(&self, guild_id: u64, enabled: bool) -> Result<()> {
+        Ok(self
+            .voice()?
+            .set_speech_activity(GuildId::from(guild_id), enabled)?)
+    }
+
+    fn voice_ssrcs(&self, guild_id: u64) -> Result<HashMap<u32, u64>> {
+        let ssrcs = self.voice()?.ssrcs(GuildId::from(guild_id))?;
         Ok(ssrcs
             .into_iter()
             .map(|(ssrc, user)| (ssrc, u64::from(user)))
             .collect())
     }
 
-    fn voice_user_stats(
-        &self,
-        guild_id: u64,
-    ) -> PyResult<HashMap<u64, HashMap<&'static str, u64>>> {
-        let users = self
-            .voice()?
-            .user_stats(GuildId::from(guild_id))
-            .map_err(to_python_error)?;
+    fn voice_user_stats(&self, guild_id: u64) -> Result<HashMap<u64, HashMap<&'static str, u64>>> {
+        let users = self.voice()?.user_stats(GuildId::from(guild_id))?;
         Ok(users
             .into_iter()
             .map(|(user, counters)| (u64::from(user), counters.into_iter().collect()))
@@ -377,15 +331,12 @@ impl NativeCore {
 }
 
 impl NativeCore {
-    fn voice(&self) -> PyResult<&Voice> {
-        self.0.voice().map_err(to_python_error)
+    fn voice(&self) -> Result<&Voice> {
+        Ok(self.0.voice()?)
     }
 
-    fn open_source(&self, spec: SourceSpec) -> PyResult<NativeSource> {
-        self.voice()?
-            .open_source(spec)
-            .map(NativeSource)
-            .map_err(to_python_error)
+    fn open_source(&self, spec: SourceSpec) -> Result<NativeSource> {
+        Ok(self.voice()?.open_source(spec).map(NativeSource)?)
     }
 }
 
@@ -591,23 +542,41 @@ fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
     }
 }
 
-pub(crate) fn to_python_error(error: CoreError) -> PyErr {
-    let message = describe(&error);
-    match error {
-        CoreError::InvalidRequest(_) => PyValueError::new_err(message),
-        CoreError::Forked { .. }
-        | CoreError::Closed
-        | CoreError::UnknownShard(_)
-        | CoreError::ShardRunning(_)
-        | CoreError::SendQueueFull(_)
-        | CoreError::UnknownVoice(_)
-        | CoreError::VoiceRunning(_)
-        | CoreError::VoiceQueueFull(_)
-        | CoreError::HandleClosed(_) => PyRuntimeError::new_err(message),
-        CoreError::Runtime(_)
-        | CoreError::Bell(_)
-        | CoreError::HttpClient(_)
-        | CoreError::Tls(_) => PyOSError::new_err(message),
+pub(crate) struct Error(PyErr);
+
+pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+impl From<CoreError> for Error {
+    fn from(error: CoreError) -> Self {
+        let message = describe(&error);
+        Self(match error {
+            CoreError::InvalidRequest(_) => PyValueError::new_err(message),
+            CoreError::Forked { .. }
+            | CoreError::Closed
+            | CoreError::UnknownShard(_)
+            | CoreError::ShardRunning(_)
+            | CoreError::SendQueueFull(_)
+            | CoreError::UnknownVoice(_)
+            | CoreError::VoiceRunning(_)
+            | CoreError::VoiceQueueFull(_)
+            | CoreError::HandleClosed(_) => PyRuntimeError::new_err(message),
+            CoreError::Runtime(_)
+            | CoreError::Bell(_)
+            | CoreError::HttpClient(_)
+            | CoreError::Tls(_) => PyOSError::new_err(message),
+        })
+    }
+}
+
+impl From<PyErr> for Error {
+    fn from(error: PyErr) -> Self {
+        Self(error)
+    }
+}
+
+impl From<Error> for PyErr {
+    fn from(error: Error) -> Self {
+        error.0
     }
 }
 

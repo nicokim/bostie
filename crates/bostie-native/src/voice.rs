@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
     Application, DisconnectReason, EncoderSettings, Overflow, PcmFormat, ReceiveFormat,
-    ReceiveStall, SampleFormat, SinkFormat, SinkOptions, SourceSpec, StallPolicy,
+    ReceiveStall, SampleFormat, SinkFormat, SinkOptions, StallPolicy,
 };
 use bostie_core::voice::{
     Diagnostics, Ended, FrameEncoder, HistoryEntry, Item, ReceiveRead, Receiver, Sink, Source,
@@ -18,7 +17,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 
-use crate::to_python_error;
+use crate::{Error, Result};
 
 #[pyclass(frozen, name = "Sink", module = "bostie._native")]
 pub(crate) struct NativeSink(pub(crate) Arc<Sink>);
@@ -30,39 +29,39 @@ impl NativeSink {
         self.0.id().into()
     }
 
-    fn write(&self, py: Python<'_>, data: PyBuffer<u8>) -> PyResult<bool> {
+    fn write(&self, py: Python<'_>, data: PyBuffer<u8>) -> Result<bool> {
         let data = data.to_vec(py)?;
-        self.0.write(&data).map_err(to_python_error)
+        Ok(self.0.write(&data)?)
     }
 
-    fn mark(&self) -> PyResult<(u64, u64)> {
-        self.0.mark().map_err(to_python_error)
+    fn mark(&self) -> Result<(u64, u64)> {
+        Ok(self.0.mark()?)
     }
 
-    fn flush(&self) -> PyResult<(u64, u64)> {
-        self.0.flush().map_err(to_python_error)
+    fn flush(&self) -> Result<(u64, u64)> {
+        Ok(self.0.flush()?)
     }
 
     #[pyo3(signature = (until=None))]
-    fn clear(&self, until: Option<u64>) -> PyResult<()> {
-        self.0.clear(until).map_err(to_python_error)
+    fn clear(&self, until: Option<u64>) -> Result<()> {
+        Ok(self.0.clear(until)?)
     }
 
-    fn set_volume(&self, volume: f32) -> PyResult<()> {
-        self.0.set_volume(volume).map_err(to_python_error)
+    fn set_volume(&self, volume: f32) -> Result<()> {
+        Ok(self.0.set_volume(volume)?)
     }
 
-    fn queued(&self) -> PyResult<f64> {
-        let queued = self.0.queued().map_err(to_python_error)?;
+    fn queued(&self) -> Result<f64> {
+        let queued = self.0.queued()?;
         Ok(queued.as_secs_f64())
     }
 
-    fn passthrough(&self) -> PyResult<bool> {
-        self.0.passthrough().map_err(to_python_error)
+    fn passthrough(&self) -> Result<bool> {
+        Ok(self.0.passthrough()?)
     }
 
-    fn stats(&self) -> PyResult<HashMap<&'static str, u64>> {
-        let stats = self.0.stats().map_err(to_python_error)?;
+    fn stats(&self) -> Result<HashMap<&'static str, u64>> {
+        let stats = self.0.stats()?;
         Ok(stats.into_iter().collect())
     }
 
@@ -81,8 +80,8 @@ impl NativeSource {
         self.0.id().into()
     }
 
-    fn info(&self) -> PyResult<Option<(&'static str, Option<f64>, bool)>> {
-        let info = self.0.info().map_err(to_python_error)?;
+    fn info(&self) -> Result<Option<(&'static str, Option<f64>, bool)>> {
+        let info = self.0.info()?;
         Ok(info.map(|info| {
             (
                 info.kind.as_str(),
@@ -92,8 +91,8 @@ impl NativeSource {
         }))
     }
 
-    fn read<'py>(&self, py: Python<'py>) -> PyResult<Option<Vec<Bound<'py, PyBytes>>>> {
-        Ok(match self.0.read().map_err(to_python_error)? {
+    fn read<'py>(&self, py: Python<'py>) -> Result<Option<Vec<Bound<'py, PyBytes>>>> {
+        Ok(match self.0.read()? {
             SourceRead::Pending => Some(Vec::new()),
             SourceRead::Chunks(chunks) => {
                 Some(chunks.iter().map(|chunk| PyBytes::new(py, chunk)).collect())
@@ -102,13 +101,13 @@ impl NativeSource {
         })
     }
 
-    fn error(&self) -> PyResult<Option<String>> {
-        self.0.error().map_err(to_python_error)
+    fn error(&self) -> Result<Option<String>> {
+        Ok(self.0.error()?)
     }
 
-    fn seek(&self, position: f64) -> PyResult<()> {
+    fn seek(&self, position: f64) -> Result<()> {
         let position = seconds("position", position)?;
-        self.0.seek(position).map_err(to_python_error)
+        Ok(self.0.seek(position)?)
     }
 
     fn close(&self) {
@@ -126,30 +125,31 @@ impl NativeReceiver {
         self.0.id().into()
     }
 
-    fn read<'py>(&self, py: Python<'py>, limit: usize) -> PyResult<Option<Vec<Bound<'py, PyAny>>>> {
+    fn read<'py>(&self, py: Python<'py>, limit: usize) -> Result<Option<Vec<Bound<'py, PyAny>>>> {
         let now = Instant::now();
-        match self.0.read(limit).map_err(to_python_error)? {
-            ReceiveRead::Pending => Ok(Some(Vec::new())),
-            ReceiveRead::Items(items) => items
-                .into_iter()
-                .map(|(queued, item)| received_item(py, now, queued, item))
-                .collect::<PyResult<_>>()
-                .map(Some),
-            ReceiveRead::Ended(_) => Ok(None),
-        }
+        Ok(match self.0.read(limit)? {
+            ReceiveRead::Pending => Some(Vec::new()),
+            ReceiveRead::Items(items) => Some(
+                items
+                    .into_iter()
+                    .map(|(queued, item)| received_item(py, now, queued, item))
+                    .collect::<PyResult<_>>()?,
+            ),
+            ReceiveRead::Ended(_) => None,
+        })
     }
 
-    fn queued(&self) -> PyResult<f64> {
-        let queued = self.0.queued().map_err(to_python_error)?;
+    fn queued(&self) -> Result<f64> {
+        let queued = self.0.queued()?;
         Ok(queued.as_secs_f64())
     }
 
-    fn clear(&self) -> PyResult<()> {
-        self.0.clear().map_err(to_python_error)
+    fn clear(&self) -> Result<()> {
+        Ok(self.0.clear()?)
     }
 
-    fn stats(&self) -> PyResult<HashMap<&'static str, u64>> {
-        let stats = self.0.stats().map_err(to_python_error)?;
+    fn stats(&self) -> Result<HashMap<&'static str, u64>> {
+        let stats = self.0.stats()?;
         Ok(stats.into_iter().collect())
     }
 
@@ -179,22 +179,18 @@ impl NativeOpusEncoder {
         fec: bool,
         packet_loss: u8,
         complexity: u8,
-    ) -> PyResult<Self> {
+    ) -> Result<Self> {
         let format = PcmFormat {
             rate,
             channels,
             sample: sample_format(sample)?,
         };
         let settings = encoder_settings(bitrate, application, fec, packet_loss, complexity)?;
-        let encoder = FrameEncoder::new(format, settings).map_err(to_python_error)?;
+        let encoder = FrameEncoder::new(format, settings)?;
         Ok(Self(Mutex::new(encoder)))
     }
 
-    fn encode<'py>(
-        &self,
-        py: Python<'py>,
-        data: PyBuffer<u8>,
-    ) -> PyResult<Vec<Bound<'py, PyBytes>>> {
+    fn encode<'py>(&self, py: Python<'py>, data: PyBuffer<u8>) -> Result<Vec<Bound<'py, PyBytes>>> {
         let data = data.to_vec(py)?;
         let packets = self.encoder().encode(&data);
         Ok(packets
@@ -229,7 +225,7 @@ pub(crate) fn encoder_settings(
     fec: bool,
     packet_loss: u8,
     complexity: u8,
-) -> PyResult<EncoderSettings> {
+) -> Result<EncoderSettings> {
     let application = match application {
         "audio" => Application::Audio,
         "voip" => Application::Voip,
@@ -253,7 +249,7 @@ pub(crate) fn sink_options(
     buffer: f64,
     volume: f32,
     stall: &str,
-) -> PyResult<SinkOptions> {
+) -> Result<SinkOptions> {
     let format = match kind {
         "pcm" => SinkFormat::Pcm(PcmFormat {
             rate,
@@ -281,7 +277,7 @@ pub(crate) fn receive_format(
     rate: u32,
     channels: u8,
     sample: &str,
-) -> PyResult<ReceiveFormat> {
+) -> Result<ReceiveFormat> {
     Ok(match kind {
         "pcm" => ReceiveFormat::Pcm(PcmFormat {
             rate,
@@ -294,14 +290,14 @@ pub(crate) fn receive_format(
     })
 }
 
-pub(crate) fn overflow(overflow: &str) -> PyResult<Overflow> {
+pub(crate) fn overflow(overflow: &str) -> Result<Overflow> {
     match overflow {
         "drop_oldest" => Ok(Overflow::DropOldest),
         other => Err(unknown("overflow", other)),
     }
 }
 
-pub(crate) fn receive_stall(stall: &str) -> PyResult<ReceiveStall> {
+pub(crate) fn receive_stall(stall: &str) -> Result<ReceiveStall> {
     match stall {
         "wait" => Ok(ReceiveStall::Wait),
         other => Err(unknown("stall", other)),
@@ -312,13 +308,9 @@ pub(crate) fn users(ids: Vec<u64>) -> HashSet<UserId> {
     ids.into_iter().map(UserId::from).collect()
 }
 
-pub(crate) fn file(path: &str) -> SourceSpec {
-    SourceSpec::File(PathBuf::from(path))
-}
-
-pub(crate) fn seconds(name: &str, value: f64) -> PyResult<Duration> {
+pub(crate) fn seconds(name: &str, value: f64) -> Result<Duration> {
     Duration::try_from_secs_f64(value)
-        .map_err(|error| to_python_error(CoreError::InvalidRequest(format!("{name}: {error}"))))
+        .map_err(|error| CoreError::InvalidRequest(format!("{name}: {error}")).into())
 }
 
 pub(crate) fn diagnostics(py: Python<'_>, diagnostics: Diagnostics) -> PyResult<Bound<'_, PyDict>> {
@@ -469,7 +461,7 @@ fn micros(duration: Duration) -> u64 {
     u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
-fn sample_format(sample: &str) -> PyResult<SampleFormat> {
+fn sample_format(sample: &str) -> Result<SampleFormat> {
     match sample {
         "s16le" => Ok(SampleFormat::S16Le),
         "f32le" => Ok(SampleFormat::F32Le),
@@ -477,8 +469,6 @@ fn sample_format(sample: &str) -> PyResult<SampleFormat> {
     }
 }
 
-fn unknown(name: &str, value: &str) -> PyErr {
-    to_python_error(CoreError::InvalidRequest(format!(
-        "unknown {name} {value:?}"
-    )))
+fn unknown(name: &str, value: &str) -> Error {
+    CoreError::InvalidRequest(format!("unknown {name} {value:?}")).into()
 }
