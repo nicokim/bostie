@@ -183,11 +183,11 @@ impl Voice {
                 "the voice connection timeout must be positive".to_owned(),
             ));
         }
+        let guild = request.guild;
+        let mut connections = self.shared.connections.lock();
         if self.shared.closed.load(Ordering::Acquire) {
             return Err(CoreError::Closed);
         }
-        let guild = request.guild;
-        let mut connections = self.shared.connections.lock();
         if connections
             .get(&guild)
             .is_some_and(|handle| !handle.supervisor.is_finished())
