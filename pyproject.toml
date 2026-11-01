@@ -22,12 +22,16 @@ classifiers = [
 
 [dependency-groups]
 dev = [
+    "actionlint-py>=1.7.12.25",
     "aiohttp>=3.14.5",
     "cryptography>=50.0.2",
+    "deptry>=0.25.1",
     "mypy>=2.4.0",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "ruff>=0.17.3",
+    "typos>=1.51.1",
+    "zizmor>=1.31.1",
 ]
 
 [tool.maturin]
