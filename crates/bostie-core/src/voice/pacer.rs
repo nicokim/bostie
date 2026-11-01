@@ -630,6 +630,9 @@ fn pace(receiver: &Receiver<Assignment>, home: &Home, clock: &impl Clock) {
             let done = run_afters(&mut afters, tick, deadline, load, clock, sent);
             load.record_after(done.saturating_duration_since(sent));
             shed = strain.sustained(load.receive(), done, &home.placement.tuning);
+            if afters.is_empty() {
+                load.after_ewma.store(0, Ordering::Relaxed);
+            }
         }
         next += FRAME;
     }
@@ -1127,6 +1130,33 @@ mod tests {
             .collect();
 
         assert_eq!(ticks, [0, 1, 2].map(|tick| origin + FRAME * tick));
+    }
+
+    #[test]
+    fn a_thread_whose_last_receive_phase_left_reports_no_receive_load() {
+        let clock = Synthetic::new();
+        let mut ticks = 0;
+        let lane: LaneFn = Box::new(move |_| {
+            ticks += 1;
+            ticks < 4
+        });
+        let after: AfterFn = {
+            let clock = clock.clone();
+            let mut calls = 0;
+            Box::new(move |_, _| {
+                calls += 1;
+                clock.advance(Duration::from_millis(4));
+                calls < 3
+            })
+        };
+        let load = Arc::new(Load::default());
+        load.lanes.store(1, Ordering::Relaxed);
+        let assignment = Assignment::new(lane, Some(after));
+        let _pacer = pace_loaded(&clock, vec![assignment], Arc::clone(&load));
+
+        wait_until(|| load.lanes() == 0);
+
+        assert_eq!(load.snapshot().after_ewma, Duration::ZERO);
     }
 
     fn loaded(threads: &[(usize, u64)]) -> Vec<Worker> {
