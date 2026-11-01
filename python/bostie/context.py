@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, override
 
 import msgspec
 
@@ -420,10 +420,12 @@ class Context(_ReplyingContext[CommandInteraction, WebhookMessage]):
         """The invoked command with its subcommands, such as `"role color set"`."""
         return _command_name(self.interaction.data)
 
+    @override
     def _decode_original(self, body: bytes) -> WebhookMessage:
         return _webhook_message(body)
 
     @property
+    @override
     def _label(self) -> str:
         return f"/{self.command_name}"
 
@@ -475,6 +477,7 @@ class ComponentContext(
             self.state = ResponseState.RESPONDED
             return self._answer(decode_message, response)
 
+    @override
     async def _defer_automatically(self) -> None:
         await self._defer_update()
 
@@ -494,10 +497,12 @@ class ComponentContext(
         message = decoder(_MessageFlagsOnly).decode(self.interaction._message)
         return MessageFlags.EPHEMERAL in message.flags
 
+    @override
     def _decode_original(self, body: bytes) -> Message | WebhookMessage:
         return decode_message(body)
 
     @property
+    @override
     def _label(self) -> str:
         return f"component {self.custom_id}"
 

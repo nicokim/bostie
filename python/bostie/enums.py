@@ -1,5 +1,5 @@
 from enum import KEEP, IntEnum, IntFlag, StrEnum
-from typing import Self
+from typing import Self, override
 
 FLAG_WIDTH = 128
 MSGSPEC_ENUM_MAX = (1 << 63) - 1
@@ -9,6 +9,7 @@ class DiscordIntEnum(IntEnum):
     """An IntEnum that maps unknown values to stable `UNKNOWN_<value>` members."""
 
     @classmethod
+    @override
     def _missing_(cls, value: object) -> Self | None:
         if not isinstance(value, int):
             return None
@@ -23,6 +24,7 @@ class DiscordIntFlag(IntFlag, boundary=KEEP):
     """An IntFlag whose operators, `~` included, keep bits bostie does not know."""
 
     @classmethod
+    @override
     def _missing_(cls, value: object) -> Self:
         if isinstance(value, int) and value < 0:
             return cls(value & ((1 << FLAG_WIDTH) - 1))
@@ -268,6 +270,7 @@ class Permissions(DiscordIntFlag):
     BYPASS_SLOWMODE = 1 << 52
 
     @classmethod
+    @override
     def _missing_(cls, value: object) -> Self:
         permissions = super()._missing_(value)
         cls._value2member_map_.pop(value, None)

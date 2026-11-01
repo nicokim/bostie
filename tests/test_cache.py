@@ -246,7 +246,6 @@ def test_role_create_update_and_delete(cache: Cache) -> None:
     assert created is not None
     assert created.name == "Tester"
     assert updated is not None
-    assert updated.colors is not None
     assert updated.colors.secondary_color == 16759788
     assert cache.role(created_id) is None
     assert created_id not in {role.id for role in cache.guild_roles(GUILD)}

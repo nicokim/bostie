@@ -84,7 +84,7 @@ log = logging.getLogger("bostie.voice")
 VOICE_STATE_UPDATE = 4
 VOICE_CHANNELS = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
 
-type VoiceDelivery = (
+type ConnectionDelivery = (
     _native.VoiceStateDelivery
     | _native.VoiceMovedDelivery
     | _native.VoiceDaveDelivery
@@ -93,10 +93,11 @@ type VoiceDelivery = (
     | _native.VoiceClientsDelivery
     | _native.VoiceClientLeftDelivery
     | _native.VoiceStalledDelivery
-    | _native.VoiceWakeDelivery
-    | _native.VoiceMarkerDelivery
     | _native.VoiceSpeechDelivery
     | _native.VoiceDeafDelivery
+)
+type VoiceDelivery = (
+    ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
 )
 
 
@@ -944,7 +945,7 @@ class VoiceConnection:
             elif self._state is State.DISCONNECTED:
                 future.set_result(False)
 
-    def _apply(self, delivery: VoiceDelivery) -> None:
+    def _apply(self, delivery: ConnectionDelivery) -> None:
         match delivery:
             case ("voice_state", _, status, reason, code, detail):
                 self._set_state(status, reason, code, detail)

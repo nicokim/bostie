@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, override
 
 import msgspec
 
@@ -104,6 +104,7 @@ class GatewayClosed(BostieError):
         self.code = code
         self.reason = reason
 
+    @override
     def __str__(self) -> str:
         return f"the gateway closed the connection with code {self.code}: {self.reason}"
 
@@ -111,6 +112,7 @@ class GatewayClosed(BostieError):
 class PrivilegedIntentsRequired(GatewayClosed):
     """The bot asked for a privileged intent that is not enabled for it."""
 
+    @override
     def __str__(self) -> str:
         return (
             f"{super().__str__()}; enable the intents the bot requests on its Bot page "
@@ -174,6 +176,7 @@ class VoiceConnectError(VoiceError):
         self.code = code
         self.detail = detail
 
+    @override
     def __str__(self) -> str:
         code = "" if self.code is None else f" (close code {self.code})"
         detail = f": {self.detail}" if self.detail else ""
@@ -212,5 +215,6 @@ class SourceError(VoiceError):
         self.source = source
         self.detail = detail
 
+    @override
     def __str__(self) -> str:
         return f"{self.source}: {self.detail}"

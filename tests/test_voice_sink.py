@@ -163,7 +163,7 @@ def test_a_closed_sink_raises_sink_closed_without_a_native_call() -> None:
         with pytest.raises(SinkClosed):
             sink.write_nowait(b"")
         with pytest.raises(SinkClosed):
-            sink.mark()
+            await sink.mark()
         sink.clear()
         sink.volume = 0.5
         sink.close()

@@ -6,7 +6,7 @@ import sys
 import textwrap
 import warnings
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, override
 
 import pytest
 from fakediscord import FakeDiscord
@@ -32,6 +32,7 @@ type Rewrite = Callable[[list[_native.Delivery]], list[_native.Delivery]]
 
 
 class LoopWithoutReaders(asyncio.SelectorEventLoop):
+    @override
     def add_reader(
         self, fd: object, callback: Callable[..., object], *args: object
     ) -> None:

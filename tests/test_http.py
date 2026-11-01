@@ -48,12 +48,12 @@ def channel_id(fake: FakeDiscord) -> str:
 def test_requests_follow_the_rate_limit_headers_instead_of_hitting_429() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         channel = channel_id(fake)
-        for _ in range(ROUTE_LIMIT + 1):
-            fetched = await http.request(
-                "GET", "/channels/{channel_id}", channel_id=int(channel)
-            )
+        fetched = [
+            await http.request("GET", "/channels/{channel_id}", channel_id=int(channel))
+            for _ in range(ROUTE_LIMIT + 1)
+        ]
 
-        assert fetched == fake.channels[channel]
+        assert fetched[-1] == fake.channels[channel]
         assert len(fake.requests) == ROUTE_LIMIT + 1
         assert fake.requests[0].headers["authorization"] == f"Bot {fake.token}"
 

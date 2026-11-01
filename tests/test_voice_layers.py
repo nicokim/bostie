@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Self, Unpack, cast
+from typing import Any, ClassVar, Self, Unpack, cast, override
 
 import pytest
 from fakediscord import settle
@@ -281,6 +281,7 @@ class FakeSource:
         self._format = format
         self._seekable = seekable
 
+    @override
     def __repr__(self) -> str:
         return f"FakeSource({self.name!r})"
 
@@ -526,7 +527,7 @@ def test_pause_stops_feeding_and_resume_carries_on() -> None:
         track = await play(vc, FakeSource(clock, "a", 40))
         await clock.sleep(0.1)
         track.pause()
-        assert track.paused
+        assert (track.paused, track.ended) == (True, None)
         await clock.sleep(0.4)
         sink = vc.sinks[0]
         held = len(sink.sent)
@@ -582,14 +583,12 @@ def test_a_queue_writes_tracks_back_to_back_and_ends_them_at_their_markers() -> 
         q = queue(vc)
         first = add(q, FakeSource(clock, "a", 20))
         second = add(q, FakeSource(clock, "b", 20))
-        assert q.now is None
-        assert q.upcoming == (first, second)
+        assert (q.now, q.upcoming) == (None, (first, second))
         await clock.until(lambda: q.now is first)
         assert list(q.upcoming) == [second]
         await first.wait()
         sink = vc.sinks[0]
-        assert sink.playhead == 20
-        assert q.now is second
+        assert (sink.playhead, q.now) == (20, second)
         await q.join()
         assert len(vc.sinks) == 1
         assert sink.sent == frames("a", 20) + frames("b", 20)
@@ -846,10 +845,9 @@ def test_a_track_controls_its_queue_only_while_it_is_current() -> None:
         second = add(q, FakeSource(clock, "b", 10))
         await clock.until(lambda: q.now is first)
         second.pause()
-        assert not first.paused
+        assert (first.paused, second.paused) == (False, False)
         first.pause()
-        assert first.paused
-        assert not second.paused
+        assert (first.paused, second.paused) == (True, False)
         first.resume()
         second.volume = 0.3
         assert (q.volume, first.volume, vc.sinks[0].volume) == (0.3, 0.3, 0.3)

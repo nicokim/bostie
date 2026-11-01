@@ -323,7 +323,9 @@ def test_queued_counts_from_queueing_and_clear_and_close_drop_the_items() -> Non
     ],
 )
 def test_a_moderator_deafen_warns_once_per_receive_and_a_self_deafen_never(
-    caplog: pytest.LogCaptureFixture, steps: list[str], warnings: list[str]
+    caplog: pytest.LogCaptureFixture,
+    steps: list[Literal["receive", "close", "self_deafen", "server_deafen"]],
+    warnings: list[str],
 ) -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)

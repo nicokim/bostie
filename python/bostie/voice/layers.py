@@ -748,6 +748,8 @@ class _Grouping:
                 self._stop(user, offset, at)
             case Frame(user_id=int(user)):
                 return self._add(user, item)
+            case _:
+                pass
         return []
 
     def _expire(self, deadline: float) -> list[Utterance]:

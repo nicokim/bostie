@@ -34,9 +34,11 @@ class Harness:
         match delivery:
             case ("disconnected" | "stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway._handle(delivery)
+            case _:
+                pass
 
-    def start(self, **identify: Any) -> "asyncio.Task[None]":
-        return asyncio.create_task(
+    def start(self, **identify: Any) -> None:
+        self.started = asyncio.create_task(
             self.gateway._start(self.fake.gateway_url, intents=513, **identify)
         )
 
@@ -45,12 +47,13 @@ class Harness:
             match await self.deliveries.get():
                 case ("dispatch", _, seq, name, data):
                     return seq, name, msgspec.json.decode(data)
+                case _:
+                    pass
 
-    async def ready(self, **identify: Any) -> "asyncio.Task[None]":
-        started = self.start(**identify)
+    async def ready(self, **identify: Any) -> None:
+        self.start(**identify)
         await self.fake.next_identify()
         await self.next_dispatch()
-        return started
 
 
 def run(scenario: Scenario, token: str | None = None, **options: Any) -> None:
@@ -73,9 +76,9 @@ async def sent_op(fake: FakeDiscord, op: int) -> Any:
 def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
     async def scenario(harness: Harness) -> None:
         fake, gateway = harness.fake, harness.gateway
-        assert gateway.latency is None
+        before = gateway.latency
         gateway._identify_limit({"remaining": 0, "total": 1, "reset_after": 300})
-        started = harness.start(presence=MappingProxyType({"status": "idle"}))
+        harness.start(presence=MappingProxyType({"status": "idle"}))
 
         assert await harness.deliveries.get() == (
             "disconnected",
@@ -114,10 +117,12 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
 
         for _ in range(2):
             await sent_op(fake, 1)
-        assert gateway.latency is not None
+        during = gateway.latency
         await gateway.close()
-        await started
+        await harness.started
         assert fake.connections[-1].close_code == 1000
+        assert before is None
+        assert during is not None
         assert gateway.latency is None
 
     run(scenario, heartbeat_interval=50)
@@ -131,9 +136,9 @@ def test_start_on_a_bridge_that_is_not_running_starts_no_shard() -> None:
                 await harness.gateway._start(fake.gateway_url, intents=513)
 
             async with harness.bridge, asyncio.timeout(10):
-                started = await harness.ready()
+                await harness.ready()
                 await harness.gateway.close()
-                await started
+                await harness.started
 
     asyncio.run(main())
 
@@ -144,22 +149,22 @@ def test_close_ends_start_even_when_the_close_is_not_echoed_in_time(
     monkeypatch.setattr("bostie.gateway.CLOSE_TIMEOUT", 0)
 
     async def scenario(harness: Harness) -> None:
-        started = await harness.ready()
+        await harness.ready()
 
         await harness.gateway.close()
         await harness.bridge.close()
 
-        await started
+        await harness.started
 
     run(scenario)
 
 
 def test_close_after_start_is_cancelled_still_closes_with_1000() -> None:
     async def scenario(harness: Harness) -> None:
-        started = await harness.ready()
-        started.cancel()
+        await harness.ready()
+        harness.started.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await started
+            await harness.started
 
         await harness.gateway.close()
 
@@ -232,12 +237,12 @@ def test_a_fatal_close_code_raises_its_error_from_start(
     code: int, error_type: type[GatewayClosed]
 ) -> None:
     async def scenario(harness: Harness) -> None:
-        started = await harness.ready()
+        await harness.ready()
 
         await harness.fake.close_gateway(code)
 
         with pytest.raises(GatewayClosed) as raised:
-            await started
+            await harness.started
         assert type(raised.value) is error_type
         assert raised.value.code == code
 
@@ -246,20 +251,21 @@ def test_a_fatal_close_code_raises_its_error_from_start(
 
 def test_a_rejected_identify_token_raises_invalid_token() -> None:
     async def scenario(harness: Harness) -> None:
+        harness.start()
         with pytest.raises(InvalidToken, match="4004"):
-            await harness.start()
+            await harness.started
 
     run(scenario, token="wrong-token")
 
 
 def test_closing_the_bridge_fails_start_and_drops_the_connection() -> None:
     async def scenario(harness: Harness) -> None:
-        started = await harness.ready()
+        await harness.ready()
 
         await harness.bridge.close()
 
         with pytest.raises(TransportError, match="stopped"):
-            await started
+            await harness.started
         await asyncio.wait_for(harness.fake.connections[-1].request.task, 10)
 
     run(scenario)

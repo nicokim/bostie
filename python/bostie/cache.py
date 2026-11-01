@@ -119,6 +119,8 @@ class Cache:
                 self._store_role(event.guild_id, event.role)
             case RoleDelete():
                 self._remove_role(event.guild_id, event.role_id)
+            case _:
+                pass
 
     def _create_guild(self, event: GuildCreate) -> None:
         if isinstance(event.guild, Guild):

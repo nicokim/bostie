@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, ClassVar, Self, dataclass_transform
+from typing import Any, ClassVar, Self, dataclass_transform, override
 
 import msgspec
 
@@ -113,6 +113,7 @@ class GuildCreate(Event, kw_only=True):
         return presences
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         try:
             payload: _GuildCreatePayload = decoder(_GuildCreatePayload).decode(data)
@@ -141,6 +142,7 @@ class GuildUpdate(Event, kw_only=True):
     guild: Guild
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, guild=decode(Guild, data))
 
@@ -161,6 +163,7 @@ class _ChannelEvent(Event, kw_only=True):
     channel: Channel
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, channel=decode(Channel, data))
 
@@ -235,6 +238,7 @@ class _MessageEvent(Event, kw_only=True):
     message: Message | WebhookMessage
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, message=decode_message(data))
 
@@ -303,6 +307,7 @@ class MemberJoin(Event, kw_only=True):
     member: Member
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         payload: _GuildMemberPayload = decoder(_GuildMemberPayload).decode(data)
         return cls(
@@ -348,6 +353,7 @@ class InteractionCreate(Event, kw_only=True):
     interaction: Interaction
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, interaction=decode_interaction(data)
@@ -361,6 +367,7 @@ class VoiceStateUpdate(Event, kw_only=True):
     voice_state: VoiceState
 
     @classmethod
+    @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, voice_state=decode(VoiceState, data)

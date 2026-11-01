@@ -102,6 +102,7 @@ class _DecodedSource(Source):
     @abstractmethod
     def _create(self, core: "VoiceCore") -> NativeSource: ...
 
+    @override
     async def open(self, manager: "VoiceManager") -> None:
         self._check_unused()
         native = self._native
@@ -118,6 +119,7 @@ class _DecodedSource(Source):
         kind, self._duration, self._seekable = info
         self._format = Opus() if kind == "opus" else NATIVE_PCM
 
+    @override
     async def __anext__(self) -> bytes:
         native = self._opened()
         while not self._chunks:
@@ -136,6 +138,7 @@ class _DecodedSource(Source):
                 await self._woken.wait()
         return self._chunks.popleft()
 
+    @override
     async def seek(self, position: float) -> None:
         native = self._opened()
         if self._closed:
@@ -146,6 +149,7 @@ class _DecodedSource(Source):
         self._chunks.clear()
         self._done = False
 
+    @override
     async def aclose(self) -> None:
         self._done = self._closed = True
         self._chunks.clear()
@@ -171,9 +175,11 @@ class File(_DecodedSource):
         super().__init__()
         self._path = os.fspath(path)
 
+    @override
     def _create(self, core: "VoiceCore") -> NativeSource:
         return core.voice_file(self._path)
 
+    @override
     def __repr__(self) -> str:
         return f"File({self._path!r})"
 
@@ -186,9 +192,11 @@ class Bytes(_DecodedSource):
         self._data = data
         self._hint = hint
 
+    @override
     def _create(self, core: "VoiceCore") -> NativeSource:
         return core.voice_bytes(self._data, self._hint)
 
+    @override
     def __repr__(self) -> str:
         return f"Bytes(<{len(self._data)} bytes>)"
 
@@ -201,9 +209,11 @@ class Url(_DecodedSource):
         self._url = url
         self._headers = dict(headers or {})
 
+    @override
     def _create(self, core: "VoiceCore") -> NativeSource:
         return core.voice_url(self._url, list(self._headers.items()))
 
+    @override
     def __repr__(self) -> str:
         parts = urlsplit(self._url)
         return f"Url('{parts.scheme}://{parts.hostname}{parts.path}')"
@@ -224,6 +234,7 @@ class Stream(Source):
             self._iterator = aiter(self._items)
             self._format = self._items_format
 
+    @override
     async def __anext__(self) -> bytes:
         if self._iterator is None:
             raise RuntimeError("open() the source first")
@@ -235,12 +246,14 @@ class Stream(Source):
             self._done = True
             raise
 
+    @override
     async def aclose(self) -> None:
         self._done = True
         close = getattr(self._iterator, "aclose", None)
         if close is not None:
             await close()
 
+    @override
     def __repr__(self) -> str:
         return f"Stream({self._items!r})"
 
@@ -275,6 +288,7 @@ class FFmpeg(Source):
             self._errors = asyncio.ensure_future(_last_line(process.stderr))
         self._format = FFMPEG_PCM
 
+    @override
     async def __anext__(self) -> bytes:
         process = self._process
         if process is None or process.stdout is None:
@@ -295,6 +309,7 @@ class FFmpeg(Source):
             raise SourceError(repr(self), line or f"exited with code {code}")
         raise StopAsyncIteration
 
+    @override
     async def aclose(self) -> None:
         self._done = True
         process = self._process
@@ -305,6 +320,7 @@ class FFmpeg(Source):
         if self._errors is not None:
             self._errors.cancel()
 
+    @override
     def __repr__(self) -> str:
         return f"FFmpeg({self._executable!r})"
 

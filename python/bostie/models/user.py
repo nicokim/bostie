@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 from bostie.enums import UserFlags
 from bostie.models.base import Model
@@ -35,6 +35,7 @@ class User(PartialUser, kw_only=True):
     public_flags: UserFlags = UserFlags(0)
 
     @property
+    @override
     def display_name(self) -> str:
         return self.global_name or self.username
 

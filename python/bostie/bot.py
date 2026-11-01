@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Unpack, cast
+from typing import Any, Unpack, cast, override
 
 import msgspec
 
@@ -57,6 +57,8 @@ from bostie.models import (
     Member,
     Message,
     MessageParts,
+    ModalSubmitInteraction,
+    UnknownInteraction,
     User,
     WebhookMessage,
     build_message,
@@ -160,6 +162,7 @@ class Bot(Router):
         self._failed_dispatches: set[str] = set()
 
     @property
+    @override
     def bot(self) -> "Bot":
         """This bot, so code written against a Router works on the bot too."""
         return self
@@ -449,6 +452,7 @@ class Bot(Router):
         if self._gateway is not None:
             self._gateway._filter(self._dispatch_names())
 
+    @override
     def _registered(self) -> None:
         self._refresh_filter()
 
@@ -599,7 +603,8 @@ class Bot(Router):
                 return self._command_handler(interaction, received)
             case AutocompleteInteraction():
                 return self._autocomplete_handler(interaction, received)
-        return None
+            case ModalSubmitInteraction() | UnknownInteraction():
+                return None
 
     def _component_handler(
         self, interaction: ComponentInteraction, received: float

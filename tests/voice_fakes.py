@@ -511,7 +511,8 @@ class FakeBridge:
                 return 200, CHANNELS[int(channel_id)]
             case ["", "guilds", _, "voice-states", "@me"]:
                 return 204, None
-        return 404, {"code": 10003, "message": "Unknown Channel"}
+            case _:
+                return 404, {"code": 10003, "message": "Unknown Channel"}
 
 
 class FakeBot:

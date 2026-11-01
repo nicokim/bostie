@@ -6,7 +6,7 @@ import struct
 import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, override
 
 import msgspec
 from aiohttp import WSCloseCode, WSMessage, WSMsgType, web
@@ -92,6 +92,7 @@ class _Datagrams(asyncio.DatagramProtocol):
     def __init__(self, received: Callable[[bytes, Address], None]) -> None:
         self._received = received
 
+    @override
     def datagram_received(self, data: bytes, addr: Address) -> None:
         self._received(data, addr)
 

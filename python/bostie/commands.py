@@ -20,6 +20,7 @@ from typing import (
     get_args,
     get_origin,
     overload,
+    override,
 )
 
 from bostie.enums import (
@@ -389,6 +390,7 @@ class Command(_Node):
             arguments[parameter.python_name] = parameter.default
         return arguments
 
+    @override
     def _options(self) -> list[dict[str, Any]]:
         return [parameter.payload for parameter in self._parameters]
 
@@ -460,6 +462,7 @@ class Group(_Node):
         _warn_if_over_budget(self)
         return node
 
+    @override
     def _options(self) -> list[dict[str, Any]]:
         return [node._as_option() for node in self.commands.values()]
 

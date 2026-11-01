@@ -665,7 +665,8 @@ class FakeDiscord(VoiceGateway):
             case 6 | 7:
                 message: Json = interaction["message"]
                 return message | _message_fields(data)
-        return None
+            case _:
+                return None
 
     def _interaction_message(self, interaction: Json, body: Json) -> Json:
         return self._new_message(
@@ -803,7 +804,8 @@ def _without_localizations(value: Any) -> Any:
                 for key, item in value.items()
                 if key not in LOCALIZATIONS
             }
-    return value
+        case _:
+            return value
 
 
 def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Response:
