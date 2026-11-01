@@ -200,6 +200,11 @@ class JSONErrorCode(DiscordIntEnum):
     UNKNOWN_VOICE_STATE = 10065
 
 
+class ReactionType(DiscordIntEnum):
+    NORMAL = 0
+    BURST = 1
+
+
 class MessageReferenceType(DiscordIntEnum):
     DEFAULT = 0
     FORWARD = 1

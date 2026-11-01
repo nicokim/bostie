@@ -9,6 +9,7 @@ from bostie.enums import (
     ChannelType,
     Intents,
     MemberFlags,
+    ReactionType,
 )
 from bostie.models import (
     AddedThreadMember,
@@ -205,6 +206,17 @@ class ChannelDelete(_ChannelEvent, kw_only=True):
     NAME = "CHANNEL_DELETE"
 
 
+class ChannelPinsUpdate(Event, kw_only=True):
+    """A message was pinned or unpinned; not sent when a pinned message is deleted."""
+
+    NAME = "CHANNEL_PINS_UPDATE"
+    INTENTS = Intents.GUILDS | Intents.DIRECT_MESSAGES
+
+    guild_id: int | None = None
+    channel_id: int
+    last_pin_timestamp: datetime | None = None
+
+
 class ThreadCreate(_ChannelEvent, kw_only=True):
     NAME = "THREAD_CREATE"
 
@@ -286,6 +298,15 @@ class MessageDelete(Event, kw_only=True):
     guild_id: int | None = None
 
 
+class MessageDeleteBulk(Event, kw_only=True):
+    NAME = "MESSAGE_DELETE_BULK"
+    INTENTS = Intents.GUILD_MESSAGES
+
+    ids: tuple[int, ...]
+    channel_id: int
+    guild_id: int | None = None
+
+
 class _ReactionEvent(Event, kw_only=True):
     INTENTS = Intents.GUILD_MESSAGE_REACTIONS | Intents.DIRECT_MESSAGE_REACTIONS
 
@@ -295,6 +316,7 @@ class _ReactionEvent(Event, kw_only=True):
     guild_id: int | None = None
     emoji: PartialEmoji
     burst: bool
+    type: ReactionType
 
 
 class ReactionAdd(_ReactionEvent, kw_only=True):
@@ -302,10 +324,48 @@ class ReactionAdd(_ReactionEvent, kw_only=True):
 
     member: Member | None = None
     message_author_id: int | None = None
+    burst_colors: tuple[str, ...] = ()
 
 
 class ReactionRemove(_ReactionEvent, kw_only=True):
     NAME = "MESSAGE_REACTION_REMOVE"
+
+
+class ReactionRemoveAll(Event, kw_only=True):
+    NAME = "MESSAGE_REACTION_REMOVE_ALL"
+    INTENTS = Intents.GUILD_MESSAGE_REACTIONS | Intents.DIRECT_MESSAGE_REACTIONS
+
+    channel_id: int
+    message_id: int
+    guild_id: int | None = None
+
+
+class ReactionRemoveEmoji(Event, kw_only=True):
+    NAME = "MESSAGE_REACTION_REMOVE_EMOJI"
+    INTENTS = Intents.GUILD_MESSAGE_REACTIONS | Intents.DIRECT_MESSAGE_REACTIONS
+
+    channel_id: int
+    guild_id: int | None = None
+    message_id: int
+    emoji: PartialEmoji
+
+
+class _PollVoteEvent(Event, kw_only=True):
+    INTENTS = Intents.GUILD_MESSAGE_POLLS | Intents.DIRECT_MESSAGE_POLLS
+
+    user_id: int
+    channel_id: int
+    message_id: int
+    guild_id: int | None = None
+    answer_id: int
+
+
+class PollVoteAdd(_PollVoteEvent, kw_only=True):
+    NAME = "MESSAGE_POLL_VOTE_ADD"
+
+
+class PollVoteRemove(_PollVoteEvent, kw_only=True):
+    NAME = "MESSAGE_POLL_VOTE_REMOVE"
 
 
 class TypingStart(Event, kw_only=True):
@@ -802,6 +862,12 @@ EVENTS: dict[str, type[Event]] = {
         MembersChunk,
         PresenceUpdate,
         UserUpdate,
+        ChannelPinsUpdate,
+        MessageDeleteBulk,
+        ReactionRemoveAll,
+        ReactionRemoveEmoji,
+        PollVoteAdd,
+        PollVoteRemove,
     )
 }
 
