@@ -3,7 +3,7 @@ import inspect
 import logging
 import threading
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import msgspec
@@ -255,10 +255,13 @@ def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
 
 def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
     async def scenario(bot: FakeBot) -> None:
+        before = datetime.now(UTC)
         await connected(bot, STAGE, stage="request")
+        after = datetime.now(UTC)
         request = bot.rest.requests[-1]
         assert request.json.keys() == {"channel_id", "request_to_speak_timestamp"}
-        assert datetime.fromisoformat(request.json["request_to_speak_timestamp"])
+        asked = datetime.fromisoformat(request.json["request_to_speak_timestamp"])
+        assert before <= asked <= after
 
     run(scenario)
 
