@@ -26,6 +26,7 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      uv:
-        patterns: ["*"]
-    labels: [skip-changelog]
+      runtime:
+        dependency-type: production
+      tools:
+        dependency-type: development
