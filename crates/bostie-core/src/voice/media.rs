@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use tokio::sync::Notify;
 use tracing::debug;
 
@@ -449,12 +449,7 @@ impl Lane {
             None => self.hold(tick.now),
             Some(transport) => {
                 self.follow(&transport);
-                match self.media.gate() {
-                    SendMode::Hold => self.hold(tick.now),
-                    SendMode::Discard => self.discard(),
-                    SendMode::Plain => self.plain(&transport, tick.now),
-                    SendMode::Encrypt => self.encrypted(&transport, tick.now),
-                }
+                self.send(&transport, tick.now);
                 if let Some(rtp) = &mut self.rtp {
                     rtp.timestamp = rtp
                         .timestamp
@@ -503,7 +498,32 @@ impl Lane {
         bump(&self.media.counters.alone_ticks);
     }
 
-    fn plain(&mut self, transport: &Transport, now: Instant) {
+    fn send(&mut self, transport: &Transport, now: Instant) {
+        let media = Arc::clone(&self.media);
+        let mut mode = media.gate();
+        let mut dave = None;
+        if mode == SendMode::Encrypt {
+            let Some(guard) = media.dave.try_lock() else {
+                bump(&media.counters.dave_busy);
+                self.hold(now);
+                return;
+            };
+            mode = guard.send_mode();
+            dave = (mode == SendMode::Encrypt).then_some(guard);
+        }
+        match mode {
+            SendMode::Hold => self.hold(now),
+            SendMode::Discard => self.discard(),
+            SendMode::Plain | SendMode::Encrypt => self.send_frame(transport, now, dave),
+        }
+    }
+
+    fn send_frame(
+        &mut self,
+        transport: &Transport,
+        now: Instant,
+        mut dave: Option<MutexGuard<'_, Dave>>,
+    ) {
         let counters = &self.media.counters;
         let payload: &[u8] = match self.mixer.mix(&self.sinks) {
             Some(mixed) => {
@@ -513,89 +533,45 @@ impl Lane {
             }
             None if self.silence_left > 0 => {
                 self.silence_left -= 1;
+                let silence = if dave.is_some() {
+                    self.mixer.silence()
+                } else {
+                    Some(&SILENCE_FRAME[..])
+                };
+                let Some(silence) = silence else {
+                    return;
+                };
                 bump(&counters.silence_packets);
-                &SILENCE_FRAME
+                silence
             }
             None => return,
         };
-        let stamp = self.rtp.map(|rtp| (rtp.sequence, rtp.timestamp));
-        let sent = self
-            .rtp
-            .as_mut()
-            .is_some_and(|rtp| send(&self.media, transport, rtp, &mut self.packet, payload));
-        if sent {
-            tee(&self.media, transport, stamp, payload);
-        }
-        self.after_send(sent, now);
-    }
-
-    fn encrypted(&mut self, transport: &Transport, now: Instant) {
-        let media = Arc::clone(&self.media);
-        let Some(mut dave) = media.dave.try_lock() else {
-            bump(&media.counters.dave_busy);
-            self.hold(now);
-            return;
-        };
-        match dave.send_mode() {
-            SendMode::Encrypt => {}
-            SendMode::Plain => {
-                drop(dave);
-                self.plain(transport, now);
-                return;
-            }
-            SendMode::Discard => {
-                drop(dave);
-                self.discard();
-                return;
-            }
-            SendMode::Hold => {
-                drop(dave);
-                self.hold(now);
-                return;
-            }
-        }
-        let counters = &media.counters;
-        let payload: &[u8] = match self.mixer.mix(&self.sinks) {
-            Some(mixed) => {
-                self.silence_left = SILENCE_TAIL;
-                count_mixed(counters, &mixed);
-                mixed.packet
-            }
-            None if self.silence_left > 0 => {
-                self.silence_left -= 1;
-                match self.mixer.silence() {
-                    Some(silence) => {
-                        bump(&counters.silence_packets);
-                        silence
-                    }
-                    None => return,
-                }
-            }
-            None => return,
-        };
-        let encrypted = forced_failure(&media).map_or_else(
-            || {
+        let wire: &[u8] = match &mut dave {
+            Some(dave) => {
                 self.dave_out.clear();
-                dave.encrypt(payload, &mut self.dave_out)
-            },
-            Err,
-        );
-        drop(dave);
-        if let Err(failure) = encrypted {
-            match failure {
-                EncryptFailure::NotReady => bump(&counters.dave_not_ready),
-                EncryptFailure::Failed => bump(&counters.encrypt_failures),
+                if let Err(failure) = encrypt(&self.media, dave, payload, &mut self.dave_out) {
+                    match failure {
+                        EncryptFailure::NotReady => bump(&counters.dave_not_ready),
+                        EncryptFailure::Failed => bump(&counters.encrypt_failures),
+                    }
+                    return;
+                }
+                &self.dave_out
             }
-            return;
-        }
+            None => payload,
+        };
+        let encrypted = dave.is_some();
+        drop(dave);
         let stamp = self.rtp.map(|rtp| (rtp.sequence, rtp.timestamp));
         let sent = self
             .rtp
             .as_mut()
-            .is_some_and(|rtp| send(&media, transport, rtp, &mut self.packet, &self.dave_out));
+            .is_some_and(|rtp| seal_and_send(&self.media, transport, rtp, &mut self.packet, wire));
         if sent {
-            bump(&counters.dave_frames);
-            tee(&media, transport, stamp, payload);
+            if encrypted {
+                bump(&counters.dave_frames);
+            }
+            tee(&self.media, transport, stamp, payload);
         }
         self.after_send(sent, now);
     }
@@ -662,13 +638,28 @@ fn count_mixed(counters: &SendCounters, mixed: &Mixed<'_>) {
 }
 
 #[cfg(not(test))]
-fn forced_failure(_: &Media) -> Option<EncryptFailure> {
-    None
+fn encrypt(
+    _: &Media,
+    dave: &mut Dave,
+    payload: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), EncryptFailure> {
+    dave.encrypt(payload, out)
 }
 
 #[cfg(test)]
-fn forced_failure(media: &Media) -> Option<EncryptFailure> {
-    media.faults.encrypt.lock().take()
+fn encrypt(
+    media: &Media,
+    dave: &mut Dave,
+    payload: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<(), EncryptFailure> {
+    media
+        .faults
+        .encrypt
+        .lock()
+        .take()
+        .map_or_else(|| dave.encrypt(payload, out), Err)
 }
 
 #[cfg(not(test))]
@@ -689,7 +680,7 @@ pub struct Faults {
     pub receive_panic: AtomicBool,
 }
 
-fn send(
+fn seal_and_send(
     media: &Media,
     transport: &Transport,
     rtp: &mut RtpState,
