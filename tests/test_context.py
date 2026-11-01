@@ -3,7 +3,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import msgspec
 import pytest
@@ -102,8 +102,8 @@ def context[C: Context | AutocompleteContext](
     }[kind]
     return kind(
         source or interaction(fixture),
-        None,
-        http,
+        cast(Any, None),
+        cast(Any, http),
         received=asyncio.get_running_loop().time() - age,
         ephemeral=ephemeral,
         auto_defer=auto_defer,

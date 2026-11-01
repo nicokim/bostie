@@ -75,8 +75,8 @@ class _InteractionContext:
     def __init__(
         self,
         interaction: Interaction,
-        bot: Any,
-        http: Any,
+        bot: "Bot",
+        http: "HTTPClient",
         *,
         received: float,
         ephemeral: bool,
@@ -84,10 +84,10 @@ class _InteractionContext:
         allowed_mentions: AllowedMentions | None,
     ) -> None:
         self.interaction = interaction
-        self.bot: Bot = bot
+        self.bot = bot
         self.received = received
         self.state = ResponseState.PENDING
-        self._http: HTTPClient = http
+        self._http = http
         self._ephemeral = ephemeral
         self._auto_defer = auto_defer
         self._allowed_mentions = allowed_mentions
