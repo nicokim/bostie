@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, cast
 
 import msgspec
 
@@ -13,7 +13,7 @@ from bostie.enums import (
     StickerFormatType,
 )
 from bostie.file import File
-from bostie.models.base import Builder, Model
+from bostie.models.base import Builder, Model, decoder
 from bostie.models.channel import Channel
 from bostie.models.components import (
     Component,
@@ -22,7 +22,7 @@ from bostie.models.components import (
     decode_components,
 )
 from bostie.models.guild import PartialMember
-from bostie.models.user import User
+from bostie.models.user import PartialUser, User
 
 if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
@@ -181,7 +181,8 @@ class PartialMessage(Model, kw_only=True):
 class Message(PartialMessage, kw_only=True):
     """A message in a channel."""
 
-    author: User
+    author_json: msgspec.Raw = msgspec.field(name="author")
+    _author: PartialUser | None = msgspec.field(default=None, name="__bostie_author__")
     content: str
     timestamp: datetime
     edited_timestamp: datetime | None
@@ -193,6 +194,17 @@ class Message(PartialMessage, kw_only=True):
     embeds: tuple[Embed, ...]
     pinned: bool
     type: MessageType
+
+    def __post_init__(self) -> None:
+        model = User if self.webhook_id is None else PartialUser
+        msgspec.structs.force_setattr(
+            self, "_author", decoder(model).decode(self.author_json)
+        )
+
+    @property
+    def author(self) -> PartialUser:
+        """The sender: a `User`, or a `PartialUser` when a webhook sent it."""
+        return cast(PartialUser, self._author)
 
 
 def in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:

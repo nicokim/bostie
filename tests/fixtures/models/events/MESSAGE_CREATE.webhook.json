@@ -1,0 +1,28 @@
+{
+  "id": "1564609610244030466",
+  "type": 0,
+  "channel_id": "1335173295636611073",
+  "author": {
+    "id": "1335180000000000001",
+    "username": "Release notes",
+    "avatar": null,
+    "discriminator": "0000",
+    "global_name": null,
+    "bot": true
+  },
+  "content": "bostie 0.2 is out",
+  "timestamp": "2026-10-27T12:00:00.123000+00:00",
+  "edited_timestamp": null,
+  "tts": false,
+  "mention_everyone": false,
+  "mentions": [],
+  "mention_roles": [],
+  "attachments": [],
+  "embeds": [],
+  "components": [],
+  "pinned": false,
+  "flags": 0,
+  "channel_type": 0,
+  "guild_id": "1335172792320131073",
+  "webhook_id": "1335180000000000001"
+}

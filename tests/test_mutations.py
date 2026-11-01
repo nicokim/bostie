@@ -62,7 +62,7 @@ TOKEN = "bostie-test-token-7c1f"
 MISSING = re.compile(
     r"Object missing required field `(?P<key>[^`]+)`(?: - at `\$(?P<at>.*)`)?$"
 )
-NULL = re.compile(r"got `null` - at `\$(?P<at>.*)`$")
+NULL = re.compile(r"got `null`(?: - at `\$(?P<at>.*)`)?$")
 SNOWFLAKE_KEY = re.compile(r"\.\d+(?=\.|\[|$)")
 
 type Decoder = Callable[[bytes], object]
@@ -193,7 +193,7 @@ def refused_by_its_model(error: msgspec.ValidationError, where: str) -> bool:
     if missing := MISSING.match(str(error)):
         return where.endswith(f"{missing['at'] or ''}.{missing['key']}")
     if null := NULL.search(str(error)):
-        return where.endswith(null["at"])
+        return where.endswith(null["at"] or ".author")
     return False
 
 

@@ -65,7 +65,7 @@ from bostie.models.message import (
     StickerItem,
     build_message,
 )
-from bostie.models.user import User
+from bostie.models.user import PartialUser, User
 
 __all__ = [
     "ActionRow",
@@ -108,6 +108,7 @@ __all__ = [
     "PartialEmoji",
     "PartialMember",
     "PartialMessage",
+    "PartialUser",
     "Reaction",
     "Resolved",
     "Role",

@@ -33,7 +33,15 @@ from bostie.events import (
     VoiceServerUpdate,
     VoiceStateUpdate,
 )
-from bostie.models import CommandInteraction, Guild, Member, Model, UnavailableGuild
+from bostie.models import (
+    CommandInteraction,
+    Guild,
+    Member,
+    Model,
+    PartialUser,
+    UnavailableGuild,
+    User,
+)
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
 
@@ -248,6 +256,20 @@ def test_message_and_reaction_events() -> None:
     assert reaction.emoji.animated is True
     assert reaction.member is not None
     assert reaction.message_author_id == 1329027298099331073
+
+
+def test_a_webhook_messages_author_needs_only_the_webhooks_identity() -> None:
+    document = json.loads((EVENT_FIXTURES / "MESSAGE_CREATE.webhook.json").read_bytes())
+    identity = {key: document["author"][key] for key in ("id", "username", "avatar")}
+
+    webhook = MessageCreate.decode(
+        0, msgspec.json.encode(document | {"author": identity})
+    )
+    user = decode(MessageCreate, "MESSAGE_CREATE")
+
+    assert type(webhook.message.author) is PartialUser
+    assert webhook.message.author.display_name == "Release notes"
+    assert type(user.message.author) is User
 
 
 def test_typing_start_reads_the_unix_timestamp_and_the_member() -> None:
