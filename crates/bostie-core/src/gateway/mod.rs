@@ -119,11 +119,10 @@ impl Gateway {
             return Err(CoreError::ShardRunning(shard));
         }
         let (commands, queued) = mpsc::channel(COMMAND_QUEUE);
-        let signals = Arc::new(Signals::new());
+        let signals = Arc::new(Signals::new(identify));
         let task = Shard::new(
             shard,
             url,
-            identify,
             Arc::clone(&self.shared),
             queued,
             Arc::clone(&signals),
@@ -150,6 +149,14 @@ impl Gateway {
                     TrySendError::Full(_) => CoreError::SendQueueFull(shard),
                     TrySendError::Closed(_) => CoreError::UnknownShard(shard),
                 })
+        })
+    }
+
+    pub(crate) fn set_identify(&self, shard: ShardId, identify: &[u8]) -> Result<(), CoreError> {
+        let identify = envelope::identify_frame(identify)?;
+        self.with_running(shard, |handle| {
+            *handle.signals.identify.lock() = identify;
+            Ok(())
         })
     }
 

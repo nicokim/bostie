@@ -153,6 +153,11 @@ impl Core {
         self.gateway.send(shard, payload)
     }
 
+    pub fn gateway_identify(&self, shard: ShardId, identify: &[u8]) -> Result<(), CoreError> {
+        self.owner.check()?;
+        self.gateway.set_identify(shard, identify)
+    }
+
     pub fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<(), CoreError> {
         self.owner.check()?;
         self.gateway.set_filter(names);

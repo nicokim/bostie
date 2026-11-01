@@ -96,6 +96,12 @@ impl NativeCore {
             .gateway_send(ShardId::from(shard_id), payload.into())?)
     }
 
+    fn gateway_identify(&self, shard_id: u32, identify: Vec<u8>) -> Result<()> {
+        Ok(self
+            .0
+            .gateway_identify(ShardId::from(shard_id), &identify)?)
+    }
+
     fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<()> {
         Ok(self.0.gateway_filter(names)?)
     }

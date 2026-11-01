@@ -1052,6 +1052,35 @@ async fn queued_commands_wait_for_ready_or_resumed() {
 }
 
 #[tokio::test]
+async fn a_reidentify_sends_the_latest_payload_and_keeps_later_commands() {
+    let mut harness = Harness::new(false);
+    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
+    let idle = br#"{"token":"test-token","intents":1,"presence":{"status":"idle"}}"#;
+
+    peer.send(fixture(INVALID_SESSION)).await;
+    harness.disconnected().await;
+    harness.gateway.send(shard(), voice_state(1)).unwrap();
+    let mut peer = harness.fake.accept().await;
+    peer.send(&hello(SLOW_HEARTBEAT)).await;
+    assert_eq!(
+        peer.receive_text().await.as_bytes(),
+        [br#"{"op":2,"d":"#.as_slice(), IDENTIFY, b"}"].concat()
+    );
+    harness.gateway.set_identify(shard(), idle).unwrap();
+    harness.gateway.send(shard(), voice_state(2)).unwrap();
+    peer.send(&harness.fake.ready()).await;
+    assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("2"));
+
+    peer.send(fixture(INVALID_SESSION)).await;
+    let mut peer = harness.fake.accept().await;
+    peer.send(&hello(SLOW_HEARTBEAT)).await;
+    assert_eq!(
+        peer.receive_text().await.as_bytes(),
+        [br#"{"op":2,"d":"#.as_slice(), idle, b"}"].concat()
+    );
+}
+
+#[tokio::test]
 async fn the_api_rejects_bad_input_and_full_queues() {
     let harness = Harness::new(false);
     let gateway = &harness.gateway;
@@ -1059,6 +1088,10 @@ async fn the_api_rejects_bad_input_and_full_queues() {
 
     assert!(matches!(
         gateway.send(shard(), command()),
+        Err(CoreError::UnknownShard(_))
+    ));
+    assert!(matches!(
+        gateway.set_identify(shard(), IDENTIFY),
         Err(CoreError::UnknownShard(_))
     ));
     assert!(matches!(
@@ -1077,6 +1110,10 @@ async fn the_api_rejects_bad_input_and_full_queues() {
     harness.start();
     assert!(matches!(
         gateway.send(shard(), Bytes::from_static(br#"{"op":2,"d":{}}"#)),
+        Err(CoreError::InvalidRequest(_))
+    ));
+    assert!(matches!(
+        gateway.set_identify(shard(), b"[]"),
         Err(CoreError::InvalidRequest(_))
     ));
     for _ in 0..128 {

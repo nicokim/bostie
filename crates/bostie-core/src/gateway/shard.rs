@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
+use parking_lot::Mutex;
 use reqwest::Url;
 use tokio::net::TcpStream;
 use tokio::sync::{Notify, mpsc};
@@ -41,6 +42,7 @@ pub(super) fn gateway_url(text: &str) -> Option<Url> {
 }
 
 pub(super) struct Signals {
+    pub(super) identify: Mutex<Bytes>,
     pub(super) close: Notify,
     pub(super) reconnect: Notify,
     pub(super) latency: AtomicU64,
@@ -48,8 +50,9 @@ pub(super) struct Signals {
 }
 
 impl Signals {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(identify: Bytes) -> Self {
         Self {
+            identify: Mutex::new(identify),
             close: Notify::new(),
             reconnect: Notify::new(),
             latency: AtomicU64::new(UNKNOWN_LATENCY),
@@ -181,7 +184,6 @@ impl Connection {
 pub(super) struct Shard {
     id: ShardId,
     url: Url,
-    identify: Bytes,
     shared: Arc<Shared>,
     commands: mpsc::Receiver<Bytes>,
     signals: Arc<Signals>,
@@ -195,7 +197,6 @@ impl Shard {
     pub(super) fn new(
         id: ShardId,
         url: Url,
-        identify: Bytes,
         shared: Arc<Shared>,
         commands: mpsc::Receiver<Bytes>,
         signals: Arc<Signals>,
@@ -203,7 +204,6 @@ impl Shard {
         Self {
             id,
             url,
-            identify,
             shared,
             commands,
             signals,
@@ -402,10 +402,14 @@ impl Shard {
         Ok(())
     }
 
-    async fn send_identify(&self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn send_identify(&mut self, connection: &mut Connection) -> Result<(), Ending> {
         connection.identify_at = None;
+        if self.had_session {
+            while self.commands.try_recv().is_ok() {}
+        }
         debug!(shard = %self.id, "identifying");
-        connection.send(self.identify.clone()).await
+        let identify = self.signals.identify.lock().clone();
+        connection.send(identify).await
     }
 
     async fn on_message(
@@ -562,9 +566,6 @@ impl Shard {
     }
 
     fn begin_session(&mut self, connection: &mut Connection, data: &[u8]) {
-        if self.had_session {
-            while self.commands.try_recv().is_ok() {}
-        }
         self.shared.tap.session_started(self.id);
         self.had_session = true;
         self.session = envelope::ready_session(data).and_then(|ready| {
