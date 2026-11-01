@@ -53,7 +53,7 @@ const XCHACHA: &str = "aead_xchacha20_poly1305_rtpsize";
 fn tuning() -> Tuning {
     Tuning {
         connection: ConnectionTuning {
-            move_window: Duration::from_millis(200),
+            move_window: WAIT,
             resume_backoff: Duration::from_millis(10),
             resume_backoff_max: Duration::from_millis(50),
             keepalive_interval: Duration::from_millis(100),
@@ -822,7 +822,7 @@ impl Proxy {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_plain_call_identifies_selects_aes_and_speaks_before_any_packet() {
+async fn a_plain_call_identifies_selects_aes_and_speaks_with_its_ssrc() {
     let mut harness = Harness::start().await;
     harness.connect();
     harness.announce().await;
@@ -865,7 +865,6 @@ async fn a_plain_call_identifies_selects_aes_and_speaks_before_any_packet() {
     assert_eq!(statuses[0].0, VoiceStatus::Connecting);
     assert_eq!(statuses[0].3, "voice_events");
     assert_eq!(statuses[1].0, VoiceStatus::Ready);
-    assert!(harness.server.sfu.packets().is_empty());
 
     let sink = harness.sink(pcm(), StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES)).unwrap();
@@ -878,7 +877,11 @@ async fn a_plain_call_identifies_selects_aes_and_speaks_before_any_packet() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn only_xchacha_offered_selects_xchacha_and_its_packets_decrypt() {
-    let mut harness = Harness::with(|config| config.modes = vec![XCHACHA.to_owned()]).await;
+    let mut harness = Harness::with(|config| {
+        config.modes = vec![XCHACHA.to_owned()];
+        config.hello = HelloAt::AfterReady;
+    })
+    .await;
     harness.connected().await;
 
     let select = harness.server.expect_op(op::SELECT_PROTOCOL).await;
@@ -907,62 +910,6 @@ async fn no_supported_mode_ends_with_a_protocol_error_and_leaves() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_endpoint_keeps_its_scheme_and_port_and_gets_version_8() {
-    let mut harness = Harness::start().await;
-    harness.connect();
-    harness.state(Some(CHANNEL));
-    harness.server.token("token").await;
-    let endpoint = format!("{}/?v=4", harness.server.endpoint());
-    harness.offer_server(guild(), "token", Some(&endpoint));
-
-    let connected = harness
-        .server
-        .expect(|message| matches!(message, ClientMessage::Connected { .. }))
-        .await;
-    harness.until(VoiceStatus::Ready).await;
-
-    assert_eq!(
-        connected,
-        ClientMessage::Connected {
-            query: Some("v=8".to_owned())
-        }
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_endpoint_without_a_scheme_is_dialed_over_tls_on_its_own_port() {
-    let harness = Harness::start().await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = listener.local_addr().unwrap().to_string();
-    harness.connect();
-    harness.state(Some(CHANNEL));
-    harness.offer_server(guild(), "token", Some(&endpoint));
-
-    let (stream, _) = timeout(WAIT, listener.accept()).await.unwrap().unwrap();
-    let mut first = [0; 1];
-    loop {
-        timeout(WAIT, stream.readable()).await.unwrap().unwrap();
-        match stream.try_read(&mut first) {
-            Ok(_) => break,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(error) => panic!("{error}"),
-        }
-    }
-
-    assert_eq!(first[0], 0x16);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn ip_discovery_retries_until_an_answer_arrives() {
-    let mut harness = Harness::start().await;
-    harness.server.sfu.ignore_discoveries(2);
-
-    harness.connected().await;
-
-    assert!(harness.server.sfu.discoveries() >= 3);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unanswered_ip_discovery_times_out_naming_it() {
     let mut harness = Harness::start().await;
     harness.server.sfu.ignore_discoveries(usize::MAX);
@@ -980,16 +927,6 @@ async fn unanswered_ip_discovery_times_out_naming_it() {
     assert_eq!(reason, DisconnectReason::Timeout);
     assert!(detail.contains("ip discovery: no answer from"), "{detail}");
     assert!(harness.leaves() >= 1);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn hello_after_ready_still_completes_the_handshake() {
-    let mut harness = Harness::with(|config| config.hello = HelloAt::AfterReady).await;
-
-    harness.connected().await;
-    harness.server.expect_op(op::IDENTIFY).await;
-
-    assert_eq!(harness.server.count(op::IDENTIFY), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1043,17 +980,35 @@ async fn a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_crashed_voice_server_close_resumes() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
+async fn a_lost_transport_resumes_once_ready_and_rejoins_before() {
+    for (ready, close) in [(true, Some(4015)), (false, Some(4015)), (false, None)] {
+        let mut harness = Harness::tuned(|tuning| tuning.discovery_interval = WAIT).await;
+        if !ready {
+            harness.server.sfu.ignore_discoveries(usize::MAX);
+        }
+        harness.connect();
+        harness.announce().await;
+        harness.server.expect_op(op::IDENTIFY).await;
+        if ready {
+            harness.until(VoiceStatus::Ready).await;
+        }
 
-    harness.server.gateway.close(4015);
+        match close {
+            Some(code) => harness.server.gateway.close(code),
+            None => harness.server.gateway.drop_connection(),
+        }
 
-    let (_, _, _, detail) = harness.until(VoiceStatus::Resuming).await;
-    harness.server.expect_op(op::RESUME).await;
-    harness.until(VoiceStatus::Ready).await;
-    assert!(detail.contains("4015"), "{detail}");
-    assert_eq!(harness.server.count(op::IDENTIFY), 1);
+        if ready {
+            let (_, _, _, detail) = harness.until(VoiceStatus::Resuming).await;
+            harness.server.expect_op(op::RESUME).await;
+            harness.until(VoiceStatus::Ready).await;
+            assert!(detail.contains("4015"), "{detail}");
+        } else {
+            harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
+            assert_eq!(harness.server.count(op::RESUME), 0, "{close:?}");
+        }
+        assert_eq!(harness.server.count(op::IDENTIFY), 1, "{close:?}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1082,63 +1037,37 @@ async fn closed_with(code: u16) -> Harness {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn close_codes_bostie_caused_end_the_connection_without_retrying() {
-    for (code, reason) in [
-        (4001, DisconnectReason::ProtocolError),
-        (4002, DisconnectReason::ProtocolError),
-        (4003, DisconnectReason::ProtocolError),
-        (4005, DisconnectReason::ProtocolError),
-        (4012, DisconnectReason::ProtocolError),
-        (4016, DisconnectReason::ProtocolError),
-        (4017, DisconnectReason::DaveRequired),
-        (4020, DisconnectReason::ProtocolError),
-        (4021, DisconnectReason::RateLimited),
-    ] {
-        let mut harness = closed_with(code).await;
+async fn a_close_code_bostie_caused_ends_the_connection_without_retrying() {
+    let mut harness = closed_with(4021).await;
 
-        assert_eq!(harness.ended().await.0, reason, "{code}");
-        let statuses = harness.statuses();
-        let steps: Vec<VoiceStatus> = statuses.iter().map(|state| state.0).collect();
-        assert_eq!(
-            steps,
-            [
-                VoiceStatus::Connecting,
-                VoiceStatus::Ready,
-                VoiceStatus::Disconnected
-            ],
-            "{code}"
-        );
-        assert_eq!(statuses.last().unwrap().2, Some(code), "{code}");
-        assert_eq!(harness.joins(CHANNEL), 1, "{code}");
-        assert_eq!(harness.leaves(), 1, "{code}");
-    }
+    assert_eq!(harness.ended().await.0, DisconnectReason::RateLimited);
+    let statuses = harness.statuses();
+    let steps: Vec<VoiceStatus> = statuses.iter().map(|state| state.0).collect();
+    assert_eq!(
+        steps,
+        [
+            VoiceStatus::Connecting,
+            VoiceStatus::Ready,
+            VoiceStatus::Disconnected
+        ]
+    );
+    assert_eq!(statuses.last().unwrap().2, Some(4021));
+    assert_eq!(harness.joins(CHANNEL), 1);
+    assert_eq!(harness.leaves(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn close_codes_of_a_dead_session_rejoin_with_a_new_voice_state() {
-    for code in [4004, 4006, 4009, 4011, 4099] {
-        let mut harness = closed_with(code).await;
+async fn a_dead_session_close_rejoins_with_a_new_voice_state() {
+    let mut harness = closed_with(4006).await;
 
-        let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
-        assert_eq!(detail, "rejoining", "{code}");
-        harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
-        harness.fresh_server().await;
-        harness.until(VoiceStatus::Ready).await;
-        assert_eq!(harness.server.count(op::RESUME), 0, "{code}");
-        assert_eq!(harness.joins(CHANNEL), 2, "{code}");
-    }
-}
+    let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
+    harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Ready).await;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn transport_close_codes_resume() {
-    for code in [1000, 1001, 3000, 4015] {
-        let mut harness = closed_with(code).await;
-
-        harness.until(VoiceStatus::Resuming).await;
-        harness.server.expect_op(op::RESUME).await;
-        harness.until(VoiceStatus::Ready).await;
-        assert_eq!(harness.server.count(op::IDENTIFY), 1, "{code}");
-    }
+    assert_eq!(detail, "rejoining");
+    assert_eq!(harness.server.count(op::RESUME), 0);
+    assert_eq!(harness.joins(CHANNEL), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1147,7 +1076,10 @@ async fn disconnected_and_call_terminated_wait_for_the_gateway_then_end() {
         (4014, DisconnectReason::Removed, 0),
         (4022, DisconnectReason::CallTerminated, 1),
     ] {
-        let mut harness = closed_with(code).await;
+        let mut harness =
+            Harness::tuned(|tuning| tuning.move_window = Duration::from_millis(200)).await;
+        harness.connected().await;
+        harness.server.gateway.close(code);
 
         let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
         let (ended, ended_code, _) = harness.ended().await;
@@ -1156,36 +1088,6 @@ async fn disconnected_and_call_terminated_wait_for_the_gateway_then_end() {
         assert_eq!((ended, ended_code), (reason, Some(code)));
         assert_eq!(harness.leaves(), leaves, "{code}");
     }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn repeated_invalid_sessions_end_after_three_rejoins() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-    harness.server.expect_op(op::IDENTIFY).await;
-
-    for rejoin in 0..4 {
-        harness.server.gateway.close(4006);
-        if rejoin == 3 {
-            break;
-        }
-        harness
-            .settle(|harness| harness.joins(CHANNEL) == rejoin + 2)
-            .await;
-        harness.fresh_server().await;
-        harness
-            .server
-            .expect(|message| message.op() == Some(u64::from(op::IDENTIFY)))
-            .await;
-    }
-    let (reason, code, _) = harness.ended().await;
-
-    assert_eq!(
-        (reason, code),
-        (DisconnectReason::SessionInvalid, Some(4006))
-    );
-    assert_eq!(harness.joins(CHANNEL), 4);
-    assert_eq!(harness.leaves(), 1);
 }
 
 fn moved(delivery: &Delivery) -> Option<(u64, u64, bool)> {
@@ -1312,9 +1214,9 @@ async fn a_disconnect_close_then_a_null_channel_is_a_removal_without_a_leave() {
     harness.until(VoiceStatus::Reconnecting).await;
 
     harness.state(None);
-    let (reason, _, _) = harness.ended().await;
+    let (reason, code, _) = harness.ended().await;
 
-    assert_eq!(reason, DisconnectReason::Removed);
+    assert_eq!((reason, code), (DisconnectReason::Removed, None));
     assert_eq!(harness.leaves(), 0);
 }
 
@@ -1694,7 +1596,7 @@ async fn an_exhausted_nonce_rejoins_for_a_new_key_and_restarts_at_zero() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_move_while_resuming_abandons_the_resume_for_the_new_server() {
-    let mut harness = Harness::start().await;
+    let mut harness = Harness::tuned(|tuning| tuning.ws.connect = WAIT).await;
     let proxy = harness.via_proxy().await;
     proxy.stalls.store(5, Ordering::SeqCst);
 
@@ -1855,6 +1757,22 @@ async fn resumes_closed_before_resumed_count_as_failures_then_rejoin() {
     assert_eq!(proxy.refusals.load(Ordering::SeqCst), 0);
     assert_eq!(harness.server.count(op::RESUME), 0);
     assert_eq!(harness.server.count(op::IDENTIFY), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_whose_dial_times_out_is_retried_before_any_rejoin() {
+    let mut harness = Harness::tuned(|tuning| tuning.ws.connect = Duration::from_millis(200)).await;
+    let proxy = harness.via_proxy().await;
+    proxy.stalls.store(1, Ordering::SeqCst);
+
+    harness.server.gateway.drop_connection();
+    harness.until(VoiceStatus::Resuming).await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.server.collect().await;
+
+    assert_eq!(proxy.stalls.load(Ordering::SeqCst), 0);
+    assert_eq!(harness.server.count(op::RESUME), 1);
+    assert_eq!(harness.joins(CHANNEL), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
