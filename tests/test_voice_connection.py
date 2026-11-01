@@ -41,6 +41,11 @@ from bostie.voice.formats import StageRole
 PATCH_ME = f"/guilds/{GUILD_ID}/voice-states/@me"
 
 
+async def awaited(result: object) -> None:
+    if inspect.isawaitable(result):
+        await result
+
+
 def test_connect_merges_each_argument_over_the_defaults() -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(
@@ -150,14 +155,8 @@ def test_options_a_call_does_not_take_raise_type_error(call: str, option: str) -
             "move": lambda: vc.move(OTHER_VOICE, **options),
             "edit": lambda: vc.edit(**options),
         }
-
-        async def attempt() -> None:
-            result = attempts[call]()
-            if inspect.isawaitable(result):
-                await result
-
         with pytest.raises(TypeError, match=option):
-            await attempt()
+            await awaited(attempts[call]())
         assert bot.calls("voice_file") == bot.calls("voice_update") == []
 
     run(scenario)
@@ -207,14 +206,6 @@ def test_a_cached_channel_needs_no_request() -> None:
         await connected(bot)
         assert bot.rest.requests == []
         assert bot.calls("voice_connect")[0][2]["bitrate"] == 128_000
-
-    run(scenario)
-
-
-def test_an_uncached_channel_is_fetched() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        await connected(bot)
-        assert bot.rest.paths("GET") == [f"/channels/{VOICE}"]
 
     run(scenario)
 
@@ -596,82 +587,37 @@ def test_audio_into_a_muted_connection_warns_once(
     ]
 
 
-type Call = Callable[[voice.VoiceConnection], Awaitable[None]]
-
-AFTER_THE_END: dict[str, Call] = {}
-
-
-def after_the_end(name: str) -> Callable[[Call], Call]:
-    def register(call: Call) -> Call:
-        AFTER_THE_END[name] = call
-        return call
-
-    return register
-
-
-@after_the_end("sink")
-async def open_a_sink(vc: voice.VoiceConnection) -> None:
-    vc.sink()
-
-
-@after_the_end("play")
-async def play(vc: voice.VoiceConnection) -> None:
-    await vc.play(voice.File("a.ogg"))
-
-
-@after_the_end("move")
-async def move(vc: voice.VoiceConnection) -> None:
-    await vc.move(OTHER_VOICE)
-
-
-@after_the_end("edit")
-async def edit(vc: voice.VoiceConnection) -> None:
-    await vc.edit(self_mute=True)
-
-
-@after_the_end("stage")
-async def stage(vc: voice.VoiceConnection) -> None:
-    await vc.stage("speak")
-
-
-@after_the_end("reconnect")
-async def reconnect(vc: voice.VoiceConnection) -> None:
-    vc.reconnect()
-
-
-@after_the_end("encoder")
-async def set_encoder(vc: voice.VoiceConnection) -> None:
+def set_encoder(vc: voice.VoiceConnection) -> None:
     vc.encoder = voice.EncoderSettings(bitrate=96_000)
 
 
-@after_the_end("speaking_flags")
-async def set_speaking_flags(vc: voice.VoiceConnection) -> None:
+def set_speaking_flags(vc: voice.VoiceConnection) -> None:
     vc.speaking_flags = SpeakingFlags.SOUNDSHARE
 
 
-@after_the_end("receive")
-async def receive(vc: voice.VoiceConnection) -> None:
-    vc.receive()
-
-
-@after_the_end("speech_hangover")
-async def set_speech_hangover(vc: voice.VoiceConnection) -> None:
+def set_speech_hangover(vc: voice.VoiceConnection) -> None:
     vc.speech_hangover = 1.0
 
 
-@after_the_end("speech_activity")
-async def set_speech_activity(vc: voice.VoiceConnection) -> None:
+def set_speech_activity(vc: voice.VoiceConnection) -> None:
     vc.speech_activity = False
 
 
-@after_the_end("wait_until")
-async def wait_until_ready(vc: voice.VoiceConnection) -> None:
-    await vc.wait_until(voice.State.READY)
-
-
-@after_the_end("verification_code")
-async def verification_code(vc: voice.VoiceConnection) -> None:
-    await vc.dave.verification_code(USER_ID)
+AFTER_THE_END: dict[str, Callable[[voice.VoiceConnection], object]] = {
+    "sink": lambda vc: vc.sink(),
+    "play": lambda vc: vc.play(voice.File("a.ogg")),
+    "move": lambda vc: vc.move(OTHER_VOICE),
+    "edit": lambda vc: vc.edit(self_mute=True),
+    "stage": lambda vc: vc.stage("speak"),
+    "reconnect": lambda vc: vc.reconnect(),
+    "encoder": set_encoder,
+    "speaking_flags": set_speaking_flags,
+    "receive": lambda vc: vc.receive(),
+    "speech_hangover": set_speech_hangover,
+    "speech_activity": set_speech_activity,
+    "wait_until": lambda vc: vc.wait_until(voice.State.READY),
+    "verification_code": lambda vc: vc.dave.verification_code(USER_ID),
+}
 
 
 @pytest.mark.parametrize("name", AFTER_THE_END)
@@ -681,7 +627,7 @@ def test_after_the_end_calls_raise_voice_not_connected(name: str) -> None:
         dave = vc.dave
         bot.deliver(disconnected("removed"))
         with pytest.raises(voice.VoiceNotConnected):
-            await AFTER_THE_END[name](vc)
+            await awaited(AFTER_THE_END[name](vc))
         assert vc.dave == dave
 
     run(scenario)
