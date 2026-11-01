@@ -1580,7 +1580,7 @@ impl Output {
                 .max(0);
         }
         let at = instant(context.epoch, slot.at);
-        let frames = Frames {
+        let header = FrameHeader {
             user,
             ssrc,
             timestamp: slot.timestamp,
@@ -1611,7 +1611,7 @@ impl Output {
                 };
                 self.pcm(
                     format,
-                    frames,
+                    header,
                     decoded,
                     samples,
                     &mut track.cursor,
@@ -1662,7 +1662,7 @@ impl Output {
         track: &mut Track,
         context: &mut Context<'_>,
     ) {
-        let frames = Frames {
+        let header = FrameHeader {
             user,
             ssrc,
             timestamp: lost.timestamp,
@@ -1681,7 +1681,7 @@ impl Output {
                 };
                 self.pcm(
                     format,
-                    frames,
+                    header,
                     decoded,
                     lost.samples,
                     &mut track.cursor,
@@ -1710,7 +1710,7 @@ impl Output {
     fn pcm(
         &mut self,
         format: PcmFormat,
-        frames: Frames,
+        header: FrameHeader,
         decoded: usize,
         keep48: u32,
         cursor: &mut Cursor,
@@ -1730,12 +1730,12 @@ impl Output {
             let per_channel =
                 u32::try_from(pcm.len().checked_div(channels).unwrap_or(0)).unwrap_or(0);
             let samples = per_channel.saturating_mul(ratio);
-            let timestamp = frames.timestamp.wrapping_add(consumed);
-            let due = frames.due.saturating_add(i64::from(consumed));
+            let timestamp = header.timestamp.wrapping_add(consumed);
+            let due = header.due.saturating_add(i64::from(consumed));
             consumed = consumed.saturating_add(samples);
             if let Some(mix) = &mut self.mix {
-                if let Some(fifo) = mix.fifos.get_mut(&(frames.ssrc, frames.user)) {
-                    fifo.push(pcm, frames.lost, mix.frame);
+                if let Some(fifo) = mix.fifos.get_mut(&(header.ssrc, header.user)) {
+                    fifo.push(pcm, header.lost, mix.frame);
                     mix.dropped = mix.dropped.saturating_add(fifo.trim(mix.frame, mix.limit));
                 }
                 continue;
@@ -1743,21 +1743,21 @@ impl Output {
             let offset = cursor.offset(due, samples);
             if let Some(edge) = start.take() {
                 self.items
-                    .push(speech_item(context.epoch, frames.user, edge, Some(offset)));
+                    .push(speech_item(context.epoch, header.user, edge, Some(offset)));
             }
             let mut data = BytesMut::new();
             codec::write_samples(pcm, format.sample, &mut data);
             self.items.push(Item::Frame {
-                user: Some(frames.user),
-                ssrc: Some(frames.ssrc),
+                user: Some(header.user),
+                ssrc: Some(header.ssrc),
                 timestamp: Some(timestamp),
                 offset,
                 samples,
-                at: frames.at,
+                at: header.at,
                 data: data.freeze(),
-                lost: frames.lost,
+                lost: header.lost,
             });
-            context.heard |= !frames.lost;
+            context.heard |= !header.lost;
             end = Some(offset.saturating_add(u64::from(samples)));
         }
         end
@@ -1827,7 +1827,7 @@ impl Output {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Frames {
+struct FrameHeader {
     user: UserId,
     ssrc: u32,
     timestamp: u32,
