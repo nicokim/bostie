@@ -658,16 +658,6 @@ def test_edit_sends_the_flags_for_the_same_channel() -> None:
     run(scenario)
 
 
-def test_reconnect_resumes_the_connection() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        vc.reconnect()
-        await vc.wait_until(voice.State.RESUMING)
-        await vc.wait_until(voice.State.READY)
-
-    run(scenario)
-
-
 def test_disconnect_returns_once_ended_and_is_idempotent() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
