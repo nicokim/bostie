@@ -43,6 +43,7 @@ struct Fifo {
     samples: VecDeque<f32>,
     frames: VecDeque<(bool, Instant)>,
     partial: Option<(bool, Instant)>,
+    starved: bool,
 }
 
 struct Mix {
@@ -769,10 +770,12 @@ impl Fifo {
             samples: VecDeque::new(),
             frames: VecDeque::new(),
             partial: None,
+            starved: false,
         }
     }
 
     fn push(&mut self, pcm: &[f32], lost: bool, heard: Instant, frame: NonZeroUsize) {
+        self.starved = false;
         self.samples.extend(pcm);
         let (lost_before, first) = self.partial.take().unwrap_or((false, heard));
         let mut next = (lost_before || lost, first);
@@ -796,13 +799,15 @@ impl Fifo {
     }
 
     fn pop(&mut self, sum: &mut [f32], frame: NonZeroUsize) -> Option<bool> {
-        if self.samples.len() < frame.get() {
+        if self.samples.len() < frame.get() && !mem::replace(&mut self.starved, true) {
             return None;
         }
-        for (total, sample) in sum.iter_mut().zip(self.samples.drain(..frame.get())) {
+        let (lost, _) = self.frames.pop_front().or_else(|| self.partial.take())?;
+        let taken = self.samples.len().min(frame.get());
+        for (total, sample) in sum.iter_mut().zip(self.samples.drain(..taken)) {
             *total += sample;
         }
-        Some(self.frames.pop_front().is_some_and(|(lost, _)| lost))
+        Some(lost)
     }
 }
 
@@ -871,6 +876,19 @@ mod tests {
 
     fn users(ids: &[u64]) -> HashSet<UserId> {
         ids.iter().copied().map(UserId::from).collect()
+    }
+
+    #[test]
+    fn a_fifo_mixes_its_partial_frame_once_a_frame_passes_with_nothing_new() {
+        let frame = NonZeroUsize::new(4).unwrap();
+        let mut fifo = Fifo::new(0);
+        let mut sums = [[0.0; 4]; 3];
+
+        fifo.push(&[1.0; 6], false, Instant::now(), frame);
+        let popped = sums.each_mut().map(|sum| fifo.pop(sum, frame));
+
+        assert_eq!(popped, [Some(false), None, Some(false)]);
+        assert_eq!(sums, [[1.0; 4], [0.0; 4], [1.0, 1.0, 0.0, 0.0]]);
     }
 
     #[test]
