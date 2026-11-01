@@ -296,6 +296,16 @@ class Integration(Model, kw_only=True):
     scopes: tuple[str, ...] = ()
 
 
+class PartialIntegration(Model, kw_only=True):
+    """An integration as the audit log refers to it."""
+
+    id: int
+    name: str
+    type: str
+    account: IntegrationAccount
+    application_id: int | None = None
+
+
 class RequestGuildMembersRateLimit(Model, kw_only=True):
     """The metadata of a rate limited Request Guild Members."""
 

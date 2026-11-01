@@ -7,10 +7,14 @@ from bostie.enums import (
     AutoModerationTriggerType,
     KeywordPresetType,
 )
-from bostie.models.base import Model
+from bostie.models.base import Builder, Model
+from bostie.models.channel import Channel
+from bostie.models.guild import PartialIntegration
+from bostie.models.scheduled_event import ScheduledEvent
+from bostie.models.user import User
 
 
-class AutoModerationTriggerMetadata(Model, kw_only=True):
+class AutoModerationTriggerMetadata(Builder, kw_only=True):
     """What a rule matches; only the fields of its trigger type are set."""
 
     keyword_filter: tuple[str, ...] = ()
@@ -21,7 +25,7 @@ class AutoModerationTriggerMetadata(Model, kw_only=True):
     mention_raid_protection_enabled: bool | None = None
 
 
-class AutoModerationActionMetadata(Model, kw_only=True):
+class AutoModerationActionMetadata(Builder, kw_only=True):
     """The settings of an action; only the fields of its action type are set."""
 
     channel_id: int | None = None
@@ -29,7 +33,7 @@ class AutoModerationActionMetadata(Model, kw_only=True):
     custom_message: str | None = None
 
 
-class AutoModerationAction(Model, kw_only=True):
+class AutoModerationAction(Builder, kw_only=True):
     type: AutoModerationActionType
     metadata: AutoModerationActionMetadata | None = None
 
@@ -82,3 +86,14 @@ class AuditLogEntry(Model, kw_only=True):
     changes: tuple[AuditLogChange, ...] = ()
     options: AuditLogEntryInfo | None = None
     reason: str | None = None
+
+
+class AuditLogPage(Model, kw_only=True):
+    """A page of entries, with the users, threads and other objects they refer to."""
+
+    audit_log_entries: tuple[AuditLogEntry, ...]
+    auto_moderation_rules: tuple[AutoModerationRule, ...]
+    guild_scheduled_events: tuple[ScheduledEvent, ...]
+    integrations: tuple[PartialIntegration, ...]
+    threads: tuple[Channel, ...]
+    users: tuple[User, ...]

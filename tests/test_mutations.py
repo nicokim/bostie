@@ -19,6 +19,7 @@ from bostie.events import (
 )
 from bostie.models import (
     ActionRow,
+    AuditLogPage,
     Ban,
     Channel,
     CommandInteraction,
@@ -48,6 +49,7 @@ REST_MODELS: dict[str, type[Model]] = {
     "channel": Channel,
     "guild": Guild,
     "message": Message,
+    "audit_log_page": AuditLogPage,
     "ban": Ban,
     "current_user_guild": CurrentUserGuild,
     "guild_preview": GuildPreview,

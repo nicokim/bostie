@@ -1,5 +1,0 @@
-POST /guilds/{guild_id}/auto-moderation/rules auto_moderation.create reason
-DELETE /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.delete reason
-PATCH /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.edit reason
-GET /guilds/{guild_id}/auto-moderation/rules/{rule_id} auto_moderation.fetch
-GET /guilds/{guild_id}/auto-moderation/rules auto_moderation.list
