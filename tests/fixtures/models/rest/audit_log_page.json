@@ -213,5 +213,23 @@
       "banner_color": "#5865f2"
     }
   ],
-  "webhooks": []
+  "webhooks": [
+    {
+      "name": "test webhook",
+      "type": 1,
+      "channel_id": "199737254929760256",
+      "avatar": null,
+      "guild_id": "199737254929760256",
+      "id": "223704706495545344",
+      "application_id": null,
+      "user": {
+        "username": "test",
+        "discriminator": "7479",
+        "id": "190320984123768832",
+        "avatar": "b004ec1740a63ca06ae2e14c5cee11f3",
+        "global_name": null,
+        "public_flags": 131328
+      }
+    }
+  ]
 }

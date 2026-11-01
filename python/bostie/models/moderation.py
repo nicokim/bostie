@@ -13,6 +13,7 @@ from bostie.models.guild import PartialIntegration
 from bostie.models.interaction import ApplicationCommand
 from bostie.models.scheduled_event import ScheduledEvent
 from bostie.models.user import User
+from bostie.models.webhook import Webhook
 
 
 class AutoModerationTriggerMetadata(Builder, kw_only=True):
@@ -99,3 +100,4 @@ class AuditLogPage(Model, kw_only=True):
     integrations: tuple[PartialIntegration, ...]
     threads: tuple[Channel, ...]
     users: tuple[User, ...]
+    webhooks: tuple[Webhook, ...]
