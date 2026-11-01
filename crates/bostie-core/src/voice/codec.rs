@@ -341,7 +341,11 @@ pub(crate) mod tests {
         assert_eq!(packet_samples(&[]), None);
         assert_eq!(packet_samples(&[0x03]), None);
         assert_eq!(
-            packet_samples(&[[0x00].as_slice(), &[0; 1_276]].concat()),
+            packet_samples(&[[0x00].as_slice(), &[0; MAX_PACKET]].concat()),
+            Some(480)
+        );
+        assert_eq!(
+            packet_samples(&[[0x00].as_slice(), &[0; MAX_PACKET + 1]].concat()),
             None
         );
     }
@@ -360,7 +364,7 @@ pub(crate) mod tests {
         let settings = EncoderSettings {
             bitrate: 96_000,
             application: Application::Voip,
-            fec: false,
+            fec: true,
             packet_loss: 15,
             complexity: 5,
         };
@@ -371,7 +375,7 @@ pub(crate) mod tests {
             encoder.opus.get_application().unwrap(),
             opus::Application::Voip
         );
-        assert!(!encoder.opus.get_inband_fec().unwrap());
+        assert!(encoder.opus.get_inband_fec().unwrap());
         assert_eq!(encoder.opus.get_packet_loss_perc().unwrap(), 15);
         assert_eq!(encoder.opus.get_complexity().unwrap(), 5);
     }
