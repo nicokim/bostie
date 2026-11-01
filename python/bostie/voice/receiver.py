@@ -4,7 +4,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, Self, cast
+from typing import TYPE_CHECKING, Protocol, Self, assert_never, cast
 
 from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
@@ -226,3 +226,5 @@ def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, It
                 duration=duration,
                 offset=offset,
             )
+        case _:
+            assert_never(item)
