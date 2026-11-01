@@ -268,12 +268,12 @@ ENTER_EPHEMERAL: dict[str, Callable[[Any], Awaitable[object]]] = {
     "deferred_update": lambda ctx: ctx.defer_update(),
     "responded": lambda ctx: ctx.respond("first"),
 }
-CALL_EPHEMERAL: dict[str, Callable[[Any, bool | None], Awaitable[object]]] = {
-    "respond": lambda ctx, ephemeral: ctx.respond("hi", ephemeral=ephemeral),
-    "defer": lambda ctx, ephemeral: ctx.defer(ephemeral=ephemeral),
-    "update": lambda ctx, ephemeral: ctx.update("hi", ephemeral=ephemeral),
-    "edit": lambda ctx, ephemeral: ctx.edit("hi", ephemeral=ephemeral),
-    "followup": lambda ctx, ephemeral: ctx.followup("hi", ephemeral=ephemeral),
+CALL_EPHEMERAL: dict[str, Callable[[Any, dict[str, bool]], Awaitable[object]]] = {
+    "respond": lambda ctx, given: ctx.respond("hi", **given),
+    "defer": lambda ctx, given: ctx.defer(**given),
+    "update": lambda ctx, given: ctx.update("hi", **given),
+    "edit": lambda ctx, given: ctx.edit("hi", **given),
+    "followup": lambda ctx, given: ctx.followup("hi", **given),
 }
 
 
@@ -369,7 +369,8 @@ def test_ephemeral_reaches_new_messages_and_warns_on_edits_that_differ(
         async def handler(ctx: Any) -> None:
             await ENTER_EPHEMERAL[enter](ctx)
             start = len(on.fake.requests)
-            await CALL_EPHEMERAL[call](ctx, ephemeral)
+            given = {} if ephemeral is None else {"ephemeral": ephemeral}
+            await CALL_EPHEMERAL[call](ctx, given)
             (request,) = on.fake.requests[start:]
             assert calls([request]) == [sent]
             assert flagged(request) is ephemeral_sent
@@ -701,8 +702,13 @@ def test_new_messages_refuse_attachments_which_only_edits_take() -> None:
 
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: Context) -> None:
-            for send in (ctx.respond, ctx.followup, partial(on.bot.send_message, 1)):
-                with pytest.raises(TypeError, match="message parts: attachments"):
+            for send in (
+                ctx.respond,
+                ctx.followup,
+                ctx.defer,
+                partial(on.bot.send_message, 1),
+            ):
+                with pytest.raises(TypeError, match=": attachments"):
                     await send(**parts)
             await ctx.respond("ok")
 

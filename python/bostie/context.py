@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Unpack
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
 import msgspec
 
@@ -24,6 +24,7 @@ from bostie.file import File
 from bostie.http import decode_answer
 from bostie.models import (
     AllowedMentions,
+    Attachment,
     AutocompleteInteraction,
     CommandData,
     CommandInteraction,
@@ -37,12 +38,11 @@ from bostie.models import (
     PartialMessage,
     User,
     WebhookMessage,
-    build_message,
     decode,
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
-from bostie.models.message import EDIT_PARTS, MESSAGE_PARTS, in_guild
+from bostie.models.message import in_guild, message_body
 from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
@@ -77,6 +77,29 @@ class _CallbackResponse(msgspec.Struct):
 
 class _MessageFlagsOnly(msgspec.Struct):
     flags: MessageFlags = MessageFlags(0)
+
+
+class ReplyParts(MessageParts, total=False):
+    """The parts of an answer; without `ephemeral`, the command's setting applies."""
+
+    ephemeral: bool
+
+
+class ReplyEditParts(EditParts, total=False):
+    """The parts of an edit; `ephemeral` cannot change the message and only warns."""
+
+    ephemeral: bool
+
+
+class DeferOptions(TypedDict, total=False):
+    """Without `ephemeral`, the command's setting applies."""
+
+    ephemeral: bool
+
+
+REPLY_PARTS = ReplyParts.__optional_keys__
+REPLY_EDIT_PARTS = ReplyEditParts.__optional_keys__
+DEFER_OPTIONS = DeferOptions.__optional_keys__
 
 
 class _InteractionContext[
@@ -220,72 +243,61 @@ class _ReplyingContext[
                 timer.cancel()
 
     async def respond(
-        self,
-        content: str | None = None,
-        *,
-        ephemeral: bool | None = None,
-        **parts: Unpack[MessageParts],
+        self, content: str | None = None, **parts: Unpack[ReplyParts]
     ) -> WebhookMessage:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
-        body, files = self._message_body(content, MESSAGE_PARTS, **parts)
+        body, files = self._message_body(content, REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
                 case ResponseState.PENDING:
-                    response = await self._respond_with_callback(body, files, ephemeral)
+                    response = await self._respond_with_callback(body, files, parts)
                     self.state = ResponseState.RESPONDED
                     return self._answer(_from_callback(_webhook_message), response)
                 case ResponseState.DEFERRED:
-                    response = await self._edit_original(body, files, ephemeral)
+                    response = await self._edit_original(body, files, parts)
                 case _:
-                    response = await self._send_followup(body, files, ephemeral)
+                    response = await self._send_followup(body, files, parts)
             self.state = ResponseState.RESPONDED
             return self._answer(_webhook_message, response)
 
-    async def defer(self, *, ephemeral: bool | None = None) -> None:
+    async def defer(self, **options: Unpack[DeferOptions]) -> None:
         """Show "thinking…" and answer later with `respond`."""
+        check_keys(options, DEFER_OPTIONS, "options")
         async with self._lock:
             self._ensure_alive()
             if self.state is ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
             if self.state is ResponseState.PENDING:
-                await self._defer(self._ephemeral if ephemeral is None else ephemeral)
+                await self._defer(options.get("ephemeral", self._ephemeral))
 
     async def edit(
-        self,
-        content: str | None = None,
-        *,
-        ephemeral: bool | None = None,
-        **parts: Unpack[EditParts],
+        self, content: str | None = None, **parts: Unpack[ReplyEditParts]
     ) -> M:
         """Edit the original answer.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._message_body(content, EDIT_PARTS, **parts)
+        body, files = self._edit_body(content, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
-            response = await self._edit_original(body, files, ephemeral)
+            response = await self._edit_original(body, files, parts)
             self._finish_deferred()
             return self._answer(self._decode_original, response)
 
     async def followup(
-        self,
-        content: str | None = None,
-        *,
-        ephemeral: bool | None = None,
-        **parts: Unpack[MessageParts],
+        self, content: str | None = None, **parts: Unpack[ReplyParts]
     ) -> WebhookMessage:
         """Send another message; right after `defer()` it fills the deferred answer."""
-        body, files = self._message_body(content, MESSAGE_PARTS, **parts)
+        body, files = self._message_body(content, REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
             if self.state is ResponseState.DEFERRED:
-                response = await self._edit_original(body, files, ephemeral)
+                response = await self._edit_original(body, files, parts)
             else:
-                response = await self._send_followup(body, files, ephemeral)
+                response = await self._send_followup(body, files, parts)
             self._finish_deferred()
             return self._answer(_webhook_message, response)
 
@@ -331,9 +343,9 @@ class _ReplyingContext[
         self._original_ephemeral = ephemeral
 
     async def _respond_with_callback(
-        self, body: dict[str, Any], files: Sequence[File], ephemeral: bool | None
+        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
     ) -> bytes:
-        flagged = self._ephemeral_for_new_message(ephemeral)
+        flagged = parts.get("ephemeral", self._ephemeral)
         response = await self._callback(
             InteractionCallbackType.CHANNEL_MESSAGE_WITH_SOURCE,
             _with_ephemeral(body, flagged),
@@ -343,24 +355,22 @@ class _ReplyingContext[
         return response
 
     async def _send_followup(
-        self, body: dict[str, Any], files: Sequence[File], ephemeral: bool | None
+        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
     ) -> bytes:
-        flagged = self._ephemeral_for_new_message(ephemeral)
+        flagged = parts.get("ephemeral", self._ephemeral)
         return await self._webhook(
             "POST", FOLLOWUP_ROUTE, _with_ephemeral(body, flagged), files
         )
 
     async def _edit_original(
-        self, body: dict[str, Any], files: Sequence[File], ephemeral: bool | None
+        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
     ) -> bytes:
-        self._warn_if_ephemeral_differs(ephemeral)
+        self._warn_if_ephemeral_differs(parts)
         return await self._webhook("PATCH", ORIGINAL_ROUTE, body, files)
 
-    def _ephemeral_for_new_message(self, ephemeral: bool | None) -> bool:
-        return self._ephemeral if ephemeral is None else ephemeral
-
-    def _warn_if_ephemeral_differs(self, ephemeral: bool | None) -> None:
-        if ephemeral is None or ephemeral == self._original_ephemeral:
+    def _warn_if_ephemeral_differs(self, parts: ReplyParts) -> None:
+        ephemeral = parts.get("ephemeral", self._original_ephemeral)
+        if ephemeral == self._original_ephemeral:
             return
         if not self._warned_ephemeral:
             self._warned_ephemeral = True
@@ -372,11 +382,21 @@ class _ReplyingContext[
             )
 
     def _message_body(
-        self, content: str | None, allowed: frozenset[str], **parts: Unpack[EditParts]
+        self,
+        content: str | None,
+        allowed: frozenset[str],
+        parts: ReplyParts,
+        attachments: Sequence[Attachment | int] = (),
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
         parts.setdefault("allowed_mentions", self._allowed_mentions)
-        return build_message(content, **parts)
+        return message_body(content, parts, attachments)
+
+    def _edit_body(
+        self, content: str | None, parts: ReplyEditParts
+    ) -> tuple[dict[str, Any], Sequence[File]]:
+        attachments = parts.get("attachments", ())
+        return self._message_body(content, REPLY_EDIT_PARTS, parts, attachments)
 
     def _answer[A: PartialMessage](
         self, decode: Callable[[bytes], A], body: bytes
@@ -431,26 +451,22 @@ class ComponentContext(
                 await self._defer_update()
 
     async def update(
-        self,
-        content: str | None = None,
-        *,
-        ephemeral: bool | None = None,
-        **parts: Unpack[EditParts],
+        self, content: str | None = None, **parts: Unpack[ReplyEditParts]
     ) -> Message | WebhookMessage:
         """Edit the message the component is attached to.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._message_body(content, EDIT_PARTS, **parts)
+        body, files = self._edit_body(content, parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
                 case ResponseState.PENDING:
-                    response = await self._update_with_callback(body, files, ephemeral)
+                    response = await self._update_with_callback(body, files, parts)
                     self.state = ResponseState.RESPONDED
                     return self._answer(_from_callback(decode_message), response)
                 case ResponseState.DEFERRED_UPDATE:
-                    response = await self._edit_original(body, files, ephemeral)
+                    response = await self._edit_original(body, files, parts)
                 case _:
                     raise InteractionResponded(
                         "update() needs an unanswered interaction or defer_update()"
@@ -467,10 +483,10 @@ class ComponentContext(
         self._original_ephemeral = self._component_message_is_ephemeral()
 
     async def _update_with_callback(
-        self, body: dict[str, Any], files: Sequence[File], ephemeral: bool | None
+        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
     ) -> bytes:
         self._original_ephemeral = self._component_message_is_ephemeral()
-        self._warn_if_ephemeral_differs(ephemeral)
+        self._warn_if_ephemeral_differs(parts)
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _component_message_is_ephemeral(self) -> bool:

@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack
 
@@ -276,6 +276,16 @@ def build_message(
     or `attachments` an edit keeps only the listed `attachments`.
     """
     check_keys(parts, EDIT_PARTS, "message parts")
+    return message_body(content, parts, parts.get("attachments", ()), reply_to=reply_to)
+
+
+def message_body(
+    content: str | None,
+    parts: MessageParts,
+    attachments: Iterable[Attachment | int] = (),
+    *,
+    reply_to: int | None = None,
+) -> tuple[dict[str, Any], Sequence[File]]:
     embeds = parts.get("embeds")
     components = parts.get("components")
     files = parts.get("files", ())
@@ -301,7 +311,7 @@ def build_message(
     )
     attachment_list = [
         {"id": attachment if isinstance(attachment, int) else attachment.id}
-        for attachment in parts.get("attachments", ())
+        for attachment in attachments
     ] + [_attachment(index, file) for index, file in enumerate(files)]
     fields: dict[str, Any] = {
         "content": content,
