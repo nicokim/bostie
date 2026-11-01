@@ -691,67 +691,109 @@ async def _utterances(
     min_silence: float,
     max_length: float,
 ) -> AsyncIterator[Utterance]:
-    silence = round(min_silence * SAMPLE_RATE)
-    longest = round(max_length * SAMPLE_RATE)
-    width = format.channels * (2 if format.sample == "s16le" else 4)
-    speaking: dict[int, _Speech] = {}
+    grouping = _Grouping(
+        silence=round(min_silence * SAMPLE_RATE),
+        longest=round(max_length * SAMPLE_RATE),
+        pause=rx.jitter + min_silence,
+        width=format.channels * (2 if format.sample == "s16le" else 4),
+        rate=format.rate,
+    )
     while True:
-        deadline = min(
-            (speech.deadline for speech in speaking.values()), default=math.inf
-        )
-        item: Frame | SpeechStart | SpeechStop | None = None
+        deadline = grouping.deadline()
         try:
-            async with asyncio.timeout(
-                None if math.isinf(deadline) else deadline - time.monotonic()
-            ):
-                item = await anext(rx)
-        except TimeoutError:
-            pass
+            item = await _next_before(rx, deadline)
         except StopAsyncIteration:
             break
+        for utterance in grouping.take(item, deadline):
+            yield utterance
+    for user, speech in grouping.speaking.items():
+        yield speech.utterance(user)
+
+
+async def _next_before(
+    rx: "Receiver[Frame | SpeechStart | SpeechStop]", deadline: float
+) -> Frame | SpeechStart | SpeechStop | None:
+    try:
+        async with asyncio.timeout(
+            None if math.isinf(deadline) else deadline - time.monotonic()
+        ):
+            return await anext(rx)
+    except TimeoutError:
+        return None
+
+
+@dataclass(slots=True)
+class _Grouping:
+    silence: int
+    longest: int
+    pause: float
+    width: int
+    rate: int
+    speaking: dict[int, _Speech] = field(default_factory=dict)
+
+    def deadline(self) -> float:
+        return min(
+            (speech.deadline for speech in self.speaking.values()), default=math.inf
+        )
+
+    def take(
+        self, item: Frame | SpeechStart | SpeechStop | None, deadline: float
+    ) -> list[Utterance]:
         match item:
             case None:
-                expired = [
-                    user
-                    for user, speech in speaking.items()
-                    if speech.deadline <= deadline
-                ]
-                for user in expired:
-                    yield speaking.pop(user).utterance(user)
+                return self._expire(deadline)
             case SpeechStart(user_id=user, offset=int(offset)):
-                speech = speaking.get(user)
-                if (
-                    speech is not None
-                    and speech.stop is not None
-                    and offset - speech.stop < silence
-                ):
-                    speech.stop, speech.deadline = None, math.inf
-                    continue
-                if speech is not None:
-                    yield speech.utterance(user)
-                speaking[user] = _Speech(offset, offset)
+                return self._start(user, offset)
             case SpeechStop(user_id=user, offset=int(offset), at=at):
-                if (speech := speaking.get(user)) is not None:
-                    speech.stop = offset
-                    speech.deadline = at + rx.jitter + min_silence
+                self._stop(user, offset, at)
             case Frame(user_id=int(user)):
-                speech = speaking.get(user)
-                if speech is not None and (
-                    item.offset - speech.end >= silence
-                    or item.offset + item.samples - speech.offset > longest
-                ):
-                    yield speaking.pop(user).utterance(user)
-                    speech = None
-                if speech is None:
-                    speech = speaking[user] = _Speech(item.offset, item.offset)
-                gap = max(item.offset - speech.end, 0) * format.rate // SAMPLE_RATE
-                speech.data += bytes(gap * width)
-                speech.data += item.data
-                speech.end = item.offset + item.samples
-                if item.lost:
-                    speech.lost += item.samples
-    for user, speech in speaking.items():
-        yield speech.utterance(user)
+                return self._add(user, item)
+        return []
+
+    def _expire(self, deadline: float) -> list[Utterance]:
+        expired = [
+            user
+            for user, speech in self.speaking.items()
+            if speech.deadline <= deadline
+        ]
+        return [self.speaking.pop(user).utterance(user) for user in expired]
+
+    def _start(self, user: int, offset: int) -> list[Utterance]:
+        speech = self.speaking.get(user)
+        if (
+            speech is not None
+            and speech.stop is not None
+            and offset - speech.stop < self.silence
+        ):
+            speech.stop, speech.deadline = None, math.inf
+            return []
+        self.speaking[user] = _Speech(offset, offset)
+        return [] if speech is None else [speech.utterance(user)]
+
+    def _stop(self, user: int, offset: int, at: float) -> None:
+        speech = self.speaking.get(user)
+        if speech is not None:
+            speech.stop = offset
+            speech.deadline = at + self.pause
+
+    def _add(self, user: int, frame: Frame) -> list[Utterance]:
+        ended: list[Utterance] = []
+        speech = self.speaking.get(user)
+        if speech is not None and (
+            frame.offset - speech.end >= self.silence
+            or frame.offset + frame.samples - speech.offset > self.longest
+        ):
+            ended.append(self.speaking.pop(user).utterance(user))
+            speech = None
+        if speech is None:
+            speech = self.speaking[user] = _Speech(frame.offset, frame.offset)
+        gap = max(frame.offset - speech.end, 0) * self.rate // SAMPLE_RATE
+        speech.data += bytes(gap * self.width)
+        speech.data += frame.data
+        speech.end = frame.offset + frame.samples
+        if frame.lost:
+            speech.lost += frame.samples
+        return ended
 
 
 class _OggStream:
