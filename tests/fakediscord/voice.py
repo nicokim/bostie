@@ -110,7 +110,6 @@ class VoiceGateway:
         self.packets: list[Packet] = []
         self.rejected_packets: list[bytes] = []
         self._voice_identifies: asyncio.Queue[Json] = asyncio.Queue()
-        self._voice_resumes: asyncio.Queue[Json] = asyncio.Queue()
         self._grants: dict[str, tuple[str, str, str]] = {}
         self._current_sessions: dict[str, VoiceSession] = {}
         self._sessions_by_ssrc: dict[int, VoiceSession] = {}
@@ -176,10 +175,6 @@ class VoiceGateway:
     async def next_voice_identify(self) -> Json:
         """Wait for the next voice Identify and return its ``d``."""
         return await self._voice_identifies.get()
-
-    async def next_voice_resume(self) -> Json:
-        """Wait for the next accepted voice Resume and return its ``d``."""
-        return await self._voice_resumes.get()
 
     async def wait_for_packets(self, count: int) -> list[Packet]:
         """Wait for ``count`` RTP packets and return the first ``count``."""
@@ -320,7 +315,6 @@ class VoiceGateway:
                 await socket.send(session.sent[replayed])
                 replayed += 1
             session.socket = socket
-            self._voice_resumes.put_nowait(resume)
 
     async def _select_protocol(
         self, socket: VoiceSocket, session: VoiceSession, select: Json
