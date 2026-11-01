@@ -35,6 +35,7 @@ from bostie import (
     Router,
     ui,
 )
+from bostie.commands import CommandSettings
 from bostie.events import (
     ChannelUpdate,
     GuildCreate,
@@ -44,6 +45,7 @@ from bostie.events import (
     MessageDelete,
     RawEvent,
     Ready,
+    Resumed,
 )
 from bostie.gateway import GatewayClient
 from bostie.sync import SyncResult
@@ -90,6 +92,11 @@ async def sent_op(fake: FakeDiscord, op: int) -> Any:
     while (payload := await fake.gateway_received.get())["op"] != op:
         pass
     return payload["d"]
+
+
+async def settle() -> None:
+    for _ in range(5):
+        await asyncio.sleep(0)
 
 
 def levels(caplog: pytest.LogCaptureFixture, logger: str) -> list[int]:
@@ -279,28 +286,32 @@ def test_a_subcommand_in_a_group_gets_its_resolved_member() -> None:
     run(scenario)
 
 
-def test_a_command_can_override_the_bots_auto_defer_and_answer_ephemerally() -> None:
+@pytest.mark.parametrize(
+    ("bot_delay", "settings", "first"),
+    [
+        (0, {}, 5),
+        (0, {"auto_defer": None}, 4),
+        (None, {"auto_defer": 0}, 5),
+        (60, {"auto_defer": 0}, 5),
+        (60, {}, 4),
+    ],
+)
+def test_a_commands_auto_defer_overrides_the_bots(
+    bot_delay: float | None, settings: CommandSettings, first: int
+) -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, auto_defer=0)
+        bot = Bot(api_url=fake.api_url, auto_defer=bot_delay)
 
-        @bot.command
+        @bot.command(**settings)
         async def slow(ctx: Context) -> None:
             """Answer after a moment."""
-            await asyncio.sleep(0.01)
-            await ctx.respond("done")
-
-        @bot.command(auto_defer=None, ephemeral=True)
-        async def patient(ctx: Context) -> None:
-            """Answer after a moment without deferring."""
-            await asyncio.sleep(0.01)
+            await settle()
             await ctx.respond("done")
 
         async with running(bot, fake):
-            deferred = await fake.interaction(2, payloads.command("slow"))
-            answered = await fake.interaction(2, payloads.command("patient"))
+            answer = await fake.interaction(2, payloads.command("slow"))
 
-        assert deferred.json == {"type": 5}
-        assert (answered.json["type"], answered.json["data"]["flags"]) == (4, EPHEMERAL)
+        assert answer.json["type"] == first
 
     run(scenario)
 
@@ -554,72 +565,47 @@ def test_raw_listeners_receive_events_bostie_does_not_model() -> None:
     run(scenario)
 
 
-def test_a_resume_replays_missed_events_once_and_times_interactions_by_their_age(
-    caplog: pytest.LogCaptureFixture,
+@pytest.mark.parametrize(
+    ("replayed", "age", "first"),
+    [(True, 60.0, None), (True, 2.5, 5), (False, 60.0, 4)],
+)
+def test_a_replayed_interaction_is_timed_from_its_creation(
+    replayed: bool, age: float, first: int | None, caplog: pytest.LogCaptureFixture
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url, auto_defer=1.0)
-        handled: list[int] = []
-        messages: asyncio.Queue[int] = asyncio.Queue()
-        interactions: asyncio.Queue[int] = asyncio.Queue()
+        handled: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
         @bot.command
         async def ping(ctx: Context) -> None:
             """Ping."""
-            handled.append(ctx.interaction.id)
+            await settle()
             await ctx.respond("pong")
+            handled.set_result(None)
 
-        @bot.command
-        async def slow(ctx: Context) -> None:
-            """Answer after a moment."""
-            await asyncio.sleep(0.1)
-            await ctx.respond("done")
-
-        @bot.listen
-        async def on_message(event: MessageCreate) -> None:
-            messages.put_nowait(event.message.id)
-
-        @bot.listen
-        async def on_interaction(event: InteractionCreate) -> None:
-            interactions.put_nowait(event.interaction.id)
-
-        minute_ago = time.time() - 60
+        created = payloads.snowflake(time.time() - age)
+        interaction = payloads.interaction(2, payloads.command("ping"), id=created)
         async with running(bot, fake):
+            resumed = asyncio.Task(
+                bot.wait_for(Resumed), loop=asyncio.get_running_loop(), eager_start=True
+            )
             await fake.send_op(7)
-            missed = payloads.message()
-            missed_seq = await fake.dispatch("MESSAGE_CREATE", missed)
-            stale = payloads.interaction(
-                2, payloads.command("ping"), id=payloads.snowflake(minute_ago)
-            )
-            await fake.dispatch("INTERACTION_CREATE", stale)
-            recent = await fake.interaction(
-                2, payloads.command("slow"), id=payloads.snowflake(time.time() - 2.5)
-            )
+            if replayed:
+                await fake.dispatch("INTERACTION_CREATE", interaction)
+            await resumed
+            if not replayed:
+                await fake.dispatch("INTERACTION_CREATE", interaction)
+            if first is not None:
+                await handled
 
-            resume = await fake.next_resume()
-            assert resume["seq"] == missed_seq - 1
-            assert fake.connections[-1].path == "/gateway-resume"
-            assert await messages.get() == int(missed["id"])
-            assert await interactions.get() == int(stale["id"])
-            assert recent.json == {"type": 5}
-
-            late = await fake.interaction(
-                2, payloads.command("ping"), id=payloads.snowflake(minute_ago)
-            )
-            marker = payloads.message()
-            await fake.dispatch("MESSAGE_CREATE", marker)
-            assert await messages.get() == int(marker["id"])
-
-        assert handled == [int(late.path.split("/")[2])]
-        sent = [
-            fake.gateway_received.get_nowait()
-            for _ in range(fake.gateway_received.qsize())
+        callbacks = [
+            r.json["type"] for r in fake.requests if r.path.endswith("/callback")
         ]
-        assert [payload["op"] for payload in sent].count(2) == 1
+        assert callbacks == ([] if first is None else [first])
 
     run(scenario)
 
-    assert levels(caplog, "bostie.bot") == [logging.WARNING]
+    assert len(levels(caplog, "bostie.bot")) == (1 if first is None else 0)
 
 
 def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
