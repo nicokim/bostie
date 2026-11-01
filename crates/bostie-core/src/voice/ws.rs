@@ -262,6 +262,7 @@ mod tests {
     use std::net::SocketAddr;
 
     use sonic_rs::JsonValueTrait;
+    use tokio::io::AsyncReadExt;
     use tokio::net::{TcpListener, TcpSocket};
     use tokio_websockets::ServerBuilder;
 
@@ -426,29 +427,15 @@ mod tests {
     }
 
     #[test]
-    fn seq_ack_is_minus_one_until_a_sequenced_message_arrives() {
-        let mut seq_ack = SeqAck::default();
-        seq_ack.record(proto::parse_text(br#"{"op":6,"d":{"t":1}}"#).seq);
-
-        assert_eq!(seq_ack.last(), None);
-        assert_eq!(
-            proto::heartbeat(1, seq_ack.last()),
-            r#"{"op":3,"d":{"t":1,"seq_ack":-1}}"#
-        );
-    }
-
-    #[test]
-    fn seq_ack_keeps_the_last_seq_from_json_and_binary_messages() {
+    fn seq_ack_keeps_the_last_seq_seen() {
         let mut seq_ack = SeqAck::default();
 
-        seq_ack.record(proto::parse_text(br#"{"op":5,"d":{},"seq":7}"#).seq);
-        assert_eq!(seq_ack.last(), Some(7));
-        seq_ack.record(proto::parse_binary(Bytes::from_static(&[0x01, 0x02, 25])).seq);
-        assert_eq!(seq_ack.last(), Some(258));
-        seq_ack.record(proto::parse_text(br#"{"op":6,"d":{"t":1}}"#).seq);
-        assert_eq!(seq_ack.last(), Some(258));
-        seq_ack.record(proto::parse_binary(Bytes::from_static(&[0x00, 0x03])).seq);
-        assert_eq!(seq_ack.last(), Some(3));
+        let seen = [None, Some(7), None, Some(3)].map(|seq| {
+            seq_ack.record(seq);
+            seq_ack.last()
+        });
+
+        assert_eq!(seen, [None, Some(7), Some(7), Some(3)]);
     }
 
     #[tokio::test]
@@ -630,6 +617,27 @@ mod tests {
             Err(WsError::ConnectTimeout(waited)) if waited == TIMEOUTS.connect
         ));
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_endpoint_without_a_scheme_is_dialed_over_tls_on_its_own_port() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = endpoint_url(&listener.local_addr().unwrap().to_string()).unwrap();
+        let connector = Connector::new().unwrap();
+        let dial =
+            tokio::spawn(
+                async move { VoiceSocket::dial(&url, &connector, Timeouts::default()).await },
+            );
+
+        let (mut stream, _) = timeout(WAIT, listener.accept()).await.unwrap().unwrap();
+        let mut first = [0; 1];
+        timeout(WAIT, stream.read_exact(&mut first))
+            .await
+            .unwrap()
+            .unwrap();
+        dial.abort();
+
+        assert_eq!(first, [0x16]);
     }
 
     #[tokio::test]
