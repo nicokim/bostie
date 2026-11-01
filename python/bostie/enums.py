@@ -434,6 +434,11 @@ class StatusDisplayType(DiscordIntEnum):
     DETAILS = 2
 
 
+class AnimationType(DiscordIntEnum):
+    PREMIUM = 0
+    BASIC = 1
+
+
 class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1

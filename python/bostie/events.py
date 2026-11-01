@@ -5,6 +5,7 @@ from typing import Any, ClassVar, Self, dataclass_transform, override
 import msgspec
 
 from bostie.enums import (
+    AnimationType,
     AutoModerationTriggerType,
     ChannelType,
     Intents,
@@ -35,6 +36,7 @@ from bostie.models import (
     ThreadMember,
     UnavailableGuild,
     User,
+    VoiceChannelInfo,
     VoiceState,
     WebhookMessage,
 )
@@ -460,6 +462,49 @@ class VoiceStateUpdate(Event, kw_only=True):
         )
 
 
+class VoiceChannelEffectSend(Event, kw_only=True):
+    """Someone sent an emoji reaction or a soundboard sound in the bot's channel."""
+
+    NAME = "VOICE_CHANNEL_EFFECT_SEND"
+    INTENTS = Intents.GUILD_VOICE_STATES
+
+    channel_id: int
+    guild_id: int
+    user_id: int
+    emoji: Emoji | None = None
+    animation_type: AnimationType | None = None
+    animation_id: int | None = None
+    sound_id: int | None = None
+    sound_volume: float | None = None
+
+
+class VoiceChannelStatusUpdate(Event, kw_only=True):
+    NAME = "VOICE_CHANNEL_STATUS_UPDATE"
+    INTENTS = Intents.GUILDS
+
+    id: int
+    guild_id: int
+    status: str | None
+
+
+class VoiceChannelStartTimeUpdate(Event, kw_only=True):
+    NAME = "VOICE_CHANNEL_START_TIME_UPDATE"
+    INTENTS = Intents.GUILDS
+
+    id: int
+    guild_id: int
+    voice_start_time: datetime | None = None
+
+
+class ChannelInfo(Event, kw_only=True):
+    """The voice data of a guild's channels, sent for a Request Channel Info."""
+
+    NAME = "CHANNEL_INFO"
+
+    guild_id: int
+    channels: tuple[VoiceChannelInfo, ...]
+
+
 class VoiceServerUpdate(Event, kw_only=True):
     NAME = "VOICE_SERVER_UPDATE"
 
@@ -868,6 +913,10 @@ EVENTS: dict[str, type[Event]] = {
         ReactionRemoveEmoji,
         PollVoteAdd,
         PollVoteRemove,
+        VoiceChannelEffectSend,
+        VoiceChannelStatusUpdate,
+        VoiceChannelStartTimeUpdate,
+        ChannelInfo,
     )
 }
 

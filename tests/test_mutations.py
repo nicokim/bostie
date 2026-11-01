@@ -59,6 +59,7 @@ ENUM_KEYS = {
     "frequency",
     "day",
     "status_display_type",
+    "animation_type",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

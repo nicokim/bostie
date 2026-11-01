@@ -1,0 +1,15 @@
+{
+  "guild_id": "1335172792320131073",
+  "channels": [
+    {
+      "id": "1335173547294851073",
+      "status": "rehearsing the lyre duet",
+      "voice_start_time": 1793091600
+    },
+    {
+      "id": "1565160118272131073",
+      "status": null,
+      "voice_start_time": null
+    }
+  ]
+}

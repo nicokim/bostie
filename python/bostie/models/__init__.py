@@ -6,6 +6,7 @@ from bostie.models.channel import (
     PartialChannel,
     ThreadMember,
     ThreadMetadata,
+    VoiceChannelInfo,
 )
 from bostie.models.components import (
     ActionRow,
@@ -225,6 +226,7 @@ __all__ = [
     "UnknownInteraction",
     "User",
     "UserSelect",
+    "VoiceChannelInfo",
     "VoiceState",
     "WebhookMessage",
     "build_message",

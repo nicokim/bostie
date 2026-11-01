@@ -15,6 +15,7 @@ from bostie.events import (
     EVENTS,
     AuditLogEntryCreate,
     AutoModerationRuleCreate,
+    ChannelInfo,
     ChannelUpdate,
     EntitlementCreate,
     Event,
@@ -40,6 +41,7 @@ from bostie.events import (
     ThreadMemberUpdate,
     TypingStart,
     UserUpdate,
+    VoiceChannelStartTimeUpdate,
     VoiceServerUpdate,
     VoiceStateUpdate,
     decode_event,
@@ -360,6 +362,16 @@ def test_typing_start_reads_the_unix_timestamp_and_the_member() -> None:
     assert event.timestamp == datetime(2026, 10, 27, 12, tzinfo=UTC)
     assert event.member is not None
     assert event.member.id == event.user_id == 820774541721731073
+
+
+def test_voice_session_start_times_read_unix_seconds() -> None:
+    started = datetime(2026, 10, 27, 9, tzinfo=UTC)
+
+    update = decode(VoiceChannelStartTimeUpdate, "VOICE_CHANNEL_START_TIME_UPDATE")
+    info = decode(ChannelInfo, "CHANNEL_INFO")
+
+    assert update.voice_start_time == started
+    assert [channel.voice_start_time for channel in info.channels] == [started, None]
 
 
 def test_voice_events() -> None:

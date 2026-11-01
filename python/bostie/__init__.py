@@ -10,6 +10,7 @@ from bostie.context import (
 from bostie.enums import (
     ActivityFlags,
     ActivityType,
+    AnimationType,
     ApplicationFlags,
     AttachmentFlags,
     AuditLogEvent,
@@ -181,6 +182,7 @@ from bostie.models import (
     UnknownInteraction,
     User,
     UserSelect,
+    VoiceChannelInfo,
     VoiceState,
     WebhookMessage,
 )
@@ -199,6 +201,7 @@ __all__ = [
     "ActivityType",
     "AddedThreadMember",
     "AllowedMentions",
+    "AnimationType",
     "ApplicationFlags",
     "Attachment",
     "AttachmentFlags",
@@ -366,6 +369,7 @@ __all__ = [
     "UserFlags",
     "UserSelect",
     "VerificationLevel",
+    "VoiceChannelInfo",
     "VoiceState",
     "WebhookMessage",
     "Weekday",

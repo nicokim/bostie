@@ -111,3 +111,11 @@ class AddedThreadMember(_ThreadMember, kw_only=True):
 
     member: Member
     presence: Presence | None
+
+
+class VoiceChannelInfo(Model, kw_only=True):
+    """A channel's voice status and the start of its voice session."""
+
+    id: int
+    status: str | None = None
+    voice_start_time: datetime | None = None
