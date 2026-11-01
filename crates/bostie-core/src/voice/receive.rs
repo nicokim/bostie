@@ -90,7 +90,7 @@ impl Intake {
     fn open(&mut self, packet: &mut [u8]) {
         let media = &self.media;
         bump(&media.counters.packets_received);
-        if !media.speech_activity() && media.open_receivers.load(Ordering::Relaxed) == 0 {
+        if !media.speech_activity() && media.open_receivers() == 0 {
             return;
         }
         let at = Instant::now();
@@ -128,11 +128,10 @@ impl Intake {
             bump(&media.receive.own_echoes);
             return;
         }
-        let payload = (media.open_receivers.load(Ordering::Relaxed) > 0)
-            .then(|| Bytes::copy_from_slice(opened.payload));
+        let payload = (media.open_receivers() > 0).then(|| Bytes::copy_from_slice(opened.payload));
         let extension = header
             .extension
-            .filter(|_| media.packet_receivers.load(Ordering::Relaxed) > 0)
+            .filter(|_| media.packet_receivers() > 0)
             .map(|extension| (extension.profile, Bytes::copy_from_slice(opened.extension)));
         media.arrive(Arrival {
             ssrc: header.ssrc,
@@ -357,7 +356,7 @@ impl Reception {
 
     fn run(&mut self, now: Instant, skipped: u32, deadline: Instant) -> bool {
         if self.state.is_none()
-            && self.media.open_receivers.load(Ordering::Relaxed) == 0
+            && self.media.open_receivers() == 0
             && self.media.arrivals.lock().is_empty()
         {
             return !self.media.closed.load(Ordering::Acquire);

@@ -270,8 +270,7 @@ impl Rig {
             sequence,
             timestamp: u32::from(sequence) * 960,
             at: self.now,
-            payload: (self.media.open_receivers.load(Ordering::Relaxed) > 0)
-                .then(|| Bytes::copy_from_slice(payload)),
+            payload: (self.media.open_receivers() > 0).then(|| Bytes::copy_from_slice(payload)),
             silence: payload == SILENCE_FRAME,
             extension: None,
             own: false,

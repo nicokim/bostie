@@ -121,6 +121,12 @@ impl DaveView {
     }
 }
 
+#[derive(Default)]
+struct Roster {
+    open: Vec<Arc<Receiver>>,
+    reconnecting: bool,
+}
+
 pub struct Media {
     guild: GuildId,
     inbox: Arc<Inbox>,
@@ -135,17 +141,16 @@ pub struct Media {
     pub others: AtomicUsize,
     pub counters: SendCounters,
     pub closed: AtomicBool,
-    reconnecting: AtomicBool,
     pub lost: Notify,
     pub exhausted: Notify,
     pub recover: Notify,
     pub arrivals: Mutex<VecDeque<Arrival>>,
-    pub receivers: Mutex<Vec<Arc<Receiver>>>,
-    pub open_receivers: AtomicUsize,
-    pub packet_receivers: AtomicUsize,
-    pub self_receivers: AtomicUsize,
-    pub speech_hangover: AtomicU64,
-    pub speech_activity: AtomicBool,
+    receivers: Mutex<Roster>,
+    open_receivers: AtomicUsize,
+    packet_receivers: AtomicUsize,
+    self_receivers: AtomicUsize,
+    speech_hangover: AtomicU64,
+    speech_activity: AtomicBool,
     pub receive: ReceiveCounters,
 }
 
@@ -174,12 +179,11 @@ impl Media {
             others: AtomicUsize::new(0),
             counters: SendCounters::default(),
             closed: AtomicBool::new(false),
-            reconnecting: AtomicBool::new(false),
             lost: Notify::new(),
             exhausted: Notify::new(),
             recover: Notify::new(),
             arrivals: Mutex::new(VecDeque::new()),
-            receivers: Mutex::new(Vec::new()),
+            receivers: Mutex::new(Roster::default()),
             open_receivers: AtomicUsize::new(0),
             packet_receivers: AtomicUsize::new(0),
             self_receivers: AtomicUsize::new(0),
@@ -210,26 +214,24 @@ impl Media {
     }
 
     pub fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
-        let mut receivers = self.receivers.lock();
+        let mut roster = self.receivers.lock();
         if self.closed.load(Ordering::Acquire) {
             return false;
         }
-        if self.reconnecting.load(Ordering::Relaxed)
-            && receiver.options().stall == ReceiveStall::End
-        {
+        if roster.reconnecting && receiver.options().stall == ReceiveStall::End {
             receiver.end(Ended::Reconnecting);
             return true;
         }
         self.count_receiver(receiver, |count| {
             count.fetch_add(1, Ordering::Relaxed);
         });
-        receivers.push(Arc::clone(receiver));
+        roster.open.push(Arc::clone(receiver));
         true
     }
 
     pub fn drop_ended_receivers(&self, open: &mut Vec<Arc<Receiver>>) {
-        let mut receivers = self.receivers.lock();
-        receivers.retain(|receiver| {
+        let mut roster = self.receivers.lock();
+        roster.open.retain(|receiver| {
             let ended = receiver.is_closed();
             if ended {
                 self.count_receiver(receiver, |count| {
@@ -239,25 +241,33 @@ impl Media {
             !ended
         });
         open.clear();
-        open.extend(receivers.iter().cloned());
+        open.extend(roster.open.iter().cloned());
     }
 
     pub fn end_receivers(&self, why: Ended) {
-        for receiver in self.receivers.lock().iter() {
+        for receiver in &self.receivers.lock().open {
             receiver.end(why);
         }
     }
 
     pub fn set_reconnecting(&self, reconnecting: bool) {
-        let receivers = self.receivers.lock();
-        self.reconnecting.store(reconnecting, Ordering::Relaxed);
+        let mut roster = self.receivers.lock();
+        roster.reconnecting = reconnecting;
         if reconnecting {
-            for receiver in receivers.iter() {
+            for receiver in &roster.open {
                 if receiver.options().stall == ReceiveStall::End {
                     receiver.end(Ended::Reconnecting);
                 }
             }
         }
+    }
+
+    pub fn open_receivers(&self) -> usize {
+        self.open_receivers.load(Ordering::Relaxed)
+    }
+
+    pub fn packet_receivers(&self) -> usize {
+        self.packet_receivers.load(Ordering::Relaxed)
     }
 
     pub fn speech_hangover(&self) -> Duration {

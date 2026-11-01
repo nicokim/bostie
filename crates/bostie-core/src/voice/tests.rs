@@ -2938,13 +2938,13 @@ async fn include_self_hears_the_bots_own_audio() {
     let sent = harness.play(&sink, 3);
     let heard = harness.hear(&receiver, 3).await;
 
-    let open = harness.media().open_receivers.load(Ordering::Relaxed);
+    let open = harness.media().open_receivers();
     receiver.close();
     harness.tick(1);
 
     assert_eq!(frames(&heard)[..3], spoken(u64::from(bot()), &sent));
     assert_eq!(open, 1);
-    assert_eq!(harness.media().open_receivers.load(Ordering::Relaxed), 0);
+    assert_eq!(harness.media().open_receivers(), 0);
     assert_eq!(
         harness.count(|delivery| matches!(delivery, Delivery::VoiceSpeech { .. })),
         0
