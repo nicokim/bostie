@@ -1,5 +1,6 @@
 import secrets
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from http import HTTPStatus
 from typing import Any
 
@@ -22,7 +23,7 @@ from bostie.models.base import encoder
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
 
-type QueryValue = str | int | float | bool
+type QueryValue = str | int | float | bool | datetime
 type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
 
 STATUS_ERRORS: dict[int, type[HTTPException]] = {
@@ -145,6 +146,8 @@ def _query_pairs(query: Query) -> list[tuple[str, str]]:
 def _query_text(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, datetime):
+        return value.isoformat()
     return str(value)
 
 

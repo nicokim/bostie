@@ -5,7 +5,7 @@ import re
 import textwrap
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from fakediscord import FakeDiscord, payloads, run, running
@@ -171,5 +171,70 @@ def test_a_rest_answer_that_fails_to_decode_raises_with_its_payload(
             with pytest.raises(UnexpectedResponse, match=accepted) as raised:
                 await call(bot)
             assert raised.value.raw == {"id": "1"}
+
+    run(scenario)
+
+
+def history(channel_id: int, ids: range) -> list[dict[str, Any]]:
+    message = payloads.fixture("rest/message") | {"channel_id": str(channel_id)}
+    return [message | {"id": str(id)} for id in ids]
+
+
+@pytest.mark.parametrize(
+    ("options", "pages", "walked", "queries"),
+    [
+        (
+            {"limit": 150},
+            [range(300, 200, -1), range(200, 150, -1)],
+            range(300, 150, -1),
+            [{"limit": "100"}, {"limit": "50", "before": "201"}],
+        ),
+        (
+            {"after": 100},
+            [range(200, 100, -1), range(230, 200, -1)],
+            range(101, 231),
+            [{"limit": "100", "after": "100"}, {"limit": "100", "after": "200"}],
+        ),
+        (
+            {"around": 50, "limit": 500},
+            [range(60, 40, -1)],
+            range(60, 40, -1),
+            [{"limit": "100", "around": "50"}],
+        ),
+    ],
+)
+def test_a_listing_walks_pages_from_its_cursor_up_to_its_limit(
+    options: dict[str, int],
+    pages: list[range],
+    walked: range,
+    queries: list[dict[str, str]],
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        channel_id = int(payloads.channel()["id"])
+        async with running(bot, fake):
+            route = f"/channels/{channel_id}/messages"
+            for ids in pages:
+                fake.fail("GET", route, 200, history(channel_id, ids))
+            listed = bot.rest.messages.list(channel_id, **options)
+            assert [message.id async for message in listed] == list(walked)
+            assert [request.query for request in fake.requests[-len(pages) :]] == (
+                queries
+            )
+
+    run(scenario)
+
+
+def test_a_listing_refuses_unknown_and_mutually_exclusive_cursors() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            sent = len(fake.requests)
+            unknown: dict[str, Any] = {"since": 2}
+            with pytest.raises(TypeError, match="unexpected options: since"):
+                bot.rest.messages.list(1, **unknown)
+            with pytest.raises(ValueError, match="before and around are mutually"):
+                bot.rest.messages.list(1, before=2, around=3)
+            assert len(fake.requests) == sent
 
     run(scenario)

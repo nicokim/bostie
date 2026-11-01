@@ -1,6 +1,7 @@
 import asyncio
 from collections import UserList
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -242,7 +243,13 @@ def test_params_and_query_values_are_sent_as_text(
             "GET",
             "/guilds/{guild_id}/members",
             guild_id=123,
-            query={"limit": 5, "with_counts": True, "after": None, "ids": range(1, 3)},
+            query={
+                "limit": 5,
+                "with_counts": True,
+                "after": None,
+                "before": datetime(2026, 11, 1, tzinfo=UTC),
+                "ids": range(1, 3),
+            },
             reason="audit",
         )
         await bridge.close()
@@ -253,7 +260,13 @@ def test_params_and_query_values_are_sent_as_text(
                 "GET",
                 "/guilds/{guild_id}/members",
                 {"guild_id": "123"},
-                [("limit", "5"), ("with_counts", "true"), ("ids", "1"), ("ids", "2")],
+                [
+                    ("limit", "5"),
+                    ("with_counts", "true"),
+                    ("before", "2026-11-01T00:00:00+00:00"),
+                    ("ids", "1"),
+                    ("ids", "2"),
+                ],
                 {"body": None, "content_type": None, "reason": "audit"},
             )
         ]

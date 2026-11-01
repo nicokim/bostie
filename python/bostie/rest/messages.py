@@ -1,5 +1,8 @@
+from collections.abc import AsyncIterator
 from functools import partial
-from typing import Unpack
+from typing import TypedDict, Unpack
+
+import msgspec
 
 from bostie.models import (
     EditParts,
@@ -10,9 +13,18 @@ from bostie.models import (
     decode,
     decode_message,
 )
-from bostie.models.base import check_keys
+from bostie.models.base import check_keys, decoder
 from bostie.models.message import MESSAGE_PARTS, message_body
-from bostie.rest.base import Group
+from bostie.rest.base import Group, paginate
+
+
+class MessageList(TypedDict, total=False):
+    """Where `messages.list` starts, at most one of them, and how many it yields."""
+
+    before: int
+    after: int
+    around: int
+    limit: int
 
 
 class Messages(Group):
@@ -86,3 +98,29 @@ class Messages(Group):
             message_id=message_id,
         )
         return self._in_guild(message)
+
+    def list(
+        self, channel_id: int, /, **options: Unpack[MessageList]
+    ) -> AsyncIterator[Message | WebhookMessage]:
+        """Walk a channel's messages newest first, or oldest first with `after`."""
+        check_keys(options, MessageList.__optional_keys__, "options")
+        pages = paginate(
+            self._http,
+            "/channels/{channel_id}/messages",
+            options,
+            decode=self._messages,
+            items=tuple,
+            cursor=lambda message: message.id,
+            page_size=100,
+            channel_id=channel_id,
+        )
+        forward = "after" in options
+        return (
+            message
+            async for page in pages
+            for message in (reversed(page) if forward else page)
+        )
+
+    def _messages(self, data: bytes) -> tuple[Message | WebhookMessage, ...]:
+        raws = decoder(tuple[msgspec.Raw, ...]).decode(data)
+        return tuple(self._in_guild(decode_message(bytes(raw))) for raw in raws)

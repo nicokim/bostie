@@ -1,6 +1,5 @@
 POST /channels/{channel_id}/messages/bulk-delete messages.bulk_delete reason
 POST /channels/{channel_id}/messages/{message_id}/crosspost messages.crosspost
-GET /channels/{channel_id}/messages messages.list
 GET /channels/{channel_id}/messages/pins messages.list_pins
 PUT /channels/{channel_id}/messages/pins/{message_id} messages.pin reason
 GET /guilds/{guild_id}/messages/search messages.search
