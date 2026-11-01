@@ -10,6 +10,7 @@ from bostie.enums import (
 from bostie.models.base import Builder, Model
 from bostie.models.channel import Channel
 from bostie.models.guild import PartialIntegration
+from bostie.models.interaction import ApplicationCommand
 from bostie.models.scheduled_event import ScheduledEvent
 from bostie.models.user import User
 
@@ -91,6 +92,7 @@ class AuditLogEntry(Model, kw_only=True):
 class AuditLogPage(Model, kw_only=True):
     """A page of entries, with the users, threads and other objects they refer to."""
 
+    application_commands: tuple[ApplicationCommand, ...]
     audit_log_entries: tuple[AuditLogEntry, ...]
     auto_moderation_rules: tuple[AutoModerationRule, ...]
     guild_scheduled_events: tuple[ScheduledEvent, ...]
