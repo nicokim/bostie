@@ -34,6 +34,21 @@ class DiscordIntFlag(IntFlag, boundary=KEEP):
         return flag
 
 
+class DiscordStrEnum(StrEnum):
+    """A StrEnum that maps unknown values to stable `UNKNOWN_<value>` members."""
+
+    @classmethod
+    @override
+    def _missing_(cls, value: object) -> Self | None:
+        if not isinstance(value, str):
+            return None
+        unknown = str.__new__(cls, value)
+        unknown._name_ = f"UNKNOWN_{value}"
+        unknown._value_ = value
+        cls._value2member_map_.setdefault(value, unknown)
+        return cls(value)
+
+
 class ChannelType(DiscordIntEnum):
     GUILD_TEXT = 0
     DM = 1
@@ -391,6 +406,29 @@ class SubscriptionStatus(DiscordIntEnum):
     ENDING = 2
 
 
+class Status(DiscordStrEnum):
+    ONLINE = "online"
+    DND = "dnd"
+    IDLE = "idle"
+    INVISIBLE = "invisible"
+    OFFLINE = "offline"
+
+
+class ActivityType(DiscordIntEnum):
+    PLAYING = 0
+    STREAMING = 1
+    LISTENING = 2
+    WATCHING = 3
+    CUSTOM = 4
+    COMPETING = 5
+
+
+class StatusDisplayType(DiscordIntEnum):
+    NAME = 0
+    STATE = 1
+    DETAILS = 2
+
+
 class Permissions(DiscordIntFlag):
     CREATE_INSTANT_INVITE = 1 << 0
     KICK_MEMBERS = 1 << 1
@@ -576,6 +614,18 @@ class AttachmentFlags(DiscordIntFlag):
     IS_ANIMATED = 1 << 5
     CONTAINS_GORE_CONTENT = 1 << 6
     CONTAINS_SELF_HARM_CONTENT = 1 << 7
+
+
+class ActivityFlags(DiscordIntFlag):
+    INSTANCE = 1 << 0
+    JOIN = 1 << 1
+    SPECTATE = 1 << 2
+    JOIN_REQUEST = 1 << 3
+    SYNC = 1 << 4
+    PLAY = 1 << 5
+    PARTY_PRIVACY_FRIENDS = 1 << 6
+    PARTY_PRIVACY_VOICE_CHANNEL = 1 << 7
+    EMBEDDED = 1 << 8
 
 
 class SpeakingFlags(DiscordIntFlag):

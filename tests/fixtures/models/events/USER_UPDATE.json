@@ -1,0 +1,21 @@
+{
+  "id": "1329027298099331073",
+  "username": "bostie-renamed",
+  "global_name": "Bostie",
+  "discriminator": "4821",
+  "avatar": "9b2f1c64aa0b4c3d8e5f6a7b8c9d0e1f",
+  "bot": true,
+  "verified": true,
+  "mfa_enabled": true,
+  "email": null,
+  "flags": 0,
+  "clan": null,
+  "primary_guild": null,
+  "banner": null,
+  "accent_color": null,
+  "locale": "en-US",
+  "premium_type": 0,
+  "public_flags": 524288,
+  "avatar_decoration_data": null,
+  "collectibles": null
+}

@@ -42,6 +42,7 @@ from bostie.events import (
     RawEvent,
     Ready,
     Resumed,
+    UserUpdate,
     decode_event,
 )
 from bostie.gateway import GatewayClient
@@ -586,6 +587,10 @@ class Bot(Router):
                         future.set_result(None)
         elif dispatch.name == Resumed.NAME:
             self._replaying.discard(dispatch.shard_id)
+        elif dispatch.name == UserUpdate.NAME:
+            update = dispatch.event(UserUpdate)
+            if update is not None:
+                self.user = update.user
         elif dispatch.name == "RATE_LIMITED":
             limit = msgspec.json.decode(dispatch.data)
             log.warning(

@@ -1,5 +1,12 @@
 from bostie.models.base import Builder, Model, decode
-from bostie.models.channel import Channel, Overwrite, PartialChannel, ThreadMetadata
+from bostie.models.channel import (
+    AddedThreadMember,
+    Channel,
+    Overwrite,
+    PartialChannel,
+    ThreadMember,
+    ThreadMetadata,
+)
 from bostie.models.components import (
     ActionRow,
     Button,
@@ -94,6 +101,17 @@ from bostie.models.moderation import (
     AutoModerationTriggerMetadata,
 )
 from bostie.models.monetization import Entitlement, Subscription
+from bostie.models.presence import (
+    Activity,
+    ActivityAssets,
+    ActivityEmoji,
+    ActivityParty,
+    ActivitySecrets,
+    ActivityTimestamps,
+    ClientStatus,
+    Presence,
+    PresenceUser,
+)
 from bostie.models.scheduled_event import (
     RecurrenceRule,
     RecurrenceRuleNWeekday,
@@ -104,6 +122,13 @@ from bostie.models.user import PartialUser, User
 
 __all__ = [
     "ActionRow",
+    "Activity",
+    "ActivityAssets",
+    "ActivityEmoji",
+    "ActivityParty",
+    "ActivitySecrets",
+    "ActivityTimestamps",
+    "AddedThreadMember",
     "AllowedMentions",
     "Attachment",
     "AuditLogChange",
@@ -118,6 +143,7 @@ __all__ = [
     "Button",
     "Channel",
     "ChannelSelect",
+    "ClientStatus",
     "CommandData",
     "CommandInteraction",
     "Component",
@@ -154,6 +180,8 @@ __all__ = [
     "PartialMember",
     "PartialMessage",
     "PartialUser",
+    "Presence",
+    "PresenceUser",
     "Reaction",
     "RecurrenceRule",
     "RecurrenceRuleNWeekday",
@@ -188,6 +216,7 @@ __all__ = [
     "SubmittedValues",
     "Subscription",
     "TextDisplay",
+    "ThreadMember",
     "ThreadMetadata",
     "Thumbnail",
     "UnavailableGuild",

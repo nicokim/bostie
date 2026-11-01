@@ -1,4 +1,4 @@
-from enum import IntFlag
+from enum import Enum, IntFlag
 
 import msgspec
 import pytest
@@ -18,6 +18,7 @@ from bostie.enums import (
     MessageType,
     OptionType,
     Permissions,
+    Status,
 )
 from bostie.models import PartialApplication, PartialMember, PartialMessage, decode
 
@@ -28,16 +29,27 @@ class Channel(msgspec.Struct):
     type: ChannelType
 
 
-def test_unknown_value_decodes_to_a_stable_pseudo_member() -> None:
-    decoder = msgspec.json.Decoder(Channel, strict=False)
+class Presence(msgspec.Struct):
+    type: Status
 
-    first = decoder.decode(b'{"type": 9999}').type
-    second = decoder.decode(b'{"type": 9999}').type
 
-    assert first.name == "UNKNOWN_9999"
-    assert first == 9999
-    assert first is second is ChannelType(9999)
-    assert ChannelType(9999) not in list(ChannelType)
+@pytest.mark.parametrize(
+    ("struct", "enum", "value"),
+    [(Channel, ChannelType, 9999), (Presence, Status, "streaming")],
+)
+def test_unknown_value_decodes_to_a_stable_pseudo_member(
+    struct: type[Channel | Presence], enum: type[Enum], value: int | str
+) -> None:
+    decoder = msgspec.json.Decoder(struct, strict=False)
+    payload = msgspec.json.encode({"type": value})
+
+    first = decoder.decode(payload).type
+    second = decoder.decode(payload).type
+
+    assert first.name == f"UNKNOWN_{value}"
+    assert first == value
+    assert first is second is enum(value)
+    assert enum(value) not in list(enum)
 
 
 @pytest.mark.parametrize(

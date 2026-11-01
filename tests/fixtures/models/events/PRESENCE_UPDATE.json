@@ -1,0 +1,82 @@
+{
+  "user": {
+    "id": "613374681415811073",
+    "username": "grace",
+    "global_name": "Grace H.",
+    "discriminator": "0",
+    "avatar": null
+  },
+  "guild_id": "1335172792320131073",
+  "status": "dnd",
+  "activities": [
+    {
+      "id": "custom",
+      "name": "Custom Status",
+      "type": 4,
+      "state": "tuning the lyre",
+      "emoji": {
+        "name": "lyre_spin",
+        "id": "1345335003709571073",
+        "animated": true
+      },
+      "created_at": 1793088000000
+    },
+    {
+      "id": "ec0b28a579ecb4bd",
+      "name": "Rocket League",
+      "type": 0,
+      "application_id": "379286085710381999",
+      "status_display_type": 2,
+      "state": "In a Match",
+      "state_url": "https://rocketleague.com/en/match",
+      "details": "Ranked Duos: 2-1",
+      "details_url": "https://rocketleague.com/en/ranked",
+      "timestamps": {
+        "start": 1793101200000,
+        "end": 1793103000000
+      },
+      "party": {
+        "id": "9dd6594e-81b3-49f6-a6b5-a679e6a060d3",
+        "size": [
+          2,
+          2
+        ]
+      },
+      "assets": {
+        "large_image": "351371005538729000",
+        "large_text": "DFH Stadium",
+        "large_url": "https://rocketleague.com/en/arenas",
+        "small_image": "mp:external/silver3.png",
+        "small_text": "Silver III",
+        "small_url": "https://rocketleague.com/en/ranks",
+        "invite_cover_image": "351371005538729222"
+      },
+      "secrets": {
+        "join": "025ed05c71f639de8bfaa0d679d7c94b2fdce12f",
+        "spectate": "e7eb30d2ee025ed05c71ea495f770b76454ee4e0",
+        "match": "4b2fdce12f639de8bfa7e3591b71a0d679d7c93f"
+      },
+      "instance": true,
+      "flags": 3,
+      "buttons": [
+        "Watch the stream",
+        "Join the club"
+      ],
+      "created_at": 1793101205000
+    },
+    {
+      "name": "Twitch",
+      "type": 1,
+      "url": "https://www.twitch.tv/discord",
+      "details": "24H RL Stream for Charity",
+      "state": "Rocket League",
+      "created_at": 1793100000000
+    }
+  ],
+  "client_status": {
+    "desktop": "dnd",
+    "mobile": "idle",
+    "web": "dnd",
+    "vr": "online"
+  }
+}

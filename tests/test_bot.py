@@ -51,6 +51,7 @@ from bostie.events import (
     RawEvent,
     Ready,
     Resumed,
+    UserUpdate,
 )
 from bostie.gateway import GatewayClient
 from bostie.sync import SyncResult
@@ -620,6 +621,21 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache(
             assert filters[-1] == ["MESSAGE_DELETE", "RATE_LIMITED"]
             await fake.dispatch("MESSAGE_DELETE", {"id": "3", "channel_id": "1"})
             assert await deleted.get() == 3
+
+    run(scenario)
+
+
+def test_user_update_replaces_the_bot_user() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            await asyncio.gather(
+                bot.wait_for(UserUpdate),
+                fake.dispatch("USER_UPDATE", fake.bot_user | {"username": "renamed"}),
+            )
+
+            assert bot.user is not None
+            assert bot.user.username == "renamed"
 
     run(scenario)
 

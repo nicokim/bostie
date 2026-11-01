@@ -5,6 +5,8 @@ import msgspec
 
 from bostie.enums import ChannelFlags, ChannelType, OverwriteType, Permissions
 from bostie.models.base import Model, permissions_from
+from bostie.models.guild import Member
+from bostie.models.presence import Presence
 
 if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
@@ -89,3 +91,23 @@ class Channel(PartialChannel, kw_only=True):
     rtc_region: str | None = None
     message_count: int | None = None
     member_count: int | None = None
+
+
+class _ThreadMember(Model, kw_only=True):
+    id: int | None = None
+    user_id: int | None = None
+    join_timestamp: datetime
+    flags: int
+
+
+class ThreadMember(_ThreadMember, kw_only=True):
+    """A user's membership in a thread; `flags` are its notification settings."""
+
+    member: Member | None = None
+
+
+class AddedThreadMember(_ThreadMember, kw_only=True):
+    """A thread member THREAD_MEMBERS_UPDATE adds, with its member and presence."""
+
+    member: Member
+    presence: Presence | None

@@ -1,0 +1,134 @@
+{
+  "guild_id": "1335172792320131073",
+  "members": [
+    {
+      "user": {
+        "id": "308882807193731073",
+        "username": "ada_owner",
+        "global_name": "Ada",
+        "discriminator": "0",
+        "avatar": "a_173d406e7b4073210e72cabee9602253",
+        "public_flags": 576,
+        "avatar_decoration_data": {
+          "asset": "a_9cfe55ebd354b2d1a226d267afeb6a71",
+          "sku_id": "1144058844004233369",
+          "expires_at": null
+        },
+        "collectibles": {
+          "nameplate": {
+            "sku_id": "1349849614353829990",
+            "asset": "nameplates/nameplates/twilight/",
+            "label": "",
+            "palette": "cobalt",
+            "expires_at": null
+          }
+        },
+        "display_name_styles": {
+          "font_id": 3,
+          "effect_id": 4,
+          "colors": [
+            16777215
+          ]
+        },
+        "clan": {
+          "identity_guild_id": "1335172792320131073",
+          "identity_enabled": true,
+          "tag": "LYRE",
+          "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+        },
+        "primary_guild": {
+          "identity_guild_id": "1335172792320131073",
+          "identity_enabled": true,
+          "tag": "LYRE",
+          "badge": "e0392f3fe5695fb33a9707c32c2c9260"
+        }
+      },
+      "avatar": "21855e513cd819fe7e9c0660c83a5e83",
+      "banner": null,
+      "communication_disabled_until": null,
+      "flags": 2,
+      "joined_at": "2025-02-01T09:00:00.000000+00:00",
+      "nick": null,
+      "premium_since": "2025-02-01T12:00:00.000000+00:00",
+      "roles": [
+        "1335174050611331073"
+      ],
+      "unusual_dm_activity_until": null,
+      "collectibles": null,
+      "avatar_decoration_data": null,
+      "deaf": false,
+      "mute": false,
+      "pending": false
+    },
+    {
+      "user": {
+        "id": "820774541721731073",
+        "username": "linus",
+        "global_name": null,
+        "discriminator": "0",
+        "avatar": null,
+        "public_flags": 0,
+        "avatar_decoration_data": null,
+        "collectibles": null,
+        "display_name_styles": null,
+        "clan": null,
+        "primary_guild": null
+      },
+      "avatar": null,
+      "banner": null,
+      "communication_disabled_until": null,
+      "flags": 2,
+      "joined_at": "2025-04-18T19:03:11.987000+00:00",
+      "nick": null,
+      "premium_since": null,
+      "roles": [],
+      "unusual_dm_activity_until": null,
+      "collectibles": null,
+      "avatar_decoration_data": null,
+      "deaf": false,
+      "mute": false,
+      "pending": false
+    }
+  ],
+  "chunk_index": 0,
+  "chunk_count": 1,
+  "not_found": [
+    "1562134550937731073"
+  ],
+  "presences": [
+    {
+      "user": {
+        "id": "308882807193731073"
+      },
+      "status": "online",
+      "client_status": {
+        "desktop": "online"
+      },
+      "activities": [
+        {
+          "id": "custom",
+          "name": "Custom Status",
+          "type": 4,
+          "state": "tuning the lyre",
+          "emoji": {
+            "name": "lyre_spin",
+            "id": "1345335003709571073",
+            "animated": true
+          },
+          "created_at": 1793088000000
+        }
+      ]
+    },
+    {
+      "user": {
+        "id": "820774541721731073"
+      },
+      "status": "idle",
+      "client_status": {
+        "mobile": "idle"
+      },
+      "activities": []
+    }
+  ],
+  "nonce": "chunk-1"
+}

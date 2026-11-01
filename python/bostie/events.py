@@ -11,6 +11,7 @@ from bostie.enums import (
     MemberFlags,
 )
 from bostie.models import (
+    AddedThreadMember,
     AuditLogEntry,
     AutoModerationAction,
     AutoModerationRule,
@@ -24,11 +25,13 @@ from bostie.models import (
     Model,
     PartialApplication,
     PartialEmoji,
+    Presence,
     Role,
     ScheduledEvent,
     SoundboardSound,
     Sticker,
     Subscription,
+    ThreadMember,
     UnavailableGuild,
     User,
     VoiceState,
@@ -126,8 +129,10 @@ class GuildCreate(Event, kw_only=True):
         return members
 
     @property
-    def presences(self) -> list[dict[str, Any]]:
-        presences: list[dict[str, Any]] = msgspec.json.decode(self._presences)
+    def presences(self) -> tuple[Presence, ...]:
+        presences: tuple[Presence, ...] = decoder(tuple[Presence, ...]).decode(
+            self._presences
+        )
         return presences
 
     @classmethod
@@ -227,6 +232,7 @@ class ThreadListSync(Event, kw_only=True):
     guild_id: int
     channel_ids: tuple[int, ...] | None = None
     threads: tuple[Channel, ...]
+    members: tuple[ThreadMember, ...]
 
 
 class _RoleEvent(Event, kw_only=True):
@@ -637,6 +643,96 @@ class SubscriptionDelete(_SubscriptionEvent, kw_only=True):
     NAME = "SUBSCRIPTION_DELETE"
 
 
+class _ThreadMemberPayload(ThreadMember, kw_only=True):
+    guild_id: int
+
+
+class ThreadMemberUpdate(Event, kw_only=True):
+    """The bot's own membership in a thread changed."""
+
+    NAME = "THREAD_MEMBER_UPDATE"
+    INTENTS = Intents.GUILDS
+
+    guild_id: int
+    thread_member: ThreadMember
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _ThreadMemberPayload = decoder(_ThreadMemberPayload).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            guild_id=payload.guild_id,
+            thread_member=_narrow(ThreadMember, payload),
+        )
+
+
+class ThreadMembersUpdate(Event, kw_only=True):
+    """Members joined or left a thread; others than the bot need GUILD_MEMBERS."""
+
+    NAME = "THREAD_MEMBERS_UPDATE"
+    INTENTS = Intents.GUILDS | Intents.GUILD_MEMBERS
+
+    id: int
+    guild_id: int
+    member_count: int
+    added_members: tuple[AddedThreadMember, ...] = ()
+    removed_member_ids: tuple[int, ...] = ()
+
+
+class MembersChunk(Event, kw_only=True):
+    """Members sent for a Request Guild Members."""
+
+    NAME = "GUILD_MEMBERS_CHUNK"
+
+    guild_id: int
+    members: tuple[Member, ...]
+    chunk_index: int
+    chunk_count: int
+    not_found: tuple[int, ...] = ()
+    presences: tuple[Presence, ...] = ()
+    nonce: str | None = None
+
+
+class _PresencePayload(Presence, kw_only=True):
+    guild_id: int
+
+
+class PresenceUpdate(Event, kw_only=True):
+    """A member's status, activities or user changed."""
+
+    NAME = "PRESENCE_UPDATE"
+    INTENTS = Intents.GUILD_PRESENCES
+
+    guild_id: int
+    presence: Presence
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _PresencePayload = decoder(_PresencePayload).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            guild_id=payload.guild_id,
+            presence=_narrow(Presence, payload),
+        )
+
+
+class UserUpdate(Event, kw_only=True):
+    """The bot's user changed."""
+
+    NAME = "USER_UPDATE"
+
+    user: User
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(shard_id=shard_id, raw_json=data, user=decode(User, data))
+
+
 class RawEvent(Event, kw_only=True):
     """Any dispatch, modelled or not, with its payload in `raw`."""
 
@@ -701,6 +797,11 @@ EVENTS: dict[str, type[Event]] = {
         SubscriptionCreate,
         SubscriptionUpdate,
         SubscriptionDelete,
+        ThreadMemberUpdate,
+        ThreadMembersUpdate,
+        MembersChunk,
+        PresenceUpdate,
+        UserUpdate,
     )
 }
 

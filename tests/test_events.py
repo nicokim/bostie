@@ -10,7 +10,7 @@ import pytest
 from fakediscord import FakeDiscord, run, running
 
 from bostie import Bot, events
-from bostie.enums import ApplicationFlags, ChannelType, MemberFlags
+from bostie.enums import ApplicationFlags, ChannelType, MemberFlags, Status
 from bostie.events import (
     EVENTS,
     AuditLogEntryCreate,
@@ -27,6 +27,7 @@ from bostie.events import (
     MemberUpdate,
     MessageCreate,
     MessageDelete,
+    PresenceUpdate,
     RawEvent,
     ReactionAdd,
     Ready,
@@ -36,7 +37,9 @@ from bostie.events import (
     ThreadCreate,
     ThreadDelete,
     ThreadListSync,
+    ThreadMemberUpdate,
     TypingStart,
+    UserUpdate,
     VoiceServerUpdate,
     VoiceStateUpdate,
     decode_event,
@@ -49,6 +52,8 @@ from bostie.models import (
     Message,
     Model,
     PartialUser,
+    Presence,
+    ThreadMember,
     UnavailableGuild,
     User,
     WebhookMessage,
@@ -115,6 +120,7 @@ def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
         (ScheduledEventCreate, "GUILD_SCHEDULED_EVENT_CREATE", "scheduled_event"),
         (EntitlementCreate, "ENTITLEMENT_CREATE", "entitlement"),
         (SubscriptionCreate, "SUBSCRIPTION_CREATE", "subscription"),
+        (UserUpdate, "USER_UPDATE", "user"),
     ],
 )
 def test_an_event_that_is_one_entity_shares_its_payload_with_it(
@@ -192,11 +198,12 @@ def test_guild_create_members_and_presences_decode_on_access() -> None:
         "bostie-test",
     ]
     assert members[0].roles == (1335174050611331073,)
-    assert [presence["status"] for presence in event.presences] == [
-        "online",
-        "idle",
-        "online",
+    assert [presence.status for presence in event.presences] == [
+        Status.ONLINE,
+        Status.IDLE,
+        Status.ONLINE,
     ]
+    assert event.presences[1].activities[0].assets is not None
 
 
 def test_unavailable_guild_create_is_only_a_marker() -> None:
@@ -229,6 +236,8 @@ def test_guild_delete_reads_the_guild_id_from_id() -> None:
     [
         (MemberJoin, "GUILD_MEMBER_ADD", "member", Member),
         (AuditLogEntryCreate, "GUILD_AUDIT_LOG_ENTRY_CREATE", "entry", AuditLogEntry),
+        (PresenceUpdate, "PRESENCE_UPDATE", "presence", Presence),
+        (ThreadMemberUpdate, "THREAD_MEMBER_UPDATE", "thread_member", ThreadMember),
     ],
 )
 def test_an_entity_with_a_guild_id_is_split_from_it(

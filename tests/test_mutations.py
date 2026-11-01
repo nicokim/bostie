@@ -58,6 +58,7 @@ ENUM_KEYS = {
     "entity_type",
     "frequency",
     "day",
+    "status_display_type",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {
@@ -282,7 +283,10 @@ def test_no_repr_shows_a_token_raw_json_or_a_private_field(
     document = load(path)
     for value in list(objects(document)):
         for key in SECRET_KEYS & value.keys():
-            value[key] = TOKEN
+            secret = value[key]
+            value[key] = (
+                dict.fromkeys(secret, TOKEN) if isinstance(secret, dict) else TOKEN
+            )
 
     for decoded in decode_all(decoder, document):
         if isinstance(decoded, msgspec.Struct):

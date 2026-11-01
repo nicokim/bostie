@@ -251,6 +251,14 @@ def test_role_create_update_and_delete(cache: Cache) -> None:
     assert created_id not in {role.id for role in cache.guild_roles(GUILD)}
 
 
+def test_user_update_replaces_the_bot_user(cache: Cache) -> None:
+    cache.apply(event("USER_UPDATE"))
+
+    assert cache.user is not None
+    assert cache.user.username == "bostie-renamed"
+    assert cache.user.raw_json is None
+
+
 def test_ready_of_a_new_session_clears_everything(cache: Cache) -> None:
     cache.apply(event("READY"))
 

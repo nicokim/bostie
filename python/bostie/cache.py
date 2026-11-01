@@ -20,6 +20,7 @@ from bostie.events import (
     ThreadDelete,
     ThreadListSync,
     ThreadUpdate,
+    UserUpdate,
 )
 from bostie.models import Channel, Guild, Role, User
 
@@ -57,6 +58,7 @@ class Cache:
             RoleCreate,
             RoleUpdate,
             RoleDelete,
+            UserUpdate,
         )
     )
 
@@ -119,6 +121,8 @@ class Cache:
                 self._store_role(event.guild_id, event.role)
             case RoleDelete():
                 self._remove_role(event.guild_id, event.role_id)
+            case UserUpdate():
+                self.user = msgspec.structs.replace(event.user, raw_json=None)
             case _:
                 pass
 
