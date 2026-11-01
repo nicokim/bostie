@@ -42,6 +42,7 @@ type Key = (u32, UserId);
 
 pub struct Intake {
     media: Arc<Media>,
+    info: Arc<Info>,
     socket: Arc<UdpSocket>,
     transport: Option<Arc<Transport>>,
     windows: HashMap<u32, ReplayWindow>,
@@ -49,9 +50,15 @@ pub struct Intake {
 }
 
 impl Intake {
-    pub fn new(media: Arc<Media>, socket: Arc<UdpSocket>, replay_window: u32) -> Self {
+    pub fn new(
+        media: Arc<Media>,
+        info: Arc<Info>,
+        socket: Arc<UdpSocket>,
+        replay_window: u32,
+    ) -> Self {
         Self {
             media,
+            info,
             socket,
             transport: None,
             windows: HashMap::new(),
@@ -86,6 +93,10 @@ impl Intake {
             return;
         };
         let header = opened.header;
+        if !self.windows.contains_key(&header.ssrc) {
+            let ssrcs = self.info.ssrcs.lock();
+            self.windows.retain(|ssrc, _| ssrcs.contains_key(ssrc));
+        }
         let replay_window = self.replay_window;
         let window = self
             .windows
@@ -2266,6 +2277,15 @@ mod tests {
             receiver
         }
 
+        fn intake(&self) -> Intake {
+            Intake::new(
+                Arc::clone(&self.media),
+                Arc::clone(&self.info),
+                Arc::clone(&self.socket),
+                64,
+            )
+        }
+
         fn map(&self, ssrc: u32, id: u64) {
             self.info.ssrcs.lock().insert(ssrc, (user(id), self.now));
         }
@@ -2973,8 +2993,13 @@ mod tests {
         let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
         let stranger = Cipher::new(Mode::Aes256GcmRtpSize, &[1; 32]);
         let other_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").unwrap());
-        let mut stale = Intake::new(Arc::clone(&rig.media), other_socket, 64);
-        let mut intake = Intake::new(Arc::clone(&rig.media), Arc::clone(&rig.socket), 64);
+        let mut stale = Intake::new(
+            Arc::clone(&rig.media),
+            Arc::clone(&rig.info),
+            other_socket,
+            64,
+        );
+        let mut intake = rig.intake();
         let tagged = Sealing {
             extension: Some(vec![0x10, 0xAA]),
             ..Sealing::default()
@@ -3025,7 +3050,7 @@ mod tests {
     fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
         let mut rig = Rig::new(tuning());
         let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-        let mut intake = Intake::new(Arc::clone(&rig.media), Arc::clone(&rig.socket), 64);
+        let mut intake = rig.intake();
         let _packets = rig.open(options(ReceiveFormat::Packets));
 
         for (nonce, sequence) in [(2, 1), (256, 2)] {
@@ -3044,6 +3069,31 @@ mod tests {
 
         assert_eq!(rig.media.arrivals.lock().len(), 2);
         assert_eq!(rig.counter("replays"), 0);
+    }
+
+    #[test]
+    fn the_intake_forgets_the_replay_windows_of_ssrcs_that_left_when_a_new_one_arrives() {
+        let mut rig = Rig::new(tuning());
+        let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
+        let mut intake = rig.intake();
+        let _packets = rig.open(options(ReceiveFormat::Packets));
+        rig.map(ALICE_SSRC, ALICE);
+        rig.map(BOB_SSRC, BOB);
+
+        let mut send = |nonce, ssrc| {
+            let sealing = Sealing::default();
+            let mut packet = sfu::seal(&cipher, nonce, ssrc, 0, 0, &SILENCE_FRAME, &sealing);
+            intake.rtp(&mut packet);
+        };
+        send(0, ALICE_SSRC);
+        send(1, BOB_SSRC);
+        rig.info.ssrcs.lock().remove(&ALICE_SSRC);
+        rig.map(STRANGER_SSRC, STRANGER);
+        send(2, STRANGER_SSRC);
+
+        let mut windows: Vec<u32> = intake.windows.keys().copied().collect();
+        windows.sort_unstable();
+        assert_eq!(windows, [BOB_SSRC, STRANGER_SSRC]);
     }
 
     #[test]
@@ -3486,7 +3536,7 @@ mod tests {
             rig.map(ALICE_SSRC, ALICE);
             let receiver = rig.open(only(&[ALICE], ReceiveFormat::Opus));
             let stale = Cipher::new(Mode::Aes256GcmRtpSize, &[1; 32]);
-            let mut intake = Intake::new(Arc::clone(&rig.media), Arc::clone(&rig.socket), 64);
+            let mut intake = rig.intake();
             let mut stalls = Vec::new();
             for sequence in 0..7 {
                 if cause == "a stale key" {
@@ -3551,7 +3601,7 @@ mod tests {
             ];
             let valid = opus(4, 0.5);
             let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
-            let mut intake = Intake::new(Arc::clone(&rig.media), Arc::clone(&rig.socket), 64);
+            let mut intake = rig.intake();
             let ssrcs = [ALICE_SSRC, BOB_SSRC, 0xFFFF_FFFF];
             for (nonce, (which, sequence, timestamp, extension, padding, real, payload)) in (0..).zip(packets) {
                 let payload = if real { valid[usize::from(sequence) % valid.len()].to_vec() } else { payload };

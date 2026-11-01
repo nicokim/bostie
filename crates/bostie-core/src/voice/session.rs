@@ -467,6 +467,7 @@ impl<'c> Session<'c> {
             let media = Arc::clone(&self.conn.media);
             let mut intake = Intake::new(
                 Arc::clone(&media),
+                Arc::clone(&self.conn.info),
                 Arc::clone(&sender),
                 self.conn.tuning.receive.replay_window,
             );
