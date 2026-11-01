@@ -200,18 +200,24 @@ def test_guild_delete_reads_the_guild_id_from_id() -> None:
     assert left.unavailable is False
 
 
-@pytest.mark.parametrize(
-    ("event_type", "name"),
-    [(MemberJoin, "GUILD_MEMBER_ADD"), (MemberUpdate, "GUILD_MEMBER_UPDATE")],
-)
-def test_member_events_split_the_guild_id_from_the_member(
-    event_type: type[MemberJoin | MemberUpdate], name: str
-) -> None:
-    event = decode(event_type, name)
+def test_member_join_splits_the_guild_id_from_the_member() -> None:
+    event = decode(MemberJoin, "GUILD_MEMBER_ADD")
 
     assert event.guild_id == 1335172792320131073
     assert type(event.member) is Member
     assert event.member.id == int(json.loads(event.raw_json)["user"]["id"])
+
+
+def test_member_update_decodes_the_documented_fields_without_flags() -> None:
+    document = json.loads((EVENT_FIXTURES / "GUILD_MEMBER_UPDATE.json").read_bytes())
+
+    event = MemberUpdate.decode(0, msgspec.json.encode(without(document, "flags")))
+
+    assert event.guild_id == 1335172792320131073
+    assert event.user.username == "linus"
+    assert event.nick == "linus (timed out)"
+    assert event.communication_disabled_until == datetime(2026, 10, 27, 13, tzinfo=UTC)
+    assert event.flags == MemberFlags(0)
 
 
 def test_member_remove_carries_only_the_user() -> None:

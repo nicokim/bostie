@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Self, dataclass_transform
 
 import msgspec
 
-from bostie.enums import ChannelType, Intents
+from bostie.enums import ChannelType, Intents, MemberFlags
 from bostie.models import (
     Channel,
     Guild,
@@ -293,7 +293,8 @@ class _GuildMemberPayload(Member, kw_only=True):
     guild_id: int
 
 
-class _MemberEvent(Event, kw_only=True):
+class MemberJoin(Event, kw_only=True):
+    NAME = "GUILD_MEMBER_ADD"
     INTENTS = Intents.GUILD_MEMBERS
 
     guild_id: int
@@ -310,12 +311,25 @@ class _MemberEvent(Event, kw_only=True):
         )
 
 
-class MemberJoin(_MemberEvent, kw_only=True):
-    NAME = "GUILD_MEMBER_ADD"
+class MemberUpdate(Event, kw_only=True):
+    """A member changed, or its user did."""
 
-
-class MemberUpdate(_MemberEvent, kw_only=True):
     NAME = "GUILD_MEMBER_UPDATE"
+    INTENTS = Intents.GUILD_MEMBERS
+
+    guild_id: int
+    roles: tuple[int, ...]
+    user: User
+    nick: str | None = None
+    avatar: str | None
+    banner: str | None
+    joined_at: datetime | None
+    premium_since: datetime | None = None
+    deaf: bool | None = None
+    mute: bool | None = None
+    pending: bool = False
+    communication_disabled_until: datetime | None = None
+    flags: MemberFlags = MemberFlags(0)
 
 
 class MemberRemove(Event, kw_only=True):
