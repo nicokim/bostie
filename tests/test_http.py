@@ -242,7 +242,7 @@ def test_params_and_query_values_are_sent_as_text(
             "GET",
             "/guilds/{guild_id}/members",
             guild_id=123,
-            query={"limit": 5, "with_counts": True, "after": None, "ids": [1, 2]},
+            query={"limit": 5, "with_counts": True, "after": None, "ids": range(1, 3)},
             reason="audit",
         )
         await bridge.close()

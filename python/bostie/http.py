@@ -133,7 +133,11 @@ def _query_pairs(query: Query) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for name, value in query.items():
         if value is not None:
-            values = value if isinstance(value, list | tuple) else (value,)
+            values = (
+                (value,)
+                if isinstance(value, str) or not isinstance(value, Sequence)
+                else value
+            )
             pairs.extend((name, _query_text(item)) for item in values)
     return pairs
 
