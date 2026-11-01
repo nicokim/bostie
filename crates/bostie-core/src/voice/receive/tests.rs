@@ -1420,8 +1420,12 @@ fn release_and_decode_stop_at_the_deadline_and_resume_next_tick() {
 }
 
 #[test]
-fn the_watchdog_reports_media_that_arrives_but_never_plays() {
-    for cause in ["undecryptable frames", "a stale key"] {
+fn the_receive_watchdog_reports_media_that_never_plays_and_its_end() {
+    for (cause, closes) in [
+        ("undecryptable frames", false),
+        ("a stale key", false),
+        ("undecryptable frames", true),
+    ] {
         let mut rig = Rig::dave();
         rig.map(ALICE_SSRC, ALICE);
         let receiver = rig.open(only(&[ALICE], ReceiveFormat::Opus));
@@ -1448,17 +1452,36 @@ fn the_watchdog_reports_media_that_arrives_but_never_plays() {
             rig.step();
             stalls.extend(rig.stalls());
         }
-        rig.send(ALICE_SSRC, 7, &SILENCE_FRAME);
+        if closes {
+            receiver.close();
+        } else {
+            rig.send(ALICE_SSRC, 7, &SILENCE_FRAME);
+        }
         rig.step();
 
         assert_eq!(stalls, [(Direction::Receive, true, STALL)], "{cause}");
         assert_eq!(
             rig.stalls(),
             [(Direction::Receive, false, STALL + FRAME * 2)],
-            "{cause}"
+            "{cause} {closes}"
         );
-        assert_eq!(read(&receiver).len(), 1, "{cause}");
+        assert!(closes || read(&receiver).len() == 1, "{cause}");
     }
+}
+
+#[test]
+fn a_speaker_who_goes_quiet_is_not_a_receive_stall() {
+    let mut rig = Rig::dave();
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(only(&[ALICE], ReceiveFormat::Opus));
+
+    rig.send(ALICE_SSRC, 0, &SILENCE_FRAME);
+    for _ in 0..10 {
+        rig.step();
+    }
+
+    assert!(rig.stalls().is_empty());
+    assert_eq!(read(&receiver).len(), 1);
 }
 
 proptest! {
