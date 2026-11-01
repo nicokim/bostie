@@ -299,6 +299,13 @@ impl NativeCore {
             .set_speech_hangover(GuildId::from(guild_id), hangover)?)
     }
 
+    fn voice_server_change_delay(&self, guild_id: u64, seconds: f64) -> Result<()> {
+        let delay = crate::seconds("server_change_delay", seconds)?;
+        Ok(self
+            .voice()?
+            .set_server_change_delay(GuildId::from(guild_id), delay)?)
+    }
+
     fn voice_speech_activity(&self, guild_id: u64, enabled: bool) -> Result<()> {
         Ok(self
             .voice()?

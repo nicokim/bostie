@@ -288,6 +288,14 @@ impl Voice {
         self.command(guild, Command::Speaking(flags))
     }
 
+    pub fn set_server_change_delay(
+        &self,
+        guild: GuildId,
+        delay: Duration,
+    ) -> Result<(), CoreError> {
+        self.command(guild, Command::ServerChangeDelay(delay))
+    }
+
     pub fn latency(
         &self,
         guild: GuildId,

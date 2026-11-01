@@ -164,6 +164,7 @@ class VoiceCore(Protocol):
         stall: ReceiveStall,
     ) -> NativeReceiver: ...
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
+    def voice_server_change_delay(self, guild_id: int, seconds: float) -> None: ...
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
@@ -859,6 +860,10 @@ class VoiceConnection:
             self.speech_hangover = options["speech_hangover"]
         if "speech_activity" in options:
             self.speech_activity = options["speech_activity"]
+        if "server_change_delay" in options:
+            self._core().voice_server_change_delay(
+                self.guild_id, options["server_change_delay"]
+            )
         if "stage" in options and channel.type is ChannelType.GUILD_STAGE_VOICE:
             await self._request_stage(options["stage"])
 

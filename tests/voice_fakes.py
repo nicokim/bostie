@@ -451,6 +451,9 @@ class FakeCore:
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None:
         self._record("voice_speech_hangover", guild_id, seconds)
 
+    def voice_server_change_delay(self, guild_id: int, seconds: float) -> None:
+        self._record("voice_server_change_delay", guild_id, seconds)
+
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None:
         self._record("voice_speech_activity", guild_id, enabled)
 

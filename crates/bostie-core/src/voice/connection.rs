@@ -74,6 +74,7 @@ pub enum Command {
         self_deaf: bool,
     },
     Speaking(u8),
+    ServerChangeDelay(Duration),
     Disconnect,
     Reconnect,
 }
@@ -392,6 +393,10 @@ impl Connection {
             Some(Command::Reconnect) => Some(SessionEnd::Reconnect),
             Some(Command::Speaking(flags)) => {
                 self.speaking = flags;
+                None
+            }
+            Some(Command::ServerChangeDelay(delay)) => {
+                self.servers.change_delay = delay;
                 None
             }
             Some(Command::Update {

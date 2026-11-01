@@ -1271,6 +1271,31 @@ async fn a_first_connect_and_a_move_skip_the_server_change_delay() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_changed_server_change_delay_applies_to_the_next_server_change() {
+    let mut harness = Harness::start().await;
+    harness
+        .voice
+        .connect(&ConnectRequest {
+            server_change_delay: Duration::from_secs(3_600),
+            ..harness.request()
+        })
+        .unwrap();
+    harness.announce().await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness
+        .voice
+        .set_server_change_delay(guild(), Duration::ZERO)
+        .unwrap();
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Reconnecting).await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness.server.collect().await;
+    assert_eq!(harness.server.count(op::IDENTIFY), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_session_replaced_during_the_change_delay_waits_for_new_server() {
     let mut harness = Harness::start().await;
     harness

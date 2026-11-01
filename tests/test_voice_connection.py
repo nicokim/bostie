@@ -287,6 +287,10 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
                 ("voice_speech_activity", (GUILD_ID, False), {}),
             ],
         ),
+        (
+            {"server_change_delay": 0.5},
+            [("voice_server_change_delay", (GUILD_ID, 0.5), {})],
+        ),
     ],
 )
 def test_a_second_connect_keeps_the_state_and_applies_only_its_options(
