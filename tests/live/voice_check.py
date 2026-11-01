@@ -252,7 +252,7 @@ async def receive_checks(
         print(f"{type(mark).__name__} {mark.user_id} at offset {mark.offset}{length}")
     print_op5_timing(packets, speech)
     steps = Counter(
-        (b.timestamp - a.timestamp) % 2**32 // 48
+        ((b.timestamp - a.timestamp + 2**31) % 2**32 - 2**31) // 48
         for a, b in itertools.pairwise(p for p in packets if p.user_id == human)
         if (b.sequence - a.sequence) % 2**16 == 1
     )
