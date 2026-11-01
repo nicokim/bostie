@@ -456,6 +456,29 @@ fn a_nonce_about_to_wrap_stops_sending_and_asks_for_a_new_key_once() {
 }
 
 #[test]
+fn a_frame_dave_cannot_encrypt_is_dropped_and_never_sent_plain() {
+    let mut rig = Rig::new();
+    rig.connect(&KEY);
+    rig.nonce_at(0);
+    let sink = rig.pcm_sink(StallPolicy::Hold);
+    sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
+    let mut dave = Dave::new(
+        UserId::from(BOT),
+        ChannelId::from(CHANNEL),
+        &ReceiveTuning::default(),
+    );
+    dave.start(1, &mut Vec::new()).unwrap();
+    let dave = Mutex::new(dave);
+    let transport = rig.media.transport.lock().clone().unwrap();
+
+    rig.lane.snapshot_sinks();
+    rig.lane.send_frame(&transport, rig.now, Some(dave.lock()));
+
+    rig.packets(0);
+    assert_eq!(queued_frames(&sink), 960);
+}
+
+#[test]
 fn a_busy_dave_lock_holds_the_tick_and_keeps_the_audio() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
@@ -524,6 +547,23 @@ fn the_watchdog_reports_a_stall_and_its_end() {
         rig.tick(1);
         assert!(stalls(&rig.deliveries()).is_empty());
     }
+}
+
+#[test]
+fn a_reported_stall_stays_reported_while_it_eases_until_it_resumes() {
+    let start = Instant::now();
+    let mut stall = Stall::default();
+    stall.press(start, STALL);
+    stall.ease();
+    let restarted = stall.press(start + STALL, STALL);
+
+    let reported = stall.press(start + STALL * 2, STALL);
+    stall.ease();
+
+    assert_eq!((restarted, reported), (None, Some(STALL)));
+    assert!(stall.reported());
+    assert_eq!(stall.resume(start + STALL * 3), Some(STALL * 2));
+    assert_eq!(stall.resume(start + STALL * 4), None);
 }
 
 #[test]
