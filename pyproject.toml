@@ -122,7 +122,10 @@ ignore_missing_imports = true
 
 [tool.pyright]
 include = ["python/bostie"]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
+reportPrivateUsage = false
+reportUninitializedInstanceVariable = true
+reportUnnecessaryTypeIgnoreComment = true
 
 [tool.pytest]
 testpaths = ["tests"]

@@ -120,7 +120,11 @@ class Router:
         """Register a listener for the events in its annotation, or the given ones."""
         if len(targets) == 1 and not isinstance(targets[0], type):
             return self._listen(targets[0], ())
-        return lambda listener: self._listen(listener, targets)
+
+        def register(listener: ListenerCallback) -> ListenerCallback:
+            return self._listen(listener, targets)
+
+        return register
 
     def listen_raw[L: ListenerCallback](self, *names: str) -> Callable[[L], L]:
         """Register a listener that gets a RawEvent for each of these dispatch names."""
@@ -164,7 +168,11 @@ class Router:
         for target in targets:
             if not (isinstance(target, type) and issubclass(target, BaseException)):
                 raise TypeError(f"{target!r} is not an exception class")
-        return lambda handler: self._on_error(handler, targets or (Exception,))
+
+        def register(handler: ErrorHandler) -> ErrorHandler:
+            return self._on_error(handler, targets or (Exception,))
+
+        return register
 
     def include(self, router: "Router") -> None:
         """Add a router's commands, listeners and routes, including later ones."""

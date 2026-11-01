@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from functools import cache
-from typing import Any, dataclass_transform
+from typing import Any, cast, dataclass_transform
 
 import msgspec
 
@@ -60,9 +60,9 @@ def decoder(type_: Any) -> msgspec.json.Decoder[Any]:
 
 def _as_builtin(value: object) -> object:
     if isinstance(value, Mapping):
-        return dict(value)
+        return dict(cast("Mapping[object, object]", value))
     if isinstance(value, Sequence):
-        return list(value)
+        return list(cast("Sequence[object]", value))
     raise TypeError(f"Encoding objects of type {type(value).__name__} is unsupported")
 
 

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
 from http import HTTPStatus
@@ -225,7 +225,7 @@ class _ReplyingContext[
         self._allowed_mentions = allowed_mentions
 
     @contextmanager
-    def auto_defer(self) -> Iterator[None]:
+    def auto_defer(self) -> Generator[None, None, None]:
         """Use as `with ctx.auto_defer():` to defer when the block is slow to answer.
 
         Slow means no answer `auto_defer` seconds after the interaction arrived.

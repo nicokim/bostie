@@ -88,7 +88,7 @@ class _Entry:
     end: "Marker | None" = None
     base: float = 0.0
     exhausted: bool = False
-    kept: list[bytes] = field(default_factory=list)
+    kept: list[bytes] = field(default_factory=list[bytes])
     final: float | None = None
 
     def position(self) -> float:
@@ -729,7 +729,7 @@ class _Grouping:
     pause: float
     width: int
     rate: int
-    speaking: dict[int, _Speech] = field(default_factory=dict)
+    speaking: dict[int, _Speech] = field(default_factory=dict[int, _Speech])
 
     def deadline(self) -> float:
         return min(

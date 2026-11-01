@@ -617,12 +617,12 @@ def _kind(
     OptionType, list[Choice], tuple[OptionModel, ...], Callable[[Any], object] | None
 ]:
     models = tuple(
-        model for member in members for model in OPTION_MODELS if model is member
+        model for member in members for model in OPTION_MODELS if member is model
     )
     if len(models) == len(members):
-        kinds = {OPTION_MODELS[model] for model in models}
+        kinds = frozenset(OPTION_MODELS[model] for model in models)
         if len(models) == 1:
-            return kinds.pop(), [], models, None
+            return OPTION_MODELS[models[0]], [], models, None
         if kinds == MENTIONABLE_TYPES:
             return OptionType.MENTIONABLE, [], models, None
     hint = members[0] if len(members) == 1 else None

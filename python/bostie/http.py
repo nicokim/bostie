@@ -21,6 +21,10 @@ from bostie.file import File
 from bostie.models.base import encoder
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
+
+type QueryValue = str | int | float | bool
+type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
+
 STATUS_ERRORS: dict[int, type[HTTPException]] = {
     400: BadRequest,
     403: Forbidden,
@@ -53,7 +57,7 @@ class HTTPClient:
         *,
         json: Any = None,
         files: Sequence[File] = (),
-        query: Mapping[str, Any] | None = None,
+        query: Query | None = None,
         reason: str | None = None,
         **params: object,
     ) -> Any:
@@ -91,7 +95,7 @@ class HTTPClient:
         *,
         json: Any = None,
         files: Sequence[File] = (),
-        query: Mapping[str, Any] | None = None,
+        query: Query | None = None,
         reason: str | None = None,
         **params: object,
     ) -> bytes:
@@ -125,7 +129,7 @@ def decode_answer[T](
         raise UnexpectedResponse(data, str(error), took_effect=took_effect) from error
 
 
-def _query_pairs(query: Mapping[str, Any]) -> list[tuple[str, str]]:
+def _query_pairs(query: Query) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for name, value in query.items():
         if value is not None:

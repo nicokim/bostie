@@ -37,12 +37,20 @@ class InteractionDataOption(Model, kw_only=True):
 class Resolved(Model, kw_only=True):
     """The users, members, roles, channels, messages and files an interaction names."""
 
-    users: dict[int, User] = msgspec.field(default_factory=dict)
-    members: dict[int, PartialMember] = msgspec.field(default_factory=dict)
-    roles: dict[int, Role] = msgspec.field(default_factory=dict)
-    channels: dict[int, PartialChannel] = msgspec.field(default_factory=dict)
-    messages: dict[int, PartialMessage] = msgspec.field(default_factory=dict)
-    attachments: dict[int, Attachment] = msgspec.field(default_factory=dict)
+    users: dict[int, User] = msgspec.field(default_factory=dict[int, User])
+    members: dict[int, PartialMember] = msgspec.field(
+        default_factory=dict[int, PartialMember]
+    )
+    roles: dict[int, Role] = msgspec.field(default_factory=dict[int, Role])
+    channels: dict[int, PartialChannel] = msgspec.field(
+        default_factory=dict[int, PartialChannel]
+    )
+    messages: dict[int, PartialMessage] = msgspec.field(
+        default_factory=dict[int, PartialMessage]
+    )
+    attachments: dict[int, Attachment] = msgspec.field(
+        default_factory=dict[int, Attachment]
+    )
 
     def member(self, id: int) -> Member | None:
         """The member with this id, with its user."""

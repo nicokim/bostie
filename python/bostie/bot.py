@@ -102,7 +102,9 @@ class _Dispatch:
     seq: int
     name: str
     data: bytes
-    decoded: dict[type[Event], Event | None] = field(default_factory=dict)
+    decoded: dict[type[Event], Event | None] = field(
+        default_factory=dict[type[Event], Event | None]
+    )
 
     def event[E: Event](self, cls: type[E]) -> E | None:
         if cls not in self.decoded:

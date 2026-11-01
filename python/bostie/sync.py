@@ -198,7 +198,7 @@ def _canonical_option(
 def _project(
     payload: Mapping[str, Any], local: Mapping[str, Any], defaults: Mapping[str, Any]
 ) -> dict[str, Any]:
-    canonical = {}
+    canonical: dict[str, Any] = {}
     for key in defaults.keys() | local.keys():
         value = payload.get(key)
         canonical[key] = defaults.get(key) if value is None else value
