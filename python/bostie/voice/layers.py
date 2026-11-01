@@ -38,6 +38,7 @@ log = logging.getLogger("bostie.voice")
 BROADCAST_BITRATE = 64_000
 SILENCE = b"\xf8\xff\xfe"
 SILENCE_SAMPLES = 960
+TICK = 0.02
 PAGE_SAMPLES = SAMPLE_RATE
 MAX_SEGMENTS = 255
 MAX_PACKET = MAX_SEGMENTS * 255 - 1
@@ -861,7 +862,7 @@ class Recorder:
 
     async def stop(self) -> dict[int, Path]:
         """Stop recording, finish every file and return them by user id."""
-        await asyncio.wait({self._task}, timeout=self._rx.jitter)
+        await asyncio.wait({self._task}, timeout=self._rx.jitter + TICK)
         if not self._stopping.done():
             self._stopping.set_result(None)
         await asyncio.wait({self._task})
