@@ -22,7 +22,13 @@ from typing import (
     overload,
 )
 
-from bostie.enums import CommandType, InteractionContextType, OptionType, Permissions
+from bostie.enums import (
+    ChannelType,
+    CommandType,
+    InteractionContextType,
+    OptionType,
+    Permissions,
+)
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
@@ -176,7 +182,7 @@ class Option:
     max: float | None = None
     min_length: int | None = None
     max_length: int | None = None
-    channel_types: Iterable[int] | None = None
+    channel_types: Iterable[ChannelType] | None = None
     choices: Iterable[Choice | ChoiceValue] | None = None
     extra: Mapping[str, Any] | None = None
 

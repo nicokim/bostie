@@ -14,7 +14,7 @@ from bostie.commands import (
     Range,
     autocomplete_choices,
 )
-from bostie.enums import OptionType, Permissions
+from bostie.enums import ChannelType, OptionType, Permissions
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
@@ -147,7 +147,10 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (Annotated[int, "How many"], option(4, description="How many")),
         (Annotated[str, Option(autocomplete=suggest)], option(3, autocomplete=True)),
         (
-            Annotated[PartialChannel, Option(channel_types=[0, 2])],
+            Annotated[
+                PartialChannel,
+                Option(channel_types=[ChannelType.GUILD_TEXT, ChannelType.GUILD_VOICE]),
+            ],
             option(7, channel_types=[0, 2]),
         ),
         (
@@ -299,7 +302,10 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
         (Range[int, 0, 2**53], "within"),
         (Range[bool, 0, 1], "min_value does not apply to BOOLEAN"),
         (Annotated[str, Option(min=1)], "min_value does not apply to STRING"),
-        (Annotated[int, Option(channel_types=[0])], "channel_types does not apply"),
+        (
+            Annotated[int, Option(channel_types=[ChannelType.GUILD_TEXT])],
+            "channel_types does not apply",
+        ),
     ],
 )
 def test_definition_errors_name_the_function_and_parameter(
