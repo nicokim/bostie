@@ -1,32 +1,21 @@
 import math
-import re
 from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
-from pathlib import Path
-from typing import Any, TypeAliasType, get_args
+from typing import Any, get_args, get_type_hints
 
 import pytest
 
 import bostie
-from bostie import voice
+from bostie import _native, voice
 from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlags, State
+from bostie.voice.connection import VoiceCore
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 
 VALID = nullcontext()
-CRATES = Path(__file__).parents[1] / "crates"
-TYPES = "bostie-core/src/voice/types.rs"
-NATIVE = "bostie-native/src/voice.rs"
-RUST_NAME = re.compile(r'(?:=> |\()"([^"]+)"')
 
 
 def invalid(message: str) -> AbstractContextManager[object]:
     return pytest.raises(ValueError, match=message)
-
-
-def rust_names(path: str, impl: str) -> list[str]:
-    source = (CRATES / path).read_text()
-    start = source.index(f"impl {impl} {{")
-    return RUST_NAME.findall(source, start, source.index("\n}\n", start))
 
 
 @pytest.mark.parametrize(
@@ -148,34 +137,36 @@ def test_formats_default_to_the_documented_values() -> None:
 
 
 @pytest.mark.parametrize(
-    ("enum", "path", "impl"),
+    ("enum", "names"),
     [
-        (State, TYPES, "VoiceStatus"),
-        (DisconnectReason, TYPES, "DisconnectReason"),
-        (Direction, TYPES, "Direction"),
-        (ClosedReason, "bostie-core/src/voice/receiver.rs", "Ended"),
+        (State, _native.VOICE_STATES),
+        (DisconnectReason, _native.DISCONNECT_REASONS),
+        (Direction, _native.DIRECTIONS),
+        (ClosedReason, _native.CLOSED_REASONS),
     ],
 )
 def test_enum_values_are_the_names_rust_sends(
-    enum: type[StrEnum], path: str, impl: str
+    enum: type[StrEnum], names: list[str]
 ) -> None:
-    assert [member.value for member in enum] == rust_names(path, impl)
+    assert [member.value for member in enum] == names
 
 
 @pytest.mark.parametrize(
-    ("alias", "impl"),
+    ("literal", "names"),
     [
-        (voice.OpusApplication, "Application"),
-        (voice.Sample, "SampleFormat"),
-        (voice.SinkStall, "StallPolicy"),
-        (voice.Overflow, "Overflow"),
-        (voice.ReceiveStall, "ReceiveStall"),
+        (voice.OpusApplication.__value__, _native.OPUS_APPLICATIONS),
+        (voice.Sample.__value__, _native.SAMPLES),
+        (get_type_hints(VoiceCore.voice_sink)["kind"], _native.SINK_KINDS),
+        (get_type_hints(VoiceCore.voice_receive)["kind"], _native.RECEIVE_KINDS),
+        (voice.SinkStall.__value__, _native.SINK_STALLS),
+        (voice.ReceiveStall.__value__, _native.RECEIVE_STALLS),
+        (voice.Overflow.__value__, _native.OVERFLOWS),
     ],
 )
 def test_option_literals_are_the_names_rust_accepts(
-    alias: TypeAliasType, impl: str
+    literal: object, names: list[str]
 ) -> None:
-    assert list(get_args(alias.__value__)) == rust_names(NATIVE, f"Choices for {impl}")
+    assert list(get_args(literal)) == names
 
 
 def test_voice_events_need_no_intent_and_have_local_names() -> None:

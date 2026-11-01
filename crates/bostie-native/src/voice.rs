@@ -261,6 +261,10 @@ impl<T: Choices> FromPyObject<'_, '_> for Choice<T> {
     }
 }
 
+pub(crate) fn names<T: Choices>() -> Vec<&'static str> {
+    T::NAMES.iter().map(|&(name, _)| name).collect()
+}
+
 impl Choices for Application {
     const OPTION: &'static str = "application";
     const NAMES: &'static [(&'static str, Self)] = &[

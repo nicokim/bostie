@@ -579,14 +579,77 @@ impl From<Error> for PyErr {
     }
 }
 
+macro_rules! variant_names {
+    ($kind:ident { $($variant:ident),+ $(,)? }) => {{
+        let name = |value: $kind| match value {
+            $($kind::$variant)|+ => value.as_str(),
+        };
+        [$(name($kind::$variant)),+]
+    }};
+}
+
 #[pymodule]
 mod _native {
-    use bostie_core::voice::types;
+    use bostie_core::voice::Ended;
+    use bostie_core::voice::types::{
+        self, Application, Direction, DisconnectReason, Overflow, ReceiveStall, SampleFormat,
+        StallPolicy, VoiceStatus,
+    };
+    use pyo3::prelude::*;
 
     #[pymodule_export]
     use super::NativeCore;
     #[pymodule_export]
     use super::voice::{NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions};
+    use super::voice::{ReceiveKind, SinkKind, names};
+
+    #[pymodule_init]
+    fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
+        module.add("OPUS_APPLICATIONS", names::<Application>())?;
+        module.add("SAMPLES", names::<SampleFormat>())?;
+        module.add("SINK_KINDS", names::<SinkKind>())?;
+        module.add("RECEIVE_KINDS", names::<ReceiveKind>())?;
+        module.add("SINK_STALLS", names::<StallPolicy>())?;
+        module.add("RECEIVE_STALLS", names::<ReceiveStall>())?;
+        module.add("OVERFLOWS", names::<Overflow>())?;
+        module.add(
+            "VOICE_STATES",
+            variant_names!(VoiceStatus {
+                Connecting,
+                Ready,
+                Resuming,
+                Reconnecting,
+                Disconnected,
+            }),
+        )?;
+        module.add(
+            "DISCONNECT_REASONS",
+            variant_names!(DisconnectReason {
+                Requested,
+                Removed,
+                CallTerminated,
+                RateLimited,
+                Timeout,
+                SessionInvalid,
+                AuthenticationFailed,
+                DaveRequired,
+                DaveFailed,
+                ProtocolError,
+                Closed,
+            }),
+        )?;
+        module.add("DIRECTIONS", variant_names!(Direction { Send, Receive }))?;
+        module.add(
+            "CLOSED_REASONS",
+            variant_names!(Ended {
+                Closed,
+                Disconnected,
+                Moved,
+                Reconnecting,
+            }),
+        )?;
+        Ok(())
+    }
 
     #[pymodule_export]
     const SAMPLE_RATE: u32 = types::SAMPLE_RATE;
