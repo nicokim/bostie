@@ -343,21 +343,17 @@ impl ReceiveOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReceiveTuning {
+pub(crate) struct ReceiveTuning {
     pub hold: Duration,
     pub hold_packets: usize,
     pub unmapped_ssrcs: usize,
     pub arrivals: usize,
     pub stream_idle: Duration,
     pub max_conceal: Duration,
-    pub resync: Duration,
-    pub anchor_window: Duration,
     pub replay_window: u32,
     pub dave_retries: usize,
     pub dave_budget: Duration,
     pub decrypt_tolerance: u32,
-    pub recovery_interval: Duration,
-    pub recoveries_per_user: u8,
     pub dave_grace: Duration,
     pub downgrade_expiry: u32,
     pub upgrade_passthrough: u32,
@@ -372,14 +368,10 @@ impl Default for ReceiveTuning {
             arrivals: 2_048,
             stream_idle: Duration::from_secs(30),
             max_conceal: Duration::from_millis(100),
-            resync: Duration::from_secs(1),
-            anchor_window: Duration::from_secs(10),
             replay_window: 4_096,
             dave_retries: 200,
             dave_budget: Duration::from_micros(200),
             decrypt_tolerance: 36,
-            recovery_interval: Duration::from_secs(30),
-            recoveries_per_user: 2,
             dave_grace: Duration::from_secs(10),
             downgrade_expiry: 24,
             upgrade_passthrough: 10,

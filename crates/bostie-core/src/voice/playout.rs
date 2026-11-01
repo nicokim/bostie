@@ -5,11 +5,13 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::ids::UserId;
-use crate::voice::types::{ReceiveTuning, SAMPLE_RATE};
+use crate::voice::types::SAMPLE_RATE;
 
 const RING: usize = 64;
 const MAX_DROPOUT: u16 = 3_000;
 const MAX_MISORDER: u16 = 100;
+const RESYNC: Duration = Duration::from_secs(1);
+const ANCHOR_WINDOW: Duration = Duration::from_secs(10);
 
 const OLDEST: u16 = (RING - 1) as u16;
 const TIMESTAMP_SLACK: u32 = 960;
@@ -91,7 +93,7 @@ impl Stream {
         }
     }
 
-    pub fn insert(&mut self, slot: Slot, check: Check, tuning: &ReceiveTuning) -> bool {
+    pub fn insert(&mut self, slot: Slot, check: Check) -> bool {
         if check == Check::Restart && self.classify(slot.sequence) == Check::Jump {
             self.restart();
         }
@@ -104,11 +106,7 @@ impl Stream {
             timestamp: slot.timestamp,
         };
         match &mut self.anchor {
-            Some(anchor) => anchor.update(
-                mark,
-                to_samples(tuning.anchor_window) / 2,
-                to_samples(tuning.resync),
-            ),
+            Some(anchor) => anchor.update(mark),
             None => self.anchor = Some(Anchor::new(mark)),
         }
         self.last_packet = Some(self.last_packet.map_or(slot.at, |last| last.max(slot.at)));
@@ -260,10 +258,10 @@ impl Anchor {
         }
     }
 
-    fn update(&mut self, mark: Mark, half_window: i64, resync: i64) {
-        if mark.local.saturating_sub(self.mark().due(mark.timestamp)) > resync {
+    fn update(&mut self, mark: Mark) {
+        if mark.local.saturating_sub(self.mark().due(mark.timestamp)) > to_samples(RESYNC) {
             *self = Self::new(mark);
-        } else if mark.local.saturating_sub(self.started) >= half_window {
+        } else if mark.local.saturating_sub(self.started) >= to_samples(ANCHOR_WINDOW) / 2 {
             self.previous = Some(self.current);
             self.current = mark;
             self.started = mark.local;
@@ -456,7 +454,7 @@ mod tests {
 
         fn arrive(&mut self, slot: Slot) -> Check {
             let check = self.stream.check(slot.sequence);
-            self.stream.insert(slot, check, &ReceiveTuning::default());
+            self.stream.insert(slot, check);
             check
         }
 
@@ -657,9 +655,8 @@ mod tests {
             assert_eq!(stream.check(sequence), check, "{sequence}");
         }
         let expected = stream.expected();
-        let tuning = ReceiveTuning::default();
-        assert!(!stream.insert(steady(30), Check::Fresh, &tuning));
-        assert!(!stream.insert(steady(60), Check::Fresh, &tuning));
+        assert!(!stream.insert(steady(30), Check::Fresh));
+        assert!(!stream.insert(steady(60), Check::Fresh));
         assert_eq!(stream.expected(), expected);
     }
 
@@ -694,19 +691,15 @@ mod tests {
 
             let mut held = Player::new(0);
             held.run((0..10).map(steady));
-            let tuning = ReceiveTuning::default();
             let checks: Vec<Check> = (0..6)
                 .map(|offset| held.stream.check(restarted(offset).sequence))
                 .collect();
             assert_eq!(checks[..1], [Check::Jump], "{first}");
             assert_eq!(checks[1..], [Check::Restart; 5], "{first}");
             for offset in 1..6 {
-                assert!(
-                    held.stream
-                        .insert(restarted(offset), Check::Restart, &tuning)
-                );
+                assert!(held.stream.insert(restarted(offset), Check::Restart));
             }
-            assert!(!held.stream.insert(restarted(1), Check::Restart, &tuning));
+            assert!(!held.stream.insert(restarted(1), Check::Restart));
             held.tick(restarted(5).at);
 
             assert_eq!(held.played, restarted_run(6), "{first}");
@@ -802,7 +795,7 @@ mod tests {
         for now in (0..=14).map(|tick| tick * FRAME) {
             for slot in arrivals.iter().filter(|slot| slot.at == now) {
                 let check = stream.check(slot.sequence);
-                stream.insert(slot.clone(), check, &ReceiveTuning::default());
+                stream.insert(slot.clone(), check);
             }
             while let Some(release) = shallow.next(&stream, now, FRAME, MAX_CONCEAL) {
                 shallow_heard.push(out(&release));

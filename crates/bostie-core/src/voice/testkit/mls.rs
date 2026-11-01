@@ -673,7 +673,7 @@ pub struct Call {
     pub executed: Vec<(UserId, Executed)>,
     pub failures: Vec<(UserId, DaveError)>,
     pub remote: Vec<Message>,
-    pub receive: ReceiveTuning,
+    pub(crate) receive: ReceiveTuning,
     channel: ChannelId,
     clients: HashMap<UserId, Dave>,
     remote_users: HashSet<UserId>,
@@ -788,7 +788,7 @@ impl Call {
 
     fn add(&mut self, user: UserId, messages: Vec<Message>) {
         self.enqueue(messages);
-        let mut dave = Dave::new(user, self.channel).with_receive(self.receive);
+        let mut dave = Dave::new(user, self.channel, &self.receive);
         let mut out = Vec::new();
         if let Err(error) = dave.start(self.fake.protocol_version(), &mut out) {
             self.failures.push((user, error));
@@ -865,7 +865,7 @@ mod tests {
         call.join(user(10));
         call.run();
         let remote = user(20);
-        let mut dave = Dave::new(remote, ChannelId::from(CHANNEL));
+        let mut dave = Dave::new(remote, ChannelId::from(CHANNEL), &ReceiveTuning::default());
         let mut out = Vec::new();
         dave.start(1, &mut out).unwrap();
         call.join_remote(remote);

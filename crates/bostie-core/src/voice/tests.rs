@@ -18,8 +18,7 @@ use crate::bell::{self, BellReceiver};
 use crate::voice::codec::FrameEncoder;
 use crate::voice::connection::ConnectionTuning;
 use crate::voice::crypto::Mode;
-use crate::voice::dave::Recovery;
-use crate::voice::dave::{Fault, MlsCall, Outbound, SendMode};
+use crate::voice::dave::{Fault, MlsCall, Outbound, RECOVERY_LIMIT, SendMode};
 use crate::voice::proto::op;
 use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
 use crate::voice::source::tests::fixture;
@@ -62,10 +61,6 @@ fn tuning() -> Tuning {
             ws: Timeouts {
                 connect: Duration::from_secs(1),
                 close: Duration::from_millis(200),
-            },
-            dave: Recovery {
-                limit: 2,
-                window: Duration::from_secs(1),
             },
             receive: ReceiveTuning {
                 hold: WAIT,
@@ -2260,7 +2255,7 @@ async fn too_many_dave_recoveries_end_the_connection() {
     let mut call = dave_call(CHANNEL, &[]);
     harness.in_call(&mut call).await;
 
-    for transition_id in 1..=3_u16 {
+    for transition_id in 1..=u16::try_from(RECOVERY_LIMIT).unwrap() + 1 {
         harness.server.send_dave(DaveOp::Welcome {
             transition_id,
             welcome: Bytes::from_static(b"not a welcome"),

@@ -177,7 +177,7 @@ pub struct Media {
 }
 
 impl Media {
-    pub fn new(
+    pub(crate) fn new(
         guild: GuildId,
         user: UserId,
         channel: ChannelId,
@@ -185,7 +185,7 @@ impl Media {
         stall_after: Duration,
         receive: ReceiveTuning,
     ) -> Self {
-        let dave = Dave::new(user, channel).with_receive(receive);
+        let dave = Dave::new(user, channel, &receive);
         let view = DaveView::of(&dave);
         Self {
             guild,
@@ -947,7 +947,11 @@ mod tests {
         call.run();
         let dave = mem::replace(
             call.dave_mut(UserId::from(BOT)),
-            Dave::new(UserId::from(BOT), ChannelId::from(CHANNEL)),
+            Dave::new(
+                UserId::from(BOT),
+                ChannelId::from(CHANNEL),
+                &ReceiveTuning::default(),
+            ),
         );
         assert_eq!(dave.send_mode(), SendMode::Encrypt);
         rig.media.with_dave(|current| *current = dave);

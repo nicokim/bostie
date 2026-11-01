@@ -30,9 +30,9 @@ pub type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;
 pub type AfterFn = Box<dyn FnMut(Tick, Instant) -> bool + Send>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PacerTuning {
-    pub rebalance_above: Duration,
-    pub rebalance_after: Duration,
+pub(crate) struct PacerTuning {
+    pub(crate) rebalance_above: Duration,
+    pub(crate) rebalance_after: Duration,
 }
 
 impl Default for PacerTuning {
@@ -146,7 +146,7 @@ impl PacerPool {
         Self::tuned(PacerTuning::default())
     }
 
-    pub fn tuned(tuning: PacerTuning) -> Self {
+    fn tuned(tuning: PacerTuning) -> Self {
         Self {
             mode: Mode::Threads(Arc::new(Mutex::new(Vec::new()))),
             placement: Placement {

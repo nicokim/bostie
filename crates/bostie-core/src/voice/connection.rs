@@ -14,7 +14,6 @@ use tracing::debug;
 use super::Shared;
 use super::close::{self, CloseAction};
 use super::crypto::Mode;
-use super::dave::Recovery;
 use super::media::{Media, bump};
 use super::proto;
 use super::receiver::Ended;
@@ -41,7 +40,6 @@ pub(crate) struct ConnectionTuning {
     pub(crate) discovery_interval: Duration,
     pub(crate) stall_after: Duration,
     pub(crate) ws: Timeouts,
-    pub(crate) dave: Recovery,
     pub(crate) receive: ReceiveTuning,
 }
 
@@ -57,7 +55,6 @@ impl Default for ConnectionTuning {
             discovery_interval: Duration::from_secs(1),
             stall_after: Duration::from_secs(2),
             ws: Timeouts::default(),
-            dave: Recovery::default(),
             receive: ReceiveTuning::default(),
         }
     }

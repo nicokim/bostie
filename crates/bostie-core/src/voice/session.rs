@@ -556,11 +556,9 @@ impl<'c> Session<'c> {
             .await?;
         let (user, channel) = (self.conn.user, self.conn.dave_channel());
         let protocol_version = description.dave_protocol_version;
-        let (recovery, receive) = (self.conn.tuning.dave, self.conn.tuning.receive);
+        let receive = self.conn.tuning.receive;
         let start = move || {
-            let mut dave = Dave::new(user, channel)
-                .with_recovery(recovery)
-                .with_receive(receive);
+            let mut dave = Dave::new(user, channel, &receive);
             let mut out = Vec::new();
             dave.start(protocol_version, &mut out).map(|()| (dave, out))
         };

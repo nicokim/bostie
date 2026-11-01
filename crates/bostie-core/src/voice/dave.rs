@@ -66,20 +66,8 @@ pub struct DaveCounters {
     pub decrypt_panics: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Recovery {
-    pub(crate) limit: usize,
-    pub(crate) window: Duration,
-}
-
-impl Default for Recovery {
-    fn default() -> Self {
-        Self {
-            limit: 5,
-            window: Duration::from_secs(60),
-        }
-    }
-}
+pub(crate) const RECOVERY_LIMIT: usize = 5;
+const RECOVERY_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -162,7 +150,6 @@ pub struct Dave {
     pending: HashMap<u16, u16>,
     last_transition: u16,
     recovering: bool,
-    recovery: Recovery,
     recoveries: VecDeque<Instant>,
     dave_grace: Duration,
     downgrade_expiry: u32,
@@ -175,8 +162,7 @@ pub struct Dave {
 }
 
 impl Dave {
-    pub fn new(user: UserId, channel: ChannelId) -> Self {
-        let tuning = ReceiveTuning::default();
+    pub(crate) fn new(user: UserId, channel: ChannelId, tuning: &ReceiveTuning) -> Self {
         Self {
             user,
             channel,
@@ -188,7 +174,6 @@ impl Dave {
             pending: HashMap::new(),
             last_transition: 0,
             recovering: false,
-            recovery: Recovery::default(),
             recoveries: VecDeque::new(),
             dave_grace: tuning.dave_grace,
             downgrade_expiry: tuning.downgrade_expiry,
@@ -198,20 +183,6 @@ impl Dave {
             counters: DaveCounters::default(),
             #[cfg(test)]
             fault: None,
-        }
-    }
-
-    pub(crate) fn with_recovery(mut self, recovery: Recovery) -> Self {
-        self.recovery = recovery;
-        self
-    }
-
-    pub fn with_receive(self, tuning: ReceiveTuning) -> Self {
-        Self {
-            dave_grace: tuning.dave_grace,
-            downgrade_expiry: tuning.downgrade_expiry,
-            upgrade_passthrough: tuning.upgrade_passthrough,
-            ..self
         }
     }
 
@@ -691,15 +662,15 @@ impl Dave {
         while self
             .recoveries
             .front()
-            .is_some_and(|&at| now.saturating_duration_since(at) >= self.recovery.window)
+            .is_some_and(|&at| now.saturating_duration_since(at) >= RECOVERY_WINDOW)
         {
             self.recoveries.pop_front();
         }
         self.recoveries.push_back(now);
-        if self.recoveries.len() > self.recovery.limit {
+        if self.recoveries.len() > RECOVERY_LIMIT {
             return Err(DaveError::RecoveryLimit {
-                limit: self.recovery.limit,
-                window: self.recovery.window,
+                limit: RECOVERY_LIMIT,
+                window: RECOVERY_WINDOW,
             });
         }
         warn!(transition_id, "resetting the DAVE session");
@@ -996,7 +967,7 @@ mod tests {
 
     fn started(protocol_version: u16) -> (Dave, Vec<Outbound>) {
         crate::init_test_tracing();
-        let mut dave = Dave::new(user(BOT), channel());
+        let mut dave = Dave::new(user(BOT), channel(), &ReceiveTuning::default());
         let mut out = Vec::new();
         dave.start(protocol_version, &mut out).unwrap();
         (dave, out)
@@ -1328,7 +1299,6 @@ mod tests {
     #[test]
     fn more_recoveries_than_the_limit_within_the_window_end_the_session() {
         let (mut dave, _) = started(1);
-        let recovery = Recovery::default();
         let now = Instant::now();
         let mut out = Vec::new();
         let corrupt = |transition_id| DaveOp::Welcome {
@@ -1336,11 +1306,11 @@ mod tests {
             welcome: Bytes::from_static(b"not a welcome"),
         };
 
-        for transition_id in 1..=u16::try_from(recovery.limit).unwrap() {
+        for transition_id in 1..=u16::try_from(RECOVERY_LIMIT).unwrap() {
             dave.handle(corrupt(transition_id), now, &mut out).unwrap();
         }
         out.clear();
-        let past_limit = dave.handle(corrupt(9), now + recovery.window / 2, &mut out);
+        let past_limit = dave.handle(corrupt(9), now + RECOVERY_WINDOW / 2, &mut out);
 
         assert!(matches!(past_limit, Err(DaveError::RecoveryLimit { .. })));
         assert!(out.is_empty());
@@ -1358,7 +1328,7 @@ mod tests {
                 welcome: Bytes::from_static(b"not a welcome"),
             };
             dave.handle(welcome, now, &mut out).unwrap();
-            now += Recovery::default().window;
+            now += RECOVERY_WINDOW;
         }
 
         assert_eq!(dave.counters().recoveries, 10);
@@ -1559,7 +1529,7 @@ mod tests {
     #[test]
     fn encrypting_before_a_group_is_not_ready() {
         let (mut alone, _) = started(1);
-        let mut stage = Dave::new(user(BOT), channel());
+        let mut stage = Dave::new(user(BOT), channel(), &ReceiveTuning::default());
         let mut out = Vec::new();
 
         assert_eq!(alone.encrypt(OPUS, &mut out), Err(EncryptFailure::NotReady));

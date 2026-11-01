@@ -41,6 +41,8 @@ const PAYLOAD_CHUNK: usize = 8 * 1024;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 const MIX_SLACK: Duration = Duration::from_millis(100);
 const WARN_EVERY: Duration = Duration::from_secs(1);
+const RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
+const RECOVERIES_PER_USER: u8 = 2;
 
 type Key = (u32, UserId);
 
@@ -325,7 +327,12 @@ struct State {
 }
 
 impl Reception {
-    pub fn new(media: Arc<Media>, info: Arc<Info>, user: UserId, tuning: ReceiveTuning) -> Self {
+    pub(crate) fn new(
+        media: Arc<Media>,
+        info: Arc<Info>,
+        user: UserId,
+        tuning: ReceiveTuning,
+    ) -> Self {
         Self {
             media,
             info,
@@ -909,16 +916,15 @@ impl State {
     }
 
     fn request_recovery(&mut self, now: Instant) {
-        let interval = self.tuning.recovery_interval;
         let due = |last: Option<Instant>| {
-            last.is_none_or(|last| now.saturating_duration_since(last) >= interval)
+            last.is_none_or(|last| now.saturating_duration_since(last) >= RECOVERY_INTERVAL)
         };
         if !due(self.last_request) {
             return;
         }
         let asking = self.streaks.iter_mut().find(|(_, streak)| {
             streak.failures >= self.tuning.decrypt_tolerance
-                && streak.requested < self.tuning.recoveries_per_user
+                && streak.requested < RECOVERIES_PER_USER
                 && due(streak.last_request)
         });
         if let Some((user, streak)) = asking {
@@ -988,7 +994,7 @@ impl State {
             at: at48,
             payload: Some(plain.clone()),
         };
-        if feed.stream.insert(slot, check, &self.tuning) {
+        if feed.stream.insert(slot, check) {
             feed.received = feed.received.saturating_add(1);
             let own = feed.own;
             let played = self.subscribers.values().any(|subscriber| {
@@ -2779,7 +2785,7 @@ mod tests {
     #[test]
     fn a_failure_streak_requests_recoveries_an_interval_apart_and_stops_after_two_per_user() {
         let tolerance = ReceiveTuning::default().decrypt_tolerance;
-        let interval = ReceiveTuning::default().recovery_interval;
+        let interval = RECOVERY_INTERVAL;
         for case in ["garbage", "plaintext", "unknown epoch"] {
             let mut rig = Rig::dave();
             let peers: &[u64] = if case == "garbage" {
