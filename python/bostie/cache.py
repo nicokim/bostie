@@ -101,32 +101,30 @@ class Cache:
             case Ready():
                 self.clear()
                 self.user = event.user
-            case GuildCreate(guild=Guild() as guild):
-                self._add_guild(event, guild)
             case GuildCreate():
-                self._mark_unavailable(event.guild.id)
+                self._create_guild(event)
             case GuildUpdate():
                 self._update_guild(event.guild)
-            case GuildDelete(unavailable=True):
-                self._mark_unavailable(event.guild_id)
             case GuildDelete():
-                self._remove_guild(event.guild_id)
+                self._delete_guild(event)
             case ChannelCreate() | ChannelUpdate() | ThreadCreate() | ThreadUpdate():
                 self._store_channel(event.channel)
             case ChannelDelete():
                 self._remove_channel(event.channel.id)
             case ThreadDelete():
                 self._remove_channel(event.id)
-            case ThreadListSync() if event.guild_id in self._guilds:
-                parents = None if event.channel_ids is None else set(event.channel_ids)
-                self._drop_threads(event.guild_id, parents)
-                for thread in event.threads:
-                    self._store_channel(_in_guild(thread, event.guild_id))
+            case ThreadListSync():
+                self._sync_threads(event)
             case RoleCreate() | RoleUpdate():
                 self._store_role(event.guild_id, event.role)
             case RoleDelete():
-                self._guild_roles.get(event.guild_id, {}).pop(event.role_id, None)
-                self._roles.pop(event.role_id, None)
+                self._remove_role(event.guild_id, event.role_id)
+
+    def _create_guild(self, event: GuildCreate) -> None:
+        if isinstance(event.guild, Guild):
+            self._add_guild(event, event.guild)
+        else:
+            self._mark_unavailable(event.guild.id)
 
     def _add_guild(self, event: GuildCreate, guild: Guild) -> None:
         guild_id = guild.id
@@ -153,6 +151,12 @@ class Cache:
         cached = self._guilds.get(guild_id)
         if cached is not None:
             self._guilds[guild_id] = msgspec.structs.replace(cached, unavailable=True)
+
+    def _delete_guild(self, event: GuildDelete) -> None:
+        if event.unavailable:
+            self._mark_unavailable(event.guild_id)
+        else:
+            self._remove_guild(event.guild_id)
 
     def _remove_guild(self, guild_id: int) -> None:
         self._guilds.pop(guild_id, None)
@@ -196,6 +200,18 @@ class Cache:
         ]:
             del channels[thread.id]
             del self._channels[thread.id]
+
+    def _sync_threads(self, event: ThreadListSync) -> None:
+        if event.guild_id not in self._guilds:
+            return
+        parents = None if event.channel_ids is None else set(event.channel_ids)
+        self._drop_threads(event.guild_id, parents)
+        for thread in event.threads:
+            self._store_channel(_in_guild(thread, event.guild_id))
+
+    def _remove_role(self, guild_id: int, role_id: int) -> None:
+        self._guild_roles.get(guild_id, {}).pop(role_id, None)
+        self._roles.pop(role_id, None)
 
     def _store_role(self, guild_id: int, role: Role) -> None:
         if guild_id in self._guild_roles:
