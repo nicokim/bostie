@@ -462,9 +462,8 @@ impl<'c> Session<'c> {
         let (answer_slot, answers) = watch::channel(None);
         let receiver = {
             let socket = Arc::clone(&socket);
-            let media = Arc::clone(&self.conn.media);
             let mut intake = Intake::new(
-                Arc::clone(&media),
+                Arc::clone(&self.conn.media),
                 Arc::clone(&self.conn.info),
                 Arc::clone(&sender),
                 self.conn.tuning.receive.replay_window,
