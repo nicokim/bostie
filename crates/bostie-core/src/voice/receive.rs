@@ -720,6 +720,7 @@ impl State {
             bump(&media.receive.decrypt_busy);
             return 0;
         };
+        let settling = dave.settling(now);
         let mut retries = self.tuning.dave_retries;
         let mut cut = 0;
         loop {
@@ -736,7 +737,9 @@ impl State {
             }
         }
         self.users_changed = true;
-        self.request_recovery(now);
+        if !settling {
+            self.request_recovery(now);
+        }
         cut
     }
 
@@ -882,10 +885,11 @@ impl State {
                 && due(streak.last_request)
         });
         if let Some((user, streak)) = asking {
+            debug!(%user, failures = streak.failures, "asking for a DAVE recovery after repeated decrypt failures");
+            streak.failures = 0;
             streak.requested = streak.requested.saturating_add(1);
             streak.last_request = Some(now);
             self.last_request = Some(now);
-            debug!(%user, failures = streak.failures, "asking for a DAVE recovery after repeated decrypt failures");
             self.media.recover.notify_one();
         }
     }
@@ -2780,10 +2784,30 @@ mod tests {
             );
             if case == "garbage" {
                 rig.now += interval;
+                let transition = |rig: &Rig, op| {
+                    rig.media
+                        .with_dave(|dave| dave.handle(op, rig.now, &mut Vec::new()))
+                        .unwrap();
+                };
+                transition(
+                    &rig,
+                    DaveOp::PrepareTransition {
+                        transition_id: 9,
+                        protocol_version: 1,
+                    },
+                );
+                let while_settling = send(&mut rig, ALICE, 1, false);
+                transition(&rig, DaveOp::ExecuteTransition { transition_id: 9 });
                 let second = send(&mut rig, ALICE, 1, false);
                 rig.now += interval;
                 let third = send(&mut rig, ALICE, tolerance, false);
-                assert_eq!((second, third), (true, false));
+                let bob = send(&mut rig, BOB, tolerance, false);
+                rig.now += interval;
+                let after_bob_went_quiet = send(&mut rig, ALICE, 1, false);
+                assert_eq!(
+                    (while_settling, second, third, bob, after_bob_went_quiet),
+                    (false, true, false, true, false)
+                );
             }
         }
 
