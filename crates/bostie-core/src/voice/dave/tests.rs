@@ -589,8 +589,15 @@ fn frames_between_commit_and_execute_use_the_old_key() {
     call.run();
     assert_eq!(ready_ids(&call.sent_by(user(BOT))).len(), 1);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
+    let in_flight = call.speak(user(BOT), OPUS);
 
     release(&mut call);
+    let mut heard = Vec::new();
+    call.dave_mut(user(A))
+        .receive(user(BOT), &in_flight, &mut heard)
+        .unwrap();
+
+    assert_eq!(heard, OPUS);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
     assert_eq!(hear(&mut call, BOT, B), OPUS);
 }
