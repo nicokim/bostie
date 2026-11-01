@@ -238,31 +238,127 @@ def test_an_accepted_answer_counts_even_when_its_message_fails_to_decode() -> No
     run_bot(scenario)
 
 
-def test_ephemeral_defaults_to_the_command_setting() -> None:
+ENTER_EPHEMERAL: dict[str, Callable[[Any], Awaitable[object]]] = {
+    "pending": lambda ctx: asyncio.sleep(0),
+    "deferred": lambda ctx: ctx.defer(),
+    "deferred_ephemeral": lambda ctx: ctx.defer(ephemeral=True),
+    "deferred_update": lambda ctx: ctx.defer_update(),
+    "responded": lambda ctx: ctx.respond("first"),
+}
+CALL_EPHEMERAL: dict[str, Callable[[Any, bool | None], Awaitable[object]]] = {
+    "respond": lambda ctx, ephemeral: ctx.respond("hi", ephemeral=ephemeral),
+    "defer": lambda ctx, ephemeral: ctx.defer(ephemeral=ephemeral),
+    "update": lambda ctx, ephemeral: ctx.update("hi", ephemeral=ephemeral),
+    "edit": lambda ctx, ephemeral: ctx.edit("hi", ephemeral=ephemeral),
+    "followup": lambda ctx, ephemeral: ctx.followup("hi", ephemeral=ephemeral),
+}
+
+
+def flagged(request: Recorded) -> bool:
+    body = request.json
+    if request.path.endswith("/callback"):
+        body = body.get("data") or {}
+    return bool(body.get("flags", 0) & EPHEMERAL)
+
+
+@pytest.mark.parametrize(
+    (
+        "kind",
+        "command",
+        "message",
+        "enter",
+        "call",
+        "ephemeral",
+        "sent",
+        "ephemeral_sent",
+        "warned",
+    ),
+    [
+        (Context, True, 0, "pending", "respond", None, CALLBACK_4, True, False),
+        (Context, True, 0, "pending", "respond", False, CALLBACK_4, False, False),
+        (Context, True, 0, "pending", "defer", None, CALLBACK_5, True, False),
+        (Context, False, 0, "pending", "defer", None, CALLBACK_5, False, False),
+        (Context, False, 0, "pending", "defer", True, CALLBACK_5, True, False),
+        (Context, True, 0, "responded", "followup", None, FOLLOWUP, True, False),
+        (Context, True, 0, "responded", "followup", False, FOLLOWUP, False, False),
+        (Context, False, 0, "deferred_ephemeral", "respond", True, EDIT, False, False),
+        (
+            ComponentContext,
+            False,
+            64,
+            "pending",
+            "update",
+            True,
+            CALLBACK_7,
+            False,
+            False,
+        ),
+        (
+            ComponentContext,
+            False,
+            0,
+            "pending",
+            "update",
+            True,
+            CALLBACK_7,
+            False,
+            True,
+        ),
+        (
+            ComponentContext,
+            False,
+            64,
+            "deferred_update",
+            "edit",
+            False,
+            EDIT,
+            False,
+            True,
+        ),
+        (
+            ComponentContext,
+            False,
+            0,
+            "deferred_update",
+            "respond",
+            True,
+            FOLLOWUP,
+            True,
+            False,
+        ),
+    ],
+)
+def test_ephemeral_reaches_new_messages_and_warns_on_edits_that_differ(
+    kind: type[Context | ComponentContext],
+    command: bool,
+    message: int,
+    enter: str,
+    call: str,
+    ephemeral: bool | None,
+    sent: Call,
+    ephemeral_sent: bool,
+    warned: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clicked = payloads.fixture("events/INTERACTION_CREATE.button")["message"]
+
     async def scenario(on: Interactions) -> None:
-        async def secret(ctx: Context) -> None:
-            await ctx.respond("secret")
-            await ctx.followup("also secret")
-            await ctx.followup("public", ephemeral=False)
+        async def handler(ctx: Any) -> None:
+            await ENTER_EPHEMERAL[enter](ctx)
+            start = len(on.fake.requests)
+            await CALL_EPHEMERAL[call](ctx, ephemeral)
+            (request,) = on.fake.requests[start:]
+            assert calls([request]) == [sent]
+            assert flagged(request) is ephemeral_sent
 
-        async def defer(ctx: Context) -> None:
-            await ctx.defer()
-
-        async def defer_ephemerally(ctx: Context) -> None:
-            await ctx.defer(ephemeral=True)
-
-        answer, followup, public_followup = await on.answer(
-            Context, secret, ephemeral=True
+        await on.answer(
+            kind, handler, ephemeral=command, message=clicked | {"flags": message}
         )
-        (deferred,) = await on.answer(Context, defer)
-        (ephemeral_defer,) = await on.answer(Context, defer_ephemerally)
-        assert answer.json["data"]["flags"] == EPHEMERAL
-        assert followup.json["flags"] == EPHEMERAL
-        assert "flags" not in public_followup.json
-        assert deferred.json == {"type": 5}
-        assert ephemeral_defer.json == {"type": 5, "data": {"flags": EPHEMERAL}}
 
-    run_bot(scenario)
+    with caplog.at_level(logging.WARNING, logger="bostie.context"):
+        run_bot(scenario)
+
+    assert any("is ignored because" in r.getMessage() for r in caplog.records) is warned
 
 
 def test_an_ephemeral_flag_that_cannot_apply_logs_one_warning(
@@ -367,54 +463,102 @@ def test_an_expired_interaction_sends_nothing(
     run_bot(scenario)
 
 
-def test_auto_defer_fires_at_receipt_plus_the_delay() -> None:
+async def settle() -> None:
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+async def wait(ctx: Context | ComponentContext) -> None:
+    await settle()
+
+
+async def wait_then_update(ctx: ComponentContext) -> None:
+    await settle()
+    await ctx.update("hi")
+
+
+async def answer_at_once(ctx: Context) -> None:
+    await ctx.respond("hi")
+
+
+async def wait_then_answer(ctx: Context) -> None:
+    await settle()
+    await ctx.respond("hi")
+
+
+async def leave(ctx: Context) -> None:
+    pass
+
+
+DEFERRED_EPHEMERALLY = (*CALLBACK_5, EPHEMERAL)
+ANSWERED_EPHEMERALLY = (*CALLBACK_4, EPHEMERAL)
+FOLLOWED_UP_EPHEMERALLY = (*FOLLOWUP, EPHEMERAL)
+
+
+@pytest.mark.parametrize(
+    ("kind", "ephemeral", "delay", "handler", "sent"),
+    [
+        (Context, False, 0.0, wait, [CALLBACK_5, EDIT]),
+        (Context, True, 0.0, wait, [DEFERRED_EPHEMERALLY, EDIT]),
+        (ComponentContext, False, 0.0, wait_then_update, [CALLBACK_6, EDIT, FOLLOWUP]),
+        (Context, False, 0.0, answer_at_once, [CALLBACK_4, FOLLOWUP]),
+        (Context, False, 0.0, leave, [CALLBACK_4]),
+        (
+            Context,
+            True,
+            60.0,
+            wait_then_answer,
+            [ANSWERED_EPHEMERALLY, FOLLOWED_UP_EPHEMERALLY],
+        ),
+    ],
+)
+def test_auto_defer_fires_once_due_unless_the_handler_answered_or_left(
+    kind: type[Context | ComponentContext],
+    ephemeral: bool,
+    delay: float,
+    handler: Callable[[Any], Awaitable[None]],
+    sent: list[tuple[object, ...]],
+) -> None:
     async def scenario(on: Interactions) -> None:
-        async def handler(ctx: Context) -> None:
-            await asyncio.sleep(0.01)
-            assert on.fake.requests[start:] == []
-            await asyncio.sleep(0.15)
-            assert ctx.state is ResponseState.DEFERRED
+        contexts: list[Context | ComponentContext] = []
+
+        async def handle(ctx: Any) -> None:
+            contexts.append(ctx)
+            await handler(ctx)
 
         start = len(on.fake.requests)
-        (request,) = await on.answer(Context, handler, ephemeral=True)
-        assert request.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+        await on.answer(kind, handle, ephemeral=ephemeral)
+        await settle()
+        await contexts[0].respond("after the handler")
+        requests = on.fake.requests[start:]
+        assert [
+            (*call, EPHEMERAL) if flagged(request) else call
+            for call, request in zip(calls(requests), requests, strict=True)
+        ] == sent
 
-    run_bot(scenario, auto_defer=0.05)
+    run_bot(scenario, auto_defer=delay)
 
 
-def test_a_component_auto_defer_acknowledges_without_a_message() -> None:
+def test_a_failed_auto_defer_expires_the_context_and_names_the_route(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: ComponentContext) -> None:
-            await asyncio.sleep(0.05)
-            assert ctx.state is ResponseState.DEFERRED_UPDATE
+            custom_ids.append(ctx.custom_id)
+            await settle()
+            with pytest.raises(InteractionExpired):
+                await ctx.update("hi")
 
+        on.fake.fail("POST", CALLBACK, 404, {"code": 10062, "message": "dead"})
         assert calls(await on.answer(ComponentContext, handler)) == [CALLBACK_6]
 
-    run_bot(scenario, auto_defer=0.01)
+    custom_ids: list[str] = []
+    with caplog.at_level(logging.WARNING, logger="bostie.context"):
+        run_bot(scenario, auto_defer=0.0)
 
-
-def test_no_auto_defer_after_a_response() -> None:
-    async def scenario(on: Interactions) -> None:
-        async def handler(ctx: Context) -> None:
-            await ctx.respond("fast")
-            await asyncio.sleep(0.1)
-
-        assert calls(await on.answer(Context, handler)) == [CALLBACK_4]
-
-    run_bot(scenario, auto_defer=0.05)
-
-
-def test_no_auto_defer_after_the_handler_finished() -> None:
-    async def scenario(on: Interactions) -> None:
-        async def handler(ctx: Context) -> None:
-            pass
-
-        start = len(on.fake.requests)
-        await on.answer(Context, handler)
-        await asyncio.sleep(0.1)
-        assert on.fake.requests[start:] == []
-
-    run_bot(scenario, auto_defer=0.05)
+    assert [r.getMessage() for r in caplog.records if r.name == "bostie.context"] == [
+        f"automatic defer of component {custom_ids[0]} failed"
+    ]
 
 
 def test_auto_defer_waits_for_a_response_in_flight_and_then_does_nothing() -> None:
@@ -422,30 +566,30 @@ def test_auto_defer_waits_for_a_response_in_flight_and_then_does_nothing() -> No
         async def handler(ctx: Context) -> None:
             release = on.fake.hold("POST", CALLBACK)
             answer = asyncio.create_task(ctx.respond("slow"))
-            await asyncio.sleep(0.05)
+            await settle()
             release.set()
             await answer
-            await asyncio.sleep(0.01)
+            await settle()
 
         assert calls(await on.answer(Context, handler)) == [CALLBACK_4]
 
-    run_bot(scenario, auto_defer=0.01)
+    run_bot(scenario, auto_defer=0.0)
 
 
 def test_a_response_waits_for_an_auto_defer_in_flight_and_edits_it() -> None:
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: Context) -> None:
             release = on.fake.hold("POST", CALLBACK)
-            await asyncio.sleep(0.05)
+            await settle()
             answer = asyncio.create_task(ctx.respond("after the defer"))
-            await asyncio.sleep(0.01)
+            await settle()
             release.set()
             await answer
             assert ctx.state is ResponseState.RESPONDED
 
         assert calls(await on.answer(Context, handler)) == [CALLBACK_5, EDIT]
 
-    run_bot(scenario, auto_defer=0.01)
+    run_bot(scenario, auto_defer=0.0)
 
 
 @pytest.mark.parametrize(("status", "code"), [(404, 10062), (404, 10015), (401, 50027)])
@@ -497,19 +641,6 @@ def test_an_unknown_follow_up_message_keeps_the_context_alive() -> None:
         assert calls(requests) == [CALLBACK_4, FOLLOWUP, FOLLOWUP]
 
     run_bot(scenario)
-
-
-def test_a_failed_auto_defer_on_a_dead_token_stops_the_answer() -> None:
-    async def scenario(on: Interactions) -> None:
-        async def handler(ctx: Context) -> None:
-            on.fake.fail("POST", CALLBACK, 404, {"code": 10062, "message": "dead"})
-            await asyncio.sleep(0.05)
-            with pytest.raises(InteractionExpired):
-                await ctx.respond("late")
-
-        assert calls(await on.answer(Context, handler)) == [CALLBACK_5]
-
-    run_bot(scenario, auto_defer=0.01)
 
 
 def test_flags_reach_every_answer_and_ephemeral_adds_its_bit() -> None:
