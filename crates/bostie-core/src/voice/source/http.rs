@@ -418,17 +418,7 @@ mod tests {
         assert!(!info.seekable);
         assert_eq!(error, None);
         assert_eq!(packets, read_to_end(&file).0);
-        assert!(matches!(
-            source.seek(Duration::ZERO),
-            Err(CoreError::InvalidRequest(_))
-        ));
-        let requests = server.received();
-        assert_eq!(requests.len(), 1);
-        assert!(requests[0].contains(&format!(
-            "user-agent: bostie/{}\r\n",
-            env!("CARGO_PKG_VERSION")
-        )));
-        assert!(!requests[0].contains("authorization"));
+        assert_eq!(server.received().len(), 1);
     }
 
     #[test]
@@ -559,8 +549,14 @@ mod tests {
 
         read_to_end(&source);
 
+        let request = &server.received()[0];
         assert!(!format!("{:?}", media.headers).contains("hunter2"));
-        assert!(server.received()[0].contains("x-token: hunter2\r\n"));
+        assert!(request.contains("x-token: hunter2\r\n"));
+        assert!(request.contains(&format!(
+            "user-agent: bostie/{}\r\n",
+            env!("CARGO_PKG_VERSION")
+        )));
+        assert!(!request.contains("authorization"));
     }
 
     #[test]

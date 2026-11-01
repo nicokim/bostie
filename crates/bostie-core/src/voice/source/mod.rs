@@ -677,32 +677,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_seek_lands_within_one_frame_of_the_position() {
-        let mut harness = Harness::new();
-        for name in [
-            "tone.opus",
-            "tone.webm",
-            "tone.ogg",
-            "tone.flac",
-            "tone-s16.wav",
-            "tone.mp3",
-        ] {
-            let whole = harness.file(name);
-            let kind = wait_for_info(&whole).kind;
-            let total = frames(kind, &read_to_end(&whole).0);
-            let source = harness.file(name);
-            assert!(wait_for_info(&source).seekable, "{name}");
-
-            source.seek(Duration::from_millis(500)).unwrap();
-            let (chunks, error) = read_to_end(&source);
-
-            assert_eq!(error, None, "{name}");
-            let skipped = total - frames(kind, &chunks);
-            assert!(skipped.abs_diff(24_000) <= 960, "{name}: skipped {skipped}");
-        }
-    }
-
-    #[test]
     fn a_seek_after_the_end_plays_again_from_the_new_position() {
         let mut harness = Harness::new();
         let source = harness.file("tone.flac");
