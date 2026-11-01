@@ -241,6 +241,7 @@ pub(crate) fn versions() -> HashMap<&'static str, String> {
     bostie_core::versions().into_iter().collect()
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Choice<T>(pub(crate) T);
 
 pub(crate) trait Choices: Copy + 'static {
