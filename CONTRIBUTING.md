@@ -87,7 +87,7 @@ def test_ping_answers_pong() -> None:
 
 Test what a user could notice: a return value, an event, a packet sent, an error raised. Log text and call order count only when they are the feature. Anything mypy, stubtest or clippy already catches needs no test.
 
-Each behaviour gets one test, at the lowest layer that shows it. Codecs, crypto and state machines have a `mod tests` at the bottom of their Rust file. Python tests cover what the Python layer adds. The end-to-end tests in `tests/test_bot_voice.py` and `crates/bostie-core/src/voice/tests.rs` are there to prove the parts are connected, not to repeat the unit tests. When two tests differ only in their inputs, make them one `pytest.mark.parametrize` table or one loop over cases.
+Each behaviour gets one test, at the lowest layer that shows it. Codecs, crypto and state machines have a `mod tests` at the bottom of their Rust file, or in `<module>/tests.rs` when the file is long. Python tests cover what the Python layer adds. The end-to-end tests in `tests/test_bot_voice.py` and `crates/bostie-core/src/voice/tests.rs` are there to prove the parts are connected, not to repeat the unit tests. When two tests differ only in their inputs, make them one `pytest.mark.parametrize` table or one loop over cases.
 
 Parsers and crypto get a round trip, a known-answer vector when one exists, and a malformed input that comes back as an error instead of a panic. Wire formats get one fixture per payload under `tests/fixtures`, taken from Discord's documentation. In `crates/bostie-core/src/voice/testdata`, `media/generate.sh` rebuilds the audio fixtures, byte for byte with ffmpeg 7.1.1, and `uv run vectors.py` prints the transport encryption vectors.
 
