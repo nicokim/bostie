@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use bostie_core::voice::types::{
     Application, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall, SampleFormat,
@@ -16,7 +16,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::{Error, Result};
+use crate::{Error, Result, seconds};
 
 #[pyclass(frozen, name = "Sink", module = "bostie._native")]
 pub(crate) struct NativeSink(pub(crate) Arc<Sink>);
@@ -307,11 +307,6 @@ pub(crate) fn receive_stall(stall: &str) -> Result<ReceiveStall> {
 
 pub(crate) fn users(ids: Vec<u64>) -> HashSet<UserId> {
     ids.into_iter().map(UserId::from).collect()
-}
-
-pub(crate) fn seconds(name: &str, value: f64) -> Result<Duration> {
-    Duration::try_from_secs_f64(value)
-        .map_err(|error| CoreError::InvalidRequest(format!("{name}: {error}")).into())
 }
 
 fn received_item(

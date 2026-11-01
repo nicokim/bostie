@@ -3,6 +3,7 @@ mod voice;
 use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{ConnectRequest, DisconnectReason, ReceiveOptions, SourceSpec};
@@ -55,7 +56,7 @@ impl NativeCore {
     }
 
     fn gateway_identify_limit(&self, remaining: u32, total: u32, reset_after: f64) -> Result<()> {
-        let reset_after = voice::seconds("reset_after", reset_after)?;
+        let reset_after = seconds("reset_after", reset_after)?;
         Ok(self.0.gateway_identify_limit(IdentifyLimit {
             remaining,
             total,
@@ -138,8 +139,8 @@ impl NativeCore {
             user: UserId::from(user_id),
             self_mute,
             self_deaf,
-            timeout: voice::seconds("timeout", timeout)?,
-            server_change_delay: voice::seconds("server_change_delay", server_change_delay)?,
+            timeout: seconds("timeout", timeout)?,
+            server_change_delay: seconds("server_change_delay", server_change_delay)?,
             encoder: voice::encoder_settings(bitrate, application, fec, packet_loss, complexity)?,
             speaking,
         };
@@ -274,8 +275,8 @@ impl NativeCore {
             users: users.map(voice::users),
             exclude: voice::users(exclude),
             include_self,
-            buffer: voice::seconds("buffer", buffer)?,
-            jitter: voice::seconds("jitter", jitter)?,
+            buffer: seconds("buffer", buffer)?,
+            jitter: seconds("jitter", jitter)?,
             markers,
             mix,
             overflow: voice::overflow(overflow)?,
@@ -288,7 +289,7 @@ impl NativeCore {
     }
 
     fn voice_speech_hangover(&self, guild_id: u64, seconds: f64) -> Result<()> {
-        let hangover = voice::seconds("speech_hangover", seconds)?;
+        let hangover = crate::seconds("speech_hangover", seconds)?;
         Ok(self
             .voice()?
             .set_speech_hangover(GuildId::from(guild_id), hangover)?)
@@ -510,6 +511,11 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
             (intern!(py, "voice_deaf"), u64::from(guild), deaf).into_bound_py_any(py)
         }
     }
+}
+
+fn seconds(name: &str, value: f64) -> Result<Duration> {
+    Duration::try_from_secs_f64(value)
+        .map_err(|error| CoreError::InvalidRequest(format!("{name}: {error}")).into())
 }
 
 fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
