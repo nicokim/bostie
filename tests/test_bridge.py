@@ -295,6 +295,28 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
     assert failures == {(logging.ERROR, "handler exploded")}
 
 
+def test_rust_logs_reach_the_python_logger_at_their_level(
+    run: Runner, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def main() -> None:
+        async with (
+            FakeDiscord() as fake,
+            Bridge(fake.token, fake.api_url, ignore, global_limit=50) as running,
+        ):
+            fake.rate_limit("GET", "/users/@me", scope="user", retry_after=0)
+            assert (await me(running))[0] == 200
+
+    with caplog.at_level(logging.DEBUG, logger="bostie.rest"):
+        run(main())
+
+    retries = [
+        record.levelno
+        for record in caplog.records
+        if record.name == "bostie.rest" and record.getMessage().startswith("retrying ")
+    ]
+    assert retries == [logging.DEBUG]
+
+
 def test_rejects_use_from_another_loop(run: Runner) -> None:
     async def main() -> None:
         async with bridge() as running:

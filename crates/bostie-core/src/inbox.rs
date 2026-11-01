@@ -1,10 +1,12 @@
 use std::mem;
 use std::pin::pin;
+use std::sync::Weak;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
+use tracing::Level;
 
 use crate::bell::Bell;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
@@ -118,6 +120,11 @@ pub enum Delivery {
         guild: GuildId,
         deaf: bool,
     },
+    Log {
+        level: Level,
+        logger: &'static str,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +143,27 @@ impl FailureKind {
             Self::RequestBudget => "request_budget",
             Self::Bug => "bug",
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct LogSink(Weak<Inbox>);
+
+impl LogSink {
+    pub(crate) fn new(inbox: Weak<Inbox>) -> Self {
+        Self(inbox)
+    }
+
+    pub fn push(&self, level: Level, logger: &'static str, message: String) -> Result<(), String> {
+        let Some(inbox) = self.0.upgrade() else {
+            return Err(message);
+        };
+        inbox.push(Delivery::Log {
+            level,
+            logger,
+            message,
+        });
+        Ok(())
     }
 }
 

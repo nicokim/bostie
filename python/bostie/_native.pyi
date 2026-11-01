@@ -6,6 +6,7 @@ __all__ = [
     "DECODE_RATES",
     "DIRECTIONS",
     "DISCONNECT_REASONS",
+    "LOGGERS",
     "MAX_BITRATE",
     "MAX_BUFFER",
     "MAX_COMPLEXITY",
@@ -31,6 +32,7 @@ __all__ = [
     "Receiver",
     "Sink",
     "Source",
+    "log_levels",
     "versions",
 ]
 
@@ -58,6 +60,7 @@ VOICE_STATES: Final[list[str]]
 DISCONNECT_REASONS: Final[list[str]]
 DIRECTIONS: Final[list[str]]
 CLOSED_REASONS: Final[list[str]]
+LOGGERS: Final[list[str]]
 
 type FailureKind = Literal["transport", "invalid_token", "request_budget", "bug"]
 type VoiceStateName = Literal[
@@ -115,6 +118,7 @@ type VoiceSpeechDelivery = tuple[
     Literal["voice_speech"], int, int, int, bool, float, float
 ]
 type VoiceDeafDelivery = tuple[Literal["voice_deaf"], int, bool]
+type LogDelivery = tuple[Literal["log"], int, str, str]
 type Delivery = (
     ResponseDelivery
     | FailureDelivery
@@ -136,6 +140,7 @@ type Delivery = (
     | VoiceMarkerDelivery
     | VoiceSpeechDelivery
     | VoiceDeafDelivery
+    | LogDelivery
 )
 
 type FrameItem = tuple[
@@ -316,3 +321,4 @@ class OpusEncoder:
     def flush(self) -> list[bytes]: ...
 
 def versions() -> dict[str, str]: ...
+def log_levels(levels: list[int]) -> None: ...

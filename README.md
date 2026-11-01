@@ -185,6 +185,7 @@ bot.run()
 - `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, speaking flags, sink buffer, stall policy and stage role. Each call can override them.
 - Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`. A connection asks for its role each time it enters a stage channel.
 - Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
+- What the Rust core logs, such as a DAVE session reset or a dropped frame, goes to Python `logging` under `bostie.voice`, `bostie.gateway` and `bostie.rest`. The core reads those loggers' levels when the bot starts, and levels that are off cost nothing.
 
 ### Text to speech
 

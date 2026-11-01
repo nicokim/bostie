@@ -59,6 +59,9 @@ class Bridge:
         if self._loop is not None:
             raise RuntimeError("a bridge can only be started once")
         self._loop = asyncio.get_running_loop()
+        _native.log_levels(
+            [logging.getLogger(name).getEffectiveLevel() for name in _native.LOGGERS]
+        )
         try:
             self._loop.add_reader(self._bell, self._on_bell)
         except NotImplementedError:
@@ -160,6 +163,8 @@ class Bridge:
                     self._resolve(ticket, (status, body))
                 case ("failure", ticket, kind, detail):
                     self._reject(ticket, FAILURE_ERRORS[kind](detail))
+                case ("log", level, name, message):
+                    logging.getLogger(name).log(level, message)
                 case _:
                     try:
                         self._on_gateway(delivery, received)

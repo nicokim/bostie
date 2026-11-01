@@ -22,7 +22,7 @@ pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
 pub use crate::gateway::IdentifyLimit;
 pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
-pub use crate::inbox::{Delivery, FailureKind};
+pub use crate::inbox::{Delivery, FailureKind, LogSink};
 pub use crate::rest::RestRequest;
 
 use crate::gateway::Gateway;
@@ -193,6 +193,10 @@ impl Core {
     pub fn voice(&self) -> Result<&Voice, CoreError> {
         self.owner.check()?;
         Ok(&self.voice)
+    }
+
+    pub fn log_sink(&self) -> LogSink {
+        LogSink::new(Arc::downgrade(&self.inbox))
     }
 
     pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {

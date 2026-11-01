@@ -1,5 +1,6 @@
 #![expect(clippy::needless_pass_by_value)]
 
+mod log;
 mod voice;
 
 use std::collections::HashMap;
@@ -45,6 +46,7 @@ impl NativeCore {
         global_limit: NonZeroU16,
     ) -> Result<(Self, RawBellHandle)> {
         let (core, bell) = Core::new(token, api_url, global_limit)?;
+        log::register(core.log_sink());
         Ok((Self(core), bell.into_raw()))
     }
 
@@ -558,6 +560,17 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         Delivery::VoiceDeaf { guild, deaf } => {
             (intern!(py, "voice_deaf"), u64::from(guild), deaf).into_bound_py_any(py)
         }
+        Delivery::Log {
+            level,
+            logger,
+            message,
+        } => (
+            intern!(py, "log"),
+            log::python_level(level),
+            logger,
+            message,
+        )
+            .into_bound_py_any(py),
     }
 }
 
@@ -652,6 +665,13 @@ mod _native {
     use super::NativeCore;
     #[pymodule_export]
     use super::voice::{NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions};
+    #[pymodule_export]
+    const LOGGERS: [&str; 4] = super::log::LOGGERS;
+
+    #[pyfunction]
+    fn log_levels(levels: [i32; 4]) {
+        super::log::set_levels(levels);
+    }
     use super::voice::{ReceiveKind, SinkKind, names};
 
     #[pymodule_init]
