@@ -371,7 +371,7 @@ impl Harness {
         }
     }
 
-    async fn until_holding(&mut self) {
+    async fn until_holding(&self) {
         let deadline = Instant::now() + WAIT;
         loop {
             let deliveries = self.inbox.drain();

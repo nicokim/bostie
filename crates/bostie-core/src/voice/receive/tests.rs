@@ -367,7 +367,7 @@ impl Rig {
             .collect()
     }
 
-    fn group(&mut self, peers: &[u64]) -> Call {
+    fn group(&self, peers: &[u64]) -> Call {
         let mut call = Call::new(ChannelId::from(CHANNEL), 1);
         call.now = self.now;
         for &peer in peers {

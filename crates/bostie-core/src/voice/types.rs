@@ -112,7 +112,7 @@ pub enum Application {
     LowDelay,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncoderSettings {
     pub bitrate: u32,
     pub application: Application,

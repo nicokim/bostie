@@ -121,7 +121,8 @@ impl Core {
 
     pub fn cancel(&self, ticket: Ticket) -> Result<(), CoreError> {
         self.owner.check()?;
-        if let Some(task) = self.tasks.lock().running.remove(&ticket) {
+        let task = self.tasks.lock().running.remove(&ticket);
+        if let Some(task) = task {
             task.abort();
         }
         Ok(())

@@ -107,6 +107,17 @@ unseparated_literal_suffix = "warn"
 unused_result_ok = "warn"
 unwrap_used = "deny"
 verbose_file_reads = "warn"
+branches_sharing_code = "warn"
+collection_is_never_read = "warn"
+debug_assert_with_mut_call = "warn"
+derive_partial_eq_without_eq = "warn"
+needless_pass_by_ref_mut = "warn"
+or_fun_call = "warn"
+redundant_clone = "warn"
+significant_drop_in_scrutinee = "warn"
+unused_peekable = "warn"
+use_self = "warn"
+useless_let_if_seq = "warn"
 
 [profile.dev.package."*"]
 opt-level = 2

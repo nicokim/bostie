@@ -236,7 +236,7 @@ fn deliver(
 impl Worker {
     fn spawn(
         index: usize,
-        pool: &Arc<Mutex<Vec<Worker>>>,
+        pool: &Arc<Mutex<Vec<Self>>>,
         placement: Placement,
     ) -> Result<Self, CoreError> {
         let (sender, receiver) = mpsc::channel();
@@ -684,17 +684,14 @@ mod tests {
     #[test]
     fn a_lane_past_the_thread_capacity_spawns_a_second_thread() {
         let pool = PacerPool::new();
-        let mut receivers = Vec::new();
-
-        let placed: Vec<usize> = (0..=LANES_PER_THREAD)
+        let (placed, _receivers): (Vec<usize>, Vec<_>) = (0..=LANES_PER_THREAD)
             .map(|_| {
                 let (lane, receiver) = recorder();
                 let thread = assign(&pool, lane);
                 take(&receiver, 1);
-                receivers.push(receiver);
-                thread
+                (thread, receiver)
             })
-            .collect();
+            .unzip();
 
         assert_eq!(placed, [vec![0; LANES_PER_THREAD], vec![1]].concat());
         assert_eq!(threads(&pool).len(), 2);
@@ -789,7 +786,8 @@ mod tests {
             }
 
             fn sleep_until(&self, deadline: Instant) {
-                if let Some((sender, assignment)) = self.handover.lock().take() {
+                let handed = self.handover.lock().take();
+                if let Some((sender, assignment)) = handed {
                     sender.send(assignment).unwrap();
                 }
                 self.clock.sleep_until(deadline);

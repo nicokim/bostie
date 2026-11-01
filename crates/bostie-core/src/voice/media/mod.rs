@@ -454,16 +454,17 @@ impl Lane {
     fn send(&mut self, transport: &Transport, now: Instant) {
         let media;
         let mut mode = self.media.gate();
-        let mut dave = None;
-        if mode == SendMode::Encrypt {
+        let dave = if mode == SendMode::Encrypt {
             media = Arc::clone(&self.media);
             let Some(guard) = media.dave.try_lock() else {
                 self.hold(now);
                 return;
             };
             mode = guard.send_mode();
-            dave = (mode == SendMode::Encrypt).then_some(guard);
-        }
+            (mode == SendMode::Encrypt).then_some(guard)
+        } else {
+            None
+        };
         match mode {
             SendMode::Hold => self.hold(now),
             SendMode::Discard => self.discard(),

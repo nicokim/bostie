@@ -142,7 +142,7 @@ impl Receiver {
     pub fn queued(&self) -> Result<Duration, CoreError> {
         self.owner.check()?;
         let queue = self.queue.lock();
-        let oldest = queue.stale_markers.first().or(queue.items.front());
+        let oldest = queue.stale_markers.first().or_else(|| queue.items.front());
         Ok(oldest.map_or(Duration::ZERO, |(queued, _)| queued.elapsed()))
     }
 

@@ -2621,7 +2621,7 @@ impl Harness {
         self.say(ssrc, sequence, &frame);
     }
 
-    async fn hear(&mut self, receiver: &Receiver, count: usize) -> Vec<Item> {
+    async fn hear(&self, receiver: &Receiver, count: usize) -> Vec<Item> {
         let deadline = Instant::now() + WAIT;
         let mut items = Vec::new();
         while frames(&items).len() < count {

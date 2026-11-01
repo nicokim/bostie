@@ -139,7 +139,7 @@ impl Header {
         };
         let &[first, second, s0, s1, t0, t1, t2, t3, r0, r1, r2, r3] = packet
             .first_chunk::<HEADER_LEN>()
-            .ok_or(truncated(HEADER_LEN))?;
+            .ok_or_else(|| truncated(HEADER_LEN))?;
         if first >> 6 != VERSION {
             return Err(RtpError::Version(first >> 6));
         }
@@ -155,7 +155,7 @@ impl Header {
             let &[p0, p1, w0, w1] = packet
                 .get(csrc_end..)
                 .and_then(<[u8]>::first_chunk::<EXTENSION_PREAMBLE_LEN>)
-                .ok_or(truncated(needed))?;
+                .ok_or_else(|| truncated(needed))?;
             Some(Extension {
                 profile: u16::from_be_bytes([p0, p1]),
                 words: u16::from_be_bytes([w0, w1]),

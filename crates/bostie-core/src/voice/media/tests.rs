@@ -118,7 +118,7 @@ impl Rig {
         });
     }
 
-    fn plain(&mut self) {
+    fn plain(&self) {
         self.media.with_dave(|dave| {
             let mut out = Vec::new();
             dave.start(0, &mut out).unwrap();
@@ -202,7 +202,7 @@ fn stalls(deliveries: &[Delivery]) -> Vec<(bool, Duration)> {
         .collect()
 }
 
-fn encrypting(rig: &mut Rig) -> Call {
+fn encrypting(rig: &Rig) -> Call {
     let mut call = Call::new(ChannelId::from(CHANNEL), 1);
     call.join(UserId::from(BOT));
     call.run();
@@ -322,7 +322,7 @@ fn new_audio_cancels_a_running_silence_tail() {
 fn an_encrypting_lane_sends_dave_frames_and_an_encoded_silence_tail() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
-    let mut call = encrypting(&mut rig);
+    let mut call = encrypting(&rig);
     let sink = rig.sink(SinkFormat::Opus, StallPolicy::Hold);
     let sent = opus_packets(2);
     for packet in &sent {
@@ -478,7 +478,7 @@ fn a_frame_dave_cannot_encrypt_is_dropped_and_never_sent_plain() {
 fn a_busy_dave_lock_holds_the_tick_and_keeps_the_audio() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
-    let _call = encrypting(&mut rig);
+    let _call = encrypting(&rig);
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 3)).unwrap();
 
@@ -686,7 +686,7 @@ fn include_self_tees_exactly_the_packets_sent() {
 
     let mut rig = Rig::new();
     rig.connect(&KEY);
-    let mut call = encrypting(&mut rig);
+    let mut call = encrypting(&rig);
     rig.media.self_receivers.store(1, Ordering::Relaxed);
     let sink = rig.sink(SinkFormat::Opus, StallPolicy::Hold);
     let opus = opus_packets(2);

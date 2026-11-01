@@ -238,7 +238,7 @@ fn binary(message: &Bytes) -> Result<Inbound, ProtoError> {
         message
             .first_chunk::<TRANSITION_HEADER>()
             .map(|&[.., high, low]| u16::from_be_bytes([high, low]))
-            .ok_or(truncated(TRANSITION_HEADER))
+            .ok_or_else(|| truncated(TRANSITION_HEADER))
     };
     let dave = match code {
         op::DAVE_MLS_EXTERNAL_SENDER => DaveOp::ExternalSender(body(BINARY_HEADER)?),

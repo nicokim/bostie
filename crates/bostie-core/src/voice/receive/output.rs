@@ -400,7 +400,7 @@ impl Output {
         release: Release,
         ssrc: u32,
         track: &mut Track,
-        feed: &mut Feed,
+        feed: &Feed,
         context: &mut Context<'_>,
     ) {
         let user = feed.stream.user();
@@ -659,7 +659,7 @@ impl Output {
                 .unsigned_abs();
             let offset = *mix
                 .next
-                .get_or_insert(anchor.saturating_sub(anchor % FRAME_OFFSETS));
+                .get_or_insert_with(|| anchor.saturating_sub(anchor % FRAME_OFFSETS));
             mix.sum.clear();
             mix.sum.resize(mix.frame.get(), 0.0);
             let mut lost = false;

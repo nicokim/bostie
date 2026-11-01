@@ -422,7 +422,7 @@ impl Dave {
                 let protocol_version = self
                     .pending
                     .remove(&transition_id)
-                    .unwrap_or(self.version.get());
+                    .unwrap_or_else(|| self.version.get());
                 Ok(Some(self.executed(transition_id, protocol_version, now)))
             }
             Ok(false) | Err(Failure::NoSession) => {
@@ -572,26 +572,18 @@ impl Dave {
                     .is_some_and(|users| users.contains(&own))
             }))
         }) {
-            Ok(Some(kept)) => {
-                if kept {
-                    return self.prepare(transition_id, self.version.get(), now, out);
-                }
+            Ok(Some(true)) => return self.prepare(transition_id, self.version.get(), now, out),
+            Ok(Some(false)) => {
                 warn!(
                     transition_id,
                     "a DAVE commit removed this client from its group"
                 );
                 self.recover(transition_id, now, out)?;
-                Ok(None)
             }
-            Ok(None) | Err(Failure::NoSession) => {
-                debug!(transition_id, "DAVE commit ignored");
-                Ok(None)
-            }
-            Err(failure) => {
-                self.failed(MlsCall::Commit, &failure, transition_id, now, out)?;
-                Ok(None)
-            }
+            Ok(None) | Err(Failure::NoSession) => debug!(transition_id, "DAVE commit ignored"),
+            Err(failure) => self.failed(MlsCall::Commit, &failure, transition_id, now, out)?,
         }
+        Ok(None)
     }
 
     fn process_welcome(
