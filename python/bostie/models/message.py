@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict, Unpack
 
 import msgspec
 
@@ -196,23 +196,44 @@ def in_guild(message: Message, guild_id: int | None) -> Message:
     return message
 
 
+class MessageParts(TypedDict, total=False):
+    """The parts of a message to send; a part not given is left out."""
+
+    embeds: Sequence[Embed | Mapping[str, Any]]
+    components: Sequence[Component | Mapping[str, Any]]
+    files: Sequence[File]
+    allowed_mentions: AllowedMentions
+    flags: MessageFlags
+    tts: bool
+
+
+class EditParts(MessageParts, total=False):
+    """The parts of a message to edit; with files or attachments, only these stay."""
+
+    attachments: Sequence[Attachment | int]
+
+
+EDIT_PARTS = EditParts.__optional_keys__
+
+
 def build_message(
     content: str | None = None,
     *,
-    embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-    components: Sequence[Component | Mapping[str, Any]] | None = None,
-    files: Sequence[File] = (),
-    attachments: Sequence[Attachment | int] = (),
-    allowed_mentions: AllowedMentions | Mapping[str, Any] | None = None,
-    flags: int | None = None,
-    tts: bool | None = None,
     reply_to: int | None = None,
+    **parts: Unpack[EditParts],
 ) -> tuple[dict[str, Any], Sequence[File]]:
     """Build the JSON body of a message to send or edit; only given parts are set.
 
     V2 components set IS_COMPONENTS_V2 and clear content and embeds, and with `files`
     or `attachments` an edit keeps only the listed `attachments`.
     """
+    unknown = parts.keys() - EDIT_PARTS
+    if unknown:
+        raise TypeError(f"unexpected message parts: {', '.join(sorted(unknown))}")
+    embeds = parts.get("embeds")
+    components = parts.get("components")
+    files = parts.get("files", ())
+    flags = parts.get("flags")
     components_json = None
     if components is not None:
         components_json = [
@@ -220,7 +241,7 @@ def build_message(
             for component in components
         ]
         if any(_type_of(component) in V2_COMPONENT_TYPES for component in components):
-            flags = (flags or 0) | MessageFlags.IS_COMPONENTS_V2
+            flags = MessageFlags.IS_COMPONENTS_V2 | (flags or 0)
     components_v2 = bool((flags or 0) & MessageFlags.IS_COMPONENTS_V2)
     if components_v2 and (content or embeds):
         raise ValueError(
@@ -234,19 +255,19 @@ def build_message(
     )
     attachment_list = [
         {"id": attachment if isinstance(attachment, int) else attachment.id}
-        for attachment in attachments
+        for attachment in parts.get("attachments", ())
     ] + [_attachment(index, file) for index, file in enumerate(files)]
-    parts: dict[str, Any] = {
+    fields: dict[str, Any] = {
         "content": content,
         "embeds": embeds,
         "components": components_json,
-        "allowed_mentions": allowed_mentions,
+        "allowed_mentions": parts.get("allowed_mentions"),
         "flags": flags,
-        "tts": tts,
+        "tts": parts.get("tts"),
         "message_reference": reference,
         "attachments": attachment_list or None,
     }
-    body = {key: value for key, value in parts.items() if value is not None}
+    body = {key: value for key, value in fields.items() if value is not None}
     if components_v2:
         body |= {"content": None, "embeds": []}
     return body, files

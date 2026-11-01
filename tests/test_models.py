@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import msgspec
 import pytest
@@ -319,6 +320,9 @@ def test_build_message_sets_only_the_given_parts() -> None:
         {"tts": False, "flags": MessageFlags.SUPPRESS_EMBEDS},
         (),
     )
+    misspelled: dict[str, Any] = {"embed": Embed(title="x")}
+    with pytest.raises(TypeError, match="unexpected message parts: embed"):
+        build_message(**misspelled)
 
 
 def test_build_message_lists_files_as_attachments() -> None:

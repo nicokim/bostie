@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, cast
+from typing import Any, Unpack, cast
 
 import msgspec
 
@@ -41,21 +41,19 @@ from bostie.events import (
     Resumed,
     decode_event,
 )
-from bostie.file import File
 from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import (
     AllowedMentions,
-    Attachment,
     Channel,
-    Component,
-    Embed,
+    EditParts,
     Guild,
     Interaction,
     InteractionData,
     InteractionDataOption,
     Member,
     Message,
+    MessageParts,
     User,
     build_message,
     decode,
@@ -289,27 +287,12 @@ class Bot(Router):
         channel_id: int,
         content: str | None = None,
         *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
-        allowed_mentions: AllowedMentions | None = None,
-        flags: int | None = None,
-        tts: bool | None = None,
         reply_to: int | None = None,
+        **parts: Unpack[MessageParts],
     ) -> Message:
         """Send a message; `reply_to` takes the id of a message in the same channel."""
-        body, files = build_message(
-            content,
-            embeds=embeds,
-            components=components,
-            files=files,
-            allowed_mentions=self._allowed_mentions
-            if allowed_mentions is None
-            else allowed_mentions,
-            flags=flags,
-            tts=tts,
-            reply_to=reply_to,
-        )
+        parts.setdefault("allowed_mentions", self._allowed_mentions)
+        body, files = build_message(content, reply_to=reply_to, **parts)
         data = await self.http._request(
             "POST",
             "/channels/{channel_id}/messages",
@@ -324,29 +307,14 @@ class Bot(Router):
         channel_id: int,
         message_id: int,
         content: str | None = None,
-        *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
-        attachments: Sequence[Attachment | int] = (),
-        allowed_mentions: AllowedMentions | None = None,
-        flags: int | None = None,
+        **parts: Unpack[EditParts],
     ) -> Message:
         """Edit a message; only the parts passed change.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = build_message(
-            content,
-            embeds=embeds,
-            components=components,
-            files=files,
-            attachments=attachments,
-            allowed_mentions=self._allowed_mentions
-            if allowed_mentions is None
-            else allowed_mentions,
-            flags=flags,
-        )
+        parts.setdefault("allowed_mentions", self._allowed_mentions)
+        body, files = build_message(content, **parts)
         data = await self.http._request(
             "PATCH",
             "/channels/{channel_id}/messages/{message_id}",

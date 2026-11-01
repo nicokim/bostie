@@ -3,7 +3,7 @@ import logging
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 import msgspec
 
@@ -17,14 +17,13 @@ from bostie.errors import (
 from bostie.file import File
 from bostie.models import (
     AllowedMentions,
-    Attachment,
     Channel,
-    Component,
-    Embed,
+    EditParts,
     Interaction,
     InteractionDataOption,
     Member,
     Message,
+    MessageParts,
     User,
     build_message,
     decode,
@@ -221,24 +220,11 @@ class Context(_InteractionContext):
         self,
         content: str | None = None,
         *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
         ephemeral: bool | None = None,
-        allowed_mentions: AllowedMentions | None = None,
-        tts: bool | None = None,
-        flags: int | None = None,
+        **parts: Unpack[MessageParts],
     ) -> Message | None:
         """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
-        body = self._message_body(
-            content,
-            allowed_mentions,
-            embeds=embeds,
-            components=components,
-            files=files,
-            tts=tts,
-            flags=flags,
-        )
+        body, files = self._message_body(content, **parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
@@ -266,29 +252,14 @@ class Context(_InteractionContext):
         self,
         content: str | None = None,
         *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
-        attachments: Sequence[Attachment | int] = (),
         ephemeral: bool | None = None,
-        allowed_mentions: AllowedMentions | None = None,
-        tts: bool | None = None,
-        flags: int | None = None,
+        **parts: Unpack[EditParts],
     ) -> Message | None:
         """Edit the original answer.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body = self._message_body(
-            content,
-            allowed_mentions,
-            embeds=embeds,
-            components=components,
-            files=files,
-            attachments=attachments,
-            tts=tts,
-            flags=flags,
-        )
+        body, files = self._message_body(content, **parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
@@ -300,24 +271,11 @@ class Context(_InteractionContext):
         self,
         content: str | None = None,
         *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
         ephemeral: bool | None = None,
-        allowed_mentions: AllowedMentions | None = None,
-        tts: bool | None = None,
-        flags: int | None = None,
+        **parts: Unpack[MessageParts],
     ) -> Message | None:
         """Send another message; right after `defer()` it fills the deferred answer."""
-        body = self._message_body(
-            content,
-            allowed_mentions,
-            embeds=embeds,
-            components=components,
-            files=files,
-            tts=tts,
-            flags=flags,
-        )
+        body, files = self._message_body(content, **parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
@@ -411,19 +369,11 @@ class Context(_InteractionContext):
             )
 
     def _message_body(
-        self,
-        content: str | None,
-        allowed_mentions: AllowedMentions | None,
-        **parts: Any,
-    ) -> dict[str, Any]:
-        body, _ = build_message(
-            content,
-            allowed_mentions=self._allowed_mentions
-            if allowed_mentions is None
-            else allowed_mentions,
-            **parts,
-        )
-        return body
+        self, content: str | None, **parts: Unpack[EditParts]
+    ) -> tuple[dict[str, Any], Sequence[File]]:
+        if self._allowed_mentions is not None:
+            parts.setdefault("allowed_mentions", self._allowed_mentions)
+        return build_message(content, **parts)
 
 
 class ComponentContext(Context):
@@ -453,29 +403,14 @@ class ComponentContext(Context):
         self,
         content: str | None = None,
         *,
-        embeds: Sequence[Embed | Mapping[str, Any]] | None = None,
-        components: Sequence[Component | Mapping[str, Any]] | None = None,
-        files: Sequence[File] = (),
-        attachments: Sequence[Attachment | int] = (),
         ephemeral: bool | None = None,
-        allowed_mentions: AllowedMentions | None = None,
-        tts: bool | None = None,
-        flags: int | None = None,
+        **parts: Unpack[EditParts],
     ) -> Message | None:
         """Edit the message the component is attached to.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body = self._message_body(
-            content,
-            allowed_mentions,
-            embeds=embeds,
-            components=components,
-            files=files,
-            attachments=attachments,
-            tts=tts,
-            flags=flags,
-        )
+        body, files = self._message_body(content, **parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
