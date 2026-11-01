@@ -743,7 +743,7 @@ async def _answer_failure(
     if isinstance(ctx, AutocompleteContext):
         if ctx.state is ResponseState.PENDING:
             await ctx._respond([])
-    elif ctx.state is ResponseState.PENDING:
+    elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
         await ctx.respond(FAILURE_ANSWER, ephemeral=True)
     elif ctx.state is ResponseState.DEFERRED:
         await ctx.respond(FAILURE_ANSWER)

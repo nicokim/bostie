@@ -5,13 +5,13 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from typing import Annotated, Any, Literal
 
 import pytest
-from fakediscord import FakeDiscord, payloads, run, running
+from fakediscord import FakeDiscord, Recorded, payloads, run, running
 
 from bostie import (
     AutocompleteContext,
@@ -786,24 +786,7 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
             """Crash."""
             raise RuntimeError("boom")
 
-        @bot.command
-        async def defer_and_fail(ctx: Context) -> None:
-            """Fail after deferring."""
-            await ctx.defer()
-            failing.set_result(ctx)
-            raise RuntimeError("late boom")
-
-        async def broken(ctx: AutocompleteContext, value: str) -> list[str]:
-            raise RuntimeError("autocomplete boom")
-
-        @bot.command
-        async def lookup(
-            ctx: Context, query: Annotated[str, Option(autocomplete=broken)]
-        ) -> None:
-            """Look something up."""
-
         bot.include(admin)
-        failing: asyncio.Future[Context] = asyncio.get_running_loop().create_future()
         async with running(bot, fake):
             fake.fail(
                 "GET",
@@ -813,37 +796,117 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
             )
             explained = await fake.interaction(2, payloads.command("purge"))
             crashed = await fake.interaction(2, payloads.command("crash"))
-            await fake.interaction(2, payloads.command("defer_and_fail"))
-            await (await failing).followup("after the failure answer")
-            focused = payloads.option("query", STRING, "x", focused=True)
-            suggested = await fake.interaction(4, payloads.command("lookup", focused))
 
         assert hooks == ["admin", "bot"]
-        assert explained.json["data"] == {
-            "content": "Discord said 50013",
-            "allowed_mentions": MENTIONS,
-            "flags": EPHEMERAL,
-        }
-        assert crashed.json["data"] == {
-            "content": "Something went wrong.",
-            "allowed_mentions": MENTIONS,
-            "flags": EPHEMERAL,
-        }
-        (edit,) = [request for request in fake.requests if request.method == "PATCH"]
-        assert edit.path.endswith("/messages/@original")
-        assert edit.json == {
-            "content": "Something went wrong.",
-            "allowed_mentions": MENTIONS,
-        }
-        assert suggested.json == {"type": 8, "data": {"choices": []}}
+        assert explained.json["data"]["content"] == "Discord said 50013"
+        assert crashed.json["data"]["content"] == FAILED["content"]
 
     run(scenario)
 
-    assert failures(caplog) == [
-        (logging.ERROR, "boom"),
-        (logging.ERROR, "late boom"),
-        (logging.ERROR, "autocomplete boom"),
-    ]
+    assert failures(caplog) == [(logging.ERROR, "boom")]
+
+
+FAILED = {"content": "Something went wrong.", "allowed_mentions": MENTIONS}
+FAILED_EPHEMERALLY = FAILED | {"flags": EPHEMERAL}
+
+
+def answered_with(request: Recorded) -> tuple[str, str, Any]:
+    target = request.path.rsplit("/", 1)[-1]
+    if target not in ("callback", "@original"):
+        target = "followup"
+    return request.method, target, request.json
+
+
+BEFORE_RAISING: dict[str, Callable[[Any], Awaitable[object]]] = {
+    "pending": lambda ctx: asyncio.sleep(0),
+    "deferred": lambda ctx: ctx.defer(),
+    "deferred_update": lambda ctx: ctx.defer_update(),
+    "responded": lambda ctx: ctx.respond("first"),
+}
+
+
+@pytest.mark.parametrize(
+    ("kind", "before", "answer"),
+    [
+        (
+            Context,
+            "pending",
+            ("POST", "callback", {"type": 4, "data": FAILED_EPHEMERALLY}),
+        ),
+        (
+            ComponentContext,
+            "pending",
+            ("POST", "callback", {"type": 4, "data": FAILED_EPHEMERALLY}),
+        ),
+        (Context, "deferred", ("PATCH", "@original", FAILED)),
+        (ComponentContext, "deferred", ("PATCH", "@original", FAILED)),
+        (ComponentContext, "deferred_update", ("POST", "followup", FAILED_EPHEMERALLY)),
+        (Context, "responded", None),
+        (ComponentContext, "responded", None),
+    ],
+)
+def test_a_handler_that_raises_gets_the_answer_its_state_allows(
+    kind: type[Context | ComponentContext],
+    before: str,
+    answer: tuple[str, str, dict[str, Any]] | None,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=None)
+        raised: asyncio.Future[tuple[Context | ComponentContext, int]] = (
+            asyncio.get_running_loop().create_future()
+        )
+
+        async def fail(ctx: Context | ComponentContext) -> None:
+            await BEFORE_RAISING[before](ctx)
+            raised.set_result((ctx, len(fake.requests)))
+            raise RuntimeError("boom")
+
+        if kind is Context:
+
+            @bot.command
+            async def command(ctx: Context) -> None:
+                """Fail."""
+                await fail(ctx)
+
+            payload = payloads.interaction(2, payloads.command("command"))
+        else:
+
+            @bot.on_component("component")
+            async def component(ctx: ComponentContext) -> None:
+                await fail(ctx)
+
+            payload = payloads.interaction(3, payloads.button("component"))
+        async with running(bot, fake):
+            await fake.dispatch("INTERACTION_CREATE", payload)
+            ctx, start = await raised
+            await ctx.followup("sent once the failure answer is done")
+
+        sent = [answered_with(request) for request in fake.requests[start:-1]]
+        assert sent == ([] if answer is None else [answer])
+
+    run(scenario)
+
+
+def test_a_raising_autocomplete_answers_with_no_choices() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        async def broken(ctx: AutocompleteContext, value: str) -> list[str]:
+            raise RuntimeError("boom")
+
+        @bot.command
+        async def lookup(
+            ctx: Context, query: Annotated[str, Option(autocomplete=broken)]
+        ) -> None:
+            """Look something up."""
+
+        focused = payloads.option("query", STRING, "x", focused=True)
+        async with running(bot, fake):
+            suggested = await fake.interaction(4, payloads.command("lookup", focused))
+
+        assert suggested.json == {"type": 8, "data": {"choices": []}}
+
+    run(scenario)
 
 
 def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
