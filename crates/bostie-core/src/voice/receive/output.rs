@@ -18,7 +18,7 @@ use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
-    FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE, SampleFormat,
+    FRAME, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE,
 };
 
 const FRAME_OFFSETS: u64 = FRAME_SAMPLES as u64;
@@ -46,7 +46,7 @@ struct Fifo {
 }
 
 struct Mix {
-    sample: SampleFormat,
+    format: PcmFormat,
     fifos: HashMap<Key, Fifo>,
     owed: u32,
     next: Option<u64>,
@@ -57,13 +57,19 @@ struct Mix {
     dropped: u64,
 }
 
+enum Form {
+    Pcm(PcmFormat),
+    Mixed(Mix),
+    Opus,
+    Packets,
+}
+
 struct Output {
-    format: ReceiveFormat,
+    form: Form,
     markers: bool,
     opened: i64,
     jitter: i64,
     speaking: HashMap<UserId, Marker>,
-    mix: Option<Mix>,
     items: Vec<Item>,
     peak: Peak,
     lost: u64,
@@ -120,15 +126,14 @@ impl Subscribers {
 
     pub(super) fn plays(&self, user: UserId, own: bool) -> bool {
         self.open.values().any(|subscriber| {
-            subscriber.out.format != ReceiveFormat::Packets
-                && wants(subscriber.receiver.options(), user, own)
+            !subscriber.out.is_packets() && wants(subscriber.receiver.options(), user, own)
         })
     }
 
     pub(super) fn reset(&mut self) {
         for subscriber in self.open.values_mut() {
             subscriber.tracks.clear();
-            if let Some(mix) = &mut subscriber.out.mix {
+            if let Form::Mixed(mix) = &mut subscriber.out.form {
                 mix.fifos.clear();
             }
         }
@@ -144,7 +149,7 @@ impl Subscribers {
         hangover: i64,
     ) -> bool {
         let taking = |subscriber: &Subscriber| {
-            subscriber.out.format == ReceiveFormat::Packets
+            subscriber.out.is_packets()
                 && arrival.at >= subscriber.receiver.opened()
                 && wants(subscriber.receiver.options(), user, arrival.own)
         };
@@ -186,7 +191,7 @@ impl Subscribers {
 
     pub(super) fn expire_packet_markers(&mut self, epoch: Instant, now48: i64, hangover: i64) {
         for subscriber in self.open.values_mut() {
-            if subscriber.out.format == ReceiveFormat::Packets && subscriber.out.markers {
+            if subscriber.out.is_packets() && subscriber.out.markers {
                 subscriber.out.expire_markers(epoch, now48, hangover, false);
             }
         }
@@ -202,7 +207,7 @@ impl Subscribers {
     ) -> bool {
         for subscriber in self.open.values_mut() {
             subscriber.follow(streams);
-            if let Some(mix) = &mut subscriber.out.mix {
+            if let Form::Mixed(mix) = &mut subscriber.out.form {
                 mix.owe(transport, skipped);
             }
         }
@@ -227,7 +232,7 @@ impl Subscribers {
             let Some(subscriber) = self.open.get_mut(handle) else {
                 continue;
             };
-            let packets = subscriber.out.format == ReceiveFormat::Packets;
+            let packets = subscriber.out.is_packets();
             if !packets && !deferred {
                 deferred = !subscriber.play(streams, &self.keys, &mut context, at.deadline);
             }
@@ -267,17 +272,18 @@ impl Subscriber {
     fn new(receiver: Arc<Receiver>, epoch: Instant) -> Self {
         let options = receiver.options();
         let jitter = to_samples(options.jitter);
-        let mix = match options.format {
-            ReceiveFormat::Mixed(format) => Some(Mix::new(format, options.jitter)),
-            _ => None,
+        let form = match options.format {
+            ReceiveFormat::Pcm(format) => Form::Pcm(format),
+            ReceiveFormat::Mixed(format) => Form::Mixed(Mix::new(format, options.jitter)),
+            ReceiveFormat::Opus => Form::Opus,
+            ReceiveFormat::Packets => Form::Packets,
         };
         let out = Output {
-            format: options.format,
+            form,
             markers: options.markers,
             opened: samples_since(epoch, receiver.opened()),
             jitter,
             speaking: HashMap::new(),
-            mix,
             items: Vec::new(),
             peak: Peak::default(),
             lost: 0,
@@ -290,13 +296,13 @@ impl Subscriber {
     }
 
     fn follow(&mut self, streams: &HashMap<Key, Feed>) {
-        if self.out.format == ReceiveFormat::Packets {
+        if self.out.is_packets() {
             return;
         }
         let current =
             |key: &Key, feed: u64| streams.get(key).is_some_and(|stream| stream.id == feed);
         self.tracks.retain(|key, track| current(key, track.feed));
-        if let Some(mix) = &mut self.out.mix {
+        if let Form::Mixed(mix) = &mut self.out.form {
             mix.fifos.retain(|key, fifo| current(key, fifo.feed));
         }
         let options = self.receiver.options();
@@ -312,7 +318,7 @@ impl Subscriber {
                     decoder: None,
                 },
             );
-            if let Some(mix) = &mut self.out.mix {
+            if let Form::Mixed(mix) = &mut self.out.form {
                 mix.fifos.insert(key, Fifo::new(feed.id));
             }
         }
@@ -323,7 +329,7 @@ impl Subscriber {
         if out.lost > 0 {
             self.receiver.add_lost(mem::take(&mut out.lost));
         }
-        if let Some(mix) = &mut out.mix
+        if let Form::Mixed(mix) = &mut out.form
             && mix.dropped > 0
         {
             self.receiver.add_dropped(mem::take(&mut mix.dropped));
@@ -379,6 +385,10 @@ impl Subscriber {
 }
 
 impl Output {
+    fn is_packets(&self) -> bool {
+        matches!(self.form, Form::Packets)
+    }
+
     fn play(
         &mut self,
         release: Release,
@@ -467,8 +477,8 @@ impl Output {
                 .saturating_sub(due)
                 .max(0);
         }
-        let end = match self.format {
-            ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) => {
+        let end = match self.form {
+            Form::Pcm(format) | Form::Mixed(Mix { format, .. }) => {
                 let decoder = decoder(track, format);
                 let decoded = match decoder
                     .as_mut()
@@ -496,7 +506,7 @@ impl Output {
                     &mut start,
                 )
             }
-            ReceiveFormat::Opus if samples > 0 => {
+            Form::Opus if samples > 0 => {
                 let offset = track.cursor.offset(due, samples);
                 if let Some(start) = start.take() {
                     self.items
@@ -515,7 +525,7 @@ impl Output {
                 context.heard = true;
                 Some(offset.saturating_add(u64::from(samples)))
             }
-            ReceiveFormat::Opus | ReceiveFormat::Packets => None,
+            Form::Opus | Form::Packets => None,
         };
         if let Some(start) = start {
             let offset = end.unwrap_or_else(|| offset_of(due, self.opened));
@@ -537,8 +547,8 @@ impl Output {
         track: &mut Track,
         context: &mut Context<'_>,
     ) {
-        match self.format {
-            ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) => {
+        match self.form {
+            Form::Pcm(format) | Form::Mixed(Mix { format, .. }) => {
                 let decoder = decoder(track, format);
                 let Some(Ok(decoded)) = decoder
                     .as_mut()
@@ -555,7 +565,7 @@ impl Output {
                     &mut None,
                 );
             }
-            ReceiveFormat::Opus => {
+            Form::Opus => {
                 let offset = track.cursor.offset(header.due, header.samples);
                 self.items.push(Item::Frame {
                     user: Some(header.user),
@@ -568,7 +578,7 @@ impl Output {
                     lost: header.lost,
                 });
             }
-            ReceiveFormat::Packets => {}
+            Form::Packets => {}
         }
     }
 
@@ -597,7 +607,7 @@ impl Output {
             let timestamp = header.timestamp.wrapping_add(consumed);
             let due = header.due.saturating_add(i64::from(consumed));
             consumed = consumed.saturating_add(samples);
-            if let Some(mix) = &mut self.mix {
+            if let Form::Mixed(mix) = &mut self.form {
                 if let Some(fifo) = mix.fifos.get_mut(&(header.ssrc, header.user)) {
                     fifo.push(pcm, header.lost, mix.frame);
                     mix.dropped = mix.dropped.saturating_add(fifo.trim(mix.frame, mix.limit));
@@ -628,7 +638,7 @@ impl Output {
     }
 
     fn mix(&mut self, context: &mut Context<'_>, deadline: Instant) -> bool {
-        let Some(mix) = &mut self.mix else {
+        let Form::Mixed(mix) = &mut self.form else {
             return true;
         };
         while mix.owed > 0 {
@@ -655,7 +665,7 @@ impl Output {
             }
             mix.clip.apply(&mut mix.sum);
             let mut data = BytesMut::new();
-            codec::write_samples(&mix.sum, mix.sample, &mut data);
+            codec::write_samples(&mix.sum, mix.format.sample, &mut data);
             self.items.push(Item::Frame {
                 user: None,
                 ssrc: None,
@@ -712,7 +722,7 @@ impl Mix {
             .unwrap_or(NonZeroUsize::MIN);
         let limit = (jitter.saturating_add(MIX_SLACK).as_nanos() / FRAME_NANOS).max(1);
         Self {
-            sample: format.sample,
+            format,
             fifos: HashMap::new(),
             owed: 0,
             next: None,
