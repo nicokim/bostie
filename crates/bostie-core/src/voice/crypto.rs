@@ -228,11 +228,13 @@ fn full_nonce<const N: usize>(counter: [u8; NONCE_LEN]) -> [u8; N] {
 
 #[cfg(test)]
 mod tests {
+    use proptest::collection::vec;
     use proptest::prelude::*;
+    use proptest::sample::select;
 
     use super::*;
-    use crate::voice::rtp::tests::header_bytes;
-    use crate::voice::rtp::{Extension, HEADER_LEN, write_header};
+    use crate::voice::rtp::tests::{any_extension, header_bytes, padded};
+    use crate::voice::rtp::{HEADER_LEN, write_header};
 
     const OVERHEAD: usize = TAG_LEN + NONCE_LEN;
 
@@ -316,59 +318,76 @@ mod tests {
     }
 
     #[test]
-    fn sealed_packets_match_the_reference_vectors() {
+    fn reference_vectors_seal_and_open_to_their_payload_and_extension() {
         let silence = [0xF8, 0xFF, 0xFE];
+        let plain = header();
+        let extended = hex("91781234 56789abc deadbeef 00000001 bede0001");
+        let element = [0x10, 0xAA, 0x00, 0x00];
         let vectors = [
             (
                 Mode::Aes256GcmRtpSize,
                 0,
+                &plain[..],
+                &[][..],
                 &silence[..],
                 "80781234 56789abc deadbeef f6434b 00ffbbf32669c5d5684992a3d839a461 00000000",
             ),
             (
                 Mode::Aes256GcmRtpSize,
                 u32::MAX,
+                &plain[..],
+                &[][..],
                 OPUS,
                 "80781234 56789abc deadbeef fbe0d9bb51e38ed1d85a707d \
                  476a77a9f87e2927ec3672e9166fd386 ffffffff",
             ),
             (
+                Mode::Aes256GcmRtpSize,
+                1,
+                &extended[..],
+                &element[..],
+                &silence[..],
+                "91781234 56789abc deadbeef 00000001 bede0001 549ccdaaf4a50a \
+                 cd98369eca4666c9eeea90014f266aaa 00000001",
+            ),
+            (
                 Mode::XChaCha20Poly1305RtpSize,
                 0,
+                &plain[..],
+                &[][..],
                 &silence[..],
                 "80781234 56789abc deadbeef 6df972 63b63481d0370a12d90cacdfef481a21 00000000",
             ),
             (
                 Mode::XChaCha20Poly1305RtpSize,
                 u32::MAX,
+                &plain[..],
+                &[][..],
                 OPUS,
                 "80781234 56789abc deadbeef f258f75f9b48283a48c1e837 \
                  f197050bfc4db2cf5c9ed8b2baf3165c ffffffff",
             ),
+            (
+                Mode::XChaCha20Poly1305RtpSize,
+                1,
+                &extended[..],
+                &element[..],
+                &silence[..],
+                "91781234 56789abc deadbeef 00000001 bede0001 190d512097ff6f \
+                 e3cc43acc4f2cb19dc77f88b31dd34f1 00000001",
+            ),
         ];
 
-        for (mode, nonce, payload, expected) in vectors {
-            assert_eq!(
-                sealed(mode, nonce, &header(), payload),
-                hex(expected),
-                "{mode:?} nonce {nonce:#x}"
-            );
-        }
-    }
+        for (mode, nonce, header, extension, payload, expected) in vectors {
+            let case = format!("{mode:?} nonce {nonce:#x}");
+            let mut packet = sealed(mode, nonce, header, &[extension, payload].concat());
+            assert_eq!(packet, hex(expected), "{case}");
 
-    #[test]
-    fn sealed_packets_open_to_their_header_nonce_and_payload() {
-        for mode in MODES {
-            let cipher = Cipher::new(mode, &KEY);
-            let mut packet = Vec::new();
-            cipher.seal(7, &header(), OPUS, &mut packet).unwrap();
+            let opened = Cipher::new(mode, &KEY).open(&mut packet).unwrap();
 
-            let opened = cipher.open(&mut packet).unwrap();
-
-            assert_eq!(opened.header, Header::parse(&header()).unwrap());
-            assert_eq!(opened.nonce, 7_u32.to_be_bytes());
-            assert_eq!(opened.payload, OPUS);
-            assert_eq!(opened.extension, b"");
+            assert_eq!(opened.nonce, nonce.to_be_bytes(), "{case}");
+            assert_eq!(opened.extension, extension, "{case}");
+            assert_eq!(opened.payload, payload, "{case}");
         }
     }
 
@@ -381,43 +400,6 @@ mod tests {
             assert_eq!(&packet[..HEADER_LEN], header());
             assert_eq!(packet[packet.len() - NONCE_LEN..], [1, 2, 3, 4]);
             assert_ne!(&packet[HEADER_LEN..HEADER_LEN + OPUS.len()], OPUS);
-        }
-    }
-
-    #[test]
-    fn the_largest_nonce_round_trips() {
-        for mode in MODES {
-            let cipher = Cipher::new(mode, &KEY);
-            let mut packet = sealed(mode, u32::MAX, &header(), OPUS);
-
-            assert_eq!(packet[packet.len() - NONCE_LEN..], [0xFF; 4]);
-            assert_eq!(cipher.open(&mut packet).unwrap().nonce, [0xFF; 4]);
-        }
-    }
-
-    #[test]
-    fn opening_skips_csrcs_the_encrypted_extension_body_and_padding() {
-        let extension = Extension {
-            profile: 0xBEDE,
-            words: 2,
-        };
-        let header = header_bytes(true, &[11, 22, 33], Some(extension), 9);
-        let elements = [0x51, 0x02, 0x80, 0x00, 0x92, 0x01, 0x00, 0x00];
-        let mut body = elements.to_vec();
-        body.extend_from_slice(OPUS);
-        body.extend_from_slice(&[0, 0, 0, 4]);
-
-        for mode in MODES {
-            let cipher = Cipher::new(mode, &KEY);
-            let mut packet = Vec::new();
-            cipher.seal(3, &header, &body, &mut packet).unwrap();
-
-            let opened = cipher.open(&mut packet).unwrap();
-
-            assert_eq!(opened.header.csrc_count, 3);
-            assert_eq!(opened.header.extension, Some(extension));
-            assert_eq!(opened.extension, elements);
-            assert_eq!(opened.payload, OPUS);
         }
     }
 
@@ -547,7 +529,30 @@ mod tests {
 
     proptest! {
         #[test]
-        fn random_bytes_never_panic(packet in proptest::collection::vec(any::<u8>(), 0..128)) {
+        fn sealed_packets_open_to_what_was_sealed(
+            mode in select(MODES.to_vec()),
+            nonce in any::<u32>(),
+            csrcs in vec(any::<u32>(), 0..=15),
+            (extension, extension_body) in any_extension(),
+            padding in any::<u8>(),
+            payload in vec(any::<u8>(), 0..64),
+        ) {
+            let header = header_bytes(padding > 0, &csrcs, extension, 7);
+            let body = [extension_body.clone(), padded(&payload, padding)].concat();
+            let cipher = Cipher::new(mode, &KEY);
+            let mut packet = Vec::new();
+            cipher.seal(nonce, &header, &body, &mut packet).unwrap();
+
+            let opened = cipher.open(&mut packet).unwrap();
+
+            prop_assert_eq!(opened.header, Header::parse(&header).unwrap());
+            prop_assert_eq!(opened.nonce, nonce.to_be_bytes());
+            prop_assert_eq!(opened.extension, &extension_body[..]);
+            prop_assert_eq!(opened.payload, &payload[..]);
+        }
+
+        #[test]
+        fn random_bytes_never_panic(packet in vec(any::<u8>(), 0..128)) {
             let mut version_2 = packet.clone();
             if let Some(first) = version_2.first_mut() {
                 *first = 0x80 | (*first & 0x3F);
