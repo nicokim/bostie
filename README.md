@@ -107,11 +107,17 @@ A few things the example takes for granted:
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
 
-`bot.rest` groups Discord's REST operations by resource once the bot has started, such as `bot.rest.messages.create(channel_id, "hi")` or `bot.rest.members.fetch(guild_id, user_id)`. Ids come first and positional, in the order of the URL. Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
+`bot.rest` has every documented REST operation, grouped by resource, once the bot has started:
+
+- `await bot.rest.channels.edit(channel_id, name="news", topic=None)`: ids come first and positional, in the order of the URL. A keyword you leave out is left as it is, and `None` clears the field.
+- `reason="..."` goes to the audit log on the operations that take one, such as `bot.rest.bans.create(guild_id, user_id, reason="spam")`.
+- A list Discord pages is an async iterator that pages for you: `async for message in bot.rest.messages.list(channel_id, limit=500)`. `bot.rest.audit_log.list(guild_id)` yields whole pages, with the users and webhooks the entries refer to.
+- Image options such as `icon`, `avatar` and `banner` take a `File`.
+- Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
 
 Everything bostie does not model yet stays reachable:
 
-- `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint.
+- `bot.http.request("GET", "/guilds/{guild_id}/some-new-route", guild_id=...)` calls any endpoint, such as one Discord added after this release, and returns its JSON.
 - `bot.gateway.send(op=..., d=...)` sends any opcode: op 3 to every shard, a payload with a `guild_id` to that guild's shard, anything else to shard 0. `bot.gateway.shard(id).send(...)` picks the shard yourself.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
 - `ui.raw({...})` puts a component that `ui` has no builder for into a row, section, container, label or modal.

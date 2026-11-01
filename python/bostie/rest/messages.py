@@ -261,7 +261,7 @@ class Messages(Group):
     async def search(
         self, guild_id: int, /, **options: Unpack[MessageSearch]
     ) -> MessageSearchResults:
-        """Search a guild's messages, waiting while Discord indexes them."""
+        """Search messages, waiting out indexing; bound it with asyncio.timeout()."""
         query = wire(options, MessageSearch)
         while True:
             found = await self._http._decoded(
