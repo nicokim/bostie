@@ -15,6 +15,7 @@ use tokio_websockets::{ClientBuilder, CloseCode, Message, ServerBuilder};
 
 use super::*;
 use crate::bell::{self, BellReceiver};
+use crate::runtime::Owner;
 use crate::voice::codec::FrameEncoder;
 use crate::voice::connection::ConnectionTuning;
 use crate::voice::crypto::Mode;
@@ -2679,7 +2680,7 @@ async fn dropping_voice_in_another_process_leaves_its_sources_open() {
     let harness = Harness::start().await;
     let kept = harness.voice.open_source(tone_file()).unwrap();
     let mut voice = harness.voice;
-    voice.owner = voice.owner.wrapping_add(1);
+    voice.owner = Owner::foreign();
 
     drop(voice);
 

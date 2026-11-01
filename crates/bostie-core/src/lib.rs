@@ -10,7 +10,6 @@ pub mod voice;
 
 use std::collections::HashMap;
 use std::num::NonZeroU16;
-use std::process;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -29,6 +28,7 @@ pub use crate::rest::RestRequest;
 use crate::gateway::Gateway;
 use crate::inbox::Inbox;
 use crate::rest::Rest;
+use crate::runtime::Owner;
 use crate::tasks::{PendingTicket, TaskTable};
 use crate::voice::tap::GatewayTap;
 use crate::voice::types::MAX_DAVE_PROTOCOL_VERSION;
@@ -51,7 +51,7 @@ pub fn versions() -> Vec<(&'static str, String)> {
 }
 
 pub struct Core {
-    owner: u32,
+    owner: Owner,
     next_ticket: AtomicU64,
     runtime: Handle,
     inbox: Arc<Inbox>,
@@ -89,7 +89,7 @@ impl Core {
             (rest, gateway, voice)
         };
         let core = Self {
-            owner: process::id(),
+            owner: Owner::current(),
             next_ticket: AtomicU64::new(1),
             runtime,
             inbox,
@@ -104,7 +104,7 @@ impl Core {
     }
 
     pub fn request(&self, request: RestRequest) -> Result<Ticket, CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         let ticket = Ticket::from(self.next_ticket.fetch_add(1, Ordering::Relaxed));
 
         let mut table = self.tasks.lock();
@@ -120,7 +120,7 @@ impl Core {
     }
 
     pub fn cancel(&self, ticket: Ticket) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         if let Some(task) = self.tasks.lock().running.remove(&ticket) {
             task.abort();
         }
@@ -128,7 +128,7 @@ impl Core {
     }
 
     pub fn gateway_identify_limit(&self, limit: IdentifyLimit) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.set_identify_limit(limit);
         Ok(())
     }
@@ -139,7 +139,7 @@ impl Core {
         url: &str,
         identify: Bytes,
     ) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         let table = self.tasks.lock();
         if table.rest.is_none() {
             return Err(CoreError::Closed);
@@ -148,48 +148,48 @@ impl Core {
     }
 
     pub fn gateway_send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.send(shard, payload)
     }
 
     pub fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.set_filter(names);
         Ok(())
     }
 
     pub fn gateway_reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.reconnect(shard)
     }
 
     pub fn gateway_close(&self, shard: ShardId) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.close(shard)
     }
 
     pub fn gateway_latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.gateway.latency(shard)
     }
 
     pub fn voice(&self) -> Result<&Voice, CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         Ok(&self.voice)
     }
 
     pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         Ok(self.inbox.drain())
     }
 
     pub fn inflight(&self) -> Result<usize, CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         Ok(self.tasks.lock().running.len())
     }
 
     pub fn close(&self) -> Result<(), CoreError> {
-        self.ensure_same_process()?;
+        self.owner.check()?;
         self.shut_down();
         Ok(())
     }
@@ -202,14 +202,6 @@ impl Core {
         }
         self.voice.shutdown();
         self.gateway.shutdown();
-    }
-
-    fn ensure_same_process(&self) -> Result<(), CoreError> {
-        if process::id() == self.owner {
-            Ok(())
-        } else {
-            Err(CoreError::Forked { owner: self.owner })
-        }
     }
 }
 
@@ -224,7 +216,7 @@ fn gateway_send(gateway: Weak<Gateway>) -> GatewaySend {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        if process::id() == self.owner {
+        if self.owner.is_current() {
             self.shut_down();
         }
     }

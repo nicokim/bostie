@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::mem;
-use std::process;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -10,6 +9,7 @@ use parking_lot::Mutex;
 use crate::error::CoreError;
 use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
+use crate::runtime::Owner;
 use crate::voice::receive::Peak;
 use crate::voice::types::ReceiveOptions;
 
@@ -71,7 +71,7 @@ pub enum ReceiveRead {
 pub struct Receiver {
     id: Handle,
     options: ReceiveOptions,
-    owner: u32,
+    owner: Owner,
     inbox: Arc<Inbox>,
     opened: Instant,
     queue: Mutex<Queue>,
@@ -100,7 +100,7 @@ impl Receiver {
         Ok(Self {
             id,
             options,
-            owner: process::id(),
+            owner: Owner::current(),
             inbox,
             opened: Instant::now(),
             queue: Mutex::default(),
@@ -120,7 +120,7 @@ impl Receiver {
     }
 
     pub fn read(&self, limit: usize) -> Result<ReceiveRead, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut queue = self.queue.lock();
         if queue.ended == Some(Ended::Closed) {
             return Err(CoreError::HandleClosed(self.id));
@@ -139,20 +139,20 @@ impl Receiver {
     }
 
     pub fn queued(&self) -> Result<Duration, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let queue = self.queue.lock();
         let oldest = queue.stale_markers.first().or(queue.items.front());
         Ok(oldest.map_or(Duration::ZERO, |(queued, _)| queued.elapsed()))
     }
 
     pub fn clear(&self) -> Result<(), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         self.queue.lock().discard();
         Ok(())
     }
 
     pub fn stats(&self) -> Result<Vec<(&'static str, u64)>, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let queue = self.queue.lock();
         Ok(vec![
             ("delivered", queue.stats.delivered),
@@ -170,7 +170,7 @@ impl Receiver {
     }
 
     pub fn close(&self) {
-        if process::id() != self.owner {
+        if !self.owner.is_current() {
             return;
         }
         let mut queue = self.queue.lock();
@@ -210,14 +210,6 @@ impl Receiver {
 
     pub fn add_dropped(&self, frames: u64) {
         self.queue.lock().stats.dropped += frames;
-    }
-
-    fn ensure_owner(&self) -> Result<(), CoreError> {
-        if process::id() == self.owner {
-            Ok(())
-        } else {
-            Err(CoreError::Forked { owner: self.owner })
-        }
     }
 
     fn wake(&self, queue: &mut Queue) {

@@ -3,7 +3,6 @@ pub mod http;
 
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
-use std::process;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -14,6 +13,7 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
+use crate::runtime::Owner;
 use crate::voice::panic_message;
 use crate::voice::source::decode::{Decoder, Input, Step};
 use crate::voice::source::http::{Http, HttpMedia};
@@ -50,7 +50,7 @@ pub enum SourceRead {
 
 pub struct Source {
     id: Handle,
-    owner: u32,
+    owner: Owner,
     shared: Arc<Shared>,
 }
 
@@ -141,7 +141,7 @@ impl Source {
             .map_err(CoreError::Runtime)?;
         Ok(Self {
             id,
-            owner: process::id(),
+            owner: Owner::current(),
             shared,
         })
     }
@@ -151,12 +151,12 @@ impl Source {
     }
 
     pub fn info(&self) -> Result<Option<SourceInfo>, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         Ok(self.shared.state.lock().info)
     }
 
     pub fn read(&self) -> Result<SourceRead, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut state = self.open_state()?;
         if !state.chunks.is_empty() {
             state.buffered = 0;
@@ -175,7 +175,7 @@ impl Source {
     }
 
     pub fn error(&self) -> Result<Option<String>, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         Ok(match &self.shared.state.lock().progress {
             Progress::Failed(error) => Some(error.clone()),
             Progress::Playing | Progress::Ended => None,
@@ -183,7 +183,7 @@ impl Source {
     }
 
     pub fn seek(&self, position: Duration) -> Result<(), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut state = self.open_state()?;
         if !state.info.is_some_and(|info| info.seekable) {
             return Err(CoreError::InvalidRequest(
@@ -207,7 +207,7 @@ impl Source {
     }
 
     pub fn close(&self) {
-        if process::id() != self.owner {
+        if !self.owner.is_current() {
             return;
         }
         let mut state = self.shared.state.lock();
@@ -218,14 +218,6 @@ impl Source {
         state.buffered = 0;
         self.shared.wake(&mut state);
         self.shared.changed.notify_one();
-    }
-
-    fn ensure_owner(&self) -> Result<(), CoreError> {
-        if process::id() == self.owner {
-            Ok(())
-        } else {
-            Err(CoreError::Forked { owner: self.owner })
-        }
     }
 
     fn open_state(&self) -> Result<MutexGuard<'_, State>, CoreError> {

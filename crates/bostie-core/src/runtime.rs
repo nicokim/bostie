@@ -9,8 +9,34 @@ use crate::error::CoreError;
 const MIN_WORKERS: usize = 2;
 const MAX_WORKERS: usize = 4;
 
+#[derive(Clone, Copy)]
+pub(crate) struct Owner(u32);
+
+impl Owner {
+    pub(crate) fn current() -> Self {
+        Self(process::id())
+    }
+
+    pub(crate) fn is_current(self) -> bool {
+        self.0 == process::id()
+    }
+
+    pub(crate) fn check(self) -> Result<(), CoreError> {
+        if self.is_current() {
+            Ok(())
+        } else {
+            Err(CoreError::Forked { owner: self.0 })
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn foreign() -> Self {
+        Self(process::id().wrapping_add(1))
+    }
+}
+
 struct OwnedRuntime {
-    owner: u32,
+    owner: Owner,
     runtime: Runtime,
 }
 
@@ -21,17 +47,13 @@ pub(crate) fn shared() -> Result<Handle, CoreError> {
         Some(existing) => existing,
         None => {
             let built = OwnedRuntime {
-                owner: process::id(),
+                owner: Owner::current(),
                 runtime: build()?,
             };
             RUNTIME.get_or_init(|| built)
         }
     };
-    if shared.owner != process::id() {
-        return Err(CoreError::Forked {
-            owner: shared.owner,
-        });
-    }
+    shared.owner.check()?;
     Ok(shared.runtime.handle().clone())
 }
 

@@ -28,7 +28,6 @@ pub(crate) mod ws;
 use std::any::Any;
 use std::collections::HashMap;
 use std::mem;
-use std::process;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -61,6 +60,7 @@ use self::types::{
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
+use crate::runtime::Owner;
 
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
 pub type Counters = Vec<(&'static str, u64)>;
@@ -87,7 +87,7 @@ impl Default for Tuning {
 pub struct Voice {
     runtime: runtime::Handle,
     shared: Arc<Shared>,
-    owner: u32,
+    owner: Owner,
 }
 
 struct Shared {
@@ -171,7 +171,7 @@ impl Voice {
                 closed: AtomicBool::new(false),
             }),
             runtime,
-            owner: process::id(),
+            owner: Owner::current(),
         })
     }
 
@@ -496,7 +496,7 @@ impl Voice {
 
 impl Drop for Voice {
     fn drop(&mut self) {
-        if process::id() == self.owner {
+        if self.owner.is_current() {
             self.shutdown();
         }
     }

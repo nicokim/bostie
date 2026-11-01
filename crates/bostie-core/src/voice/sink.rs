@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::mem;
-use std::process;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,6 +9,7 @@ use parking_lot::{Mutex, MutexGuard};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
+use crate::runtime::Owner;
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
@@ -22,7 +22,7 @@ const FRAME_FRAMES: u64 = FRAME_SAMPLES as u64;
 pub struct Sink {
     id: Handle,
     options: SinkOptions,
-    owner: u32,
+    owner: Owner,
     inbox: Arc<Inbox>,
     high_water: u64,
     low_water: u64,
@@ -94,7 +94,7 @@ impl Sink {
         Ok(Self {
             id,
             options,
-            owner: process::id(),
+            owner: Owner::current(),
             inbox,
             high_water,
             low_water: high_water / 2,
@@ -115,7 +115,7 @@ impl Sink {
     }
 
     pub fn write(&self, data: &[u8]) -> Result<bool, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut producer = self.producer.lock();
         {
             let mut queue = self.open_queue()?;
@@ -146,13 +146,13 @@ impl Sink {
     }
 
     pub fn mark(&self) -> Result<(u64, u64), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut queue = self.open_queue()?;
         Ok(self.place_marker(&mut queue))
     }
 
     pub fn flush(&self) -> Result<(u64, u64), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut producer = self.producer.lock();
         let mut queue = self.open_queue()?;
         if let Producer::Pcm { converter, scratch } = &mut *producer {
@@ -173,7 +173,7 @@ impl Sink {
     }
 
     pub fn clear(&self, until: Option<u64>) -> Result<(), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let mut producer = self.producer.lock();
         let mut queue = self.open_queue()?;
         let end = match until {
@@ -196,7 +196,7 @@ impl Sink {
     }
 
     pub fn set_volume(&self, volume: f32) -> Result<(), CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         SinkOptions {
             volume,
             ..self.options
@@ -207,18 +207,18 @@ impl Sink {
     }
 
     pub fn queued(&self) -> Result<Duration, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let frames = self.queue.lock().queued;
         Ok(Duration::from_secs(frames) / SAMPLE_RATE)
     }
 
     pub fn passthrough(&self) -> Result<bool, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         Ok(self.queue.lock().passthrough)
     }
 
     pub fn stats(&self) -> Result<Vec<(&'static str, u64)>, CoreError> {
-        self.ensure_owner()?;
+        self.owner.check()?;
         let queue = self.queue.lock();
         Ok(vec![
             ("sent_samples", queue.stats.sent),
@@ -235,7 +235,7 @@ impl Sink {
     }
 
     pub fn close(&self) {
-        if process::id() != self.owner {
+        if !self.owner.is_current() {
             return;
         }
         let mut queue = self.queue.lock();
@@ -302,14 +302,6 @@ impl Sink {
         queue.passthrough = passing;
         if passing {
             queue.stats.passthrough_packets += 1;
-        }
-    }
-
-    fn ensure_owner(&self) -> Result<(), CoreError> {
-        if process::id() == self.owner {
-            Ok(())
-        } else {
-            Err(CoreError::Forked { owner: self.owner })
         }
     }
 
@@ -839,7 +831,7 @@ pub(crate) mod tests {
     fn a_forked_child_gets_an_error_from_every_method() {
         let mut fixture = Fixture::new();
         let mut sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
-        sink.owner = process::id().wrapping_add(1);
+        sink.owner = Owner::foreign();
         let forked =
             |result: Result<(), CoreError>| matches!(result, Err(CoreError::Forked { .. }));
 
