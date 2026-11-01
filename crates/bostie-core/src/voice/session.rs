@@ -471,13 +471,8 @@ impl<'c> Session<'c> {
             );
             let ssrc = ready.ssrc;
             tokio::spawn(async move {
-                let received = udp::receive(
-                    &socket,
-                    ssrc,
-                    &answer_slot,
-                    |packet| intake.rtp(packet),
-                    |packet| media.rtcp(packet),
-                );
+                let received =
+                    udp::receive(&socket, ssrc, &answer_slot, |packet| intake.rtp(packet));
                 if let Err(error) = received.await {
                     debug!(%error, "the voice UDP receiver stopped");
                 }

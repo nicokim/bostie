@@ -21,7 +21,6 @@ pub struct Mixer {
     passing: Option<Handle>,
     passed: Bytes,
     stale: bool,
-    encode_errors: u64,
 }
 
 pub struct Mixed<'a> {
@@ -52,7 +51,6 @@ impl Mixer {
             passing: None,
             passed: Bytes::new(),
             stale: false,
-            encode_errors: 0,
         })
     }
 
@@ -146,10 +144,6 @@ impl Mixer {
         self.encode()
     }
 
-    pub fn encode_errors(&self) -> u64 {
-        self.encode_errors
-    }
-
     fn strip(&mut self, sink: &Sink) -> &mut Strip {
         self.strips
             .entry(sink.id())
@@ -181,17 +175,12 @@ impl Mixer {
                 Ok(encoder) => self.encoder = Some(encoder),
                 Err(error) => {
                     tracing::debug!(%error, "opus could not build the encoder");
-                    self.encode_errors += 1;
                     return None;
                 }
             },
         }
         self.stale = false;
-        let packet = self.encoder.as_mut()?.encode(&self.sum);
-        if packet.is_none() {
-            self.encode_errors += 1;
-        }
-        packet
+        self.encoder.as_mut()?.encode(&self.sum)
     }
 }
 
@@ -598,7 +587,6 @@ mod tests {
             opus::packet::get_nb_channels(&silence),
             Ok(Channels::Stereo)
         ));
-        assert_eq!(mixer.encode_errors(), 0);
     }
 
     #[test]

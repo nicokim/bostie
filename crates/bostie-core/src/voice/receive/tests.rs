@@ -1008,8 +1008,6 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
     intake.rtp(&mut packet(&cipher, 2, ALICE_SSRC, 3, &tagged));
     intake.rtp(&mut packet(&cipher, 3, BOT_SSRC, 4, &tagged));
     intake.rtp(&mut packet(&stranger, 4, ALICE_SSRC, 5, &tagged));
-    rig.media.rtcp(&[0x80, 200, 0, 6]);
-    rig.media.rtcp(&[0x80, 201, 0, 1]);
 
     let arrivals: Vec<Arrival> = rig.media.arrivals.lock().drain(..).collect();
     let shapes: Vec<(u16, bool, bool)> = arrivals
@@ -1021,14 +1019,8 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
     assert_eq!(arrivals[0].extension, None);
     assert_eq!(arrivals[1].extension, Some((rtp::ONE_BYTE_PROFILE, body)));
     assert_eq!(
-        [
-            "transport_failures",
-            "replays",
-            "own_echoes",
-            "rtcp_sender_reports"
-        ]
-        .map(|name| rig.counter(name)),
-        [2, 1, 1, 1]
+        ["transport_failures", "replays", "own_echoes"].map(|name| rig.counter(name)),
+        [2, 1, 1]
     );
     assert_eq!(
         rig.media.counters.packets_received.load(Ordering::Relaxed),

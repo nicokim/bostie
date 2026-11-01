@@ -28,7 +28,6 @@ pub const SILENCE_TAIL: u8 = 5;
 
 const SAMPLES_PER_TICK: u32 = FRAME_SAMPLES as u32;
 const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
-const SENDER_REPORT: u8 = 200;
 
 macro_rules! counters {
     ($counters:ident { $($name:ident),+ $(,)? }) => {
@@ -48,19 +47,16 @@ macro_rules! counters {
 
 counters!(SendCounters {
     packets_sent,
-    bytes_sent,
     passthrough_packets,
     encoded_packets,
     silence_packets,
     held_ticks,
     alone_ticks,
     late_ticks,
-    send_errors,
     dave_frames,
     dave_not_ready,
     encrypt_failures,
     dave_busy,
-    encode_errors,
     invalid_frames,
     keepalives_sent,
     keepalives_answered,
@@ -83,7 +79,6 @@ counters!(ReceiveCounters {
     receive_deferred,
     arrivals_dropped,
     rx_panics,
-    rtcp_sender_reports,
 });
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -224,12 +219,6 @@ impl Media {
             bump(&self.receive.arrivals_dropped);
         }
         arrivals.push_back(arrival);
-    }
-
-    pub fn rtcp(&self, packet: &[u8]) {
-        if packet.get(1) == Some(&SENDER_REPORT) {
-            bump(&self.receive.rtcp_sender_reports);
-        }
     }
 
     pub fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {
@@ -491,9 +480,6 @@ impl Lane {
         if sent {
             tee(&self.media, transport, stamp, payload);
         }
-        counters
-            .encode_errors
-            .store(self.mixer.encode_errors(), Ordering::Relaxed);
         self.after_send(sent, now);
     }
 
@@ -550,9 +536,6 @@ impl Lane {
         );
         drop(dave);
         if let Err(failure) = encrypted {
-            counters
-                .encode_errors
-                .store(self.mixer.encode_errors(), Ordering::Relaxed);
             match failure {
                 EncryptFailure::NotReady => bump(&counters.dave_not_ready),
                 EncryptFailure::Failed => bump(&counters.encrypt_failures),
@@ -568,9 +551,6 @@ impl Lane {
             bump(&counters.dave_frames);
             tee(&media, transport, stamp, payload);
         }
-        counters
-            .encode_errors
-            .store(self.mixer.encode_errors(), Ordering::Relaxed);
         self.after_send(sent, now);
     }
 
@@ -691,23 +671,17 @@ fn send(
         .seal(rtp.nonce, &header, payload, packet)
         .is_err()
     {
-        bump(&media.counters.send_errors);
         return false;
     }
     rtp.nonce += 1;
     match transport.socket.send(packet) {
-        Ok(sent) => {
+        Ok(_) => {
             rtp.sequence = rtp.sequence.wrapping_add(1);
             bump(&media.counters.packets_sent);
-            media
-                .counters
-                .bytes_sent
-                .fetch_add(sent as u64, Ordering::Relaxed);
             true
         }
         Err(error) => {
             debug!(%error, "a voice packet was not sent");
-            bump(&media.counters.send_errors);
             false
         }
     }

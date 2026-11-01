@@ -132,7 +132,6 @@ pub async fn receive(
     ssrc: u32,
     answers: &watch::Sender<Option<Answer>>,
     mut on_rtp: impl FnMut(&mut [u8]),
-    mut on_rtcp: impl FnMut(&[u8]),
 ) -> io::Result<()> {
     let mut buffer = [0; MAX_DATAGRAM];
     loop {
@@ -157,8 +156,7 @@ pub async fn receive(
         } else {
             match rtp::classify(packet) {
                 Kind::Rtp => on_rtp(packet),
-                Kind::Rtcp => on_rtcp(packet),
-                Kind::Other => {}
+                Kind::Rtcp | Kind::Other => {}
             }
         }
     }
@@ -167,8 +165,6 @@ pub async fn receive(
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use parking_lot::Mutex;
 
     use proptest::prelude::*;
 
@@ -330,29 +326,19 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
     }
 
-    type Rtcp = Arc<Mutex<Vec<Vec<u8>>>>;
-
     fn spawn_receiver(
         socket: Arc<UdpSocket>,
-    ) -> (watch::Receiver<Option<Answer>>, Arc<AtomicUsize>, Rtcp) {
+    ) -> (watch::Receiver<Option<Answer>>, Arc<AtomicUsize>) {
         let (answers, receiver) = watch::channel(None);
         let rtp = Arc::new(AtomicUsize::new(0));
-        let rtcp = Rtcp::default();
         let counted = Arc::clone(&rtp);
-        let kept = Arc::clone(&rtcp);
         tokio::spawn(async move {
-            receive(
-                &socket,
-                SSRC,
-                &answers,
-                |_| {
-                    counted.fetch_add(1, Ordering::Relaxed);
-                },
-                |packet| kept.lock().push(packet.to_vec()),
-            )
+            receive(&socket, SSRC, &answers, |_| {
+                counted.fetch_add(1, Ordering::Relaxed);
+            })
             .await
         });
-        (receiver, rtp, rtcp)
+        (receiver, rtp)
     }
 
     #[tokio::test]
@@ -363,15 +349,17 @@ mod tests {
             Ipv4Addr::LOCALHOST.into(),
             socket.local_addr().unwrap().port(),
         );
-        let (mut answers, rtp, _) = spawn_receiver(Arc::new(socket));
+        let (mut answers, rtp) = spawn_receiver(Arc::new(socket));
         let mut voice = [0; 40];
         rtp::write_header((&mut voice[..12]).try_into().unwrap(), 1, 2, 3);
+        let sender_report = [0x80, 0xC8, 0, 6, 0, 0, 0, 1, 9, 9, 9, 9];
         let before = Instant::now();
 
         for datagram in [
             &voice[..],
             &response(7, external())[..],
             b"junk",
+            &sender_report[..],
             &voice[..],
             &response(SSRC, external())[..],
         ] {
@@ -383,34 +371,6 @@ mod tests {
         assert_eq!(answer.address, external());
         assert!(answer.at >= before);
         assert_eq!(rtp.load(Ordering::Relaxed), 2);
-    }
-
-    #[tokio::test]
-    async fn rtcp_datagrams_reach_the_rtcp_callback_and_never_the_rtp_one() {
-        let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        let (socket, _sender) = bind(server.local_addr().unwrap()).unwrap();
-        let client = SocketAddr::new(
-            Ipv4Addr::LOCALHOST.into(),
-            socket.local_addr().unwrap().port(),
-        );
-        let (mut answers, rtp, rtcp) = spawn_receiver(Arc::new(socket));
-        let sender_report = [0x80, 0xC8, 0, 6, 0, 0, 0, 1, 9, 9, 9, 9];
-        let receiver_report = [0x81, 0xC9, 0, 7, 0, 0, 0, 2];
-        let mut voice = [0; 40];
-        rtp::write_header((&mut voice[..12]).try_into().unwrap(), 1, 2, 3);
-
-        for datagram in [
-            &sender_report[..],
-            &voice[..],
-            &receiver_report[..],
-            &response(SSRC, external())[..],
-        ] {
-            server.send_to(datagram, client).unwrap();
-        }
-        timeout(WAIT, answers.changed()).await.unwrap().unwrap();
-
-        assert_eq!(*rtcp.lock(), [&sender_report[..], &receiver_report[..]]);
-        assert_eq!(rtp.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
