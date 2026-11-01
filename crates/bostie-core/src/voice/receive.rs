@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem;
 use std::net::UdpSocket;
+use std::num::NonZeroUsize;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,11 +33,13 @@ use crate::voice::types::{
 };
 
 const FRAME_48K: u32 = FRAME_SAMPLES as u32;
+const FRAME_OFFSETS: u64 = FRAME_SAMPLES as u64;
+const FRAME_NANOS: u128 = FRAME.as_nanos();
+const NANOS_PER_3_SAMPLES: u64 = 3_000_000_000 / SAMPLE_RATE as u64;
 const PEAK_TICKS: u32 = 24;
 const PAYLOAD_CHUNK: usize = 8 * 1024;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 const MIX_SLACK: Duration = Duration::from_millis(100);
-const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const WARN_EVERY: Duration = Duration::from_secs(1);
 
 type Key = (u32, UserId);
@@ -230,7 +233,7 @@ struct Mix {
     next: Option<u64>,
     clip: SoftClip,
     sum: Vec<f32>,
-    frame: usize,
+    frame: NonZeroUsize,
     limit: usize,
     dropped: u64,
 }
@@ -1771,11 +1774,11 @@ impl Output {
                 .saturating_sub(self.opened)
                 .max(0)
                 .unsigned_abs();
-            let offset = *mix.next.get_or_insert(
-                anchor.saturating_sub(anchor.checked_rem(u64::from(FRAME_48K)).unwrap_or(0)),
-            );
+            let offset = *mix
+                .next
+                .get_or_insert(anchor.saturating_sub(anchor % FRAME_OFFSETS));
             mix.sum.clear();
-            mix.sum.resize(mix.frame, 0.0);
+            mix.sum.resize(mix.frame.get(), 0.0);
             let mut lost = false;
             for fifo in mix.fifos.values_mut() {
                 if let Some(concealed) = fifo.pop(&mut mix.sum, mix.frame) {
@@ -1850,11 +1853,12 @@ impl Mix {
         } else {
             Channels::Stereo
         };
-        let per_channel = format.rate.checked_div(50).unwrap_or(0);
-        let frame =
-            usize::try_from(per_channel.saturating_mul(u32::from(format.channels))).unwrap_or(0);
-        let window = jitter.saturating_add(MIX_SLACK).as_nanos();
-        let limit = window.checked_div(FRAME.as_nanos()).unwrap_or(0).max(1);
+        let samples = (format.rate / 50).saturating_mul(u32::from(format.channels));
+        let frame = usize::try_from(samples)
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .unwrap_or(NonZeroUsize::MIN);
+        let limit = (jitter.saturating_add(MIX_SLACK).as_nanos() / FRAME_NANOS).max(1);
         Self {
             fifos: HashMap::new(),
             owed: 0,
@@ -1887,29 +1891,29 @@ impl Fifo {
         }
     }
 
-    fn push(&mut self, pcm: &[f32], lost: bool, frame: usize) {
+    fn push(&mut self, pcm: &[f32], lost: bool, frame: NonZeroUsize) {
         self.samples.extend(pcm);
         self.pending_lost |= lost;
-        while frame > 0 && self.samples.len().checked_div(frame).unwrap_or(0) > self.lost.len() {
+        while self.samples.len() / frame > self.lost.len() {
             self.lost.push_back(mem::take(&mut self.pending_lost));
         }
     }
 
-    fn trim(&mut self, frame: usize, limit: usize) -> u64 {
+    fn trim(&mut self, frame: NonZeroUsize, limit: usize) -> u64 {
         let mut dropped: u64 = 0;
-        while self.lost.len() > limit && self.samples.len() >= frame {
-            self.samples.drain(..frame);
+        while self.lost.len() > limit && self.samples.len() >= frame.get() {
+            self.samples.drain(..frame.get());
             self.lost.pop_front();
             dropped = dropped.saturating_add(1);
         }
         dropped
     }
 
-    fn pop(&mut self, sum: &mut [f32], frame: usize) -> Option<bool> {
-        if frame == 0 || self.samples.len() < frame {
+    fn pop(&mut self, sum: &mut [f32], frame: NonZeroUsize) -> Option<bool> {
+        if self.samples.len() < frame.get() {
             return None;
         }
-        for (total, sample) in sum.iter_mut().zip(self.samples.drain(..frame)) {
+        for (total, sample) in sum.iter_mut().zip(self.samples.drain(..frame.get())) {
             *total += sample;
         }
         Some(self.lost.pop_front().unwrap_or(false))
@@ -2002,12 +2006,8 @@ fn samples_since(epoch: Instant, instant: Instant) -> i64 {
 }
 
 fn duration_of(samples: i64) -> Duration {
-    let samples = u128::from(u64::try_from(samples).unwrap_or(0));
-    let nanos = samples
-        .saturating_mul(NANOS_PER_SECOND)
-        .checked_div(u128::from(SAMPLE_RATE))
-        .unwrap_or(0);
-    Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+    let samples = u64::try_from(samples).unwrap_or(0);
+    Duration::from_nanos(samples.saturating_mul(NANOS_PER_3_SAMPLES) / 3)
 }
 
 fn instant(epoch: Instant, samples: i64) -> Instant {
