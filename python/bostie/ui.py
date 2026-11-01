@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Mapping
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict
 
 from bostie.custom_id import MAX_CUSTOM_ID
 from bostie.enums import ButtonStyle, ChannelType, ComponentType
@@ -178,34 +178,26 @@ def button(
     disabled: bool = False,
 ) -> ButtonDict:
     """A button that sends `custom_id` to the bot when clicked."""
-    return cast(
-        ButtonDict,
-        _present(
-            type=ComponentType.BUTTON,
-            style=style,
-            label=label,
-            emoji=_emoji(emoji),
-            custom_id=_checked(custom_id),
-            disabled=disabled,
-        ),
-    )
+    button: ButtonDict = {
+        "type": ComponentType.BUTTON,
+        "style": style,
+        "custom_id": _checked(custom_id),
+        "disabled": disabled,
+    }
+    return _labelled(button, label, emoji)
 
 
 def link_button(
     label: str | None, url: str, *, emoji: _Emoji | None = None, disabled: bool = False
 ) -> ButtonDict:
     """A button that opens `url` and never reaches the bot."""
-    return cast(
-        ButtonDict,
-        _present(
-            type=ComponentType.BUTTON,
-            style=ButtonStyle.LINK,
-            label=label,
-            emoji=_emoji(emoji),
-            url=url,
-            disabled=disabled,
-        ),
-    )
+    button: ButtonDict = {
+        "type": ComponentType.BUTTON,
+        "style": ButtonStyle.LINK,
+        "url": url,
+        "disabled": disabled,
+    }
+    return _labelled(button, label, emoji)
 
 
 def string_select(
@@ -330,16 +322,12 @@ def select_option(
     default: bool = False,
 ) -> SelectOptionDict:
     """One entry of a select menu; `value` is what the bot receives."""
-    return cast(
-        SelectOptionDict,
-        _present(
-            label=label,
-            value=value,
-            description=description,
-            emoji=_emoji(emoji),
-            default=default,
-        ),
-    )
+    option: SelectOptionDict = {"label": label, "value": value, "default": default}
+    if description is not None:
+        option["description"] = description
+    if emoji is not None:
+        option["emoji"] = _emoji(emoji)
+    return option
 
 
 def text(content: str) -> TextDict:
@@ -362,15 +350,14 @@ def thumbnail(
     url: str, *, description: str | None = None, spoiler: bool = False
 ) -> ThumbnailDict:
     """A small image for a `section`; `url` may be `attachment://<filename>`."""
-    return cast(
-        ThumbnailDict,
-        _present(
-            type=ComponentType.THUMBNAIL,
-            media={"url": url},
-            description=description,
-            spoiler=spoiler,
-        ),
-    )
+    thumbnail: ThumbnailDict = {
+        "type": ComponentType.THUMBNAIL,
+        "media": {"url": url},
+        "spoiler": spoiler,
+    }
+    if description is not None:
+        thumbnail["description"] = description
+    return thumbnail
 
 
 def media_gallery(*items: GalleryItemDict | _Raw) -> MediaGalleryDict:
@@ -382,10 +369,10 @@ def gallery_item(
     url: str, *, description: str | None = None, spoiler: bool = False
 ) -> GalleryItemDict:
     """One entry of a `media_gallery`; `url` may be `attachment://<filename>`."""
-    return cast(
-        GalleryItemDict,
-        _present(media={"url": url}, description=description, spoiler=spoiler),
-    )
+    item: GalleryItemDict = {"media": {"url": url}, "spoiler": spoiler}
+    if description is not None:
+        item["description"] = description
+    return item
 
 
 def file(filename: str, *, spoiler: bool = False) -> FileDict:
@@ -408,15 +395,14 @@ def container(
     spoiler: bool = False,
 ) -> ContainerDict:
     """A box around rows, texts, sections, galleries, files and separators."""
-    return cast(
-        ContainerDict,
-        _present(
-            type=ComponentType.CONTAINER,
-            components=list(components),
-            accent_color=accent_color,
-            spoiler=spoiler,
-        ),
-    )
+    container: ContainerDict = {
+        "type": ComponentType.CONTAINER,
+        "components": list(components),
+        "spoiler": spoiler,
+    }
+    if accent_color is not None:
+        container["accent_color"] = accent_color
+    return container
 
 
 def _entity_select(
@@ -445,11 +431,17 @@ def _defaults(ids: Iterable[int], type: SelectDefaultType) -> list[SelectDefault
     return [{"id": id, "type": type} for id in ids]
 
 
-def _present(**fields: Any) -> dict[str, Any]:
-    return {key: value for key, value in fields.items() if value is not None}
+def _labelled(
+    button: ButtonDict, label: str | None, emoji: _Emoji | None
+) -> ButtonDict:
+    if label is not None:
+        button["label"] = label
+    if emoji is not None:
+        button["emoji"] = _emoji(emoji)
+    return button
 
 
-def _emoji(emoji: _Emoji | None) -> Mapping[str, Any] | None:
+def _emoji(emoji: _Emoji) -> Mapping[str, Any]:
     return {"name": emoji} if isinstance(emoji, str) else emoji
 
 
