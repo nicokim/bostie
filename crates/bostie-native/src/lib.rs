@@ -105,10 +105,6 @@ impl NativeCore {
         Ok(PyList::new(py, items)?)
     }
 
-    fn inflight(&self) -> Result<usize> {
-        Ok(self.0.inflight()?)
-    }
-
     fn close(&self) -> Result<()> {
         Ok(self.0.close()?)
     }

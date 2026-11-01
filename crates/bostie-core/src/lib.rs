@@ -183,6 +183,7 @@ impl Core {
         Ok(self.inbox.drain())
     }
 
+    #[cfg(test)]
     pub fn inflight(&self) -> Result<usize, CoreError> {
         self.owner.check()?;
         Ok(self.tasks.lock().running.len())
