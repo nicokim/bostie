@@ -50,6 +50,7 @@ from bostie.models import (
     ModalSubmitInteraction,
     Model,
     PartialChannel,
+    ReactionCountDetails,
     Role,
     Section,
     Separator,
@@ -171,7 +172,10 @@ def test_rich_message() -> None:
     assert second.video is not None
     assert second.video.url == "https://www.youtube.com/embed/q3Vx8RmT2kZ"
     assert [reaction.count for reaction in message.reactions] == [2, 1]
-    assert message.reactions[1].emoji.id == 1345334752051331073
+    super_reaction = message.reactions[1]
+    assert super_reaction.emoji.id == 1345334752051331073
+    assert super_reaction.count_details == ReactionCountDetails(burst=1, normal=0)
+    assert super_reaction.burst_colors == ("#5865f2", "#eb459e")
     assert message.sticker_items[0].name == "lyre wave"
     assert message.message_reference is not None
     assert message.referenced_message is not None

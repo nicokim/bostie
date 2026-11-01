@@ -153,10 +153,22 @@ class Embed(Builder, kw_only=True):
     fields: tuple[EmbedField, ...] = ()
 
 
+class ReactionCountDetails(Model, kw_only=True):
+    """The reactions of one emoji, split into super reactions and normal ones."""
+
+    burst: int
+    normal: int
+
+
 class Reaction(Model, kw_only=True):
+    """An emoji's reactions on a message; `count` includes super reactions."""
+
     count: int
+    count_details: ReactionCountDetails
     me: bool
+    me_burst: bool
     emoji: PartialEmoji
+    burst_colors: tuple[str, ...]
 
 
 class MessageReference(Builder, kw_only=True):
