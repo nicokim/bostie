@@ -11,7 +11,13 @@ from fakediscord import settle
 
 from bostie.cache import Cache
 from bostie.enums import Intents
-from bostie.errors import SinkClosed
+from bostie.errors import (
+    AlreadyConnected,
+    ReceiverClosed,
+    SinkClosed,
+    StateError,
+    VoiceNotConnected,
+)
 from bostie.events import Event
 from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
@@ -223,7 +229,7 @@ class FakeSource:
 
     def _check(self) -> None:
         if self.closed:
-            raise RuntimeError(f"voice handle {self._id} is closed")
+            raise StateError(f"source {self._id} is closed")
 
 
 class FakeReceiver:
@@ -286,7 +292,7 @@ class FakeReceiver:
 
     def _check(self) -> None:
         if self.closed:
-            raise RuntimeError(f"voice handle {self._id} is closed")
+            raise ReceiverClosed(f"receiver {self._id} is closed")
 
 
 class FakeCore:
@@ -324,7 +330,7 @@ class FakeCore:
 
     def voice_connect(self, guild_id: int, channel_id: int, **options: Any) -> None:
         if guild_id in self.live:
-            raise RuntimeError(f"guild {guild_id} already has a voice connection")
+            raise AlreadyConnected(f"guild {guild_id} already has a voice connection")
         self.calls.append(("voice_connect", (guild_id, channel_id), options))
         self.live.add(guild_id)
         self.sent.append(
@@ -473,7 +479,7 @@ class FakeCore:
 
     def _record(self, name: str, guild_id: int, *args: Any, **kwargs: Any) -> None:
         if guild_id not in self.live:
-            raise RuntimeError(f"no voice connection in guild {guild_id}")
+            raise VoiceNotConnected(f"no voice connection in guild {guild_id}")
         self.calls.append((name, (guild_id, *args), kwargs))
 
 
