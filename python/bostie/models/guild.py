@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from bostie.models.interaction import Resolved
 
 
-class RoleColors(Model, kw_only=True):
+class RoleColors(Builder, kw_only=True):
     primary_color: int
     secondary_color: int | None
     tertiary_color: int | None

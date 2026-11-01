@@ -1,8 +1,0 @@
-POST /guilds/{guild_id}/roles roles.create reason
-DELETE /guilds/{guild_id}/roles/{role_id} roles.delete reason
-PATCH /guilds/{guild_id}/roles/{role_id} roles.edit reason
-PATCH /guilds/{guild_id}/roles roles.edit_positions reason
-GET /guilds/{guild_id}/roles/{role_id} roles.fetch
-GET /guilds/{guild_id}/roles/member-counts roles.fetch_member_counts
-GET /guilds/{guild_id}/permissions/role/{role_id} roles.fetch_permissions
-GET /guilds/{guild_id}/roles roles.list

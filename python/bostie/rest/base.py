@@ -7,6 +7,7 @@ from typing import Any
 import msgspec
 
 from bostie.cache import Cache
+from bostie.enums import Permissions
 from bostie.file import File
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
@@ -52,12 +53,22 @@ def each[T](decode: Callable[[bytes], T]) -> Callable[[bytes], tuple[T, ...]]:
 
 
 def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, object]:
-    """`options` checked against the TypedDict `shape`, with each File as a data URI."""
+    """`options` checked against the TypedDict `shape`, ready for the wire.
+
+    A File becomes a data URI and Permissions their string of bits.
+    """
     check_keys(options, shape.__required_keys__ | shape.__optional_keys__, "options")
-    return {
-        name: _data_uri(value) if isinstance(value, File) else value
-        for name, value in options.items()
-    }
+    return {name: _wire_value(value) for name, value in options.items()}
+
+
+def _wire_value(value: object) -> object:
+    match value:
+        case File():
+            return _data_uri(value)
+        case Permissions():
+            return str(value.value)
+        case _:
+            return value
 
 
 def _data_uri(file: File) -> str:

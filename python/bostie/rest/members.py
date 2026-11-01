@@ -1,10 +1,129 @@
+from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
 from functools import partial
+from typing import Required, TypedDict, Unpack
 
+from bostie.enums import MemberFlags, Permissions
+from bostie.file import File
+from bostie.http import decode_answer
 from bostie.models import Member, decode
-from bostie.rest.base import Group
+from bostie.models.base import Model
+from bostie.rest.base import Group, each, paginate, wire
+
+
+class MemberAdd(TypedDict, total=False):
+    access_token: Required[str]
+    nick: str
+    roles: Sequence[int]
+    mute: bool
+    deaf: bool
+
+
+class MemberEdit(TypedDict, total=False):
+    nick: str | None
+    roles: Sequence[int] | None
+    mute: bool | None
+    deaf: bool | None
+    channel_id: int | None
+    communication_disabled_until: datetime | None
+    flags: MemberFlags | None
+
+
+class MemberEditCurrent(TypedDict, total=False):
+    nick: str | None
+    banner: File | None
+    avatar: File | None
+    bio: str | None
+
+
+class MemberList(TypedDict, total=False):
+    after: int
+    limit: int
+
+
+class MemberSearch(TypedDict, total=False):
+    query: Required[str]
+    limit: int
+
+
+class _Permissions(Model, kw_only=True):
+    permissions: str
+
+
+def decode_permissions(data: bytes) -> Permissions:
+    return Permissions(int(decode(_Permissions, data).permissions))
 
 
 class Members(Group):
+    async def add(
+        self, guild_id: int, user_id: int, /, **options: Unpack[MemberAdd]
+    ) -> Member | None:
+        """Add a user with their OAuth2 token; None if they were already a member."""
+        data = await self._http._request(
+            "PUT",
+            "/guilds/{guild_id}/members/{user_id}",
+            json=wire(options, MemberAdd),
+            guild_id=guild_id,
+            user_id=user_id,
+        )
+        if not data:
+            return None
+        return decode_answer(partial(decode, Member), data, took_effect=True)
+
+    async def add_role(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        /,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        await self._http._request(
+            "PUT",
+            "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+            reason=reason,
+            guild_id=guild_id,
+            user_id=user_id,
+            role_id=role_id,
+        )
+
+    async def edit(
+        self,
+        guild_id: int,
+        user_id: int,
+        /,
+        *,
+        reason: str | None = None,
+        **options: Unpack[MemberEdit],
+    ) -> Member:
+        return await self._http._decoded(
+            partial(decode, Member),
+            "PATCH",
+            "/guilds/{guild_id}/members/{user_id}",
+            json=wire(options, MemberEdit),
+            reason=reason,
+            guild_id=guild_id,
+            user_id=user_id,
+        )
+
+    async def edit_current(
+        self,
+        guild_id: int,
+        /,
+        *,
+        reason: str | None = None,
+        **options: Unpack[MemberEditCurrent],
+    ) -> Member:
+        return await self._http._decoded(
+            partial(decode, Member),
+            "PATCH",
+            "/guilds/{guild_id}/members/@me",
+            json=wire(options, MemberEditCurrent),
+            reason=reason,
+            guild_id=guild_id,
+        )
+
     async def fetch(self, guild_id: int, user_id: int, /) -> Member:
         return await self._http._decoded(
             partial(decode, Member),
@@ -12,4 +131,72 @@ class Members(Group):
             "/guilds/{guild_id}/members/{user_id}",
             guild_id=guild_id,
             user_id=user_id,
+        )
+
+    async def fetch_permissions(self, guild_id: int, user_id: int, /) -> Permissions:
+        """The member's guild permissions from their roles and `@everyone`."""
+        return await self._http._decoded(
+            decode_permissions,
+            "GET",
+            "/guilds/{guild_id}/permissions/member/{user_id}",
+            guild_id=guild_id,
+            user_id=user_id,
+        )
+
+    def list(
+        self, guild_id: int, /, **options: Unpack[MemberList]
+    ) -> AsyncIterator[Member]:
+        """Walk the guild's members by user id; needs the Server Members intent."""
+        pages = paginate(
+            self._http,
+            "/guilds/{guild_id}/members",
+            wire(options, MemberList),
+            decode=each(partial(decode, Member)),
+            items=tuple,
+            cursor=lambda member: member.id,
+            page_size=1000,
+            forward=True,
+            guild_id=guild_id,
+        )
+        return (member async for page in pages for member in page)
+
+    async def remove(
+        self, guild_id: int, user_id: int, /, *, reason: str | None = None
+    ) -> None:
+        await self._http._request(
+            "DELETE",
+            "/guilds/{guild_id}/members/{user_id}",
+            reason=reason,
+            guild_id=guild_id,
+            user_id=user_id,
+        )
+
+    async def remove_role(
+        self,
+        guild_id: int,
+        user_id: int,
+        role_id: int,
+        /,
+        *,
+        reason: str | None = None,
+    ) -> None:
+        await self._http._request(
+            "DELETE",
+            "/guilds/{guild_id}/members/{user_id}/roles/{role_id}",
+            reason=reason,
+            guild_id=guild_id,
+            user_id=user_id,
+            role_id=role_id,
+        )
+
+    async def search(
+        self, guild_id: int, /, **options: Unpack[MemberSearch]
+    ) -> tuple[Member, ...]:
+        """Members whose username or nickname starts with `query`."""
+        return await self._http._decoded(
+            each(partial(decode, Member)),
+            "GET",
+            "/guilds/{guild_id}/members/search",
+            query=wire(options, MemberSearch),
+            guild_id=guild_id,
         )
