@@ -1,7 +1,6 @@
 pub mod decode;
 pub mod http;
 
-use std::any::Any;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 use std::process;
@@ -15,6 +14,7 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
+use crate::voice::panic_message;
 use crate::voice::source::decode::{Decoder, Input, Step};
 use crate::voice::source::http::{Http, HttpMedia};
 use crate::voice::types::{SAMPLE_RATE, SourceSpec};
@@ -330,14 +330,6 @@ fn play(shared: &Shared, input: Input) {
 fn frames_in(duration: Duration) -> u64 {
     let frames = duration.as_millis() * u128::from(SAMPLE_RATE) / 1_000;
     u64::try_from(frames).unwrap_or(u64::MAX)
-}
-
-fn panic_message(payload: &(dyn Any + Send)) -> &str {
-    payload
-        .downcast_ref::<&str>()
-        .copied()
-        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("unknown panic")
 }
 
 #[cfg(test)]

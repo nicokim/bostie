@@ -13,11 +13,11 @@ use crate::inbox::{Delivery, Inbox};
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
-    CHANNELS, FRAME_LEN, FRAME_SAMPLES, SAMPLE_RATE, SinkFormat, SinkOptions, StallPolicy,
+    CHANNELS, FRAME_LEN, FRAME_SAMPLES, NANOS_PER_SECOND, SAMPLE_RATE, SinkFormat, SinkOptions,
+    StallPolicy,
 };
 
 const FRAME_FRAMES: u64 = FRAME_SAMPLES as u64;
-const NANOS_PER_SECOND: u64 = 1_000_000_000;
 
 pub struct Sink {
     id: Handle,
@@ -209,9 +209,7 @@ impl Sink {
     pub fn queued(&self) -> Result<Duration, CoreError> {
         self.ensure_owner()?;
         let frames = self.queue.lock().queued;
-        Ok(Duration::from_nanos(
-            frames.saturating_mul(NANOS_PER_SECOND) / u64::from(SAMPLE_RATE),
-        ))
+        Ok(Duration::from_secs(frames) / SAMPLE_RATE)
     }
 
     pub fn passthrough(&self) -> Result<bool, CoreError> {
@@ -408,7 +406,7 @@ impl Queue {
 }
 
 fn frames_in(duration: Duration) -> u64 {
-    let frames = duration.as_nanos() * u128::from(SAMPLE_RATE) / u128::from(NANOS_PER_SECOND);
+    let frames = duration.as_nanos() * u128::from(SAMPLE_RATE) / NANOS_PER_SECOND;
     u64::try_from(frames).unwrap_or(u64::MAX)
 }
 

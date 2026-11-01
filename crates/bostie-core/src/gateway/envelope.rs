@@ -12,7 +12,7 @@ const IDENTIFY_PREFIX: &[u8] = br#"{"op":2,"d":"#;
 static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&["op", "s", "t"]));
 static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&["session_id", "resume_gateway_url"]));
 
-fn tree(keys: &[&str]) -> PointerTree {
+pub(crate) fn tree(keys: &[&str]) -> PointerTree {
     let mut tree = PointerTree::new();
     for key in keys {
         tree.add_path([*key]);

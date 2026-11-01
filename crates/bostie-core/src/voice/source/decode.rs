@@ -23,9 +23,8 @@ use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::source::http::HttpMedia;
 use crate::voice::source::{SourceInfo, SourceKind};
-use crate::voice::types::{CHANNELS, PcmFormat, SAMPLE_RATE, SampleFormat};
+use crate::voice::types::{CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, SampleFormat};
 
-const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const MINUS_3_DB: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 pub enum Input {

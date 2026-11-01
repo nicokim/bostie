@@ -592,6 +592,10 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
     });
 }
 
+pub(crate) fn nanos(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
 pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
     payload
         .downcast_ref::<&str>()

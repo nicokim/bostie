@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::io;
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
@@ -12,6 +11,7 @@ use parking_lot::Mutex;
 
 use crate::error::CoreError;
 use crate::voice::types::FRAME;
+use crate::voice::{nanos, panic_message};
 
 pub const AFTER_MARGIN: Duration = Duration::from_millis(2);
 
@@ -514,10 +514,6 @@ impl Load {
     }
 }
 
-fn nanos(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
-}
-
 fn ewma(average: u64, took: Duration) -> u64 {
     average - average / WORK_SMOOTHING + nanos(took) / WORK_SMOOTHING
 }
@@ -677,14 +673,6 @@ fn contained(load: &Load, what: &str, call: impl FnOnce() -> bool) -> bool {
         );
         false
     })
-}
-
-fn panic_message(payload: &(dyn Any + Send)) -> &str {
-    payload
-        .downcast_ref::<&str>()
-        .copied()
-        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("unknown panic")
 }
 
 #[cfg(test)]

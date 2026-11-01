@@ -7,6 +7,7 @@ use sonic_rs::{JsonValueTrait, LazyValue, PointerTree};
 use tokio::sync::watch;
 use tracing::debug;
 
+use crate::gateway::tree;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 
 pub const VOICE_STATE_UPDATE: &str = "VOICE_STATE_UPDATE";
@@ -27,14 +28,6 @@ static STATE_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| {
 });
 static SERVER_FIELDS: LazyLock<PointerTree> =
     LazyLock::new(|| tree(&["guild_id", "token", "endpoint"]));
-
-fn tree(keys: &[&str]) -> PointerTree {
-    let mut tree = PointerTree::new();
-    for key in keys {
-        tree.add_path([*key]);
-    }
-    tree
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {

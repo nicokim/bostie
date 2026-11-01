@@ -23,7 +23,7 @@ use crate::voice::dave::{self, Dave, DecryptFailure};
 use crate::voice::media::{Arrival, Media, Transport, UserCounters, bump};
 use crate::voice::pacer::Tick;
 use crate::voice::panic_message;
-use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, to_samples};
+use crate::voice::playout::{Check, Cursor, Release, Slot, Stream, is_before, to_samples};
 use crate::voice::receiver::{Item, Receiver};
 use crate::voice::rtp;
 use crate::voice::speech::{self, Activity, Edge};
@@ -1208,7 +1208,13 @@ impl State {
                 match track.cursor.position() {
                     None => waiting = true,
                     Some(next) => {
-                        oldest = Some(oldest.map_or(next, |oldest| earlier(next, oldest)));
+                        oldest = Some(oldest.map_or(next, |oldest| {
+                            if is_before(next, oldest) {
+                                next
+                            } else {
+                                oldest
+                            }
+                        }));
                     }
                 }
             }
@@ -1502,7 +1508,7 @@ impl Output {
                 if samples < slot.samples
                     && feed
                         .trimmed
-                        .is_none_or(|trimmed| later(slot.sequence, trimmed))
+                        .is_none_or(|trimmed| is_before(trimmed, slot.sequence))
                 {
                     feed.trimmed = Some(slot.sequence);
                     context.invalid(user);
@@ -1986,14 +1992,6 @@ fn rotate<T>(items: &mut [T], turn: usize) {
     if let Some(by) = turn.checked_rem(items.len()) {
         items.rotate_left(by);
     }
-}
-
-fn earlier(a: u16, b: u16) -> u16 {
-    if later(b, a) { a } else { b }
-}
-
-fn later(sequence: u16, other: u16) -> bool {
-    sequence.wrapping_sub(other).cast_signed() > 0
 }
 
 fn samples_since(epoch: Instant, instant: Instant) -> i64 {

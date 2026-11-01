@@ -21,6 +21,7 @@ use tokio::task::AbortHandle;
 use tokio::time::Instant;
 use tokio_websockets::Connector;
 
+pub(crate) use self::envelope::tree;
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
 use self::limits::Limits;

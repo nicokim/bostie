@@ -15,6 +15,7 @@ use davey::{Codec, DaveSession, MediaType, ProposalsOperationType};
 use tracing::{debug, error, warn};
 
 use crate::ids::{ChannelId, UserId};
+use crate::voice::panic_message;
 use crate::voice::types::{
     DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp, ReceiveTuning, SILENCE_FRAME,
 };
@@ -781,14 +782,6 @@ impl Dave {
 
 pub fn has_marker(frame: &[u8]) -> bool {
     frame.ends_with(&MARKER)
-}
-
-fn panic_message(payload: &(dyn Any + Send)) -> &str {
-    payload
-        .downcast_ref::<&str>()
-        .copied()
-        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("unknown panic")
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 
 pub const SAMPLE_RATE: u32 = 48_000;
+pub(crate) const NANOS_PER_SECOND: u128 = 1_000_000_000;
 pub const CHANNELS: usize = 2;
 pub const FRAME_SAMPLES: usize = 960;
 pub const FRAME_LEN: usize = FRAME_SAMPLES * CHANNELS;

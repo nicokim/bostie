@@ -15,6 +15,7 @@ use crate::inbox::{Delivery, Inbox};
 use crate::voice::crypto::Cipher;
 use crate::voice::dave::{Dave, DaveCounters, DaveInfo, EncryptFailure, SendMode};
 use crate::voice::mixer::{Mixed, Mixer};
+use crate::voice::nanos;
 use crate::voice::pacer::Tick;
 use crate::voice::receiver::{Ended, Receiver};
 use crate::voice::rtp::{self, HEADER_LEN};
@@ -378,10 +379,6 @@ impl Media {
             duration,
         });
     }
-}
-
-fn nanos(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
 #[derive(Debug, Clone, Copy)]
