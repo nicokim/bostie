@@ -27,6 +27,7 @@ from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop
 from bostie.voice.formats import (
     PCM,
+    SAMPLE_BYTES,
     SAMPLE_RATE,
     SINK_OPTIONS,
     EncoderSettings,
@@ -355,8 +356,7 @@ class _Player:
             return
         following = self._entries.index(current) + 1
         if following < len(self._entries) and not self._entries[following].opened:
-            upcoming = self._entries[following]
-            upcoming.opening = self._opening(upcoming)
+            _ = self._opening(self._entries[following])
 
     def _opening(self, entry: _Entry) -> asyncio.Task[Exception | None]:
         if entry.opening is None:
@@ -695,7 +695,7 @@ async def _utterances(
         silence=round(min_silence * SAMPLE_RATE),
         longest=round(max_length * SAMPLE_RATE),
         pause=rx.jitter + min_silence,
-        width=format.channels * (2 if format.sample == "s16le" else 4),
+        width=format.channels * SAMPLE_BYTES[format.sample],
         rate=format.rate,
     )
     while True:
