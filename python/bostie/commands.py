@@ -7,14 +7,16 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from enum import Enum
-from types import EllipsisType, NoneType, UnionType
+from types import NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
     Literal,
+    TypedDict,
     Union,
+    Unpack,
     get_args,
     get_origin,
     overload,
@@ -34,10 +36,13 @@ __all__ = [
     "ChoiceValue",
     "Command",
     "CommandCallback",
+    "CommandSettings",
     "Group",
+    "GroupSettings",
     "Option",
     "Range",
     "Scope",
+    "SubcommandSettings",
     "autocomplete_choices",
 ]
 
@@ -92,6 +97,34 @@ FIELD_TYPES = {
     "channel_types": frozenset({OptionType.CHANNEL}),
 }
 MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
+
+
+class GroupSettings(TypedDict, total=False):
+    """Settings of a top-level command or group."""
+
+    default_permissions: Permissions
+    guild_only: bool
+    nsfw: bool
+    extra: Mapping[str, Any]
+
+
+class SubcommandSettings(TypedDict, total=False):
+    """Settings of a subcommand; without `auto_defer` it follows the bot's."""
+
+    name: str
+    description: str
+    ephemeral: bool
+    auto_defer: float | None
+    extra: Mapping[str, Any]
+
+
+class CommandSettings(SubcommandSettings, GroupSettings, total=False):
+    """Settings of a top-level slash command."""
+
+
+GROUP_SETTINGS = GroupSettings.__optional_keys__
+SUBCOMMAND_SETTINGS = SubcommandSettings.__optional_keys__
+COMMAND_SETTINGS = CommandSettings.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,10 +232,7 @@ class _Node(ABC):
         *,
         router: "Router",
         parent: "Group | None",
-        default_permissions: Permissions | None,
-        guild_only: bool,
-        nsfw: bool,
-        extra: Mapping[str, Any] | None,
+        settings: GroupSettings,
     ) -> None:
         _check_name(name)
         _check_description(description)
@@ -210,10 +240,10 @@ class _Node(ABC):
         self.description = description
         self.router = router
         self.parent = parent
-        self.default_permissions = default_permissions
-        self.guild_only = guild_only
-        self.nsfw = nsfw
-        self.extra = dict(extra or {})
+        self.default_permissions = settings.get("default_permissions")
+        self.guild_only = settings.get("guild_only", False)
+        self.nsfw = settings.get("nsfw", False)
+        self.extra = dict(settings.get("extra", {}))
 
     @property
     def qualified_name(self) -> str:
@@ -266,32 +296,25 @@ class Command(_Node):
         *,
         router: "Router",
         parent: "Group | None" = None,
-        name: str | None = None,
-        description: str | None = None,
-        default_permissions: Permissions | None = None,
-        guild_only: bool = False,
-        nsfw: bool = False,
-        ephemeral: bool = False,
-        auto_defer: float | EllipsisType | None = ...,
-        extra: Mapping[str, Any] | None = None,
+        **settings: Unpack[CommandSettings],
     ) -> None:
+        _check_settings(
+            settings, COMMAND_SETTINGS if parent is None else SUBCOMMAND_SETTINGS
+        )
         try:
             super().__init__(
-                callback.__name__ if name is None else name,
-                _command_description(callback, description),
+                settings.get("name", callback.__name__),
+                _command_description(callback, settings.get("description")),
                 router=router,
                 parent=parent,
-                default_permissions=default_permissions,
-                guild_only=guild_only,
-                nsfw=nsfw,
-                extra=extra,
+                settings=settings,
             )
             self._parameters = _parameters(callback)
         except CommandDefinitionError as error:
             raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
         self.callback = callback
-        self.ephemeral = ephemeral
-        self.auto_defer = auto_defer
+        self.ephemeral = settings.get("ephemeral", False)
+        self._settings = settings
         self.autocompletes: dict[str, AutocompleteCallback] = {
             parameter.name: parameter.autocomplete
             for parameter in self._parameters
@@ -302,6 +325,13 @@ class Command(_Node):
         }
         if parent is None:
             _warn_if_over_budget(self)
+
+    @property
+    def auto_defer(self) -> float | None:
+        """Seconds before an unanswered call is deferred; the bot's unless set here."""
+        if "auto_defer" in self._settings:
+            return self._settings["auto_defer"]
+        return self.router.bot.auto_defer
 
     def bind(self, options: Sequence[Any], resolved: Any) -> dict[str, Any]:
         """Turn the leaf options of an invocation into keyword arguments."""
@@ -340,21 +370,12 @@ class Group(_Node):
         *,
         router: "Router",
         parent: "Group | None" = None,
-        default_permissions: Permissions | None = None,
-        guild_only: bool = False,
-        nsfw: bool = False,
-        extra: Mapping[str, Any] | None = None,
+        **settings: Unpack[GroupSettings],
     ) -> None:
+        _check_settings(settings, GROUP_SETTINGS)
         try:
             super().__init__(
-                name,
-                description,
-                router=router,
-                parent=parent,
-                default_permissions=default_permissions,
-                guild_only=guild_only,
-                nsfw=nsfw,
-                extra=extra,
+                name, description, router=router, parent=parent, settings=settings
             )
         except CommandDefinitionError as error:
             raise CommandDefinitionError(f"group {name!r}: {error}") from None
@@ -373,42 +394,20 @@ class Group(_Node):
 
     @overload
     def command(
-        self,
-        callback: None = None,
-        /,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        ephemeral: bool = False,
-        auto_defer: float | EllipsisType | None = ...,
-        extra: Mapping[str, Any] | None = None,
+        self, callback: None = None, /, **settings: Unpack[SubcommandSettings]
     ) -> Callable[[CommandCallback], Command]: ...
 
     def command(
         self,
         callback: CommandCallback | None = None,
         /,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        ephemeral: bool = False,
-        auto_defer: float | EllipsisType | None = ...,
-        extra: Mapping[str, Any] | None = None,
+        **settings: Unpack[SubcommandSettings],
     ) -> Command | Callable[[CommandCallback], Command]:
         """Add a subcommand, as `@group.command` or `@group.command(name=...)`."""
 
         def register(callback: CommandCallback) -> Command:
             return self._add(
-                Command(
-                    callback,
-                    router=self.router,
-                    parent=self,
-                    name=name,
-                    description=description,
-                    ephemeral=ephemeral,
-                    auto_defer=auto_defer,
-                    extra=extra,
-                )
+                Command(callback, router=self.router, parent=self, **settings)
             )
 
         return register if callback is None else register(callback)
@@ -706,6 +705,12 @@ def _check_description(description: str) -> None:
         raise CommandDefinitionError(
             f"description {description!r} must be 1-100 characters long"
         )
+
+
+def _check_settings(settings: Mapping[str, object], allowed: frozenset[str]) -> None:
+    unknown = settings.keys() - allowed
+    if unknown:
+        raise TypeError(f"unexpected settings: {', '.join(sorted(unknown))}")
 
 
 def _command_description(callback: CommandCallback, description: str | None) -> str:

@@ -523,8 +523,11 @@ def test_subcommands_cannot_set_top_level_settings(setting: str) -> None:
     group = Router().group("admin", "Admin tools")
     settings: dict[str, Any] = {setting: Permissions.ADMINISTRATOR}
 
+    async def handler(ctx: object) -> None:
+        pass
+
     with pytest.raises(TypeError, match=setting):
-        group.command(**settings)
+        group.command(**settings)(handler)
 
 
 def test_a_group_holds_at_most_25_subcommands() -> None:

@@ -8,7 +8,6 @@ import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
-from types import EllipsisType
 from typing import Any, cast
 
 import msgspec
@@ -122,7 +121,7 @@ class Bot(Router):
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
         self._auto_sync = auto_sync
-        self._auto_defer = auto_defer
+        self.auto_defer = auto_defer
         self._caching = cache
         self._allowed_mentions = allowed_mentions
         self._presence = presence
@@ -613,7 +612,7 @@ class Bot(Router):
                 self,
                 received=received,
                 ephemeral=False,
-                auto_defer=self._auto_defer,
+                auto_defer=self.auto_defer,
                 allowed_mentions=self._allowed_mentions,
             )
             return self._run_handler(
@@ -632,9 +631,7 @@ class Bot(Router):
             self,
             received=received,
             ephemeral=command.ephemeral,
-            auto_defer=self._auto_defer
-            if isinstance(command.auto_defer, EllipsisType)
-            else command.auto_defer,
+            auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
         return self._run_handler(

@@ -1,21 +1,27 @@
 import inspect
 import typing
-from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Iterator
 from dataclasses import dataclass
-from types import EllipsisType, UnionType
+from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
     TypeAliasType,
     Union,
+    Unpack,
     get_args,
     get_origin,
     overload,
 )
 
-from bostie.commands import Command, CommandCallback, Group
+from bostie.commands import (
+    Command,
+    CommandCallback,
+    CommandSettings,
+    Group,
+    GroupSettings,
+)
 from bostie.custom_id import ComponentRoute
-from bostie.enums import Permissions
 from bostie.errors import CommandDefinitionError
 from bostie.events import Event, RawEvent
 from bostie.voice.events import VoiceEvent
@@ -61,22 +67,14 @@ class Router:
 
     @overload
     def command(
-        self,
-        callback: None = None,
-        /,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        default_permissions: Permissions | None = None,
-        guild_only: bool = False,
-        nsfw: bool = False,
-        ephemeral: bool = False,
-        auto_defer: float | EllipsisType | None = ...,
-        extra: Mapping[str, Any] | None = None,
+        self, callback: None = None, /, **settings: Unpack[CommandSettings]
     ) -> Callable[[CommandCallback], Command]: ...
 
     def command(
-        self, callback: CommandCallback | None = None, /, **settings: Any
+        self,
+        callback: CommandCallback | None = None,
+        /,
+        **settings: Unpack[CommandSettings],
     ) -> Command | Callable[[CommandCallback], Command]:
         """Register a slash command, as `@router.command` or `@router.command(...)`."""
 
@@ -88,25 +86,10 @@ class Router:
         return register if callback is None else register(callback)
 
     def group(
-        self,
-        name: str,
-        description: str,
-        *,
-        default_permissions: Permissions | None = None,
-        guild_only: bool = False,
-        nsfw: bool = False,
-        extra: Mapping[str, Any] | None = None,
+        self, name: str, description: str, **settings: Unpack[GroupSettings]
     ) -> Group:
         """Register a slash command made of subcommands."""
-        group = Group(
-            name,
-            description,
-            router=self,
-            default_permissions=default_permissions,
-            guild_only=guild_only,
-            nsfw=nsfw,
-            extra=extra,
-        )
+        group = Group(name, description, router=self, **settings)
         self._add_command(group)
         return group
 
