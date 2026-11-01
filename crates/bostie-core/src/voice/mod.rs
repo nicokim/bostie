@@ -7,6 +7,7 @@ pub(crate) mod dave;
 pub(crate) mod media;
 pub(crate) mod mixer;
 pub(crate) mod pacer;
+pub(crate) mod peak;
 pub(crate) mod playout;
 pub(crate) mod proto;
 pub(crate) mod receive;

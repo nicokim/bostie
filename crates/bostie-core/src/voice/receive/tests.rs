@@ -1,19 +1,25 @@
 use std::collections::HashSet;
+use std::net::UdpSocket;
 
+use bytes::BytesMut;
 use futures_util::FutureExt;
 use proptest::prelude::*;
 
+use super::intake::SPARE_WINDOWS;
 use super::*;
-use crate::ids::{ChannelId, GuildId, ShardId};
-use crate::voice::codec::FrameEncoder;
+use crate::ids::{ChannelId, Handle, ShardId};
+use crate::voice::codec::{Decoder, FrameEncoder};
 use crate::voice::crypto::{Cipher, Mode};
 use crate::voice::dave::{Outbound, SendMode};
-use crate::voice::receiver::{Ended, ReceiveRead};
+use crate::voice::media::Transport;
+use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
+use crate::voice::rtp;
 use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
 use crate::voice::types::{
-    Application, DaveOp, EncoderSettings, Overflow, ReceiveStall, SampleFormat, Speaking,
+    Application, DaveOp, EncoderSettings, FRAME, Overflow, PcmFormat, ReceiveFormat,
+    ReceiveOptions, ReceiveStall, SampleFormat,
 };
 
 const GUILD: u64 = 10;
@@ -202,7 +208,7 @@ impl Rig {
         ));
         let info = Arc::new(Info::new(GuildId::from(GUILD), ShardId::from(0)));
         let reception = Reception::new(Arc::clone(&media), Arc::clone(&info), user(BOT), tuning);
-        let now = reception.epoch + Duration::from_secs(1);
+        let now = reception.core.epoch + Duration::from_secs(1);
         let rig = Self {
             fixture,
             media,
@@ -300,25 +306,9 @@ impl Rig {
     }
 
     fn run_unguarded(&mut self, now: Instant, skipped: u32) -> bool {
-        let Reception {
-            media,
-            info,
-            user,
-            tuning,
-            epoch,
-            state,
-            ..
-        } = &mut self.reception;
+        let Reception { core, state, .. } = &mut self.reception;
         state
-            .get_or_insert_with(|| {
-                Box::new(State::new(
-                    Arc::clone(media),
-                    Arc::clone(info),
-                    *user,
-                    *tuning,
-                    *epoch,
-                ))
-            })
+            .get_or_insert_with(|| Box::new(State::new(core)))
             .run(now, skipped, now + FRAME)
     }
 
@@ -326,7 +316,7 @@ impl Rig {
         self.reception
             .state
             .as_ref()
-            .map_or(0, |state| state.undecryptable)
+            .map_or(0, |state| state.hold.undecryptable.total)
     }
 
     fn recovered(&self) -> bool {
@@ -456,7 +446,7 @@ fn an_unmapped_ssrc_is_held_until_op_5_and_dropped_after_the_hold() {
     rig.map(BOB_SSRC, BOB);
     rig.step();
     let after_op_5 = read(&receiver);
-    rig.now += rig.reception.tuning.hold;
+    rig.now += rig.reception.core.tuning.hold;
     rig.step();
     rig.map(STRANGER_SSRC, STRANGER);
     rig.step();
@@ -495,7 +485,7 @@ fn users_nobody_receives_are_never_decrypted_but_still_speak() {
     let switched_off = rig.speech();
     rig.send(BOB_SSRC, 2, &garbage(4));
     rig.step();
-    rig.now += rig.reception.tuning.hold;
+    rig.now += rig.reception.core.tuning.hold;
     rig.step();
 
     assert!(rig.speech().is_empty());
@@ -564,7 +554,7 @@ fn frames_failing_in_a_late_commit_retry_on_dave_changes() {
         rig.step();
         let rest = read(&receiver);
         let still_held = rig.undecryptable();
-        rig.now += rig.reception.tuning.hold;
+        rig.now += rig.reception.core.tuning.hold;
         rig.step();
 
         assert_eq!(before, 4, "{speaker}");
@@ -731,155 +721,41 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
 }
 
 #[test]
-fn a_failure_streak_requests_spaced_and_capped_recoveries() {
+fn a_failure_streak_asks_for_one_recovery_and_a_success_resets_it() {
     let tolerance = ReceiveTuning::default().decrypt_tolerance;
-    let interval = RECOVERY_INTERVAL;
-    for case in ["garbage", "plaintext", "unknown epoch"] {
-        let mut rig = Rig::dave();
-        let peers: &[u64] = if case == "garbage" {
-            &[ALICE, BOB]
-        } else {
-            &[ALICE]
-        };
-        let mut call = rig.group(peers);
-        rig.map(ALICE_SSRC, ALICE);
-        rig.map(BOB_SSRC, BOB);
-        let _receiver = rig.open(options(ReceiveFormat::Opus));
-        let packet = opus(1, 0.3).remove(0);
-        let first = call.speak(user(ALICE), &packet);
-        rig.send(ALICE_SSRC, 0, &first);
-        rig.step();
-        if case == "unknown epoch" {
-            join_behind_the_bot(&mut call, BOB);
-        }
-        let mut sequence = 1;
-        let mut send = |rig: &mut Rig, speaker: u64, count: u32, decryptable: bool| {
-            let ssrc = if speaker == ALICE {
-                ALICE_SSRC
-            } else {
-                BOB_SSRC
-            };
-            for _ in 0..count {
-                let frame = if decryptable || case == "unknown epoch" {
-                    call.speak(user(speaker), &packet)
-                } else if case == "plaintext" {
-                    packet.to_vec()
-                } else {
-                    garbage(sequence)
-                };
-                rig.send(ssrc, sequence, &frame);
-                sequence += 1;
-            }
-            rig.step();
-            rig.recovered()
-        };
-
-        let short = send(&mut rig, ALICE, tolerance - 1, false);
-        if case == "garbage" {
-            assert!(!send(&mut rig, ALICE, 1, true));
-            assert!(!send(&mut rig, ALICE, tolerance - 1, false));
-        }
-        let reached = send(&mut rig, ALICE, 1, false);
-        if case == "plaintext" {
-            assert_eq!(rig.undecryptable(), u64::from(tolerance));
-        }
-        if case == "garbage" {
-            assert!(!send(&mut rig, BOB, tolerance, false));
-            assert!(!send(&mut rig, BOB, 1, true));
-        }
-        let within_the_interval = send(&mut rig, ALICE, tolerance, false);
-        assert_eq!(
-            (short, reached, within_the_interval),
-            (false, true, false),
-            "{case}"
-        );
-        if case == "garbage" {
-            rig.now += interval;
-            let transition = |rig: &Rig, op| {
-                rig.media
-                    .with_dave(|dave| dave.handle(op, rig.now, &mut Vec::new()))
-                    .unwrap();
-            };
-            transition(
-                &rig,
-                DaveOp::PrepareTransition {
-                    transition_id: 9,
-                    protocol_version: 1,
-                },
-            );
-            let while_settling = send(&mut rig, ALICE, 1, false);
-            transition(&rig, DaveOp::ExecuteTransition { transition_id: 9 });
-            let second = send(&mut rig, ALICE, 1, false);
-            rig.now += interval;
-            let third = send(&mut rig, ALICE, tolerance, false);
-            let bob = send(&mut rig, BOB, tolerance, false);
-            rig.now += interval;
-            let after_bob_went_quiet = send(&mut rig, ALICE, 1, false);
-            assert_eq!(
-                (while_settling, second, third, bob, after_bob_went_quiet),
-                (false, true, false, true, false)
-            );
-        }
-    }
-
-    for case in [
-        "empty or unparseable",
-        "no decryptor",
-        "protocol version 0",
-        "settling",
-        "no group yet",
-    ] {
-        let mut rig = if case == "settling" {
-            Rig::new(tuning())
-        } else {
-            Rig::dave()
-        };
-        let mut corrupted = Vec::new();
-        if case != "no group yet" {
-            let mut call = rig.group(&[ALICE]);
-            let packet = &opus(1, 0.3)[0];
-            corrupted = (0..tolerance * 2)
-                .map(|_| {
-                    let mut frame = call.speak(user(ALICE), packet);
-                    frame[1] ^= 0xFF;
-                    frame
-                })
-                .collect();
-            if case == "protocol version 0" {
-                let downgrade = call.fake.downgrade();
-                call.enqueue(downgrade);
-                call.run();
-                rig.deliver(&mut call);
-                assert_eq!(rig.media.protocol_version(), 0);
-            }
-        }
-        let speaker = if case == "no decryptor" {
-            STRANGER
-        } else {
-            ALICE
-        };
-        rig.map(ALICE_SSRC, speaker);
-        let _receiver = rig.open(only(&[speaker], ReceiveFormat::Opus));
-        for sequence in 0..u16::try_from(tolerance * 2).unwrap() {
-            let frame = match case {
-                "empty or unparseable" if sequence % 2 == 0 => Vec::new(),
-                "empty or unparseable" => vec![0x03],
-                "no group yet" => garbage(sequence),
-                _ => corrupted[usize::from(sequence)].clone(),
-            };
+    let mut rig = Rig::dave();
+    let mut call = rig.group(&[ALICE]);
+    rig.map(ALICE_SSRC, ALICE);
+    let _receiver = rig.open(options(ReceiveFormat::Opus));
+    let decryptable = call.speak(user(ALICE), &opus(1, 0.3)[0]);
+    let mut sequence = 0;
+    let mut send = |rig: &mut Rig, frames: Vec<Vec<u8>>| {
+        for frame in frames {
             rig.send(ALICE_SSRC, sequence, &frame);
+            sequence += 1;
         }
         rig.step();
-        assert!(!rig.recovered(), "{case}");
-        let sent = tolerance * 2;
-        let beyond_the_hold = sent - u32::try_from(rig.reception.tuning.hold_packets).unwrap();
-        let dropped = match case {
-            "empty or unparseable" => 0,
-            "protocol version 0" => sent,
-            _ => beyond_the_hold,
-        };
-        assert_eq!(rig.undecryptable(), u64::from(dropped), "{case}");
-    }
+        rig.recovered()
+    };
+    let failing = |count: u32| (0..count).map(|index| garbage(index as u16)).collect();
+    let refused = (0..tolerance)
+        .flat_map(|_| [Vec::new(), vec![0x03]])
+        .collect();
+
+    let after_refused = send(&mut rig, refused);
+    let dropped = rig.undecryptable();
+    let short = send(&mut rig, failing(tolerance - 1));
+    let after_a_success = send(&mut rig, vec![decryptable]);
+    let short_again = send(&mut rig, failing(tolerance - 1));
+    let reached = send(&mut rig, failing(1));
+    let within_the_interval = send(&mut rig, failing(tolerance));
+
+    assert_eq!(dropped, 0);
+    assert_eq!(
+        (after_refused, short, after_a_success, short_again),
+        (false, false, false, false)
+    );
+    assert_eq!((reached, within_the_interval), (true, false));
 }
 
 #[test]
@@ -1132,7 +1008,7 @@ fn each_packet_goes_to_the_owner_of_its_ssrc_at_arrival() {
     let mut rig = Rig::new(tuning());
     let receiver = rig.open(options(ReceiveFormat::Opus));
     let packets = opus(4, 0.3);
-    let hold = rig.reception.tuning.hold;
+    let hold = rig.reception.core.tuning.hold;
     rig.map(ALICE_SSRC, ALICE);
     rig.send(ALICE_SSRC, 0, &packets[0]);
     rig.step();
@@ -1287,7 +1163,7 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
     rig.run(2, rig.now + LATER);
     let late = read(&receiver);
     rig.now += FRAME;
-    rig.run(0, rig.reception.epoch);
+    rig.run(0, rig.reception.core.epoch);
     let deferred = read(&receiver);
     rig.step();
     let caught_up = read(&receiver);
@@ -1454,7 +1330,7 @@ fn a_packets_receiver_gets_every_decrypted_packet_in_arrival_order() {
         .collect();
     let _earlier = rig.open(options(ReceiveFormat::Opus));
     rig.media.arrive(Arrival {
-        at: rig.reception.epoch,
+        at: rig.reception.core.epoch,
         ..rig.arrival(ALICE_SSRC, 3, &frames[3])
     });
     let receiver = rig.open(only(&[ALICE], ReceiveFormat::Packets));
@@ -1504,7 +1380,7 @@ fn release_and_decode_stop_at_the_deadline_and_resume_next_tick() {
         rig.send(ALICE_SSRC, sequence, packet);
     }
 
-    rig.run(0, rig.reception.epoch);
+    rig.run(0, rig.reception.core.epoch);
     let deferred = read(&receiver);
     rig.step();
 

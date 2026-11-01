@@ -10,7 +10,7 @@ use crate::error::CoreError;
 use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime::Owner;
-use crate::voice::receive::Peak;
+use crate::voice::peak::Peak;
 use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
