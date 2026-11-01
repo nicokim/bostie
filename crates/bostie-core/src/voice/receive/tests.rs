@@ -253,6 +253,10 @@ impl Rig {
             .unwrap(),
         );
         self.next_handle += 1;
+        assert!(
+            receiver.opened() <= self.now,
+            "the rig took longer than its clock allows to open a receiver"
+        );
         assert!(self.media.add_receiver(&receiver));
         receiver
     }
@@ -1184,17 +1188,48 @@ fn streams_and_failure_streaks_unheard_for_the_stream_idle_are_forgotten() {
     assert!(!recovered);
 }
 
-#[test]
-fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
-    let mut rig = Rig::new(tuning());
-    rig.map(ALICE_SSRC, ALICE);
-    rig.map(BOB_SSRC, BOB);
-    let receiver = rig.open(options(ReceiveFormat::Mixed(PcmFormat {
+fn mixed() -> ReceiveFormat {
+    ReceiveFormat::Mixed(PcmFormat {
         rate: 48_000,
         channels: 2,
         sample: SampleFormat::F32Le,
-    })));
-    let (quiet, loud) = (opus(6, 0.2), opus(2, 0.9));
+    })
+}
+
+fn floats(items: &[Item]) -> Vec<f32> {
+    data(items)
+        .iter()
+        .flat_map(|frame| {
+            frame
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn offsets(items: &[Item]) -> Vec<u64> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Frame { offset, user, .. } => {
+                assert!(user.is_none());
+                Some(*offset)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_mix_sums_users_and_soft_clips() {
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    rig.map(BOB_SSRC, BOB);
+    let receiver = rig.open(options(mixed()));
+    let (quiet, loud) = (opus(3, 0.2), opus(2, 0.9));
     let decoded = |packets: &[Bytes]| -> Vec<f32> {
         let mut decoder = Decoder::new(48_000, 2).unwrap();
         let mut pcm = Vec::new();
@@ -1205,51 +1240,55 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
         }
         pcm
     };
-    let floats = |items: &[Item]| -> Vec<f32> {
-        data(items)
-            .iter()
-            .flat_map(|frame| {
-                frame
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|bytes| f32::from_le_bytes(*bytes))
-                    .collect::<Vec<_>>()
-            })
-            .collect()
+    let both = |rig: &mut Rig, first: u16, packets: &[Bytes]| {
+        for (sequence, packet) in (first..).zip(packets) {
+            rig.send(ALICE_SSRC, sequence, packet);
+            rig.send(BOB_SSRC, sequence, packet);
+            rig.step();
+        }
+        read(&receiver)
     };
+
+    let summed = both(&mut rig, 0, &quiet);
+    let clipped = both(&mut rig, 3, &loud);
+
+    let expected: Vec<f32> = decoded(&quiet).iter().map(|sample| sample * 2.0).collect();
+    assert_eq!(floats(&summed), expected);
+    let loud_sum = decoded(&loud)
+        .iter()
+        .map(|sample| sample * 2.0)
+        .fold(0.0, f32::max);
+    assert!(loud_sum > 1.0, "{loud_sum}");
+    assert!(floats(&clipped).iter().all(|sample| sample.abs() <= 1.0));
+    assert_eq!(offsets(&[summed, clipped].concat()).len(), 5);
+}
+
+#[test]
+fn a_mix_keeps_one_clock_through_skipped_ticks_silence_and_a_reconnect() {
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(options(mixed()));
+    let quiet = opus(6, 0.2);
 
     for (sequence, packet) in (0..3).zip(&quiet) {
         rig.send(ALICE_SSRC, sequence, packet);
-        rig.send(BOB_SSRC, sequence, packet);
         rig.step();
     }
-    let summed = read(&receiver);
+    let started = read(&receiver);
     for (sequence, packet) in (3..6).zip(&quiet[3..]) {
         rig.send(ALICE_SSRC, sequence, packet);
         rig.now += FRAME;
     }
     rig.run(2, rig.now + LATER);
     let late = read(&receiver);
-    rig.now += FRAME;
-    rig.run(0, rig.reception.core.epoch);
-    let deferred = read(&receiver);
-    rig.step();
-    let caught_up = read(&receiver);
     rig.step();
     let silent = read(&receiver);
-    for (sequence, packet) in (6..).zip(&loud) {
-        rig.send(ALICE_SSRC, sequence, packet);
-        rig.send(BOB_SSRC, sequence, packet);
-        rig.step();
-    }
-    let clipped = read(&receiver);
-    for (sequence, packet) in (8..).zip(&opus(10, 0.2)) {
+    for (sequence, packet) in (6..).zip(&opus(10, 0.2)) {
         rig.send(ALICE_SSRC, sequence, packet);
     }
     rig.step();
     let dropped = receiver.stats().unwrap()[1];
-    read(&receiver);
+    let flooded = read(&receiver);
     rig.media.install(None);
     rig.step();
     let reconnecting = read(&receiver);
@@ -1267,37 +1306,13 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
         .map(|item| matches!(item, Heard::Frame { lost: true, .. }))
         .collect();
 
-    let expected: Vec<f32> = decoded(&quiet[..3])
-        .iter()
-        .map(|sample| sample * 2.0)
-        .collect();
-    assert_eq!(floats(&summed), expected);
-    assert_eq!(
-        (late.len(), deferred.len(), caught_up.len(), silent.len()),
-        (3, 0, 2, 1)
-    );
+    assert_eq!((started.len(), late.len(), silent.len()), (3, 3, 1));
     assert!(floats(&silent).iter().all(|&sample| sample == 0.0));
-    let all = [summed, late, caught_up, silent, clipped.clone()].concat();
-    let offsets: Vec<u64> = all
-        .iter()
-        .filter_map(|item| match item {
-            Item::Frame { offset, user, .. } => {
-                assert!(user.is_none());
-                Some(*offset)
-            }
-            _ => None,
-        })
-        .collect();
+    let offsets = offsets(&[started, late, silent, flooded].concat());
     let contiguous: Vec<u64> = (0..offsets.len() as u64)
         .map(|index| offsets[0] + index * 960)
         .collect();
     assert_eq!(offsets, contiguous);
-    let loud_sum = decoded(&loud)
-        .iter()
-        .map(|sample| sample * 2.0)
-        .fold(0.0, f32::max);
-    assert!(loud_sum > 1.0, "{loud_sum}");
-    assert!(floats(&clipped).iter().all(|sample| sample.abs() <= 1.0));
     assert_eq!(dropped, ("dropped", 5));
     assert!(reconnecting.is_empty());
     let resumed = heard(&returned);
@@ -1305,7 +1320,7 @@ fn a_mix_sums_users_soft_clips_and_continues_through_silence() {
     let Heard::Frame { offset, .. } = resumed[0] else {
         panic!("{resumed:?}");
     };
-    let before_the_gap = offsets.last().unwrap() + 960 * (1 + 1);
+    let before_the_gap = offsets.last().unwrap() + 960;
     assert!(offset >= before_the_gap + 960 * 5, "{offset}");
     assert_eq!(offset % 960, 0);
     assert_eq!(concealed, [false, true, false]);
