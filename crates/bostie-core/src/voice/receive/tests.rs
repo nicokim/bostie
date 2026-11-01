@@ -1500,6 +1500,30 @@ fn a_mark_waits_for_the_audio_heard_before_it_to_leave_the_mix() {
 }
 
 #[test]
+fn a_lost_transport_drops_the_mixed_audio_left_and_passes_its_marks() {
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(options(mixed()));
+    let heard = Instant::now();
+    for (sequence, packet) in (0..3).zip(&opus(3, 0.3)) {
+        rig.media.arrive(Arrival {
+            at: heard,
+            ..rig.arrival(ALICE_SSRC, sequence, packet)
+        });
+    }
+
+    rig.step();
+    rig.media.install(None);
+    let mark = receiver.mark().unwrap();
+    rig.step();
+
+    assert_eq!(
+        (read(&receiver).len(), rig.marks()),
+        (1, vec![(mark, true)])
+    );
+}
+
+#[test]
 fn a_mark_waits_for_a_frame_heard_before_it_held_for_a_dave_key() {
     let mut rig = Rig::new(ReceiveTuning {
         hold: LATER,

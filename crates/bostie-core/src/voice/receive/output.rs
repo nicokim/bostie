@@ -750,9 +750,14 @@ impl Mix {
     fn owe(&mut self, transport: bool, skipped: u32) {
         if transport {
             self.owed = self.owed.saturating_add(skipped).saturating_add(1);
-        } else {
-            self.owed = 0;
-            self.next = None;
+            return;
+        }
+        self.owed = 0;
+        self.next = None;
+        for fifo in self.fifos.values_mut() {
+            fifo.samples.clear();
+            fifo.frames.clear();
+            fifo.partial = None;
         }
     }
 }
