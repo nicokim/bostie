@@ -252,6 +252,7 @@ mod tests {
 
     const TOKEN: &str = "token";
     const GLOBAL_LIMIT: NonZeroU16 = NonZeroU16::new(50).unwrap();
+    const WAIT: Duration = Duration::from_secs(10);
 
     fn core(api_url: &str) -> Result<(Core, BellReceiver), CoreError> {
         Core::new(TOKEN, api_url, GLOBAL_LIMIT)
@@ -277,18 +278,30 @@ mod tests {
         format!("http://{address}/api/v10")
     }
 
-    fn serve_silently() -> (String, mpsc::Receiver<()>) {
+    struct Silent {
+        url: String,
+        requested: mpsc::Receiver<()>,
+        disconnected: mpsc::Receiver<()>,
+    }
+
+    fn serve_silently() -> Silent {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
+        let (requested, on_request) = mpsc::channel();
         let (disconnected, on_disconnect) = mpsc::channel();
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             read_request_head(&mut stream);
+            requested.send(()).unwrap();
             let mut rest = Vec::new();
             let _ = stream.read_to_end(&mut rest);
             disconnected.send(()).unwrap();
         });
-        (format!("http://{address}/api/v10"), on_disconnect)
+        Silent {
+            url: format!("http://{address}/api/v10"),
+            requested: on_request,
+            disconnected: on_disconnect,
+        }
     }
 
     fn me() -> RestRequest {
@@ -306,9 +319,7 @@ mod tests {
 
     fn wait_for_deliveries(core: &Core, receiver: &BellReceiver) -> Vec<Delivery> {
         let mut stream = receiver.stream();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .unwrap();
+        stream.set_read_timeout(Some(WAIT)).unwrap();
         stream.read_exact(&mut [0; 1]).unwrap();
         core.drain().unwrap()
     }
@@ -350,14 +361,14 @@ mod tests {
 
     #[test]
     fn cancel_drops_the_connection_without_a_message() {
-        let (url, on_disconnect) = serve_silently();
-        let (core, receiver) = core(&url).unwrap();
+        let server = serve_silently();
+        let (core, receiver) = core(&server.url).unwrap();
 
         let ticket = core.request(me()).unwrap();
-        thread::sleep(Duration::from_millis(100));
+        server.requested.recv_timeout(WAIT).unwrap();
         core.cancel(ticket).unwrap();
 
-        on_disconnect.recv_timeout(Duration::from_secs(10)).unwrap();
+        server.disconnected.recv_timeout(WAIT).unwrap();
         assert_eq!(core.tasks.lock().running.len(), 0);
         receiver.stream().set_nonblocking(true).unwrap();
         assert!(receiver.stream().read(&mut [0; 1]).is_err());
@@ -366,14 +377,14 @@ mod tests {
 
     #[test]
     fn closed_core_rejects_work_and_aborts_running_tasks() {
-        let (url, on_disconnect) = serve_silently();
-        let (core, _receiver) = core(&url).unwrap();
+        let server = serve_silently();
+        let (core, _receiver) = core(&server.url).unwrap();
         core.request(me()).unwrap();
-        thread::sleep(Duration::from_millis(100));
+        server.requested.recv_timeout(WAIT).unwrap();
 
         core.close().unwrap();
 
-        on_disconnect.recv_timeout(Duration::from_secs(10)).unwrap();
+        server.disconnected.recv_timeout(WAIT).unwrap();
         assert!(matches!(core.request(me()), Err(CoreError::Closed)));
         assert!(matches!(
             core.gateway_start(
@@ -414,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn voice_sends_its_voice_state_through_the_gateway() {
+    fn voice_connect_fails_without_a_running_shard() {
         let (core, _receiver) = core("http://127.0.0.1:1").unwrap();
 
         let joined = core.voice().unwrap().connect(&voice_request());
