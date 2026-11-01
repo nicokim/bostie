@@ -76,11 +76,14 @@ class ComponentData(Model, kw_only=True):
 
 class PartialApplication(Model, kw_only=True):
     id: int
-    _flags: str = msgspec.field(name="flags_new")
+    _flags: int = msgspec.field(default=0, name="flags")
+    _flags_new: str | None = msgspec.field(default=None, name="flags_new")
 
     @property
     def flags(self) -> ApplicationFlags:
-        return ApplicationFlags(int(self._flags))
+        return ApplicationFlags(
+            self._flags if self._flags_new is None else int(self._flags_new)
+        )
 
 
 class _Interaction(Model, kw_only=True):

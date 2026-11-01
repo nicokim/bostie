@@ -154,7 +154,10 @@ def walk(value: object) -> Iterator[object]:
         yield from walk(value.members)
     if isinstance(value, msgspec.Struct):
         for name in value.__struct_fields__:
-            yield from walk(getattr(value, name.lstrip("_")))
+            public = name.lstrip("_")
+            yield from walk(
+                getattr(value, public if hasattr(type(value), public) else name)
+            )
     elif isinstance(value, tuple | list):
         for item in value:
             yield from walk(item)

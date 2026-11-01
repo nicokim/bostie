@@ -40,13 +40,21 @@ def test_unknown_value_decodes_to_a_stable_pseudo_member() -> None:
     assert ChannelType(9999) not in list(ChannelType)
 
 
-def test_application_flags_keep_unknown_bits_beyond_64_from_a_string() -> None:
-    bits = (1 << 70) | ApplicationFlags.APPLICATION_COMMAND_BADGE
-
-    flags = decode(PartialApplication, b'{"id": "1", "flags_new": "%d"}' % bits).flags
-
-    assert flags == bits
-    assert ApplicationFlags.APPLICATION_COMMAND_BADGE in flags
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (b'{"id": "1", "flags": 8388608}', ApplicationFlags.APPLICATION_COMMAND_BADGE),
+        (
+            b'{"id": "1", "flags_new": "%d"}'
+            % ((1 << 70) | ApplicationFlags.APPLICATION_COMMAND_BADGE),
+            (1 << 70) | ApplicationFlags.APPLICATION_COMMAND_BADGE,
+        ),
+    ],
+)
+def test_application_flags_read_flags_new_only_when_it_is_sent(
+    payload: bytes, expected: int
+) -> None:
+    assert decode(PartialApplication, payload).flags == expected
 
 
 @pytest.mark.parametrize(
