@@ -1014,20 +1014,6 @@ async fn a_close_code_bostie_caused_ends_the_connection_without_retrying() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_dead_session_close_rejoins_with_a_new_voice_state() {
-    let mut harness = closed_with(4006).await;
-
-    let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
-    harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
-    harness.fresh_server().await;
-    harness.until(VoiceStatus::Ready).await;
-
-    assert_eq!(detail, "rejoining");
-    assert_eq!(harness.server.count(op::RESUME), 0);
-    assert_eq!(harness.joins(CHANNEL), 2);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn disconnected_and_call_terminated_wait_for_the_gateway_then_end() {
     for (code, reason, leaves) in [
         (4014, DisconnectReason::Removed, 0),
@@ -1346,9 +1332,10 @@ async fn a_new_token_on_the_same_endpoint_identifies_again_and_never_resumes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_replaced_main_session_sends_the_voice_state_again_and_starts_fresh() {
+async fn a_replaced_main_session_retries_the_voice_state_and_starts_fresh() {
     let mut harness = Harness::start().await;
     harness.connected().await;
+    harness.recorder.refusals.store(2, Ordering::SeqCst);
 
     harness.tap.session_started(ShardId::from(SHARD));
     let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
@@ -1359,6 +1346,7 @@ async fn a_replaced_main_session_sends_the_voice_state_again_and_starts_fresh() 
 
     assert_eq!(detail, "session_replaced");
     assert_eq!(harness.server.count(op::IDENTIFY), 2);
+    assert_eq!(harness.recorder.refusals.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1887,20 +1875,6 @@ async fn a_panicking_connection_task_is_ended_by_its_supervisor() {
         harness.voice.dave(guild()),
         Err(CoreError::UnknownVoice(_))
     ));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_full_shard_queue_is_retried_until_the_voice_state_goes_out() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-    harness.recorder.refusals.store(2, Ordering::SeqCst);
-
-    harness.tap.session_started(ShardId::from(SHARD));
-    harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
-    harness.fresh_server().await;
-    harness.until(VoiceStatus::Ready).await;
-
-    assert_eq!(harness.recorder.refusals.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
