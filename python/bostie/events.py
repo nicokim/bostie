@@ -84,10 +84,7 @@ class _GuildCreatePayload(Guild, kw_only=True):
 
 
 class GuildCreate(Event, kw_only=True):
-    """A guild became available or the bot joined it. Its children lack `guild_id`.
-
-    During an outage `guild` is an `UnavailableGuild` and the rest is empty.
-    """
+    """A guild became available or the bot joined it. Its children lack `guild_id`."""
 
     NAME = "GUILD_CREATE"
     INTENTS = Intents.GUILDS

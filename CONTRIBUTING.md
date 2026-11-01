@@ -50,13 +50,14 @@ Rust needs no change: the core forwards any dispatch name Python asks for.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.
 6. If the event changes cached state, add it to `Cache.NAMES` and `Cache.apply` in `python/bostie/cache.py`.
 
-Discord adds fields and enum values without notice, and a bot must not break when it does. So models never reject what they don't know:
+Models are typed as Discord's documentation describes each field. Discord also adds fields and enum values without notice, and a bot must not break when it does:
 
-- Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values.
-- Every field except an id or `type` has a default, usually `None`.
+- A field the docs mark required has no default, and is `T | None` if the docs mark it nullable. A field the docs mark optional (`?`) has a default: `()` for a list, an empty flag set for flags, `False` for a boolean whose absence means false, and `None` otherwise. Fields of a builder, a model you can also send, stay `None` when Discord fills in their default, so a decoded builder is sent back as it came.
+- Where the docs send a partial object, the field takes a partial model such as `PartialMember`, `PartialChannel` or `UnavailableGuild` instead of the full model with optional fields.
+- Enums subclass `DiscordIntEnum` or `DiscordIntFlag` from `python/bostie/enums.py`, which keep unknown values. Unknown components become `UnknownComponent` and unknown interaction types `UnknownInteraction`.
 - `decoder()` in `python/bostie/models/base.py` runs msgspec in lax mode. Snowflake strings become `int` and unix timestamps become `datetime` without a converter.
 
-If a payload still doesn't fit, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
+If a payload still doesn't fit, for example because it lacks a required field, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
 
 ## Tests
 

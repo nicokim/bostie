@@ -21,7 +21,8 @@ You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs
 ## Goals
 
 - Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
-- Bots keep working when Discord adds things. Unknown fields, enum values and components never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
+- Bots keep working when Discord adds things. Unknown fields, enum values, components and interaction types never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
+- Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as an option's member is a `PartialMember`, not a `Member` with holes.
 - The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
 
 ## Example
@@ -65,7 +66,7 @@ async def reroll(ctx: ComponentContext, sides: int) -> None:
 async def wave_back(event: MessageCreate) -> None:
     message = event.message
     mentioned = {user.id for user in message.mentions}
-    if bot.user and bot.user.id in mentioned and message.channel_id:
+    if bot.user and bot.user.id in mentioned:
         await bot.send_message(
             message.channel_id,
             components=[ui.text("Hi! Try /roll.")],
@@ -92,6 +93,7 @@ Everything bostie does not model yet stays reachable:
 - `bot.http.request("GET", "/guilds/{guild_id}/soundboard-sounds", guild_id=...)` calls any endpoint.
 - `bot.gateway.send(op=..., d=...)` sends any opcode.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
+- An `InteractionCreate` listener gets modal submits and other interactions bostie does not route as an `UnknownInteraction`, with the payload in `raw`.
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
 
