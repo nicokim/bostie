@@ -1,0 +1,58 @@
+from typing import Any
+
+from fakediscord import FakeDiscord, payloads, run, running
+
+from bostie import Bot, SKUFlags, SKUType
+
+ROUTE = "/applications/1/entitlements"
+
+
+def entitlements(ids: range) -> list[dict[str, Any]]:
+    entitlement = payloads.fixture("rest/entitlement")
+    return [entitlement | {"id": str(id)} for id in ids]
+
+
+def test_entitlements_walk_from_the_oldest_with_sku_ids_as_one_value() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            fake.fail("GET", ROUTE, 200, entitlements(range(1, 101)))
+            fake.fail("GET", ROUTE, 200, entitlements(range(101, 131)))
+            monetization = bot.rest.monetization
+            walked = monetization.list_entitlements(1, sku_ids=[7, 8], limit=150)
+            assert [entitlement.id async for entitlement in walked] == [*range(1, 131)]
+            assert [request.query for request in fake.requests[-2:]] == [
+                {"sku_ids": "7,8", "limit": "100"},
+                {"sku_ids": "7,8", "limit": "50", "after": "100"},
+            ]
+
+    run(scenario)
+
+
+def test_test_entitlements_have_no_period_and_skus_read_their_flags() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            monetization = bot.rest.monetization
+            entitlement = payloads.fixture("rest/entitlement")
+            del entitlement["starts_at"], entitlement["ends_at"]
+            fake.fail("POST", ROUTE, 200, entitlement)
+            created = await monetization.create_test_entitlement(
+                1, sku_id=2, owner_id=3, owner_type=2
+            )
+            assert fake.requests[-1].json == {
+                "sku_id": 2,
+                "owner_id": 3,
+                "owner_type": 2,
+            }
+            assert created.sku_id == int(entitlement["sku_id"])
+
+            sku = payloads.fixture("rest/sku")
+            fake.fail("GET", "/applications/1/skus", 200, [sku])
+            (listed,) = await monetization.list_skus(1)
+            assert (listed.type, listed.flags) == (
+                SKUType.SUBSCRIPTION,
+                SKUFlags.GUILD_SUBSCRIPTION,
+            )
+
+    run(scenario)

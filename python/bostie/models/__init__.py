@@ -126,7 +126,12 @@ from bostie.models.moderation import (
     AutoModerationRule,
     AutoModerationTriggerMetadata,
 )
-from bostie.models.monetization import Entitlement, Subscription
+from bostie.models.monetization import (
+    SKU,
+    Entitlement,
+    PartialEntitlement,
+    Subscription,
+)
 from bostie.models.onboarding import (
     GuildOnboarding,
     OnboardingPrompt,
@@ -161,6 +166,7 @@ from bostie.models.user import (
 )
 
 __all__ = [
+    "SKU",
     "ActionRow",
     "Activity",
     "ActivityAssets",
@@ -242,6 +248,7 @@ __all__ = [
     "PartialApplication",
     "PartialChannel",
     "PartialEmoji",
+    "PartialEntitlement",
     "PartialIntegration",
     "PartialMember",
     "PartialMessage",

@@ -1,8 +1,0 @@
-POST /applications/{application_id}/entitlements/{entitlement_id}/consume monetization.consume_entitlement
-POST /applications/{application_id}/entitlements monetization.create_test_entitlement
-DELETE /applications/{application_id}/entitlements/{entitlement_id} monetization.delete_test_entitlement
-GET /applications/{application_id}/entitlements/{entitlement_id} monetization.fetch_entitlement
-GET /skus/{sku_id}/subscriptions/{subscription_id} monetization.fetch_subscription
-GET /applications/{application_id}/entitlements monetization.list_entitlements
-GET /applications/{application_id}/skus monetization.list_skus
-GET /skus/{sku_id}/subscriptions monetization.list_subscriptions

@@ -432,6 +432,13 @@ class SubscriptionStatus(DiscordIntEnum):
     ENDING = 2
 
 
+class SKUType(DiscordIntEnum):
+    DURABLE = 2
+    CONSUMABLE = 3
+    SUBSCRIPTION = 5
+    SUBSCRIPTION_GROUP = 6
+
+
 class Status(DiscordStrEnum):
     ONLINE = "online"
     DND = "dnd"
@@ -619,6 +626,12 @@ class ChannelFlags(DiscordIntFlag):
     HIDE_MEDIA_DOWNLOAD_OPTIONS = 1 << 15
     CHANNEL_OBFUSCATED = 1 << 17
     IS_SPOILER_CHANNEL = 1 << 21
+
+
+class SKUFlags(DiscordIntFlag):
+    AVAILABLE = 1 << 2
+    GUILD_SUBSCRIPTION = 1 << 7
+    USER_SUBSCRIPTION = 1 << 8
 
 
 class ApplicationFlags(DiscordIntFlag):

@@ -53,6 +53,8 @@ from bostie.enums import (
     ScheduledEventEntityType,
     ScheduledEventPrivacyLevel,
     ScheduledEventStatus,
+    SKUFlags,
+    SKUType,
     StagePrivacyLevel,
     Status,
     StatusDisplayType,
@@ -97,6 +99,7 @@ from bostie.errors import (
 from bostie.file import File
 from bostie.gateway import RequestedMembers
 from bostie.models import (
+    SKU,
     ActionRow,
     Activity,
     ActivityAssets,
@@ -173,6 +176,7 @@ from bostie.models import (
     PartialApplication,
     PartialChannel,
     PartialEmoji,
+    PartialEntitlement,
     PartialIntegration,
     PartialMember,
     PartialMessage,
@@ -238,6 +242,7 @@ from bostie.router import Router
 from bostie.sync import SyncResult
 
 __all__ = [
+    "SKU",
     "ActionRow",
     "Activity",
     "ActivityAssets",
@@ -376,6 +381,7 @@ __all__ = [
     "PartialApplication",
     "PartialChannel",
     "PartialEmoji",
+    "PartialEntitlement",
     "PartialIntegration",
     "PartialMember",
     "PartialMessage",
@@ -402,6 +408,8 @@ __all__ = [
     "RoleFlags",
     "RoleSelect",
     "Router",
+    "SKUFlags",
+    "SKUType",
     "ScheduledEvent",
     "ScheduledEventEntityMetadata",
     "ScheduledEventEntityType",
