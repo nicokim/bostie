@@ -3,13 +3,13 @@ import contextlib
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol, Self, cast
+from typing import TYPE_CHECKING, Protocol, Self, cast
 
 from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
 from bostie.errors import Empty, ReceiverClosed
 from bostie.voice.events import SpeechStart, SpeechStop
-from bostie.voice.formats import ReceiveFormat
+from bostie.voice.formats import Overflow, ReceiveFormat, ReceiveStall
 from bostie.voice.frames import Frame, Packet
 
 if TYPE_CHECKING:
@@ -57,8 +57,8 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
         jitter: float,
         markers: bool,
         mix: bool,
-        overflow: Literal["drop_oldest", "drop_newest"],
-        stall: Literal["wait", "end"],
+        overflow: Overflow,
+        stall: ReceiveStall,
     ) -> None:
         self.format = format
         self.users = users

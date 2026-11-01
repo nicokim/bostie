@@ -46,8 +46,10 @@ from bostie.voice.formats import (
     Format,
     Latency,
     Opus,
+    Overflow,
     Packets,
     ReceiveFormat,
+    ReceiveStall,
 )
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.receiver import NativeReceiver, Receiver
@@ -150,8 +152,8 @@ class VoiceCore(Protocol):
         jitter: float,
         markers: bool,
         mix: bool,
-        overflow: Literal["drop_oldest", "drop_newest"],
-        stall: Literal["wait", "end"],
+        overflow: Overflow,
+        stall: ReceiveStall,
     ) -> NativeReceiver: ...
     def voice_speech_hangover(self, guild_id: int, seconds: float) -> None: ...
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
@@ -600,8 +602,8 @@ class VoiceConnection:
         include_self: bool = False,
         buffer: float | None = None,
         markers: Literal[False] = False,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet]: ...
     @overload
     def receive(
@@ -613,8 +615,8 @@ class VoiceConnection:
         include_self: bool = False,
         buffer: float | None = None,
         markers: Literal[True],
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -626,8 +628,8 @@ class VoiceConnection:
         include_self: bool = False,
         buffer: float | None = None,
         markers: bool,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -641,8 +643,8 @@ class VoiceConnection:
         jitter: float | None = None,
         markers: Literal[False] = False,
         mix: bool = False,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame]: ...
     @overload
     def receive(
@@ -656,8 +658,8 @@ class VoiceConnection:
         jitter: float | None = None,
         markers: Literal[True],
         mix: bool = False,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -671,8 +673,8 @@ class VoiceConnection:
         jitter: float | None = None,
         markers: bool,
         mix: bool = False,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
     def receive(
         self,
@@ -685,8 +687,8 @@ class VoiceConnection:
         jitter: float | None = None,
         markers: bool = False,
         mix: bool = False,
-        overflow: Literal["drop_oldest", "drop_newest"] | None = None,
-        stall: Literal["wait", "end"] | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Any]:
         """Open a bounded iterator over the audio this connection receives."""
         self._check_live()

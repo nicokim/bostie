@@ -19,6 +19,9 @@ MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
 MAX_JITTER = _native.MAX_JITTER
 DECODE_RATES = frozenset(_native.DECODE_RATES)
 
+type Overflow = Literal["drop_oldest", "drop_newest"]
+type ReceiveStall = Literal["wait", "end"]
+
 
 @dataclass(frozen=True, slots=True)
 class PCM:
@@ -109,8 +112,8 @@ class Defaults:
     speech_activity: bool = True
     receive_buffer: float = 2.0
     jitter: float = 0.1
-    overflow: Literal["drop_oldest", "drop_newest"] = "drop_oldest"
-    receive_stall: Literal["wait", "end"] = "wait"
+    overflow: Overflow = "drop_oldest"
+    receive_stall: ReceiveStall = "wait"
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.timeout) and self.timeout > 0):

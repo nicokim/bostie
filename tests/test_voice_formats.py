@@ -151,7 +151,8 @@ def test_enum_values_match_the_native_names(enum: type[StrEnum], alias: str) -> 
     [("overflow", "OverflowName"), ("receive_stall", "ReceiveStallName")],
 )
 def test_receive_defaults_take_the_native_names(field: str, alias: str) -> None:
-    assert list(get_args(get_type_hints(voice.Defaults)[field])) == stub_literals(alias)
+    hint = get_type_hints(voice.Defaults)[field]
+    assert list(get_args(hint.__value__)) == stub_literals(alias)
 
 
 def test_voice_events_need_no_intent_and_have_local_names() -> None:
