@@ -117,8 +117,8 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "respond": lambda ctx: ctx.respond("hi"),
     "defer": lambda ctx: ctx.defer(),
     "defer_update": lambda ctx: ctx.defer_update(),
-    "update": lambda ctx: ctx.update("hi"),
-    "edit": lambda ctx: ctx.edit("hi"),
+    "update": lambda ctx: ctx.update(content="hi"),
+    "edit": lambda ctx: ctx.edit(content="hi"),
     "followup": lambda ctx: ctx.followup("hi"),
     "delete": lambda ctx: ctx.delete(),
     "modal": lambda ctx: ctx.modal(FORM),
@@ -246,10 +246,10 @@ def test_a_modal_submit_updates_and_auto_defers_only_the_message_it_came_from(
             await settle()
             assert (ctx.interaction.message is not None) is from_component
             if from_component:
-                await ctx.update("done")
+                await ctx.update(content="done")
                 return
             with pytest.raises(InteractionResponded, match="message component"):
-                await ctx.update("done")
+                await ctx.update(content="done")
             await ctx.respond("done")
 
         fields = {"message": clicked} if from_component else {}
@@ -263,7 +263,7 @@ def test_callbacks_target_the_interaction_and_webhooks_the_application() -> None
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: Context) -> None:
             await ctx.respond("hi")
-            await ctx.edit("edited")
+            await ctx.edit(content="edited")
 
         callback, edit = await on.answer(Context, handler)
         assert callback.json == {
@@ -283,7 +283,7 @@ def test_message_calls_return_the_message_discord_created() -> None:
         async def handler(ctx: Context) -> None:
             answer = await ctx.respond("hi")
             followup = await ctx.followup("more")
-            edited = await ctx.edit("edited")
+            edited = await ctx.edit(content="edited")
             await ctx.delete()
 
             assert {type(answer), type(followup), type(edited)} == {WebhookMessage}
@@ -343,8 +343,8 @@ ENTER_EPHEMERAL: dict[str, Callable[[Any], Awaitable[object]]] = {
 CALL_EPHEMERAL: dict[str, Callable[[Any, dict[str, bool]], Awaitable[object]]] = {
     "respond": lambda ctx, given: ctx.respond("hi", **given),
     "defer": lambda ctx, given: ctx.defer(**given),
-    "update": lambda ctx, given: ctx.update("hi", **given),
-    "edit": lambda ctx, given: ctx.edit("hi", **given),
+    "update": lambda ctx, given: ctx.update(content="hi", **given),
+    "edit": lambda ctx, given: ctx.edit(content="hi", **given),
     "followup": lambda ctx, given: ctx.followup("hi", **given),
 }
 
@@ -465,7 +465,7 @@ def test_an_ephemeral_flag_that_cannot_apply_logs_one_warning(
             await ctx.defer()
             with caplog.at_level(logging.WARNING, logger="bostie.context"):
                 await ctx.respond("hi", ephemeral=True)
-                await ctx.edit("again", ephemeral=True)
+                await ctx.edit(content="again", ephemeral=True)
 
         _, answer, edit = await on.answer(Context, handler)
         assert "flags" not in answer.json
@@ -565,7 +565,7 @@ async def wait(ctx: Context | ComponentContext) -> None:
 
 async def wait_then_update(ctx: ComponentContext) -> None:
     await settle()
-    await ctx.update("hi")
+    await ctx.update(content="hi")
 
 
 async def answer_at_once(ctx: Context) -> None:
@@ -638,7 +638,7 @@ def test_a_failed_auto_defer_expires_the_context_and_names_the_route(
             custom_ids.append(ctx.custom_id)
             await settle()
             with pytest.raises(InteractionExpired):
-                await ctx.update("hi")
+                await ctx.update(content="hi")
 
         on.fake.fail("POST", CALLBACK, 404, {"code": 10062, "message": "dead"})
         assert calls(await on.answer(ComponentContext, handler)) == [CALLBACK_6]

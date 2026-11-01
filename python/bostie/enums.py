@@ -209,6 +209,7 @@ class JSONErrorCode(DiscordIntEnum):
     UNKNOWN_WEBHOOK = 10015
     UNKNOWN_INTERACTION = 10062
     UNKNOWN_VOICE_STATE = 10065
+    INDEX_NOT_YET_AVAILABLE = 110000
 
 
 class ReactionType(DiscordIntEnum):
@@ -219,6 +220,18 @@ class ReactionType(DiscordIntEnum):
 class MessageReferenceType(DiscordIntEnum):
     DEFAULT = 0
     FORWARD = 1
+
+
+class PollLayoutType(DiscordIntEnum):
+    DEFAULT = 1
+
+
+class BaseTheme(DiscordIntEnum):
+    UNSET = 0
+    DARK = 1
+    LIGHT = 2
+    DARKER = 3
+    MIDNIGHT = 4
 
 
 class ButtonStyle(DiscordIntEnum):

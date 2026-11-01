@@ -65,6 +65,7 @@ REST_MODELS: dict[str, type[Model]] = {
     "vanity_url": VanityURL,
     "voice_region": VoiceRegion,
     "welcome_screen": WelcomeScreen,
+    "poll_message": Message,
 }
 ENUM_KEYS = {
     "type",
@@ -90,6 +91,7 @@ ENUM_KEYS = {
     "expire_behavior",
     "channel_type",
     "mode",
+    "layout_type",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

@@ -129,7 +129,9 @@ def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
             assert sent.content == "hello"
             assert sent.raw["id"] == str(sent.id)
 
-            edited = await messages.edit(channel_id, sent.id, "edited", attachments=[7])
+            edited = await messages.edit(
+                channel_id, sent.id, content="edited", attachments=[7]
+            )
             assert fake.requests[-1].json == {
                 "content": "edited",
                 "allowed_mentions": MENTIONS,
@@ -139,6 +141,8 @@ def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
             assert (edited.content, fetched.content) == ("edited", "edited")
             link = f"https://discord.com/channels/{guild_id}/{channel_id}/{sent.id}"
             assert sent.jump_url == edited.jump_url == fetched.jump_url == link
+            cleared = await messages.edit(channel_id, sent.id, content=None)
+            assert cleared.content == ""
 
             await messages.delete(channel_id, sent.id, reason="cleanup")
             assert fake.requests[-1].headers["x-audit-log-reason"] == "cleanup"

@@ -109,6 +109,8 @@ class DeferOptions(TypedDict, total=False):
     ephemeral: bool
 
 
+type AnyReplyParts = ReplyParts | ReplyEditParts
+
 REPLY_PARTS = ReplyParts.__optional_keys__
 REPLY_EDIT_PARTS = ReplyEditParts.__optional_keys__
 DEFER_OPTIONS = DeferOptions.__optional_keys__
@@ -290,14 +292,12 @@ class _ReplyingContext[
             if self.state is ResponseState.PENDING:
                 await self._defer(ephemeral=options.get("ephemeral", self._ephemeral))
 
-    async def edit(
-        self, content: str | None = None, **parts: Unpack[ReplyEditParts]
-    ) -> M:
-        """Edit the original answer.
+    async def edit(self, **parts: Unpack[ReplyEditParts]) -> M:
+        """Edit the original answer: a part not given stays and None clears it.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._edit_body(content, parts)
+        body, files = self._message_body(None, REPLY_EDIT_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
@@ -390,12 +390,12 @@ class _ReplyingContext[
         )
 
     async def _edit_original(
-        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
+        self, body: dict[str, Any], files: Sequence[File], parts: AnyReplyParts
     ) -> bytes:
         self._warn_if_ephemeral_differs(parts)
         return await self._webhook("PATCH", ORIGINAL_ROUTE, body, files)
 
-    def _warn_if_ephemeral_differs(self, parts: ReplyParts) -> None:
+    def _warn_if_ephemeral_differs(self, parts: AnyReplyParts) -> None:
         ephemeral = parts.get("ephemeral", self._original_ephemeral)
         if ephemeral == self._original_ephemeral:
             return
@@ -412,18 +412,12 @@ class _ReplyingContext[
         self,
         content: str | None,
         allowed: frozenset[str],
-        parts: ReplyParts,
-        attachments: Sequence[Attachment | int] = (),
+        parts: AnyReplyParts,
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
         parts.setdefault("allowed_mentions", self._allowed_mentions)
-        return message_body(content, parts, attachments)
-
-    def _edit_body(
-        self, content: str | None, parts: ReplyEditParts
-    ) -> tuple[dict[str, Any], Sequence[File]]:
-        attachments = parts.get("attachments", ())
-        return self._message_body(content, REPLY_EDIT_PARTS, parts, attachments)
+        sent = {name: value for name, value in parts.items() if name != "ephemeral"}
+        return message_body(content, sent)
 
     def _answer[A: PartialMessage](
         self, decode: Callable[[bytes], A], body: bytes
@@ -475,14 +469,12 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
             if self.state is ResponseState.PENDING:
                 await self._defer_update()
 
-    async def update(
-        self, content: str | None = None, **parts: Unpack[ReplyEditParts]
-    ) -> Message | WebhookMessage:
-        """Edit the message the component is attached to.
+    async def update(self, **parts: Unpack[ReplyEditParts]) -> Message | WebhookMessage:
+        """Edit the component's message: a part not given stays and None clears it.
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._edit_body(content, parts)
+        body, files = self._message_body(None, REPLY_EDIT_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_message()
@@ -513,7 +505,7 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
         self._original_ephemeral = self._component_message_is_ephemeral()
 
     async def _update_with_callback(
-        self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
+        self, body: dict[str, Any], files: Sequence[File], parts: ReplyEditParts
     ) -> bytes:
         self._original_ephemeral = self._component_message_is_ephemeral()
         self._warn_if_ephemeral_differs(parts)

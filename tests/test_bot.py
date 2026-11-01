@@ -134,7 +134,7 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
 
     @bot.on_component("vote:{tag}:{up:int}")
     async def vote(ctx: ComponentContext, tag: str, up: int) -> None:
-        await ctx.update(f"{tag} {up!r}")
+        await ctx.update(content=f"{tag} {up!r}")
 
     @bot.command
     async def tag(

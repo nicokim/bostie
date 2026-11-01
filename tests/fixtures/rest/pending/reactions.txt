@@ -1,6 +1,0 @@
-PUT /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me reactions.create
-DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/{user_id} reactions.delete
-DELETE /channels/{channel_id}/messages/{message_id}/reactions reactions.delete_all
-DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name} reactions.delete_all_for_emoji
-DELETE /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me reactions.delete_own
-GET /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name} reactions.list

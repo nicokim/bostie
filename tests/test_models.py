@@ -59,6 +59,7 @@ from bostie.models import (
     decode,
     decode_interaction,
 )
+from bostie.models.message import message_body
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
 MESSAGE = json.loads((FIXTURES / "events" / "MESSAGE_CREATE.json").read_bytes())
@@ -467,12 +468,11 @@ def test_build_message_never_writes_raw_payloads() -> None:
     assert b"__bostie_raw__" not in msgspec.json.encode(body)
 
 
-def test_build_message_keeps_listed_attachments_before_new_files() -> None:
+def test_an_edit_body_keeps_listed_attachments_and_sends_none_as_null() -> None:
     kept = decode(Message, payload("events/MESSAGE_CREATE.rich.json")).attachments[0]
+    new = File("new.png", b"", spoiler=True)
 
-    body, _ = build_message(
-        files=[File("new.png", b"", spoiler=True)], attachments=[kept, 42]
-    )
+    body, _ = message_body(None, {"files": [new], "attachments": [kept, 42]})
 
     assert body == {
         "attachments": [
@@ -481,8 +481,10 @@ def test_build_message_keeps_listed_attachments_before_new_files() -> None:
             {"id": 0, "filename": "new.png", "is_spoiler": True},
         ]
     }
-    assert build_message(attachments=[42])[0] == {"attachments": [{"id": 42}]}
-    assert "attachments" not in build_message("text only")[0]
+    cleared = {"content": None, "embeds": None, "attachments": None}
+    assert message_body(None, cleared)[0] == cleared
+    assert message_body(None, {"attachments": []})[0] == {"attachments": []}
+    assert "attachments" not in message_body("text only", {})[0]
 
 
 def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:

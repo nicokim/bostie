@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, override
 
@@ -6,16 +6,18 @@ import msgspec
 
 from bostie.enums import (
     AttachmentFlags,
+    BaseTheme,
     ChannelType,
     ComponentType,
     MessageFlags,
     MessageReferenceType,
     MessageType,
+    PollLayoutType,
     StickerFormatType,
 )
 from bostie.file import File
 from bostie.models.base import Builder, Model, check_keys, decode, decoder
-from bostie.models.channel import Channel
+from bostie.models.channel import Channel, ThreadMember
 from bostie.models.components import (
     Component,
     PartialEmoji,
@@ -138,6 +140,65 @@ class StickerItem(Model, kw_only=True):
     format_type: StickerFormatType
 
 
+class PollMedia(Builder, kw_only=True):
+    """The text of a poll question or answer, and the emoji of an answer."""
+
+    text: str | None = None
+    emoji: PartialEmoji | None = None
+
+
+class PollAnswer(Builder, kw_only=True):
+    """A poll answer; Discord numbers `answer_id` itself."""
+
+    answer_id: int | None = None
+    poll_media: PollMedia
+
+
+class PollAnswerCount(Model, kw_only=True):
+    """The votes of the answer whose `answer_id` is `id`."""
+
+    id: int
+    count: int
+    me_voted: bool
+
+
+class PollResults(Model, kw_only=True):
+    """The votes per answer; an answer missing from `answer_counts` has none."""
+
+    is_finalized: bool
+    answer_counts: tuple[PollAnswerCount, ...]
+
+
+class Poll(Model, kw_only=True):
+    """A poll on a message; `results` is None when Discord did not count them."""
+
+    question: PollMedia
+    answers: tuple[PollAnswer, ...]
+    expiry: datetime | None
+    allow_multiselect: bool
+    layout_type: PollLayoutType
+    results: PollResults | None = None
+
+
+class PollCreateRequest(Builder, kw_only=True):
+    """A poll to send; it stays open `duration` hours, 24 when not given."""
+
+    question: PollMedia
+    answers: tuple[PollAnswer, ...]
+    duration: int | None = None
+    allow_multiselect: bool | None = None
+    layout_type: PollLayoutType | None = None
+
+
+class SharedClientTheme(Builder, kw_only=True):
+    """A client theme shared in a message; `colors` are hex strings."""
+
+    colors: tuple[str, ...]
+    gradient_angle: int
+    base_mix: int
+    base_theme: BaseTheme | None = None
+
+
 class AllowedMentions(Builder, kw_only=True):
     """Which mentions in a message may notify; `parse=()` silences all of them."""
 
@@ -201,6 +262,8 @@ class _Message(PartialMessage, kw_only=True):
     embeds: tuple[Embed, ...]
     pinned: bool
     type: MessageType
+    poll: Poll | None = None
+    shared_client_theme: SharedClientTheme | None = None
 
     @classmethod
     @override
@@ -251,6 +314,24 @@ def in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:
     return message
 
 
+class MessagePin(Model, kw_only=True):
+    """A pinned message and when it was pinned."""
+
+    pinned_at: datetime
+    message: Message | WebhookMessage
+
+
+class MessageSearchResults(Model, kw_only=True):
+    """One page of a guild message search, with the threads its messages are in."""
+
+    doing_deep_historical_index: bool
+    documents_indexed: int | None = None
+    total_results: int
+    messages: tuple[Message | WebhookMessage, ...]
+    threads: tuple[Channel, ...] = ()
+    members: tuple[ThreadMember, ...] = ()
+
+
 class MessageParts(TypedDict, total=False):
     """The parts of a message to send; a part not given is left out."""
 
@@ -260,12 +341,22 @@ class MessageParts(TypedDict, total=False):
     allowed_mentions: AllowedMentions
     flags: MessageFlags
     tts: bool
+    poll: PollCreateRequest
 
 
-class EditParts(MessageParts, total=False):
-    """The parts of a message to edit; with files or attachments, only these stay."""
+class EditParts(TypedDict, total=False):
+    """The parts of a message to edit: a part not given stays and None clears it.
 
-    attachments: Sequence[Attachment | int]
+    With `files` or `attachments`, only the listed `attachments` stay.
+    """
+
+    content: str | None
+    embeds: Sequence[Embed | Mapping[str, Any]] | None
+    components: Sequence[Component | Mapping[str, Any]] | None
+    files: Sequence[File]
+    allowed_mentions: AllowedMentions | None
+    flags: MessageFlags | None
+    attachments: Sequence[Attachment | int] | None
 
 
 MESSAGE_PARTS = MessageParts.__optional_keys__
@@ -276,62 +367,56 @@ def build_message(
     content: str | None = None,
     *,
     reply_to: int | None = None,
-    **parts: Unpack[EditParts],
+    **parts: Unpack[MessageParts],
 ) -> tuple[dict[str, Any], Sequence[File]]:
-    """Build the JSON body of a message to send or edit; only given parts are set.
+    """Build the JSON body of a message to send; only given parts are set.
 
-    V2 components set IS_COMPONENTS_V2 and clear content and embeds, and with `files`
-    or `attachments` an edit keeps only the listed `attachments`.
+    V2 components set IS_COMPONENTS_V2 and clear content and embeds.
     """
-    check_keys(parts, EDIT_PARTS, "message parts")
-    return message_body(content, parts, parts.get("attachments", ()), reply_to=reply_to)
+    check_keys(parts, MESSAGE_PARTS, "message parts")
+    return message_body(content, parts, reply_to=reply_to)
 
 
 def message_body(
     content: str | None,
-    parts: MessageParts,
-    attachments: Iterable[Attachment | int] = (),
+    parts: Mapping[str, Any],
     *,
     reply_to: int | None = None,
 ) -> tuple[dict[str, Any], Sequence[File]]:
-    embeds = parts.get("embeds")
-    components = parts.get("components")
-    files = parts.get("files", ())
-    flags = parts.get("flags")
-    components_json = None
+    body: dict[str, Any] = {} if content is None else {"content": content}
+    body |= parts
+    files: Sequence[File] = body.pop("files", ())
+    components = body.get("components")
     if components is not None:
-        components_json = [
+        body["components"] = [
             component.raw if isinstance(component, UnknownComponent) else component
             for component in components
         ]
         if any(_type_of(component) in V2_COMPONENT_TYPES for component in components):
-            flags = MessageFlags.IS_COMPONENTS_V2 | (flags or 0)
-    components_v2 = bool((flags or 0) & MessageFlags.IS_COMPONENTS_V2)
-    if components_v2 and (content or embeds):
+            body["flags"] = MessageFlags.IS_COMPONENTS_V2 | (body.get("flags") or 0)
+    components_v2 = bool((body.get("flags") or 0) & MessageFlags.IS_COMPONENTS_V2)
+    if components_v2 and (body.get("content") or body.get("embeds")):
         raise ValueError(
             "messages with Components V2 cannot have content or embeds; "
             "use ui.text() and ui.container() instead"
         )
-    reference = (
-        None
-        if reply_to is None
-        else MessageReference(type=MessageReferenceType.DEFAULT, message_id=reply_to)
-    )
-    attachment_list = [
-        {"id": attachment if isinstance(attachment, int) else attachment.id}
-        for attachment in attachments
-    ] + [_attachment(index, file) for index, file in enumerate(files)]
-    fields: dict[str, Any] = {
-        "content": content,
-        "embeds": embeds,
-        "components": components_json,
-        "allowed_mentions": parts.get("allowed_mentions"),
-        "flags": flags,
-        "tts": parts.get("tts"),
-        "message_reference": reference,
-        "attachments": attachment_list or None,
-    }
-    body = {key: value for key, value in fields.items() if value is not None}
+    if reply_to is not None:
+        if "message_reference" in body:
+            raise ValueError("reply_to and message_reference are mutually exclusive")
+        body["message_reference"] = MessageReference(
+            type=MessageReferenceType.DEFAULT, message_id=reply_to
+        )
+    if files or "attachments" in body:
+        kept: Sequence[Attachment | int] | None = body.get("attachments")
+        body["attachments"] = (
+            None
+            if kept is None and not files
+            else [
+                {"id": attachment if isinstance(attachment, int) else attachment.id}
+                for attachment in kept or ()
+            ]
+            + [_attachment(index, file) for index, file in enumerate(files)]
+        )
     if components_v2:
         body |= {"content": None, "embeds": []}
     return body, files
