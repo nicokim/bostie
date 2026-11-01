@@ -62,6 +62,12 @@ impl Hold {
         self.held.is_empty() && self.waiting.is_empty()
     }
 
+    pub(super) fn oldest(&self) -> Option<Instant> {
+        let held = self.held.front().map(|held| held.arrival.at);
+        let waiting = self.waiting.front().map(|item| item.arrival.at);
+        held.into_iter().chain(waiting).min()
+    }
+
     pub(super) fn is_pending(&self, key: Key, sequence: u16) -> bool {
         self.admitted.contains(&(key, sequence))
     }

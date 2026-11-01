@@ -175,7 +175,7 @@ impl Receiver {
         Ok(id)
     }
 
-    pub fn pass(&self, now: Instant) {
+    pub fn pass(&self, now: Instant, pending: Option<Instant>) {
         let lag = match self.options.format {
             ReceiveFormat::Packets => Duration::ZERO,
             _ => self.options.jitter,
@@ -183,6 +183,7 @@ impl Receiver {
         let mut queue = self.queue.lock();
         while let Some(&(id, at)) = queue.marks.front()
             && now.saturating_duration_since(at) >= lag
+            && pending.is_none_or(|heard| heard > at)
         {
             queue.marks.pop_front();
             self.resolve(id, true);

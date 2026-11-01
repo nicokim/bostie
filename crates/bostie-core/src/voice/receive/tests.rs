@@ -337,6 +337,18 @@ impl Rig {
             .collect()
     }
 
+    fn marks(&self) -> Vec<(u64, bool)> {
+        self.fixture
+            .inbox
+            .drain()
+            .into_iter()
+            .filter_map(|delivery| match delivery {
+                Delivery::VoiceMarker { marker, played, .. } => Some((marker, played)),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn stalls(&self) -> Vec<(Direction, bool, Duration)> {
         self.fixture
             .inbox
@@ -1432,26 +1444,15 @@ fn a_mark_passes_once_the_audio_heard_before_it_left_the_jitter_buffer() {
     });
     let first = receiver.mark().unwrap();
     let marked = Instant::now();
-    let marks = |rig: &Rig| -> Vec<(u64, bool)> {
-        rig.fixture
-            .inbox
-            .drain()
-            .into_iter()
-            .filter_map(|delivery| match delivery {
-                Delivery::VoiceMarker { marker, played, .. } => Some((marker, played)),
-                _ => None,
-            })
-            .collect()
-    };
 
     rig.now = heard + MAX_JITTER - Duration::from_millis(1);
     rig.tick();
-    let early = (read(&receiver).len(), marks(&rig));
+    let early = (read(&receiver).len(), rig.marks());
     rig.now = marked + MAX_JITTER;
     rig.run(0, rig.reception.core.epoch);
-    let deferred = (read(&receiver).len(), marks(&rig));
+    let deferred = (read(&receiver).len(), rig.marks());
     rig.step();
-    let released = (read(&receiver).len(), marks(&rig));
+    let released = (read(&receiver).len(), rig.marks());
     let second = receiver.mark().unwrap();
     receiver.end(Ended::Disconnected);
     let third = receiver.mark().unwrap();
@@ -1459,7 +1460,66 @@ fn a_mark_passes_once_the_audio_heard_before_it_left_the_jitter_buffer() {
     assert_eq!(early, (0, Vec::new()));
     assert_eq!(deferred, (0, Vec::new()));
     assert_eq!(released, (1, vec![(first, true)]));
-    assert_eq!(marks(&rig), [(second, false), (third, false)]);
+    assert_eq!(rig.marks(), [(second, false), (third, false)]);
+}
+
+#[test]
+fn a_mark_waits_for_the_audio_heard_before_it_to_leave_the_mix() {
+    let mut rig = Rig::new(tuning());
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(options(mixed()));
+    let packets = opus(7, 0.3);
+    let heard = Instant::now();
+    for (sequence, packet) in (0..4).zip(&packets) {
+        rig.media.arrive(Arrival {
+            at: heard,
+            ..rig.arrival(ALICE_SSRC, sequence, packet)
+        });
+    }
+    rig.step();
+    let mark = receiver.mark().unwrap();
+    let after = Instant::now() + Duration::from_millis(1);
+
+    let mut ticks = Vec::new();
+    for (sequence, packet) in (4..).zip(&packets[4..]) {
+        rig.media.arrive(Arrival {
+            at: after,
+            ..rig.arrival(ALICE_SSRC, sequence, packet)
+        });
+        rig.step();
+        ticks.push(rig.marks());
+    }
+
+    assert_eq!(read(&receiver).len(), 4);
+    assert_eq!(ticks, [vec![], vec![], vec![(mark, true)]]);
+}
+
+#[test]
+fn a_mark_waits_for_a_frame_heard_before_it_held_for_a_dave_key() {
+    let mut rig = Rig::new(ReceiveTuning {
+        hold: LATER,
+        ..tuning()
+    });
+    let mut call = rig.group(&[ALICE]);
+    rig.map(ALICE_SSRC, ALICE);
+    let receiver = rig.open(options(ReceiveFormat::Opus));
+    join_behind_the_bot(&mut call, BOB);
+    let frame = call.speak(user(ALICE), &opus(1, 0.3)[0]);
+    rig.media.arrive(Arrival {
+        at: Instant::now(),
+        ..rig.arrival(ALICE_SSRC, 0, &frame)
+    });
+    rig.step();
+    let mark = receiver.mark().unwrap();
+
+    rig.step();
+    let held = (read(&receiver).len(), rig.marks());
+    rig.deliver(&mut call);
+    rig.step();
+    let released = (read(&receiver).len(), rig.marks());
+
+    assert_eq!(held, (0, Vec::new()));
+    assert_eq!(released, (1, vec![(mark, true)]));
 }
 
 #[test]

@@ -252,6 +252,7 @@ impl State {
             at,
             skipped,
             transport.is_some(),
+            self.hold.oldest(),
         );
         self.watchdog.heard |= heard;
         let listening = !self.subscribers.is_empty();

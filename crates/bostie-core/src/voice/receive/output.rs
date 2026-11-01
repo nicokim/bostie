@@ -41,8 +41,8 @@ struct Marker {
 struct Fifo {
     feed: u64,
     samples: VecDeque<f32>,
-    lost: VecDeque<bool>,
-    pending_lost: bool,
+    frames: VecDeque<(bool, Instant)>,
+    partial: Option<(bool, Instant)>,
 }
 
 struct Mix {
@@ -204,6 +204,7 @@ impl Subscribers {
         at: Moment,
         skipped: u32,
         transport: bool,
+        held: Option<Instant>,
     ) -> bool {
         for subscriber in self.open.values_mut() {
             subscriber.follow(streams);
@@ -236,7 +237,7 @@ impl Subscribers {
             if !packets && !deferred {
                 deferred = !subscriber.play(streams, &self.keys, &mut context, at.deadline);
             }
-            subscriber.flush(at.now, packets || !deferred);
+            subscriber.flush(at.now, packets || !deferred, held);
         }
         let heard = context.heard;
         for (key, feed) in streams.iter_mut() {
@@ -324,7 +325,7 @@ impl Subscriber {
         }
     }
 
-    fn flush(&mut self, now: Instant, released: bool) {
+    fn flush(&mut self, now: Instant, released: bool, held: Option<Instant>) {
         let out = &mut self.out;
         if out.lost > 0 {
             self.receiver.add_lost(mem::take(&mut out.lost));
@@ -342,7 +343,12 @@ impl Subscriber {
             .shrink(out.items.capacity(), |to| out.items.shrink_to(to));
         out.peak.advance();
         if released {
-            self.receiver.pass(now);
+            let mixing = match &out.form {
+                Form::Mixed(mix) => mix.oldest(),
+                _ => None,
+            };
+            self.receiver
+                .pass(now, held.into_iter().chain(mixing).min());
         }
     }
 
@@ -609,7 +615,7 @@ impl Output {
             consumed = consumed.saturating_add(samples);
             if let Form::Mixed(mix) = &mut self.form {
                 if let Some(fifo) = mix.fifos.get_mut(&(header.ssrc, header.user)) {
-                    fifo.push(pcm, header.lost, mix.frame);
+                    fifo.push(pcm, header.lost, header.at, mix.frame);
                     mix.dropped = mix.dropped.saturating_add(fifo.trim(mix.frame, mix.limit));
                 }
                 continue;
@@ -734,6 +740,13 @@ impl Mix {
         }
     }
 
+    fn oldest(&self) -> Option<Instant> {
+        self.fifos
+            .values()
+            .flat_map(|fifo| fifo.frames.iter().map(|&(_, heard)| heard))
+            .min()
+    }
+
     fn owe(&mut self, transport: bool, skipped: u32) {
         if transport {
             self.owed = self.owed.saturating_add(skipped).saturating_add(1);
@@ -749,24 +762,29 @@ impl Fifo {
         Self {
             feed,
             samples: VecDeque::new(),
-            lost: VecDeque::new(),
-            pending_lost: false,
+            frames: VecDeque::new(),
+            partial: None,
         }
     }
 
-    fn push(&mut self, pcm: &[f32], lost: bool, frame: NonZeroUsize) {
+    fn push(&mut self, pcm: &[f32], lost: bool, heard: Instant, frame: NonZeroUsize) {
         self.samples.extend(pcm);
-        self.pending_lost |= lost;
-        while self.samples.len() / frame > self.lost.len() {
-            self.lost.push_back(mem::take(&mut self.pending_lost));
+        let (lost_before, first) = self.partial.take().unwrap_or((false, heard));
+        let mut next = (lost_before || lost, first);
+        while self.samples.len() / frame > self.frames.len() {
+            self.frames
+                .push_back(mem::replace(&mut next, (false, heard)));
+        }
+        if self.samples.len() % frame > 0 {
+            self.partial = Some(next);
         }
     }
 
     fn trim(&mut self, frame: NonZeroUsize, limit: usize) -> u64 {
         let mut dropped: u64 = 0;
-        while self.lost.len() > limit && self.samples.len() >= frame.get() {
+        while self.frames.len() > limit && self.samples.len() >= frame.get() {
             self.samples.drain(..frame.get());
-            self.lost.pop_front();
+            self.frames.pop_front();
             dropped = dropped.saturating_add(1);
         }
         dropped
@@ -779,7 +797,7 @@ impl Fifo {
         for (total, sample) in sum.iter_mut().zip(self.samples.drain(..frame.get())) {
             *total += sample;
         }
-        Some(self.lost.pop_front().unwrap_or(false))
+        Some(self.frames.pop_front().is_some_and(|(lost, _)| lost))
     }
 }
 
