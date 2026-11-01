@@ -488,9 +488,9 @@ pub(crate) mod tests {
                 .lock()
                 .pop_front()
                 .unwrap_or_else(|| reply("200 OK", &[], "{}"));
-            let _ = captured.send(request);
+            drop(captured.send(request));
             if scripted.is_empty() {
-                let _ = stream.read(&mut [0; 1]).await;
+                drop(stream.read(&mut [0; 1]).await);
                 return;
             }
             if stream

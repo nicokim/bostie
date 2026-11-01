@@ -413,7 +413,7 @@ pub(crate) mod tests {
                 "{len} bytes"
             );
         }
-        assert!(Header::parse(&packet).is_ok());
+        Header::parse(&packet).unwrap();
         assert_eq!(
             Header::parse(&packet[..15]),
             Err(RtpError::Truncated {
@@ -432,7 +432,7 @@ pub(crate) mod tests {
 
     #[test]
     fn versions_other_than_2_are_rejected() {
-        for version in [0u8, 1, 3] {
+        for version in [0_u8, 1, 3] {
             let mut packet = header_bytes(false, &[], None, 7);
             packet[0] = (packet[0] & 0x3F) | (version << 6);
 
@@ -453,7 +453,7 @@ pub(crate) mod tests {
 
     #[test]
     fn rtcp_payload_types_classify_as_rtcp() {
-        for payload_type in 200..=206u8 {
+        for payload_type in 200..=206_u8 {
             let packet = [0x80, payload_type, 0, 6, 0, 0, 0, 1];
 
             assert_eq!(classify(&packet), Kind::Rtcp, "{payload_type}");
@@ -529,10 +529,12 @@ pub(crate) mod tests {
         fn random_bytes_never_panic(packet in vec(any::<u8>(), 0..64)) {
             let _ = classify(&packet);
             for profile in [ONE_BYTE_PROFILE, TWO_BYTE_PROFILE] {
-                let _ = extensions(profile, &packet);
+                drop(extensions(profile, &packet));
             }
-            if let Ok(header) = Header::parse(&packet) {
-                let _ = header.payload(packet.get(header.size()..).unwrap_or_default());
+            if let Ok(header) = Header::parse(&packet)
+                && let Ok(payload) = header.payload(packet.get(header.size()..).unwrap_or_default())
+            {
+                prop_assert!(payload.len() <= packet.len());
             }
         }
     }

@@ -816,7 +816,7 @@ pub(crate) mod tests {
         let mut harness = Harness::new();
         let (_hold, held) = std::sync::mpsc::channel::<()>();
         let probing = harness.spawn(move |_| {
-            held.recv().ok();
+            held.recv().unwrap_err();
         });
         let live = harness.spawn(|shared| {
             shared.publish(SourceInfo {
@@ -840,7 +840,7 @@ pub(crate) mod tests {
         let (hold, held) = std::sync::mpsc::channel::<()>();
         let source = harness.spawn(move |shared| {
             shared.publish(seekable_pcm());
-            held.recv().ok();
+            held.recv().unwrap_err();
         });
         wait_for_info(&source);
         harness.wakes();

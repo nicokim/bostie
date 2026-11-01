@@ -412,7 +412,7 @@ mod tests {
             Some(Duration::from_millis(30))
         );
         assert_eq!(heartbeat.ack(t, sent_at + Duration::from_millis(31)), None);
-        assert!(heartbeat.beat(heartbeat.deadline()).is_ok());
+        heartbeat.beat(heartbeat.deadline()).unwrap();
     }
 
     #[test]

@@ -240,7 +240,7 @@ async fn stream(
     let mut response = match respond(request, ranged, &host).await {
         Ok(response) => response,
         Err(error) => {
-            head.send(Err(error)).ok();
+            drop(head.send(Err(error)));
             return;
         }
     };
@@ -257,7 +257,7 @@ async fn stream(
             Ok(Some(chunk)) => chunk,
             Ok(None) => return,
             Err(error) => {
-                pieces.send(Err(failure(error))).await.ok();
+                drop(pieces.send(Err(failure(error))).await);
                 return;
             }
         };
@@ -336,7 +336,7 @@ mod tests {
                     let sender = sender.clone();
                     thread::spawn(move || {
                         let head = read_head(&mut stream);
-                        sender.send(head.clone()).ok();
+                        drop(sender.send(head.clone()));
                         answer(&mut stream, &head, &body, ranges);
                     });
                 }
@@ -367,11 +367,9 @@ mod tests {
 
     fn answer(stream: &mut TcpStream, head: &str, body: &[u8], ranges: bool) {
         if head.starts_with("get /missing ") {
-            stream
-                .write_all(
-                    b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                )
-                .ok();
+            drop(stream.write_all(
+                b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+            ));
             return;
         }
         let start = head
@@ -398,7 +396,7 @@ mod tests {
                 body.len()
             ),
         };
-        stream.write_all(response.as_bytes()).ok();
+        drop(stream.write_all(response.as_bytes()));
         for piece in body[start.unwrap_or(0)..].chunks(1_000) {
             if stream.write_all(piece).is_err() {
                 return;

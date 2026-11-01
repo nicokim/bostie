@@ -558,15 +558,15 @@ mod tests {
         }
 
         #[test]
-        fn random_bytes_never_panic(packet in vec(any::<u8>(), 0..128)) {
+        fn random_bytes_never_open(packet in vec(any::<u8>(), 0..128)) {
             let mut version_2 = packet.clone();
             if let Some(first) = version_2.first_mut() {
                 *first = 0x80 | (*first & 0x3F);
             }
             for mode in MODES {
                 let cipher = Cipher::new(mode, &KEY);
-                let _ = cipher.open(&mut packet.clone());
-                let _ = cipher.open(&mut version_2.clone());
+                cipher.open(&mut packet.clone()).unwrap_err();
+                cipher.open(&mut version_2.clone()).unwrap_err();
             }
         }
     }

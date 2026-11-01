@@ -255,7 +255,7 @@ fn leaving_members_rekey_and_a_sole_member_resets_until_the_next_group() {
     call.run();
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     assert_eq!(hear(&mut call, BOT, A), OPUS);
-    assert!(call.dave(user(BOT)).fingerprint_pair(user(B)).is_err());
+    call.dave(user(BOT)).fingerprint_pair(user(B)).unwrap_err();
     let sent = call.sent_by(user(BOT)).len();
 
     call.leave(user(A));
@@ -500,11 +500,9 @@ fn an_add_proposal_for_an_unannounced_user_is_rejected() {
             .any(|message| matches!(message, Outbound::CommitWelcome(_)))
     );
     assert_eq!(sent_count(&sent, is_flag), 0);
-    assert!(
-        call.dave(user(BOT))
-            .fingerprint_pair(user(STRANGER))
-            .is_err()
-    );
+    call.dave(user(BOT))
+        .fingerprint_pair(user(STRANGER))
+        .unwrap_err();
     assert_eq!(hear(&mut call, BOT, A), OPUS);
 }
 
@@ -544,9 +542,9 @@ fn revoked_proposals_are_left_out_of_the_next_commit() {
     call.fake.hold_commits = false;
     call.run();
 
-    assert!(call.dave(user(BOT)).fingerprint_pair(user(A)).is_ok());
+    call.dave(user(BOT)).fingerprint_pair(user(A)).unwrap();
     assert_eq!(hear(&mut call, BOT, C), OPUS);
-    assert!(call.dave(user(BOT)).fingerprint_pair(user(B)).is_err());
+    call.dave(user(BOT)).fingerprint_pair(user(B)).unwrap_err();
 }
 
 #[test]
@@ -990,11 +988,11 @@ fn feed_davey(dave: &mut Dave, bytes: &[u8]) {
         ProposalsOperationType::APPEND,
         ProposalsOperationType::REVOKE,
     ] {
-        let _ = session.process_proposals(operation, bytes, Some(&recognized));
+        drop(session.process_proposals(operation, bytes, Some(&recognized)));
     }
-    let _ = session.process_commit(bytes);
-    let _ = session.process_welcome(bytes, Some(&recognized));
-    let _ = session.set_external_sender(bytes);
+    drop(session.process_commit(bytes));
+    drop(session.process_welcome(bytes, Some(&recognized)));
+    drop(session.set_external_sender(bytes));
 }
 
 proptest! {

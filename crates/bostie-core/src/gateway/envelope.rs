@@ -295,7 +295,7 @@ pub(crate) mod tests {
 
         #[test]
         fn any_bytes_parse_or_fail_without_panicking(frame in prop::collection::vec(any::<u8>(), 0..256)) {
-            let _ = Frame::parse(&frame, |_| true);
+            drop(Frame::parse(&frame, |_| true));
         }
     }
 
@@ -425,8 +425,8 @@ pub(crate) mod tests {
                 "{payload}"
             );
         }
-        assert!(check_command(br#"{"op":4,"d":{"guild_id":"1","channel_id":null}}"#).is_ok());
-        assert!(identify_frame(br#"{"token":"t","intents":1}"#).is_ok());
-        assert!(identify_frame(b"[]").is_err());
+        check_command(br#"{"op":4,"d":{"guild_id":"1","channel_id":null}}"#).unwrap();
+        identify_frame(br#"{"token":"t","intents":1}"#).unwrap();
+        identify_frame(b"[]").unwrap_err();
     }
 }

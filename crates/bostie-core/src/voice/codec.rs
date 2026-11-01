@@ -591,7 +591,7 @@ pub(crate) mod tests {
         assert_eq!(received_samples(&zeros), None);
         assert_eq!(received_samples(&[0x03]), None);
         assert_eq!(received_samples(&packet(Channels::Stereo, 960)), Some(960));
-        assert!(decoder.decode(&[0x03], &mut scratch).is_err());
+        decoder.decode(&[0x03], &mut scratch).unwrap_err();
         assert_eq!(
             decoder
                 .decode(&packet(Channels::Stereo, 960), &mut scratch)

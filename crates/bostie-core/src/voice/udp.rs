@@ -292,7 +292,7 @@ mod tests {
             packet in proptest::collection::vec(any::<u8>(), 0..96),
             ssrc in any::<u32>(),
         ) {
-            let _ = parse_discovery(&packet, ssrc);
+            drop(parse_discovery(&packet, ssrc));
         }
 
         #[test]
@@ -300,7 +300,7 @@ mod tests {
             mut packet in proptest::collection::vec(any::<u8>(), DISCOVERY_LEN),
         ) {
             packet[..8].copy_from_slice(&response(SSRC, external())[..8]);
-            let _ = parse_discovery(&packet, SSRC);
+            drop(parse_discovery(&packet, SSRC));
         }
     }
 

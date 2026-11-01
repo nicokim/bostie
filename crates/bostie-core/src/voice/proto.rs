@@ -942,7 +942,7 @@ mod tests {
     #[test]
     fn messages_over_the_size_limit_are_invalid() {
         let largest = binary_frame(3, 25, &vec![0; WS_MAX_MESSAGE - BINARY_HEADER]);
-        assert!(parse_binary(&largest).inbound.is_ok());
+        parse_binary(&largest).inbound.unwrap();
 
         let over = binary_frame(3, 25, &vec![0; WS_MAX_MESSAGE - BINARY_HEADER + 1]);
         let frame = parse_binary(&over);

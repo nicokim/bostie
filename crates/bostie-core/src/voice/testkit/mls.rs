@@ -865,11 +865,9 @@ mod tests {
             assert_eq!(heard, opus);
         }
         for departed in [20, 40] {
-            assert!(
-                call.dave(user(10))
-                    .fingerprint_pair(user(departed))
-                    .is_err()
-            );
+            call.dave(user(10))
+                .fingerprint_pair(user(departed))
+                .unwrap_err();
         }
     }
 

@@ -223,7 +223,7 @@ impl Server {
             .await
         {
             ClientMessage::Close(code) => code,
-            _ => unreachable!(),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -753,7 +753,7 @@ impl Proxy {
                     };
                     if refuse {
                         let close = Message::close(CloseCode::try_from(1000).ok(), "");
-                        let _ = client.send(close).await;
+                        drop(client.send(close).await);
                         while client.next().await.is_some() {}
                         return;
                     }
@@ -1523,7 +1523,7 @@ async fn disconnect_closes_with_1000_leaves_and_closes_the_sinks_and_receivers()
         receiver.read(256).unwrap(),
         ReceiveRead::Ended(Ended::Disconnected)
     );
-    assert!(harness.voice.disconnect(guild()).is_ok());
+    harness.voice.disconnect(guild()).unwrap();
     assert!(matches!(
         harness.voice.dave(guild()),
         Err(CoreError::UnknownVoice(_))
@@ -2398,7 +2398,7 @@ async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
     let (ticked, on_ticked) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         pacer.tick(5);
-        let _ = ticked.send(());
+        ticked.send(()).unwrap_or_default();
     });
     on_ticked
         .recv_timeout(WAIT)

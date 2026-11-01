@@ -544,7 +544,7 @@ async fn frames_without_a_heartbeat_ack_still_make_a_zombie() {
     let started = Instant::now();
     let zombie = loop {
         assert!(started.elapsed() < WAIT, "frames kept the connection alive");
-        let _ = peer.socket.send(request()).await;
+        drop(peer.socket.send(request()).await);
         harness.received.extend(harness.inbox.drain());
         if let Some(delivery) = harness.received.pop_front() {
             break delivery;
@@ -1103,7 +1103,7 @@ impl AsRef<[u8]> for DropWaitsForRelease {
 
 impl Drop for DropWaitsForRelease {
     fn drop(&mut self) {
-        let _ = tokio::task::block_in_place(|| self.release.recv());
+        tokio::task::block_in_place(|| self.release.recv()).unwrap_or_default();
     }
 }
 

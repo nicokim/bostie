@@ -263,9 +263,7 @@ impl Server {
                 }
             }
             Control::Configure(change) => change(&mut self.config),
-            Control::Applied(applied) => {
-                let _ = applied.send(());
-            }
+            Control::Applied(applied) => applied.send(()).unwrap_or_default(),
         }
     }
 
@@ -509,7 +507,7 @@ impl Server {
     }
 
     fn record(&self, message: ClientMessage) {
-        let _ = self.recorder.send(message);
+        drop(self.recorder.send(message));
     }
 }
 

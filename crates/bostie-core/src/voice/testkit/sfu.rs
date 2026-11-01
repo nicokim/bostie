@@ -234,7 +234,7 @@ impl Drop for Sfu {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::Relaxed);
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            drop(thread.join());
         }
     }
 }
@@ -250,7 +250,7 @@ fn serve(socket: &UdpSocket, shared: &Shared) {
         if len == DISCOVERY_LEN && datagram.starts_with(&REQUEST_HEAD) {
             let ssrc = u32::from_be_bytes(datagram[4..8].try_into().unwrap());
             if answer(shared, from) {
-                let _ = socket.send_to(&response(ssrc, from), from);
+                drop(socket.send_to(&response(ssrc, from), from));
             }
         } else {
             capture(shared, datagram, at);

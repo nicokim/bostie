@@ -103,7 +103,7 @@ pub(crate) mod tests {
 
         #[test]
         fn garbage_is_an_error_not_a_panic(garbage in vec(any::<u8>(), 0..512)) {
-            let _ = Inflater::new(MAX_DECOMPRESSED).unwrap().inflate(&garbage);
+            drop(Inflater::new(MAX_DECOMPRESSED).unwrap().inflate(&garbage));
         }
     }
 

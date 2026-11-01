@@ -219,10 +219,12 @@ impl Drop for Core {
 
 #[cfg(test)]
 fn init_test_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_test_writer()
-        .with_max_level(tracing::Level::DEBUG)
-        .try_init();
+    drop(
+        tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_max_level(tracing::Level::DEBUG)
+            .try_init(),
+    );
 }
 
 #[cfg(test)]
@@ -293,7 +295,7 @@ mod tests {
             read_request_head(&mut stream);
             requested.send(()).unwrap();
             let mut rest = Vec::new();
-            let _ = stream.read_to_end(&mut rest);
+            drop(stream.read_to_end(&mut rest));
             disconnected.send(()).unwrap();
         });
         Silent {
@@ -370,7 +372,7 @@ mod tests {
         server.disconnected.recv_timeout(WAIT).unwrap();
         assert_eq!(core.tasks.lock().running.len(), 0);
         receiver.stream().set_nonblocking(true).unwrap();
-        assert!(receiver.stream().read(&mut [0; 1]).is_err());
+        receiver.stream().read(&mut [0; 1]).unwrap_err();
         assert!(core.drain().unwrap().is_empty());
     }
 

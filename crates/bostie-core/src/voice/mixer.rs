@@ -587,7 +587,7 @@ mod tests {
                 })
                 .is_err()
         );
-        assert!(mixer.set_encoder(faster).is_ok());
+        mixer.set_encoder(faster).unwrap();
         let silence = mixer.silence().unwrap().to_vec();
 
         let silence_with = |settings| {
