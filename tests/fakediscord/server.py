@@ -382,6 +382,20 @@ class FakeDiscord(VoiceGateway):
             _Fault(method, route_prefix, lambda window: _json(json, status, window))
         )
 
+    def answer(
+        self, method: str, route_prefix: str, body: bytes, content_type: str
+    ) -> None:
+        """Answer the next matching request with a 200 that is not JSON."""
+        self._faults.append(
+            _Fault(
+                method,
+                route_prefix,
+                lambda window: web.Response(
+                    body=body, content_type=content_type, headers=window
+                ),
+            )
+        )
+
     def hold(self, method: str, route_prefix: str) -> asyncio.Event:
         """Keep the next matching request waiting until the returned event is set."""
         release = asyncio.Event()

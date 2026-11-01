@@ -166,6 +166,17 @@ class VerificationLevel(DiscordIntEnum):
     VERY_HIGH = 4
 
 
+class DefaultMessageNotificationLevel(DiscordIntEnum):
+    ALL_MESSAGES = 0
+    ONLY_MENTIONS = 1
+
+
+class ExplicitContentFilterLevel(DiscordIntEnum):
+    DISABLED = 0
+    MEMBERS_WITHOUT_ROLES = 1
+    ALL_MEMBERS = 2
+
+
 class PremiumTier(DiscordIntEnum):
     NONE = 0
     TIER_1 = 1
@@ -635,6 +646,15 @@ class MemberFlags(DiscordIntFlag):
 
 class RoleFlags(DiscordIntFlag):
     IN_PROMPT = 1 << 0
+
+
+class SystemChannelFlags(DiscordIntFlag):
+    SUPPRESS_JOIN_NOTIFICATIONS = 1 << 0
+    SUPPRESS_PREMIUM_SUBSCRIPTIONS = 1 << 1
+    SUPPRESS_GUILD_REMINDER_NOTIFICATIONS = 1 << 2
+    SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3
+    SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS = 1 << 4
+    SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES = 1 << 5
 
 
 class AttachmentFlags(DiscordIntFlag):

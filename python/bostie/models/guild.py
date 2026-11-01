@@ -12,7 +12,8 @@ from bostie.enums import (
     RoleFlags,
     VerificationLevel,
 )
-from bostie.models.base import Model, permissions_from
+from bostie.models.base import Builder, Model, permissions_from
+from bostie.models.expressions import Emoji, Sticker
 from bostie.models.user import AvatarDecorationData, Collectibles, User
 
 if TYPE_CHECKING:
@@ -121,10 +122,99 @@ class Guild(Model, kw_only=True):
     banner: str | None
     vanity_url_code: str | None
     nsfw_level: NSFWLevel
+    approximate_member_count: int | None = None
+    approximate_presence_count: int | None = None
     joined_at: datetime | None = None
     member_count: int | None = None
     large: bool | None = None
     unavailable: bool = False
+
+
+class CurrentUserGuild(Model, kw_only=True):
+    """A guild the bot is in, with the bot's permissions there."""
+
+    id: int
+    name: str
+    icon: str | None
+    banner: str | None
+    owner: bool
+    _permissions: str = msgspec.field(name="permissions")
+    features: tuple[str, ...]
+    approximate_member_count: int | None = None
+    approximate_presence_count: int | None = None
+
+    @property
+    def permissions(self) -> Permissions:
+        return Permissions(int(self._permissions))
+
+
+class GuildPreview(Model, kw_only=True):
+    id: int
+    name: str
+    icon: str | None
+    splash: str | None
+    discovery_splash: str | None
+    emojis: tuple[Emoji, ...]
+    features: tuple[str, ...]
+    approximate_member_count: int
+    approximate_presence_count: int
+    description: str | None
+    stickers: tuple[Sticker, ...]
+
+
+class GuildWidgetSettings(Model, kw_only=True):
+    enabled: bool
+    channel_id: int | None
+
+
+class GuildWidgetChannel(Model, kw_only=True):
+    id: int
+    name: str
+    position: int
+
+
+class GuildWidgetMember(Model, kw_only=True):
+    """An online member as the widget shows it, with an anonymized id."""
+
+    id: str
+    username: str
+    discriminator: str
+    avatar: str | None
+    status: str
+    avatar_url: str
+
+
+class GuildWidget(Model, kw_only=True):
+    id: int
+    name: str
+    instant_invite: str | None
+    channels: tuple[GuildWidgetChannel, ...]
+    members: tuple[GuildWidgetMember, ...]
+    presence_count: int
+
+
+class VanityURL(Model, kw_only=True):
+    code: str | None
+    uses: int
+
+
+class WelcomeScreenChannel(Builder, kw_only=True):
+    channel_id: int
+    description: str
+    emoji_id: int | None
+    emoji_name: str | None
+
+
+class WelcomeScreen(Model, kw_only=True):
+    description: str | None
+    welcome_channels: tuple[WelcomeScreenChannel, ...]
+
+
+class IncidentsData(Model, kw_only=True):
+    invites_disabled_until: datetime | None
+    dms_disabled_until: datetime | None
+    dm_spam_detected_at: datetime | None = None
+    raid_detected_at: datetime | None = None
 
 
 class UnavailableGuild(Model, kw_only=True):
