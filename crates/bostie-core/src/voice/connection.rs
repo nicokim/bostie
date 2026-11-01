@@ -628,10 +628,6 @@ impl Connection {
                 self.failures.last = Some(text);
                 fallback
             }
-            SessionEnd::Zombie => {
-                self.failures.last = Some("no heartbeat ACK".to_owned());
-                fallback
-            }
             SessionEnd::Reconnect => fallback,
             SessionEnd::Invalid(text) | SessionEnd::Failed(text) => {
                 self.failures.last = Some(text);
@@ -678,10 +674,7 @@ impl Connection {
         }
         let failed = match &end {
             SessionEnd::Closed(code) => close::classify(*code).0 == CloseAction::Resume,
-            SessionEnd::Lost(_)
-            | SessionEnd::Zombie
-            | SessionEnd::Invalid(_)
-            | SessionEnd::Failed(_) => true,
+            SessionEnd::Lost(_) | SessionEnd::Invalid(_) | SessionEnd::Failed(_) => true,
             _ => false,
         };
         match self.after(end) {

@@ -44,7 +44,6 @@ pub(super) enum SessionEnd {
     Lost(String),
     Invalid(String),
     Failed(String),
-    Zombie,
     Gateway(GatewayEvent),
     Disconnect,
     Reconnect,
@@ -295,7 +294,7 @@ impl<'c> Session<'c> {
     async fn close(self, end: &SessionEnd) {
         match end {
             SessionEnd::Closed(_) => {}
-            SessionEnd::Lost(_) | SessionEnd::Zombie => {
+            SessionEnd::Lost(_) => {
                 tokio::spawn(self.socket.close(Close::Resumable));
             }
             SessionEnd::Disconnect => self.socket.close(Close::Final).await,
@@ -703,7 +702,7 @@ impl<'c> Session<'c> {
         };
         let t = heartbeat
             .beat(Instant::now())
-            .map_err(|_| SessionEnd::Zombie)?;
+            .map_err(|zombie| SessionEnd::Lost(zombie.to_string()))?;
         let seq_ack = self
             .conn
             .voice
