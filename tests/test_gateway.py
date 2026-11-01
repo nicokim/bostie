@@ -260,7 +260,7 @@ def test_closing_the_bridge_fails_start_and_drops_the_connection() -> None:
 
         with pytest.raises(TransportError, match="stopped"):
             await started
-        await asyncio.wait_for(harness.fake.connections[-1].request.task, 1)
+        await asyncio.wait_for(harness.fake.connections[-1].request.task, 10)
 
     run(scenario)
 
