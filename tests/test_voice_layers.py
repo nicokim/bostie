@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Self, cast
+from typing import Any, ClassVar, Self, Unpack, cast
 
 import pytest
 
@@ -25,7 +25,7 @@ from bostie.voice.formats import (
     Format,
     Opus,
     ReceiveFormat,
-    SinkStall,
+    SinkOptions,
 )
 from bostie.voice.frames import Frame
 from bostie.voice.layers import (
@@ -237,14 +237,13 @@ class FakeConnection:
         self,
         format: Format = DEFAULT_PCM,
         *,
-        buffer: float | None = None,
         volume: float = 1.0,
-        stall: SinkStall | None = None,
+        **options: Unpack[SinkOptions],
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
             raise VoiceNotConnected("the voice connection has ended")
-        buffer = 0.2 if buffer is None else buffer
-        sink = FakeSink(self, format, buffer, volume, stall or "hold")
+        buffer = options.get("buffer", 0.2)
+        sink = FakeSink(self, format, buffer, volume, options.get("stall", "hold"))
         self.sinks.append(sink)
         self.clock.sinks.append(sink)
         return sink

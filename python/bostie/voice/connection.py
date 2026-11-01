@@ -50,7 +50,10 @@ from bostie.voice.events import (
 )
 from bostie.voice.formats import (
     DEFAULT_PCM,
+    PACKET_RECEIVE_OPTIONS,
     PCM,
+    RECEIVE_OPTIONS,
+    SINK_OPTIONS,
     Defaults,
     EncoderSettings,
     Format,
@@ -58,10 +61,13 @@ from bostie.voice.formats import (
     Opus,
     OpusApplication,
     Overflow,
+    PacketReceiveOptions,
     Packets,
     ReceiveFormat,
+    ReceiveOptions,
     ReceiveStall,
     Sample,
+    SinkOptions,
     SinkStall,
     StageRole,
 )
@@ -171,6 +177,19 @@ class VoiceCore(Protocol):
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
 
+class EditOptions(TypedDict, total=False):
+    """The bot's own mute and deafen; each left out stays as it is."""
+
+    self_mute: bool
+    self_deaf: bool
+
+
+class MoveOptions(TypedDict, total=False):
+    """Settings for one move() call; each overrides voice.Defaults."""
+
+    timeout: float
+
+
 class ExternalConnectOptions(TypedDict, total=False):
     """Settings for one connect_external() call; each overrides voice.Defaults."""
 
@@ -192,6 +211,8 @@ class ConnectOptions(ExternalConnectOptions, total=False):
 
 CONNECT_OPTIONS = ConnectOptions.__optional_keys__
 EXTERNAL_CONNECT_OPTIONS = ExternalConnectOptions.__optional_keys__
+MOVE_OPTIONS = MoveOptions.__optional_keys__
+EDIT_OPTIONS = EditOptions.__optional_keys__
 
 
 class _HasCore(Protocol):
@@ -577,14 +598,14 @@ class VoiceConnection:
         self,
         format: Format = DEFAULT_PCM,
         *,
-        buffer: float | None = None,
         volume: float = 1.0,
-        stall: SinkStall | None = None,
+        **options: Unpack[SinkOptions],
     ) -> Sink:
         """Open a bounded writer whose audio is mixed into this connection."""
+        check_keys(options, SINK_OPTIONS, "options")
         self._check_live()
-        buffer = self._settings.sink_buffer if buffer is None else buffer
-        stall = self._settings.stall if stall is None else stall
+        buffer = options.get("buffer", self._settings.sink_buffer)
+        stall = options.get("stall", self._settings.stall)
         pcm = DEFAULT_PCM if isinstance(format, Opus) else format
         native = self._core().voice_sink(
             self.guild_id,
@@ -609,10 +630,8 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
         markers: Literal[False] = False,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[PacketReceiveOptions],
     ) -> Receiver[Packet]: ...
     @overload
     def receive(
@@ -622,10 +641,8 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
         markers: Literal[True],
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[PacketReceiveOptions],
     ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -635,10 +652,8 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
         markers: bool,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[PacketReceiveOptions],
     ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -648,12 +663,9 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
-        jitter: float | None = None,
         markers: Literal[False] = False,
         mix: bool = False,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[ReceiveOptions],
     ) -> Receiver[Frame]: ...
     @overload
     def receive(
@@ -663,12 +675,9 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
-        jitter: float | None = None,
         markers: Literal[True],
         mix: bool = False,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[ReceiveOptions],
     ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
     @overload
     def receive(
@@ -678,12 +687,9 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
-        jitter: float | None = None,
         markers: bool,
         mix: bool = False,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[ReceiveOptions],
     ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
     def receive(
         self,
@@ -692,22 +698,23 @@ class VoiceConnection:
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
         include_self: bool = False,
-        buffer: float | None = None,
-        jitter: float | None = None,
         markers: bool = False,
         mix: bool = False,
-        overflow: Overflow | None = None,
-        stall: ReceiveStall | None = None,
+        **options: Unpack[ReceiveOptions],
     ) -> Receiver[Any]:
         """Open a bounded iterator over the audio this connection receives."""
+        allowed = (
+            PACKET_RECEIVE_OPTIONS if isinstance(format, Packets) else RECEIVE_OPTIONS
+        )
+        check_keys(options, allowed, "options")
         self._check_live()
         settings = self._settings
         wanted = None if users is None else frozenset(users)
         excluded = frozenset(exclude)
-        buffer = settings.receive_buffer if buffer is None else buffer
-        jitter = settings.jitter if jitter is None else jitter
-        overflow = settings.overflow if overflow is None else overflow
-        stall = settings.receive_stall if stall is None else stall
+        buffer = options.get("buffer", settings.receive_buffer)
+        jitter = options.get("jitter", settings.jitter)
+        overflow = options.get("overflow", settings.overflow)
+        stall = options.get("stall", settings.receive_stall)
         pcm = DEFAULT_PCM if isinstance(format, Opus | Packets) else format
         native = self._core().voice_receive(
             self.guild_id,
@@ -756,39 +763,34 @@ class VoiceConnection:
         source: "Source",
         *,
         volume: float = 1.0,
-        buffer: float | None = None,
-        stall: SinkStall | None = None,
         meta: Any = None,
+        **options: Unpack[SinkOptions],
     ) -> layers.Track:
         """Play a source on its own sink, mixed with anything else playing."""
         self._check_live()
-        return await layers.play(
-            self, source, volume=volume, buffer=buffer, stall=stall, meta=meta
-        )
+        return await layers.play(self, source, volume=volume, meta=meta, **options)
 
-    async def move(self, channel_id: int, *, timeout: float | None = None) -> None:
+    async def move(self, channel_id: int, **options: Unpack[MoveOptions]) -> None:
         """Move to another voice or stage channel and wait until media flows there."""
+        check_keys(options, MOVE_OPTIONS, "options")
         self._check_live()
         guild_id, channel = await self.manager._voice_channel(channel_id)
         if guild_id != self.guild_id:
             raise ValueError(f"channel {channel_id} is in another guild")
         self._check_live()
         await self._join(
-            channel,
-            *self._requested,
-            self._settings.timeout if timeout is None else timeout,
+            channel, *self._requested, options.get("timeout", self._settings.timeout)
         )
 
-    async def edit(
-        self, *, self_mute: bool | None = None, self_deaf: bool | None = None
-    ) -> None:
+    async def edit(self, **options: Unpack[EditOptions]) -> None:
         """Change the bot's own mute or deafen in this channel."""
+        check_keys(options, EDIT_OPTIONS, "options")
         self._check_live()
         mute, deaf = self._requested
         self._update(
             self._channel_id,
-            mute if self_mute is None else self_mute,
-            deaf if self_deaf is None else self_deaf,
+            options.get("self_mute", mute),
+            options.get("self_deaf", deaf),
         )
 
     async def stage(self, role: StageRole) -> None:

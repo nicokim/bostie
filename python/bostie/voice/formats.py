@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypedDict
 
 from bostie import _native
 from bostie.enums import SpeakingFlags
@@ -172,6 +172,32 @@ class Defaults:
             raise ValueError(
                 f"receive_stall must be 'wait' or 'end', got {self.receive_stall!r}"
             )
+
+
+class SinkOptions(TypedDict, total=False):
+    """Settings for one sink; each overrides voice.Defaults."""
+
+    buffer: float
+    stall: SinkStall
+
+
+class PacketReceiveOptions(TypedDict, total=False):
+    """Settings for one receiver of voice.Packets(); each overrides voice.Defaults."""
+
+    buffer: float
+    overflow: Overflow
+    stall: ReceiveStall
+
+
+class ReceiveOptions(PacketReceiveOptions, total=False):
+    """Settings for one receiver; each overrides voice.Defaults."""
+
+    jitter: float
+
+
+SINK_OPTIONS = SinkOptions.__optional_keys__
+PACKET_RECEIVE_OPTIONS = PacketReceiveOptions.__optional_keys__
+RECEIVE_OPTIONS = ReceiveOptions.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)

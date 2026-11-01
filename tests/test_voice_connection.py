@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import threading
 from collections.abc import Awaitable, Callable
@@ -120,6 +121,41 @@ def test_invalid_connect_options_raise_before_anything_is_sent(
         with pytest.raises(error, match=option):
             await attempts[call]()
         assert (bot.core.sent, bot.rest.requests) == ([], [])
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("call", "option"),
+    [
+        ("sink", "jitter"),
+        ("play", "overflow"),
+        ("queue", "timeout"),
+        ("receive", "volume"),
+        ("packets", "jitter"),
+        ("move", "self_mute"),
+        ("edit", "timeout"),
+    ],
+)
+def test_options_a_call_does_not_take_raise_type_error(call: str, option: str) -> None:
+    options: dict[str, Any] = {option: 0.1}
+
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot)
+        attempts: dict[str, Callable[[], object]] = {
+            "sink": lambda: vc.sink(**options),
+            "play": lambda: vc.play(voice.File("a.ogg"), **options),
+            "queue": lambda: voice.Queue(vc, **options),
+            "receive": lambda: vc.receive(**options),
+            "packets": lambda: vc.receive(voice.Packets(), **options),
+            "move": lambda: vc.move(OTHER_VOICE, **options),
+            "edit": lambda: vc.edit(**options),
+        }
+        with pytest.raises(TypeError, match=option):
+            result = attempts[call]()
+            if inspect.isawaitable(result):
+                await result
+        assert bot.calls("voice_file") == bot.calls("voice_update") == []
 
     run(scenario)
 

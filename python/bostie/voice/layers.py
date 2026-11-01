@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, BinaryIO, Self
+from typing import TYPE_CHECKING, Any, BinaryIO, Self, Unpack
 
 from bostie._aio import spawn
 from bostie.enums import State
@@ -22,14 +22,17 @@ from bostie.errors import (
     SourceError,
     VoiceNotConnected,
 )
+from bostie.models.base import check_keys
 from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop
 from bostie.voice.formats import (
     PCM,
     SAMPLE_RATE,
+    SINK_OPTIONS,
     EncoderSettings,
     Format,
     Opus,
+    SinkOptions,
     SinkStall,
 )
 from bostie.voice.frames import Frame
@@ -165,18 +168,12 @@ class Track:
 
 class _Player:
     def __init__(
-        self,
-        vc: "VoiceConnection",
-        *,
-        volume: float,
-        buffer: float | None,
-        stall: SinkStall | None,
+        self, vc: "VoiceConnection", *, volume: float, options: SinkOptions
     ) -> None:
         self.vc = vc
         self.closed = False
         self._volume = volume
-        self._buffer = buffer
-        self._stall: SinkStall | None = stall
+        self._options = options
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
         self._format: Format | None = None
@@ -449,9 +446,7 @@ class _Player:
             await self._drain(previous)
             self._sink = None
             previous.close()
-        self._sink = self.vc.sink(
-            format, buffer=self._buffer, volume=self._volume, stall=self._stall
-        )
+        self._sink = self.vc.sink(format, volume=self._volume, **self._options)
         self._format = format
         return self._sink
 
@@ -521,11 +516,11 @@ class Queue:
         vc: "VoiceConnection",
         *,
         volume: float = 1.0,
-        buffer: float | None = None,
-        stall: SinkStall | None = None,
+        **options: Unpack[SinkOptions],
     ) -> None:
+        check_keys(options, SINK_OPTIONS, "options")
         self.vc = vc
-        self._player = _Player(vc, volume=volume, buffer=buffer, stall=stall)
+        self._player = _Player(vc, volume=volume, options=options)
 
     @property
     def closed(self) -> bool:
@@ -582,17 +577,17 @@ async def play(
     source: "Source",
     *,
     volume: float = 1.0,
-    buffer: float | None = None,
-    stall: SinkStall | None = None,
     meta: Any = None,
+    **options: Unpack[SinkOptions],
 ) -> Track:
+    check_keys(options, SINK_OPTIONS, "options")
     try:
         await source.open(vc.manager)
-        sink = vc.sink(source.format, buffer=buffer, volume=volume, stall=stall)
+        sink = vc.sink(source.format, volume=volume, **options)
     except BaseException:
         await source.aclose()
         raise
-    player = _Player(vc, volume=volume, buffer=buffer, stall=stall)
+    player = _Player(vc, volume=volume, options=options)
     return player.start(source, sink, meta)
 
 
