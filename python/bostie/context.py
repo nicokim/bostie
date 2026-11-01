@@ -72,6 +72,10 @@ class _CallbackResponse(msgspec.Struct):
     resource: _CallbackResource | None = None
 
 
+class _MessageFlagsOnly(msgspec.Struct):
+    flags: MessageFlags = MessageFlags(0)
+
+
 class _InteractionContext[
     I: CommandInteraction | ComponentInteraction | AutocompleteInteraction
 ]:
@@ -450,7 +454,8 @@ class ComponentContext(_ReplyingContext[ComponentInteraction]):
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _component_message_is_ephemeral(self) -> bool:
-        return MessageFlags.EPHEMERAL in self.interaction.message.flags
+        message = decoder(_MessageFlagsOnly).decode(self.interaction.message_json)
+        return MessageFlags.EPHEMERAL in message.flags
 
     @property
     def _label(self) -> str:

@@ -238,6 +238,25 @@ def test_an_accepted_answer_counts_even_when_its_message_fails_to_decode() -> No
     run_bot(scenario)
 
 
+@pytest.mark.parametrize(
+    ("call", "sent"), [("update", CALLBACK_7), ("defer_update", CALLBACK_6)]
+)
+def test_a_component_on_a_message_that_fails_to_decode_still_answers(
+    call: str, sent: Call
+) -> None:
+    broken = payloads.fixture("events/INTERACTION_CREATE.button")["message"]
+    del broken["content"]
+
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: ComponentContext) -> None:
+            await CALLS[call](ctx)
+
+        requests = await on.answer(ComponentContext, handler, message=broken)
+        assert calls(requests) == [sent]
+
+    run_bot(scenario)
+
+
 ENTER_EPHEMERAL: dict[str, Callable[[Any], Awaitable[object]]] = {
     "pending": lambda ctx: asyncio.sleep(0),
     "deferred": lambda ctx: ctx.defer(),
