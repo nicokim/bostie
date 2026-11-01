@@ -368,7 +368,7 @@ mod tests {
             .lines()
             .find_map(|line| line.strip_prefix("range: bytes="))
             .and_then(|range| range.trim().trim_end_matches('-').parse::<usize>().ok())
-            .filter(|_| ranges);
+            .filter(|_| ranges && !head.starts_with("get /liar "));
         let accept = if ranges {
             "accept-ranges: bytes\r\n"
         } else {
@@ -484,6 +484,19 @@ mod tests {
 
         assert!(!media.is_seekable());
         assert_eq!(error.kind(), ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn a_server_that_ignores_a_range_request_fails_the_read() {
+        let harness = Harness::new();
+        let server = Server::start(vec![7; 10_000], true);
+        let mut media = HttpMedia::new(&harness.http, &server.url("/liar"), &[]).unwrap();
+        media.connect().unwrap();
+        media.seek(SeekFrom::Start(10)).unwrap();
+
+        let error = media.read(&mut [0; 16]).unwrap_err();
+
+        assert_eq!(error.to_string(), "127.0.0.1 ignored a range request");
     }
 
     #[test]
