@@ -256,6 +256,7 @@ impl<'c> Session<'c> {
         self.send_text(payload).await
     }
 
+    #[expect(clippy::cognitive_complexity)]
     async fn serve(&mut self) -> SessionEnd {
         loop {
             let deadline = self.conn.deadline;
