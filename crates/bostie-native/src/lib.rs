@@ -292,15 +292,15 @@ impl NativeCore {
             .map(NativeReceiver)?)
     }
 
-    fn voice_speech_hangover(&self, guild_id: u64, seconds: f64) -> Result<()> {
-        let hangover = crate::seconds("speech_hangover", seconds)?;
+    fn voice_speech_hangover(&self, guild_id: u64, hangover: f64) -> Result<()> {
+        let hangover = seconds("speech_hangover", hangover)?;
         Ok(self
             .voice()?
             .set_speech_hangover(GuildId::from(guild_id), hangover)?)
     }
 
-    fn voice_server_change_delay(&self, guild_id: u64, seconds: f64) -> Result<()> {
-        let delay = crate::seconds("server_change_delay", seconds)?;
+    fn voice_server_change_delay(&self, guild_id: u64, delay: f64) -> Result<()> {
+        let delay = seconds("server_change_delay", delay)?;
         Ok(self
             .voice()?
             .set_server_change_delay(GuildId::from(guild_id), delay)?)
