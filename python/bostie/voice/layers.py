@@ -802,11 +802,7 @@ class _OggStream:
             len(self.lacing),
         )
         page = bytearray(header) + self.lacing + self.body
-        page[22:26] = (
-            (zlib.crc32(page.translate(REVERSED_BITS), 0xFFFFFFFF) ^ 0xFFFFFFFF)
-            .to_bytes(4, "big")
-            .translate(REVERSED_BITS)
-        )
+        page[22:26] = _ogg_crc32(page)
         self.pages += page
         self.sequence += 1
         self.samples = 0
@@ -960,6 +956,11 @@ def _template(path: str | os.PathLike[str]) -> str:
 
 def _lacing(packet: bytes) -> bytes:
     return bytes([255] * (len(packet) // 255) + [len(packet) % 255])
+
+
+def _ogg_crc32(page: bytearray) -> bytes:
+    crc = zlib.crc32(page.translate(REVERSED_BITS), 0xFFFFFFFF) ^ 0xFFFFFFFF
+    return crc.to_bytes(4, "big").translate(REVERSED_BITS)
 
 
 def _create(path: Path) -> BinaryIO:

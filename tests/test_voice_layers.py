@@ -1065,6 +1065,9 @@ def read_ogg(path: Path) -> tuple[list[bytes], list[int]]:
     partial = b""
     while data:
         count = data[26]
+        page = bytearray(data[: 27 + count + sum(data[27 : 27 + count])])
+        page[22:26] = bytes(4)
+        assert ogg_crc(page) == int.from_bytes(data[22:26], "little")
         body = data[27 + count :]
         granules.append(int.from_bytes(data[6:14], "little"))
         for size in data[27 : 27 + count]:
@@ -1075,6 +1078,15 @@ def read_ogg(path: Path) -> tuple[list[bytes], list[int]]:
                 partial = b""
         data = body
     return packets[2:], granules
+
+
+def ogg_crc(page: bytearray) -> int:
+    crc = 0
+    for byte in page:
+        crc ^= byte << 24
+        for _ in range(8):
+            crc = (crc << 1) ^ 0x104C11DB7 if crc & 0x80000000 else crc << 1
+    return crc
 
 
 @pytest.mark.parametrize(
