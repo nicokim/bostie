@@ -309,12 +309,13 @@ def test_rust_logs_reach_the_python_logger_at_their_level(
     with caplog.at_level(logging.DEBUG, logger="bostie.rest"):
         run(main())
 
-    retries = [
-        record.levelno
+    logged = [
+        (record.levelno, record.getMessage().split()[0])
         for record in caplog.records
-        if record.name == "bostie.rest" and record.getMessage().startswith("retrying ")
+        if record.name == "bostie.rest"
+        and record.getMessage().startswith(("rate limited ", "retrying "))
     ]
-    assert retries == [logging.DEBUG]
+    assert logged == [(logging.WARNING, "rate"), (logging.DEBUG, "retrying")]
 
 
 def test_rejects_use_from_another_loop(run: Runner) -> None:

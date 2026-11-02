@@ -142,10 +142,10 @@ impl Rest {
             let permit = match self.permit(&request).await {
                 Ok(permit) => permit,
                 Err(retry_after) => {
-                    tracing::debug!(
+                    tracing::warn!(
                         route = %request.endpoint.path,
                         ?retry_after,
-                        "bucket exhausted beyond the retry limit"
+                        "held back: the route stays rate limited for longer than bostie waits"
                     );
                     return Delivery::Response {
                         ticket,
@@ -290,6 +290,13 @@ impl Rest {
         let status = response.status();
         let limits = ResponseLimits::parse(status, response.headers(), Instant::now());
         self.observe(request.class, status, limits.limited);
+        if let Some(Limited { scope, retry_after }) = limits.limited {
+            if scope == Scope::Shared {
+                tracing::debug!(route = %request.endpoint.path, ?retry_after, "shared rate limit");
+            } else {
+                tracing::warn!(route = %request.endpoint.path, ?scope, ?retry_after, "rate limited");
+            }
+        }
         if request.class == RouteClass::Interaction {
             self.interaction_buckets.lock().observe(
                 &request.endpoint,
@@ -322,7 +329,6 @@ impl Rest {
             retry_after,
         }) = limited
         {
-            tracing::debug!(?retry_after, "global rate limit");
             self.gate.pause(retry_after);
         }
         let invalid = matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
