@@ -28,7 +28,10 @@ from bostie.models.base import decoder, encoder
 CLOSE_TIMEOUT = 2.0
 PRESENCE_UPDATE = 3
 REQUEST_GUILD_MEMBERS = 8
-MEMBER_REQUEST_TIMEOUT = 30.0
+REQUEST_SOUNDBOARD_SOUNDS = 31
+REQUEST_CHANNEL_INFO = 43
+REQUEST_TIMEOUT = 30.0
+MAX_REQUESTED_MEMBERS = 100
 BUG_CLOSE_CODES = frozenset({4001, 4002, 4005, 4008})
 AUTHENTICATION_FAILED = 4004
 CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
@@ -104,9 +107,13 @@ def member_request(
         if "query" in options or "limit" in options:
             raise ValueError("pass user_ids, or query and limit, not both")
         request["user_ids"] = [str(user_id) for user_id in options["user_ids"]]
+        if len(request["user_ids"]) > MAX_REQUESTED_MEMBERS:
+            raise ValueError("user_ids takes at most 100 users")
         return request
     request["query"] = options.get("query", "")
     request["limit"] = options.get("limit", 0)
+    if not 0 <= request["limit"] <= MAX_REQUESTED_MEMBERS:
+        raise ValueError(f"limit must be 0 to 100, got {request['limit']}")
     if not request["query"] and not intents & Intents.GUILD_MEMBERS:
         raise MissingIntent(
             "requesting every member needs Intents.GUILD_MEMBERS; "
@@ -214,9 +221,10 @@ class GatewayClient:
         )
 
     def send(self, op: int, d: Any = None) -> None:
-        """Send a gateway command such as op 31 or 43 to the shard it belongs to.
+        """Send a gateway command to the shards it belongs to.
 
         Op 3 goes to every shard, a payload with a guild_id to that guild's shard,
+        one with guild_ids to each of their shards with its share of the ids, and
         anything else to shard 0. Replies arrive only for event names someone
         listens to.
         """
@@ -227,6 +235,14 @@ class GatewayClient:
         match d:
             case {"guild_id": guild_id}:
                 self.shard(self.shard_for(int(guild_id))).send(op, d)
+            case {"guild_ids": [*guild_ids]}:
+                shares: dict[int, list[Any]] = {}
+                for guild_id in guild_ids:
+                    shares.setdefault(self.shard_for(int(guild_id)), []).append(
+                        guild_id
+                    )
+                for shard_id, share in shares.items():
+                    self.shard(shard_id).send(op, {**d, "guild_ids": share})
             case _:
                 self.shard(0).send(op, d)
 
@@ -333,6 +349,8 @@ class _ShardGuilds:
     pending: set[int] = field(default_factory=set[int])
     last: float = 0.0
     timer: asyncio.TimerHandle | None = None
+    session: bool = False
+    renewing: bool = False
 
 
 class Readiness:
@@ -351,6 +369,10 @@ class Readiness:
         self._guilds = guilds
         self._timeout = timeout
 
+    def renewing(self, shard_id: int) -> bool:
+        """Whether the shard lost its session and has no READY for a new one yet."""
+        return self._shards[shard_id].renewing
+
     def ready(self, shard_id: int, data: bytes) -> bool:
         """Start following a READY; True when it leaves no guild to wait for."""
         shard = self._shards[shard_id]
@@ -358,6 +380,8 @@ class Readiness:
         ids = set[int]() if ready is None else {guild.id for guild in ready.guilds}
         shard.known = ids
         shard.pending = set(ids) if self._guilds else set()
+        shard.session = True
+        shard.renewing = False
         self._cancel(shard)
         if not shard.pending:
             return True
@@ -385,8 +409,12 @@ class Readiness:
             shard.known.discard(guild.id)
         return self._arrived(shard, guild.id)
 
-    def ended(self, shard_id: int) -> None:
-        self._cancel(self._shards[shard_id])
+    def ended(self, shard_id: int) -> bool:
+        """Note a session that ended; True when the shard had one to lose."""
+        shard = self._shards[shard_id]
+        self._cancel(shard)
+        shard.renewing = shard.session
+        return shard.session
 
     def close(self) -> None:
         for shard in self._shards.values():

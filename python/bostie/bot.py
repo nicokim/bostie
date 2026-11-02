@@ -48,6 +48,7 @@ from bostie.events import (
     BOT_EVENT_NAMES,
     EVENTS,
     BotEvent,
+    ChannelInfo,
     Event,
     GatewayRateLimited,
     GuildCreate,
@@ -60,6 +61,7 @@ from bostie.events import (
     Resumed,
     ShardDisconnect,
     ShardReady,
+    SoundboardSounds,
     Started,
     Stopping,
     UserUpdate,
@@ -67,9 +69,11 @@ from bostie.events import (
 )
 from bostie.gateway import (
     MEMBER_REQUEST,
-    MEMBER_REQUEST_TIMEOUT,
     PRESENCE_OPTIONS,
+    REQUEST_CHANNEL_INFO,
     REQUEST_GUILD_MEMBERS,
+    REQUEST_SOUNDBOARD_SOUNDS,
+    REQUEST_TIMEOUT,
     GatewayClient,
     MemberRequest,
     PresenceOptions,
@@ -88,8 +92,10 @@ from bostie.models import (
     Interaction,
     InteractionDataOption,
     ModalSubmitInteraction,
+    SoundboardSound,
     UnknownInteraction,
     User,
+    VoiceChannelInfo,
 )
 from bostie.models.base import check_keys
 from bostie.rest import REST
@@ -109,12 +115,15 @@ FAILURE_ANSWER = "Something went wrong."
 PRIVILEGED_INTENTS = (
     Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
 )
+CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
+    "status",
+    "voice_start_time",
+)
 DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
 type LocalEvent = VoiceEvent | BotEvent
-type MemberAnswer = MembersChunk | GatewayRateLimited
 
 
 @dataclass(slots=True)
@@ -124,6 +133,14 @@ class _Waiter[E: AnyEvent]:
     queue: asyncio.Queue[E | Exception]
     once: bool
     closed: bool = False
+
+
+@dataclass(slots=True)
+class _Request:
+    shard_id: int
+    answers: asyncio.Queue[Event | Exception] = field(
+        default_factory=asyncio.Queue[Event | Exception]
+    )
 
 
 @dataclass(slots=True)
@@ -217,7 +234,7 @@ class Bot(Router):
         self._tasks: set[asyncio.Task[None]] = set()
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
-        self._member_requests: dict[str, asyncio.Queue[MemberAnswer]] = {}
+        self._requests: dict[tuple[str, object], list[_Request]] = {}
 
     @property
     @override
@@ -411,24 +428,18 @@ class Bot(Router):
         """
         check_keys(options, MEMBER_REQUEST, "member request options")
         request = member_request(guild_id, options, self._intents)
-        gateway = self.gateway
-        answers: asyncio.Queue[MemberAnswer] = asyncio.Queue()
         chunks: list[MembersChunk] = []
-        self._member_requests[request["nonce"]] = answers
-        self._refresh_filter()
-        try:
-            gateway.send(REQUEST_GUILD_MEMBERS, request)
-            while not chunks or len(chunks) < chunks[-1].chunk_count:
-                async with asyncio.timeout(
-                    options.get("timeout", MEMBER_REQUEST_TIMEOUT)
-                ):
-                    answer = await answers.get()
+        key = (MembersChunk.NAME, request["nonce"])
+        wait = options.get("timeout", REQUEST_TIMEOUT)
+        async with self._request(
+            guild_id, REQUEST_GUILD_MEMBERS, request, key, wait
+        ) as answers:
+            async for answer in answers:
                 if isinstance(answer, GatewayRateLimited):
                     raise MemberRequestRateLimited(answer.retry_after)
-                chunks.append(answer)
-        finally:
-            del self._member_requests[request["nonce"]]
-            self._refresh_filter()
+                chunks.append(cast("MembersChunk", answer))
+                if len(chunks) >= chunks[-1].chunk_count:
+                    break
         return RequestedMembers(
             members=tuple(member for chunk in chunks for member in chunk.members),
             presences=tuple(
@@ -436,6 +447,61 @@ class Bot(Router):
             ),
             not_found=tuple(user_id for chunk in chunks for user_id in chunk.not_found),
         )
+
+    async def request_soundboard_sounds(
+        self, guild_id: int
+    ) -> tuple[SoundboardSound, ...]:
+        """Ask the gateway for a guild's soundboard sounds; TimeoutError after 30 s."""
+        request = {"guild_ids": [str(guild_id)]}
+        key = (SoundboardSounds.NAME, guild_id)
+        async with self._request(
+            guild_id, REQUEST_SOUNDBOARD_SOUNDS, request, key, REQUEST_TIMEOUT
+        ) as answers:
+            answer = await anext(answers)
+        return cast("SoundboardSounds", answer).soundboard_sounds
+
+    async def request_channel_info(
+        self,
+        guild_id: int,
+        *,
+        fields: Iterable[Literal["status", "voice_start_time"]] = CHANNEL_INFO_FIELDS,
+    ) -> tuple[VoiceChannelInfo, ...]:
+        """Ask the gateway for the voice status and start time of a guild's channels."""
+        request = {"guild_id": str(guild_id), "fields": list(fields)}
+        key = (ChannelInfo.NAME, guild_id)
+        async with self._request(
+            guild_id, REQUEST_CHANNEL_INFO, request, key, REQUEST_TIMEOUT
+        ) as answers:
+            answer = await anext(answers)
+        return cast("ChannelInfo", answer).channels
+
+    @contextlib.asynccontextmanager
+    async def _request(
+        self,
+        guild_id: int,
+        op: int,
+        d: Mapping[str, Any],
+        key: tuple[str, object],
+        wait: float,
+    ) -> AsyncGenerator[AsyncIterator[Event]]:
+        gateway = self.gateway
+        shard_id = gateway.shard_for(guild_id)
+        if self._readiness is not None and self._readiness.renewing(shard_id):
+            raise StateError(
+                f"shard {shard_id} is starting a new session; retry once it is ready"
+            )
+        request = _Request(shard_id)
+        pending = self._requests.setdefault(key, [])
+        pending.append(request)
+        self._refresh_filter()
+        try:
+            gateway.send(op, d)
+            yield _queued(request.answers, wait)
+        finally:
+            pending.remove(request)
+            if not pending:
+                del self._requests[key]
+            self._refresh_filter()
 
     async def sync_commands(self) -> list[sync.SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""
@@ -491,8 +557,7 @@ class Bot(Router):
         names -= LOCAL_NAMES | BOT_EVENT_NAMES
         if RAW_EVENT_NAME in names:
             return None
-        if self._member_requests:
-            names.add(MembersChunk.NAME)
+        names |= {name for name, _ in self._requests}
         if self._intents & Intents.GUILDS:
             names |= {GuildCreate.NAME, GuildDelete.NAME}
         if self._caching:
@@ -547,8 +612,7 @@ class Bot(Router):
                     self._replaying.add(shard_id)
                 else:
                     self._replaying.discard(shard_id)
-                    if self._readiness is not None:
-                        self._readiness.ended(shard_id)
+                    self._end_session(shard_id)
                 self.gateway._handle(delivery)
                 self._emit(
                     ShardDisconnect(
@@ -573,6 +637,17 @@ class Bot(Router):
                 *_,
             ):
                 self.voice._handle(delivery)
+
+    def _end_session(self, shard_id: int) -> None:
+        if self._readiness is None or not self._readiness.ended(shard_id):
+            return
+        dropped = StateError(
+            f"shard {shard_id} started a new session, which dropped the request"
+        )
+        for pending in self._requests.values():
+            for request in pending:
+                if request.shard_id == shard_id:
+                    request.answers.put_nowait(dropped)
 
     def _emit(self, event: LocalEvent) -> None:
         for waiter in self._waiters.get(event.NAME, ()):
@@ -622,7 +697,7 @@ class Bot(Router):
     ) -> None:
         dispatch = _Dispatch(shard_id, seq, name, data)
         readied = self._follow_session(dispatch)
-        self._answer_member_request(dispatch)
+        self._answer_request(dispatch)
         if self._caching and name in self.cache.names:
             cls = EVENTS[name]
             cached = dispatch.event(cls)
@@ -680,25 +755,39 @@ class Bot(Router):
                 pass
         return False
 
-    def _answer_member_request(self, dispatch: _Dispatch) -> None:
-        answer: MemberAnswer | None = None
-        nonce: str | None = None
-        if dispatch.name == MembersChunk.NAME:
-            answer = dispatch.event(MembersChunk)
-            nonce = None if answer is None else answer.nonce
-        elif dispatch.name == GatewayRateLimited.NAME:
-            answer = dispatch.event(GatewayRateLimited)
-            meta = None if answer is None else answer.meta
-            nonce = None if meta is None else meta.nonce
-        answers = None if nonce is None else self._member_requests.get(nonce)
-        if answers is not None and answer is not None:
-            answers.put_nowait(answer)
-        elif isinstance(answer, GatewayRateLimited):
-            log.warning(
-                "the gateway rate limited opcode %s; retry after %s s",
-                answer.opcode,
-                answer.retry_after,
-            )
+    def _answer_request(self, dispatch: _Dispatch) -> None:
+        match dispatch.name:
+            case MembersChunk.NAME:
+                chunk = dispatch.event(MembersChunk)
+                if chunk is not None:
+                    self._answer((MembersChunk.NAME, chunk.nonce), chunk)
+            case GatewayRateLimited.NAME:
+                limited = dispatch.event(GatewayRateLimited)
+                if limited is None:
+                    return
+                nonce = None if limited.meta is None else limited.meta.nonce
+                if not self._answer((MembersChunk.NAME, nonce), limited):
+                    log.warning(
+                        "the gateway rate limited opcode %s; retry after %s s",
+                        limited.opcode,
+                        limited.retry_after,
+                    )
+            case SoundboardSounds.NAME:
+                sounds = dispatch.event(SoundboardSounds)
+                if sounds is not None:
+                    self._answer((SoundboardSounds.NAME, sounds.guild_id), sounds)
+            case ChannelInfo.NAME:
+                info = dispatch.event(ChannelInfo)
+                if info is not None:
+                    self._answer((ChannelInfo.NAME, info.guild_id), info)
+            case _:
+                pass
+
+    def _answer(self, key: tuple[str, object], answer: Event) -> bool:
+        pending = self._requests.get(key, ())
+        for request in pending:
+            request.answers.put_nowait(answer)
+        return bool(pending)
 
     def _route(self, interaction: Interaction, received: float, shard_id: int) -> None:
         anchor = received
@@ -903,9 +992,12 @@ def _resolve[E: AnyEvent](waiter: _Waiter[E], event: E | None) -> None:
         waiter.closed = waiter.once
 
 
-async def _queued[T](queue: asyncio.Queue[T | Exception]) -> AsyncIterator[T]:
+async def _queued[T](
+    queue: asyncio.Queue[T | Exception], wait: float | None = None
+) -> AsyncIterator[T]:
     while True:
-        item = await queue.get()
+        async with asyncio.timeout(wait):
+            item = await queue.get()
         if isinstance(item, Exception):
             raise item
         yield item

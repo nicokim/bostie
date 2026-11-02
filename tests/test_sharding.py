@@ -70,10 +70,17 @@ def test_a_bot_runs_every_recommended_shard_and_routes_by_guild() -> None:
 
             bot.gateway.send(8, {"guild_id": str(GUILD_ON_SHARD_1), "limit": 0})
             bot.gateway.send(3, {"since": None, "activities": [], "status": "idle"})
-            await received(fake, 8, 3, 3)
+            bot.gateway.send(31, {"guild_ids": ["1", str(GUILD_ON_SHARD_1), "2"]})
+            await received(fake, 8, 3, 3, 31, 31)
             shards = {connection.shard: connection for connection in fake.connections}
-            assert [op for op in ops(shards[0]) if op != 1] == [2, 3]
-            assert [op for op in ops(shards[1]) if op != 1] == [2, 8, 3]
+            assert [op for op in ops(shards[0]) if op != 1] == [2, 3, 31]
+            assert [op for op in ops(shards[1]) if op != 1] == [2, 8, 3, 31]
+            assert [
+                payload["d"]["guild_ids"]
+                for shard in (0, 1)
+                for payload in shards[shard].received
+                if payload["op"] == 31
+            ] == [["1", "2"], [str(GUILD_ON_SHARD_1)]]
 
     run(scenario)
 

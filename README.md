@@ -119,7 +119,7 @@ A few things the example takes for granted:
 Everything bostie does not model yet stays reachable:
 
 - `bot.http.request("GET", "/guilds/{guild_id}/some-new-route", guild_id=...)` calls any endpoint, such as one Discord added after this release, and returns its JSON.
-- `bot.gateway.send(op=..., d=...)` sends any opcode: op 3 to every shard, a payload with a `guild_id` to that guild's shard, anything else to shard 0. `bot.gateway.shard(id).send(...)` picks the shard yourself.
+- `bot.gateway.send(op=..., d=...)` sends any opcode: op 3 to every shard, a payload with a `guild_id` to that guild's shard, one with `guild_ids` to each of their shards with its share of the ids, anything else to shard 0. `bot.gateway.shard(id).send(...)` picks the shard yourself.
 - `@bot.listen_raw("EVENT_NAME")` receives any dispatch as a `RawEvent`.
 - `ui.raw({...})` puts a component that `ui` has no builder for into a row, section, container, label or modal.
 - An `InteractionCreate` listener gets every interaction, routed or not. A type bostie does not model arrives as an `UnknownInteraction`, with the payload in `raw`.
@@ -139,7 +139,7 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 - An exception in a listener goes to the `ListenerError` listeners, or to the log when there are none. `router.remove_listener(callback)` stops a listener.
 - Registering a listener for an event that none of the bot's intents delivers logs a warning.
 
-`await bot.request_members(guild_id, query=..., limit=...)` or `user_ids=...` asks the gateway for members and gathers every chunk of the answer, with `presences=True` their presences too. Without `query` or `user_ids` it asks for every member, which needs `Intents.GUILD_MEMBERS`; presences need `Intents.GUILD_PRESENCES`. It raises `bostie.MemberRequestRateLimited` with `retry_after` when Discord refuses, and `TimeoutError` when a chunk takes over `timeout` seconds, 30 by default.
+`await bot.request_members(guild_id, query=..., limit=...)` or `user_ids=...` asks the gateway for members and gathers every chunk of the answer, with `presences=True` their presences too. `limit` goes up to 100 and `user_ids` takes at most 100. Without `query` or `user_ids` it asks for every member, which needs `Intents.GUILD_MEMBERS`; presences need `Intents.GUILD_PRESENCES`. It raises `bostie.MemberRequestRateLimited` with `retry_after` when Discord refuses, and `TimeoutError` when a chunk takes over `timeout` seconds, 30 by default. `await bot.request_soundboard_sounds(guild_id)` and `await bot.request_channel_info(guild_id)` ask the gateway for a guild's soundboard sounds and its channels' voice status. A request raises `StateError` when its shard starts a new session before the answer.
 
 ## Voice
 

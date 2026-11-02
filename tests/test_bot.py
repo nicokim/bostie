@@ -1188,6 +1188,8 @@ def test_request_members_gathers_every_chunk_with_its_nonce() -> None:
         ({}, MissingIntent, "GUILD_MEMBERS"),
         ({"query": "ad", "limit": 5, "presences": True}, MissingIntent, "PRESENCES"),
         ({"user_ids": [2], "limit": 5}, ValueError, "not both"),
+        ({"query": "ad", "limit": 101}, ValueError, "0 to 100"),
+        ({"user_ids": range(101)}, ValueError, "at most 100"),
     ],
 )
 def test_request_members_checks_intents_and_options_before_sending(
@@ -1234,6 +1236,58 @@ def test_a_member_request_whose_chunks_stop_raises_timeout_error() -> None:
             )
             with pytest.raises(TimeoutError):
                 await requested
+
+    run(scenario)
+
+
+def test_member_requests_fail_at_once_while_their_shard_renews_its_session() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            release = fake.hold_identify(0)
+            requested = asyncio.ensure_future(
+                bot.request_members(GUILD, query="ad", limit=5)
+            )
+            await sent_op(fake, 8)
+            disconnected = asyncio.ensure_future(bot.wait_for(ShardDisconnect))
+            await fake.close_gateway(4007)
+            assert (await disconnected).resuming is False
+
+            with pytest.raises(StateError, match="dropped the request"):
+                await requested
+            with pytest.raises(StateError, match="starting a new session"):
+                await bot.request_members(GUILD, query="ad", limit=5)
+            release.set()
+
+    run(scenario)
+
+
+def test_soundboard_and_channel_info_requests_return_their_guilds_answer() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        sounds = payloads.fixture("events/SOUNDBOARD_SOUNDS")
+        info = payloads.fixture("events/CHANNEL_INFO")
+        async with running(bot, fake):
+            requested_sounds = asyncio.ensure_future(
+                bot.request_soundboard_sounds(GUILD)
+            )
+            sounds_request = await sent_op(fake, 31)
+            await fake.dispatch("SOUNDBOARD_SOUNDS", sounds | {"guild_id": "1"})
+            await fake.dispatch("SOUNDBOARD_SOUNDS", sounds)
+            requested_info = asyncio.ensure_future(
+                bot.request_channel_info(GUILD, fields=["status"])
+            )
+            info_request = await sent_op(fake, 43)
+            await fake.dispatch("CHANNEL_INFO", info)
+
+            assert sounds_request == {"guild_ids": [str(GUILD)]}
+            assert info_request == {"guild_id": str(GUILD), "fields": ["status"]}
+            assert [sound.name for sound in await requested_sounds] == [
+                sound["name"] for sound in sounds["soundboard_sounds"]
+            ]
+            assert [channel.id for channel in await requested_info] == [
+                int(channel["id"]) for channel in info["channels"]
+            ]
 
     run(scenario)
 
