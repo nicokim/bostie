@@ -296,6 +296,31 @@ def test_guild_scope_syncs_each_guild_and_ignores_contexts() -> None:
     run(scenario)
 
 
+@pytest.mark.parametrize(
+    ("dev_guilds", "scopes"), [((), [None, 33]), ((11,), [11, 33])]
+)
+def test_a_command_with_guilds_syncs_there_and_the_others_as_before(
+    dev_guilds: tuple[int, ...], scopes: list[int | None]
+) -> None:
+    @Router().command(guilds=[33])
+    async def admin(ctx: object) -> None:
+        pass
+
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        results = await sync_commands(
+            http, fake.application_id, [*COMMANDS, admin], dev_guilds, always_put=True
+        )
+
+        assert [result.guild_id for result in results] == scopes
+        puts = [request.json for request in fake.requests if request.method == "PUT"]
+        assert [[command["name"] for command in put] for put in puts] == [
+            ["kit", "search", "User Info"],
+            ["admin"],
+        ]
+
+    run(scenario)
+
+
 def test_guild_scope_without_differences_sends_no_put() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.guild_commands["11"] = remote(kit={"contexts": [0]})

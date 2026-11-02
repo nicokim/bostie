@@ -329,7 +329,7 @@ def test_ping_answers_pong() -> None:
 Every parameter of `bostie.Bot` is keyword-only and optional.
 
 - `intents`: the gateway intents. The default, `Intents.DEFAULT`, is every intent except the privileged ones. A privileged intent must also be turned on in the Developer Portal.
-- `dev_guilds`: guild ids to sync commands to. When set, commands sync to these guilds only and global commands are left alone. Leave it empty to sync globally.
+- `dev_guilds`: guild ids to sync commands to. When set, commands sync to these guilds only and global commands are left alone. Leave it empty to sync globally. A command with `guilds=[...]` syncs to its own guilds either way, and the others stay global; a guild that no command names any more keeps its commands until you delete them with `bot.rest.commands`.
 - `contexts` and `integration_types`: where global commands can be used, such as `[InteractionContextType.GUILD]`, and whether they come with a guild install, a user install or both. A command's own `contexts=` or `integration_types=` wins. Left out, Discord's defaults apply: everywhere the app's installs allow.
 - `auto_sync`: `False` skips the startup sync. `await bot.sync_commands()` syncs again while the bot is running and returns a `bostie.SyncResult` for each scope, saying what differed.
 - `auto_defer`: seconds before an unanswered handler is deferred, or `None` to never defer. `@bot.command(auto_defer=...)` overrides it for one command.

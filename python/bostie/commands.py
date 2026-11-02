@@ -162,6 +162,7 @@ class CommandDefaults(TypedDict, total=False):
 class _TopLevelSettings(CommandDefaults, total=False):
     default_permissions: Permissions
     nsfw: bool
+    guilds: Iterable[int]
     name_localizations: Mapping[str, str]
     extra: Mapping[str, Any]
 
@@ -169,6 +170,7 @@ class _TopLevelSettings(CommandDefaults, total=False):
 class GroupSettings(_TopLevelSettings, total=False):
     """Settings of a top-level command or group.
 
+    `guilds` registers it in those guilds only instead of globally, and
     `contexts` and `integration_types` apply to global commands only.
     Localizations map a locale such as "fr" to the text shown in it.
     """
@@ -328,6 +330,7 @@ class _Registered:
         top: _TopLevelSettings = cast("_TopLevelSettings", settings)
         self.default_permissions = top.get("default_permissions")
         self.nsfw = top.get("nsfw", False)
+        self.guilds = tuple(top.get("guilds", ()))
         self.places = CommandDefaults()
         if "contexts" in top:
             self.places["contexts"] = tuple(top["contexts"])

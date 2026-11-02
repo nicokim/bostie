@@ -86,21 +86,28 @@ async def sync_commands(
     """
     if not commands and not always_put:
         return []
-    for type, count in Counter(command.type for command in commands).items():
-        label, limit = LIMITS[type]
-        if count > limit:
-            _warn(f"{count} {label} commands; Discord allows {limit} per scope")
-    scopes: list[int | None] = [*guild_ids] or [None]
+    base: list[int | None] = [*guild_ids] or [None]
+    scopes: dict[int | None, list[Command | Group | ContextMenuCommand]] = {
+        scope: [] for scope in base
+    }
+    for command in commands:
+        for scope in command.guilds or base:
+            scopes.setdefault(scope, []).append(command)
+    for scoped in scopes.values():
+        for type, count in Counter(command.type for command in scoped).items():
+            label, limit = LIMITS[type]
+            if count > limit:
+                _warn(f"{count} {label} commands; Discord allows {limit} per scope")
     return [
         await _sync_scope(
             http,
             application_id,
-            commands,
+            scoped,
             guild_id,
             defaults=defaults,
             always_put=always_put,
         )
-        for guild_id in scopes
+        for guild_id, scoped in scopes.items()
     ]
 
 
