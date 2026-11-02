@@ -530,6 +530,9 @@ fn received_item(
             )
                 .into_bound_py_any(py)
         }
+        Item::Leave { user, offset } => {
+            (intern!(py, "leave"), u64::from(user), offset, queued).into_bound_py_any(py)
+        }
     }
 }
 

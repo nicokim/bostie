@@ -68,7 +68,10 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
         mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.0, mix=True)
         vc.receive(voice.Opus(), users=())
         assert_type(
-            packets, voice.Receiver[voice.Packet | voice.SpeechStart | voice.SpeechStop]
+            packets,
+            voice.Receiver[
+                voice.Packet | voice.SpeechStart | voice.SpeechStop | voice.UserLeave
+            ],
         )
         assert_type(mixed, voice.Receiver[voice.Frame])
         common: dict[str, Any] = {
@@ -127,7 +130,7 @@ def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
     )
 
 
-def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> None:
+def test_items_become_frames_packets_and_markers_aged_against_one_reading() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         rx = vc.receive(markers=True)
@@ -138,10 +141,11 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
                 ("frame", None, None, None, 960, 960, 0.125, b"", True, None, 0.0),
                 ("packet", USER_ID, 77, 9, 1960, 0.0625, b"opus", [(1, b"\x85")], 0.0),
                 ("speech", USER_ID, 77, False, 1920, 0.03125, 0.25, 0.0),
+                ("leave", USER_ID, 2880, 0.0),
             ]
         )
         before = time.monotonic()
-        items: list[object] = [rx.get_nowait() for _ in range(5)]
+        items: list[object] = [rx.get_nowait() for _ in range(6)]
         after = time.monotonic()
         start = items[0]
         assert isinstance(start, voice.SpeechStart)
@@ -162,6 +166,7 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
                 duration=0.25,
                 offset=1920,
             ),
+            voice.UserLeave(guild_id=GUILD_ID, user_id=USER_ID, offset=2880),
         ]
 
     run(scenario)

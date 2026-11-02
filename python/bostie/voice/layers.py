@@ -29,7 +29,7 @@ from bostie.errors import (
 )
 from bostie.models.base import check_keys
 from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
-from bostie.voice.events import SpeechStart, SpeechStop
+from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import (
     DEFAULT_PCM,
     PCM,
@@ -883,7 +883,7 @@ class _Speech:
 
 
 def utterances(
-    rx: "Receiver[Frame | SpeechStart | SpeechStop]",
+    rx: "Receiver[Frame | SpeechStart | SpeechStop | UserLeave]",
     *,
     min_silence: float = 0.8,
     max_length: float = 30.0,
@@ -911,7 +911,7 @@ def utterances(
 
 
 async def _utterances(
-    rx: "Receiver[Frame | SpeechStart | SpeechStop]", grouping: "_Grouping"
+    rx: "Receiver[Frame | SpeechStart | SpeechStop | UserLeave]", grouping: "_Grouping"
 ) -> AsyncIterator[Utterance]:
     while True:
         deadline = grouping.deadline()
@@ -926,8 +926,8 @@ async def _utterances(
 
 
 async def _next_before(
-    rx: "Receiver[Frame | SpeechStart | SpeechStop]", deadline: float
-) -> Frame | SpeechStart | SpeechStop | None:
+    rx: "Receiver[Frame | SpeechStart | SpeechStop | UserLeave]", deadline: float
+) -> Frame | SpeechStart | SpeechStop | UserLeave | None:
     try:
         async with asyncio.timeout(
             None if math.isinf(deadline) else deadline - time.monotonic()
@@ -953,7 +953,7 @@ class _Grouping:
         )
 
     def take(
-        self, item: Frame | SpeechStart | SpeechStop | None, deadline: float
+        self, item: Frame | SpeechStart | SpeechStop | UserLeave | None, deadline: float
     ) -> list[Utterance]:
         match item:
             case None:
@@ -962,6 +962,8 @@ class _Grouping:
                 return self._pause(user, item)
             case Frame(user_id=int(user)):
                 return self._add(user, item)
+            case UserLeave(user_id=user) if user in self.speaking:
+                return [self.speaking.pop(user).utterance(user)]
             case _ if self.level is not None:
                 pass
             case SpeechStart(user_id=user, offset=int(offset)):

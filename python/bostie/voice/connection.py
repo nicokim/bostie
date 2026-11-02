@@ -724,7 +724,7 @@ class VoiceConnection:
         include_self: bool = False,
         markers: Literal[True],
         **options: Unpack[PacketReceiveOptions],
-    ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
+    ) -> Receiver[Packet | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
         self,
@@ -735,7 +735,7 @@ class VoiceConnection:
         include_self: bool = False,
         markers: bool,
         **options: Unpack[PacketReceiveOptions],
-    ) -> Receiver[Packet | SpeechStart | SpeechStop]: ...
+    ) -> Receiver[Packet | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
         self,
@@ -759,7 +759,7 @@ class VoiceConnection:
         markers: Literal[True],
         mix: bool = False,
         **options: Unpack[ReceiveOptions],
-    ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
+    ) -> Receiver[Frame | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
         self,
@@ -771,7 +771,7 @@ class VoiceConnection:
         markers: bool,
         mix: bool = False,
         **options: Unpack[ReceiveOptions],
-    ) -> Receiver[Frame | SpeechStart | SpeechStop]: ...
+    ) -> Receiver[Frame | SpeechStart | SpeechStop | UserLeave]: ...
     def receive(
         self,
         format: ReceiveFormat = DEFAULT_PCM,

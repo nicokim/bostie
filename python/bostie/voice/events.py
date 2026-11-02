@@ -76,9 +76,12 @@ class UserJoin(VoiceEvent, kw_only=True):
 
 
 class UserLeave(VoiceEvent, kw_only=True):
+    """A user left the call; in a receiver, `offset` is where on its clock."""
+
     NAME = "voice.user_leave"
 
     user_id: int
+    offset: int | None = None
 
 
 class SpeechStart(VoiceEvent, kw_only=True):

@@ -125,6 +125,7 @@ struct State {
     speech: Speech,
     presence: Presence,
     watchdog: Watchdog,
+    departed: Vec<(UserId, Instant)>,
     generation: Option<u64>,
 }
 
@@ -202,6 +203,7 @@ impl State {
             },
             presence: Presence::default(),
             watchdog: Watchdog::default(),
+            departed: Vec::new(),
             generation: None,
         }
     }
@@ -214,6 +216,11 @@ impl State {
         let now48 = samples_since(self.core.epoch, now);
         let cut = self.core.media.take_arrivals(&mut self.inflow.arrivals);
         self.inflow.peak.observe(self.inflow.arrivals.len());
+        self.core.media.take_departures(&mut self.departed);
+        for (user, at) in self.departed.drain(..) {
+            self.subscribers
+                .depart(user, samples_since(self.core.epoch, at));
+        }
         if self.inflow.arrivals.is_empty() && self.is_idle(now48) {
             self.shrink_buffers();
             return true;

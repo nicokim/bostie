@@ -20,6 +20,10 @@ enum Heard {
         speaking: bool,
         offset: Option<u64>,
     },
+    Leave {
+        user: u64,
+        offset: Option<u64>,
+    },
 }
 
 fn heard(items: &[Item]) -> Vec<Heard> {
@@ -52,6 +56,10 @@ fn heard(items: &[Item]) -> Vec<Heard> {
                 speaking, offset, ..
             } => Heard::Speech {
                 speaking: *speaking == Speaking::Started,
+                offset: *offset,
+            },
+            Item::Leave { user, offset } => Heard::Leave {
+                user: u64::from(*user),
                 offset: *offset,
             },
         })
@@ -363,6 +371,49 @@ fn in_band_markers_bracket_each_users_frames_on_the_receivers_timeline() {
                 assert!(data(&items).iter().all(|frame| frame.len() == 640));
             }
         }
+    }
+}
+
+#[test]
+fn a_leave_marker_ends_the_speech_and_follows_the_users_last_frame() {
+    for format in [ReceiveFormat::Opus, ReceiveFormat::Packets] {
+        let mut rig = Rig::new(tuning());
+        rig.media.set_speech_activity(false);
+        rig.map(ALICE_SSRC, ALICE);
+        let receiver = rig.open(ReceiveOptions {
+            markers: true,
+            jitter: Duration::from_millis(100),
+            ..options(format)
+        });
+        let others = rig.open(ReceiveOptions {
+            markers: true,
+            ..only(&[BOB], format)
+        });
+        for (sequence, packet) in (0..).zip(&opus(3, 0.3)) {
+            rig.send(ALICE_SSRC, sequence, packet);
+            rig.step();
+        }
+        rig.media.depart(user(ALICE), rig.now);
+        for _ in 0..10 {
+            rig.step();
+        }
+
+        let heard = heard(&read(&receiver));
+        let end = match heard.get(3) {
+            Some(Heard::Frame { offset, .. }) => Some(offset + 960),
+            _ => None,
+        };
+        let stop = Heard::Speech {
+            speaking: false,
+            offset: end,
+        };
+        let leave = Heard::Leave {
+            user: ALICE,
+            offset: end,
+        };
+        assert_eq!(heard.len(), 6, "{format:?}");
+        assert_eq!(heard[4..], [stop, leave], "{format:?}");
+        assert!(read(&others).is_empty());
     }
 }
 

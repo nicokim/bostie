@@ -43,6 +43,10 @@ pub enum Item {
         offset: Option<u64>,
         at: Instant,
     },
+    Leave {
+        user: UserId,
+        offset: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,7 +237,7 @@ impl Receiver {
         let buffer = self.options.buffer;
         let full = self.options.overflow == Overflow::DropNewest && queue.is_full(now, buffer);
         for item in items {
-            if full && !matches!(item, Item::Speech { .. }) {
+            if full && !item.is_marker() {
                 queue.stats.dropped += 1;
             } else {
                 queue.add(item, now);
@@ -287,6 +291,7 @@ impl Queue {
                 self.stats.lost += u64::from(*lost);
             }
             Item::Packet { .. } => self.stats.delivered += 1,
+            Item::Leave { .. } => {}
             Item::Speech { user, .. } => {
                 let user = *user;
                 self.stale_markers
@@ -312,6 +317,7 @@ impl Queue {
                         self.stale_markers.push((queued, item));
                     }
                 }
+                Item::Leave { .. } => self.stale_markers.push((queued, item)),
                 Item::Frame { .. } | Item::Packet { .. } => self.stats.dropped += 1,
             }
         }
@@ -340,6 +346,10 @@ impl Queue {
 }
 
 impl Item {
+    fn is_marker(&self) -> bool {
+        matches!(self, Self::Speech { .. } | Self::Leave { .. })
+    }
+
     fn is_speech_of(&self, speaker: UserId) -> bool {
         matches!(self, Self::Speech { user, .. } if *user == speaker)
     }
@@ -525,6 +535,10 @@ mod tests {
         let turn = [
             frame(ALICE, 1_920, start),
             speech(ALICE, false, start),
+            Item::Leave {
+                user: UserId::from(ALICE),
+                offset: Some(2_880),
+            },
             speech(BOB, true, start),
         ];
         receiver.push(turn, at(60));
@@ -537,6 +551,13 @@ mod tests {
             receiver.read(256).unwrap(),
             ReceiveRead::Items(vec![
                 (at(60), speech(ALICE, false, start)),
+                (
+                    at(60),
+                    Item::Leave {
+                        user: UserId::from(ALICE),
+                        offset: Some(2_880)
+                    }
+                ),
                 (at(100), frame(BOB, 0, start)),
                 (at(180), frame(BOB, 960, start)),
                 (at(200), speech(BOB, false, start)),

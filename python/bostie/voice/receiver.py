@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol, Self, assert_never, cast
 from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
 from bostie.errors import BostieError, Empty, ReceiverClosed
-from bostie.voice.events import SpeechStart, SpeechStop
+from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import Overflow, ReceiveFormat, ReceiveStall
 from bostie.voice.frames import Frame, Packet
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 READ_LIMIT = 256
 
-type Item = Frame | Packet | SpeechStart | SpeechStop
+type Item = Frame | Packet | SpeechStart | SpeechStop | UserLeave
 
 
 class NativeReceiver(Protocol):
@@ -43,7 +43,7 @@ class ReceiverStats:
     lost: int
 
 
-class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
+class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
     """A bounded async iterator over received audio; one per subscriber."""
 
     def __init__(
@@ -237,6 +237,10 @@ def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, It
                 at=now - age,
                 duration=duration,
                 offset=offset,
+            )
+        case ("leave", user, offset, queued):
+            return now - queued, UserLeave(
+                guild_id=guild_id, user_id=user, offset=offset
             )
         case _:
             assert_never(item)

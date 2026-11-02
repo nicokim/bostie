@@ -87,6 +87,7 @@ pub(crate) struct Media {
     pub exhausted: Notify,
     pub recover: Notify,
     pub arrivals: Mutex<VecDeque<Arrival>>,
+    departures: Mutex<Vec<(UserId, Instant)>>,
     receivers: Mutex<Roster>,
     open_receivers: AtomicUsize,
     packet_receivers: AtomicUsize,
@@ -124,6 +125,7 @@ impl Media {
             exhausted: Notify::new(),
             recover: Notify::new(),
             arrivals: Mutex::new(VecDeque::new()),
+            departures: Mutex::new(Vec::new()),
             receivers: Mutex::new(Roster::default()),
             open_receivers: AtomicUsize::new(0),
             packet_receivers: AtomicUsize::new(0),
@@ -158,6 +160,16 @@ impl Media {
         let mut arrivals = self.arrivals.lock();
         mem::swap(&mut *arrivals, into);
         Instant::now()
+    }
+
+    pub(crate) fn depart(&self, user: UserId, at: Instant) {
+        if self.open_receivers() > 0 {
+            self.departures.lock().push((user, at));
+        }
+    }
+
+    pub(crate) fn take_departures(&self, into: &mut Vec<(UserId, Instant)>) {
+        mem::swap(&mut *self.departures.lock(), into);
     }
 
     pub(crate) fn add_receiver(&self, receiver: &Arc<Receiver>) -> bool {

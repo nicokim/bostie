@@ -171,7 +171,8 @@ type PacketItem = tuple[
 type SpeechItem = tuple[
     Literal["speech"], int, int, bool, int | None, float, float, float
 ]
-type ReceivedItem = FrameItem | PacketItem | SpeechItem
+type LeaveItem = tuple[Literal["leave"], int, int | None, float]
+type ReceivedItem = FrameItem | PacketItem | SpeechItem | LeaveItem
 
 @final
 class Core:

@@ -11,7 +11,7 @@ from fakediscord import settle
 
 from bostie.enums import ClosedReason
 from bostie.errors import Empty, ReceiverClosed
-from bostie.voice.events import SpeechStart, SpeechStop
+from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import PCM, Opus, ReceiveFormat
 from bostie.voice.frames import Frame
 from bostie.voice.layers import Recorder, Utterance, utterances
@@ -29,7 +29,7 @@ OGG_FIXTURE = bytes.fromhex(
     "002a00000002000000f4e8daaf0103fcfffe"
 )
 
-type Received = Frame | SpeechStart | SpeechStop
+type Received = Frame | SpeechStart | SpeechStop | UserLeave
 
 
 class FakeReceiver:
@@ -151,6 +151,10 @@ def stop(user: int, index: int, *, at: float = 0.0) -> SpeechStop:
     )
 
 
+def leave(user: int, index: int) -> UserLeave:
+    return UserLeave(guild_id=7, user_id=user, offset=index * STEP)
+
+
 def heard(user: int, *indexes: int | None, lost: int = 0) -> Utterance:
     data = b"".join(
         bytes(SPEECH_BYTES) if index is None else frame(user, index).data
@@ -238,6 +242,15 @@ def test_utterances_refuses_a_receiver_it_cannot_group_at_the_call(
             30.0,
             [heard(1, 1, 2), heard(1, 7)],
             id="min-silence-counts-from-the-stop",
+        ),
+        pytest.param(
+            [
+                *(start(1, 1), frame(1, 1), stop(1, 2), leave(1, 2)),
+                *(start(1, 3), frame(1, 3)),
+            ],
+            30.0,
+            [heard(1, 1), heard(1, 3)],
+            id="a-leave-ends-it-at-once",
         ),
         pytest.param(
             [start(1, 1), *(frame(1, index) for index in range(1, 6))],

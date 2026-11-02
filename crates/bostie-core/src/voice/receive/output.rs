@@ -73,6 +73,7 @@ struct Output {
     opened: i64,
     jitter: i64,
     speaking: HashMap<UserId, Marker>,
+    leaving: Vec<(UserId, i64)>,
     items: Vec<Item>,
     peak: Peak,
     lost: u64,
@@ -196,6 +197,17 @@ impl Subscribers {
         for subscriber in self.open.values_mut() {
             if subscriber.out.is_packets() && subscriber.out.markers {
                 subscriber.out.expire_markers(epoch, now48, hangover, false);
+                subscriber.out.leave(epoch, now48, false);
+            }
+        }
+    }
+
+    pub(super) fn depart(&mut self, user: UserId, due: i64) {
+        for subscriber in self.open.values_mut() {
+            let out = &mut subscriber.out;
+            if out.markers && due >= out.opened && wants(subscriber.receiver.options(), user, false)
+            {
+                out.leaving.push((user, due));
             }
         }
     }
@@ -288,6 +300,7 @@ impl Subscriber {
             opened: samples_since(epoch, receiver.opened()),
             jitter,
             speaking: HashMap::new(),
+            leaving: Vec::new(),
             items: Vec::new(),
             peak: Peak::default(),
             lost: 0,
@@ -414,6 +427,7 @@ impl Subscriber {
             let end = context.now48.saturating_sub(self.out.jitter);
             self.out
                 .expire_markers(context.epoch, end, context.hangover, true);
+            self.out.leave(context.epoch, end, true);
         }
         true
     }
@@ -733,6 +747,35 @@ impl Output {
         }
         self.speaking
             .retain(|_, marker| marker.activity.is_speaking());
+    }
+
+    fn leave(&mut self, epoch: Instant, end: i64, timeline: bool) {
+        let Self {
+            leaving,
+            speaking,
+            items,
+            opened,
+            ..
+        } = self;
+        leaving.retain(|&(user, due)| {
+            let lag = speaking.get(&user).map_or(0, |marker| marker.lag);
+            if due > end.saturating_sub(lag) {
+                return true;
+            }
+            let mut last = offset_of(due, *opened);
+            if let Some(mut marker) = speaking.remove(&user) {
+                last = last.max(marker.end);
+                if let Some(stop) = marker.activity.expire(i64::MAX, 0) {
+                    let offset = timeline.then_some(marker.end);
+                    items.push(speech_item(epoch, user, stop, offset));
+                }
+            }
+            items.push(Item::Leave {
+                user,
+                offset: timeline.then_some(last),
+            });
+            false
+        });
     }
 }
 

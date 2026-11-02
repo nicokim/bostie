@@ -146,6 +146,8 @@ async def on_speech(event: voice.SpeechStart) -> None:
 
 With `markers=True`, a PCM or Opus receiver also yields `voice.SpeechStart` and `voice.SpeechStop` in its own stream, in order with the frames. Their `offset` is set, on the receiver's clock, so you know exactly which frames each utterance covers. A `voice.Packets()` receiver yields them in arrival order, with `offset` set to `None`.
 
+When someone the receiver takes leaves the call, a receiver with `markers=True` also yields `voice.UserLeave`, after their last frame and after the `voice.SpeechStop` that ends their speech, if they were talking. Its `offset` is where they left on the receiver's clock, or `None` in a `voice.Packets()` receiver. `voice.utterances()` ends that person's utterance at once. The `voice.UserLeave` event fires as well, as it always does.
+
 A bot that never listens, such as a music bot, can turn speech activity off with `connect(speech_activity=False)`, `voice.Defaults(speech_activity=False)` or `vc.speech_activity = False`. Then no `voice.SpeechStart` or `voice.SpeechStop` event fires and `vc.speaking` stays empty; turning it off ends the speech in progress with a `voice.SpeechStop`. Receivers work as before, `markers=True` included, and so do `vc.ssrcs` and the receive `voice.MediaStalled` events. While speech activity is off and no receiver is open, the bot does not even decrypt the audio it gets, which saves most of the cost of receiving.
 
 ### Mixing

@@ -18,7 +18,7 @@ from bostie.gateway import GatewayClient
 from bostie.voice import DisconnectReason, EndReason, NotInVoice, SinkClosed, State
 
 type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
-type Heard = voice.Frame | voice.SpeechStart | voice.SpeechStop
+type Heard = voice.Frame | voice.SpeechStart | voice.SpeechStop | voice.UserLeave
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 GUILD_ID = int(payloads.voice_channel()["guild_id"])

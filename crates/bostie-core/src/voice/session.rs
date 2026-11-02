@@ -608,6 +608,7 @@ impl<'c> Session<'c> {
                 self.conn
                     .media
                     .with_dave(|dave| dave.client_disconnect(user));
+                self.conn.media.depart(user, std::time::Instant::now());
                 self.conn.push(Delivery::VoiceClientLeft { guild, user });
             }
             Inbound::Dave(op) => self.dave(op).await?,
