@@ -728,6 +728,36 @@ def test_empty_allowed_mentions_silence_every_mention() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("given", "sent"),
+    [
+        ({}, AllowedMentions(parse=("users", "roles"))),
+        (
+            {"allowed_mentions": AllowedMentions(replied_user=True)},
+            AllowedMentions(parse=("users", "roles"), replied_user=True),
+        ),
+        (
+            {"allowed_mentions": AllowedMentions(users=(5,))},
+            AllowedMentions(parse=("roles",), users=(5,)),
+        ),
+        (
+            {"allowed_mentions": AllowedMentions(parse=("everyone",))},
+            AllowedMentions(parse=("everyone",)),
+        ),
+        ({"allowed_mentions": None}, None),
+    ],
+    ids=["default", "replied user", "listed users", "parse", "cleared"],
+)
+def test_a_message_changes_only_the_mentions_it_sets_over_the_default(
+    given: dict[str, AllowedMentions | None], sent: AllowedMentions | None
+) -> None:
+    default = AllowedMentions(parse=("users", "roles"))
+
+    body, _ = message_body("hi", given, mentions=default)
+
+    assert body["allowed_mentions"] == sent
+
+
 def test_build_message_never_writes_raw_payloads() -> None:
     message = decode(Message, payload("events/MESSAGE_CREATE.rich.json"))
 

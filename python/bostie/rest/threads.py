@@ -229,8 +229,9 @@ class Threads(Group):
         body = wire(options, ThreadStartInForum)
         parts = dict(options["message"])
         check_keys(parts, FORUM_THREAD_MESSAGE, "message parts")
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body["message"], files = message_body(None, parts)
+        body["message"], files = message_body(
+            None, parts, mentions=self._allowed_mentions
+        )
         return await self._http._decoded(
             partial(decode, Channel),
             "POST",

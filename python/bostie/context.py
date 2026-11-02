@@ -417,9 +417,8 @@ class _ReplyingContext[
         parts: AnyReplyParts,
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
         sent = {name: value for name, value in parts.items() if name != "ephemeral"}
-        return message_body(content, sent)
+        return message_body(content, sent, mentions=self._allowed_mentions)
 
     def _answer[A: PartialMessage](
         self, decode: Callable[[bytes], A], body: bytes

@@ -117,8 +117,9 @@ class Messages(Group):
     ) -> Message:
         """Send a message; `reply_to` takes the id of a message in the same channel."""
         check_keys(parts, MESSAGE_CREATE, "message parts")
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = message_body(content, parts, reply_to=reply_to)
+        body, files = message_body(
+            content, parts, reply_to=reply_to, mentions=self._allowed_mentions
+        )
         message = await self._http._decoded(
             partial(decode, Message),
             "POST",
@@ -137,8 +138,7 @@ class Messages(Group):
         With `files` or `attachments`, only the listed `attachments` stay.
         """
         check_keys(parts, EDIT_PARTS, "message parts")
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = message_body(None, parts)
+        body, files = message_body(None, parts, mentions=self._allowed_mentions)
         message = await self._http._decoded(
             decode_message,
             "PATCH",

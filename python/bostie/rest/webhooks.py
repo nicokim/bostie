@@ -149,8 +149,7 @@ class Webhooks(Group):
             "thread_id": parts.pop("thread_id", None),
             "with_components": parts.pop("with_components", None),
         }
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = message_body(None, parts)
+        body, files = message_body(None, parts, mentions=self._allowed_mentions)
         message = await self._http._decoded(
             partial(decode, WebhookMessage),
             "PATCH",
@@ -195,8 +194,7 @@ class Webhooks(Group):
             "thread_id": parts.pop("thread_id", None),
             "with_components": parts.pop("with_components", None),
         }
-        parts.setdefault("allowed_mentions", self._allowed_mentions)
-        body, files = message_body(content, parts)
+        body, files = message_body(content, parts, mentions=self._allowed_mentions)
         message = await self._http._decoded(
             partial(decode, WebhookMessage),
             "POST",

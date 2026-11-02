@@ -277,7 +277,10 @@ class SharedClientTheme(Builder, kw_only=True):
 
 
 class AllowedMentions(Builder, kw_only=True):
-    """Which mentions in a message may notify; `parse=()` silences all of them."""
+    """Which mentions in a message may notify; `parse=()` silences all of them.
+
+    Sent with a bot that has a default, it changes only the kinds of mention it sets.
+    """
 
     parse: tuple[MentionType, ...] | None = None
     roles: tuple[int, ...] | None = None
@@ -585,9 +588,13 @@ def message_body(
     parts: Mapping[str, Any],
     *,
     reply_to: int | None = None,
+    mentions: AllowedMentions | None = None,
 ) -> tuple[dict[str, Any], Sequence[File]]:
     body: dict[str, Any] = {} if content is None else {"content": content}
     body |= parts
+    given = body.get("allowed_mentions", AllowedMentions())
+    if mentions is not None and given is not None:
+        body["allowed_mentions"] = _merged_mentions(mentions, given)
     files: Sequence[File] = body.pop("files", ())
     components = body.get("components")
     if components is not None:
@@ -623,6 +630,27 @@ def message_body(
     if components_v2:
         body |= {"content": None, "embeds": []}
     return body, files
+
+
+def _merged_mentions(
+    default: AllowedMentions, given: AllowedMentions
+) -> AllowedMentions:
+    """`given`, with each kind of mention it says nothing about as `default` has it."""
+    users = given if given.parse is not None or given.users is not None else default
+    roles = given if given.parse is not None or given.roles is not None else default
+    everyone = given if given.parse is not None else default
+    sources: tuple[tuple[MentionType, AllowedMentions], ...] = (
+        ("everyone", everyone),
+        ("users", users),
+        ("roles", roles),
+    )
+    parse: tuple[MentionType, ...] = tuple(
+        kind for kind, source in sources if kind in (source.parse or ())
+    )
+    replied = default.replied_user if given.replied_user is None else given.replied_user
+    return AllowedMentions(
+        parse=parse, roles=roles.roles, users=users.users, replied_user=replied
+    )
 
 
 def _type_of(component: Component | Mapping[str, Any]) -> int | None:
