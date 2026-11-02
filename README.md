@@ -109,6 +109,8 @@ A few things the example takes for granted:
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
 
+[examples/][examples] holds runnable bots for commands, components, modals, events, background tasks, modules, a web app, music and recording.
+
 `bot.rest` has every documented REST operation the bot token reaches, grouped by resource, once the bot has started. Those that need a user's OAuth2 token are on a `BearerClient`, below; interaction answers go through the contexts, and deprecated or legacy routes are left out.
 
 - `await bot.rest.channels.edit(channel_id, name="news", topic=None)`: ids come first and positional, in the order of the URL. A keyword you leave out is left as it is, and `None` clears the field.
@@ -360,3 +362,5 @@ A bad argument raises `ValueError` or `TypeError`. Every other error bostie rais
 Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
 
 bostie is not affiliated with Discord Inc.
+
+[examples]: examples
