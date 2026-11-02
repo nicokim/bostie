@@ -39,6 +39,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const FAILURE_RETRIES: u32 = 2;
+const CLOUDFLARE_TIMEOUT: u16 = 524;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Auth<'a> {
@@ -417,14 +418,8 @@ impl Retries {
             self.rate_limited += 1;
             return Some(retry_after);
         }
-        let server_error = matches!(
-            status,
-            StatusCode::INTERNAL_SERVER_ERROR
-                | StatusCode::BAD_GATEWAY
-                | StatusCode::SERVICE_UNAVAILABLE
-                | StatusCode::GATEWAY_TIMEOUT
-        );
-        if server_error && *method != Method::POST {
+        let retried_status = matches!(status.as_u16(), 500 | 502 | 503 | 504 | CLOUDFLARE_TIMEOUT);
+        if retried_status && *method != Method::POST {
             self.backoff()
         } else {
             None
@@ -736,9 +731,12 @@ pub(crate) mod tests {
             retries.after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, short),
             Some(base)
         );
+        let cloudflare_timeout = StatusCode::from_u16(CLOUDFLARE_TIMEOUT).unwrap();
         for (method, status, retried) in [
             (Method::GET, StatusCode::INTERNAL_SERVER_ERROR, true),
             (Method::PUT, StatusCode::GATEWAY_TIMEOUT, true),
+            (Method::DELETE, cloudflare_timeout, true),
+            (Method::POST, cloudflare_timeout, false),
             (Method::POST, StatusCode::INTERNAL_SERVER_ERROR, false),
             (Method::GET, StatusCode::NOT_IMPLEMENTED, false),
             (Method::GET, StatusCode::NOT_FOUND, false),
