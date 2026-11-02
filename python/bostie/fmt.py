@@ -56,6 +56,12 @@ def guild_navigation(kind: GuildNavigation, role_id: int | None = None) -> str:
     return f"<id:linked-roles:{role_id}>"
 
 
+def store(application_id: int, sku_id: int | None = None) -> str:
+    """A link to the app's store page, or one SKU; chat shows it as a card."""
+    page = f"https://discord.com/application-directory/{application_id}/store"
+    return page if sku_id is None else f"{page}/{sku_id}"
+
+
 def escape_markdown(text: str) -> str:
     """The text shown as typed, with links left working."""
     return _outside_links(text, lambda part: MARKDOWN.sub(_escaped, part))

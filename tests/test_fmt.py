@@ -23,6 +23,10 @@ ID = 80351110224678912
         (fmt.emoji("b1nzy", ID, animated=True), f"<a:b1nzy:{ID}>"),
         (fmt.guild_navigation("browse"), "<id:browse>"),
         (fmt.guild_navigation("linked-roles", ID), f"<id:linked-roles:{ID}>"),
+        (
+            fmt.store(ID, 5),
+            f"https://discord.com/application-directory/{ID}/store/5",
+        ),
     ],
 )
 def test_formats_follow_the_documented_message_formats(
