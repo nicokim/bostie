@@ -1,12 +1,12 @@
 """Components V2 messages, a stateless pager and a select menu."""
 
 import bostie
-from bostie import ComponentContext, Context, ui
+from bostie import ComponentContext, Context, color, ui
 
 bot = bostie.Bot()
 
 PAGES = ("Rust runs the gateway.", "Python runs your code.", "Voice runs in Rust too.")
-COLORS = {"red": 0xE74C3C, "green": 0x2ECC71, "blue": 0x3498DB}
+COLORS = {"blurple": color.BLURPLE, "green": color.GREEN, "red": color.parse("#E74C3C")}
 
 
 def tour_page(number: int) -> list[ui.ContainerDict]:

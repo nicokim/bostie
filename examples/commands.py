@@ -17,6 +17,10 @@ from bostie import (
     Range,
     Role,
     User,
+    cdn,
+    fmt,
+    snowflake_time,
+    ui,
 )
 
 bot = bostie.Bot()
@@ -80,6 +84,20 @@ async def roles_give(
 @bot.user_command("High five")
 async def high_five(ctx: Context, user: User) -> None:
     await ctx.respond(f"{ctx.user.mention} high-fives {user.mention}!")
+
+
+@bot.user_command("Profile")
+async def profile(ctx: Context, user: User) -> None:
+    joined = fmt.timestamp(snowflake_time(user.id), "R")
+    await ctx.respond(
+        components=[
+            ui.section(
+                ui.text(f"**{user.display_name}** joined Discord {joined}."),
+                accessory=ui.thumbnail(cdn.display_avatar(user, size=128)),
+            )
+        ],
+        ephemeral=True,
+    )
 
 
 @bot.message_command("Quote")

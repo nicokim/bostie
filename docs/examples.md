@@ -4,7 +4,7 @@ These bots live in the `examples` folder of the repository. Set `BOSTIE_TOKEN` a
 
 ## Commands
 
-Slash commands with typed options, a group, autocomplete, user and message commands, and an error hook.
+Slash commands with typed options, a group, autocomplete, user and message commands, a profile card built with `cdn` and `fmt`, and an error hook.
 
 `examples/commands.py`:
 
