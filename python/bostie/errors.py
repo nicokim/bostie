@@ -1,9 +1,22 @@
-from collections.abc import Mapping
-from typing import Any, cast, override
+from collections.abc import Callable, Coroutine, Mapping
+from typing import TYPE_CHECKING, Any, cast, override
 
 import msgspec
 
 from bostie.enums import DisconnectReason, JSONErrorCode
+
+if TYPE_CHECKING:
+    from bostie.context import (
+        AutocompleteContext,
+        ComponentContext,
+        Context,
+        ModalContext,
+    )
+
+type ErrorContext = Context | ComponentContext | ModalContext | AutocompleteContext
+type ErrorHook[E: BaseException] = Callable[
+    [ErrorContext, E], Coroutine[Any, Any, None]
+]
 
 
 class BostieError(Exception):

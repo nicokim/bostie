@@ -26,7 +26,7 @@ from bostie.commands import (
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType
-from bostie.errors import CommandDefinitionError, StateError
+from bostie.errors import CommandDefinitionError, ErrorHook, StateError
 from bostie.events import BotEvent, Event, RawEvent
 from bostie.voice.events import VoiceEvent
 
@@ -38,7 +38,6 @@ RAW_EVENT_NAME = RawEvent.NAME
 type AnyEvent = Event | VoiceEvent | BotEvent
 type ListenerCallback = Callable[[Any], Coroutine[Any, Any, None]]
 type EventHandler[E: AnyEvent] = Callable[[E], Coroutine[Any, Any, None]]
-type ErrorHandler = Callable[[Any, Any], Coroutine[Any, Any, None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +64,7 @@ class Router:
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
-        self.error_handlers: dict[type[BaseException], ErrorHandler] = {}
+        self.error_handlers: dict[type[BaseException], ErrorHook[Any]] = {}
 
     @property
     def bot(self) -> "Bot":
@@ -184,12 +183,22 @@ class Router:
         return self._custom_id_route(MODAL_ROUTES, template)
 
     @overload
-    def on_error[H: ErrorHandler](self, handler: H, /) -> H: ...
+    def on_error[H: ErrorHook[Exception]](self, handler: H, /) -> H: ...
 
     @overload
-    def on_error[H: ErrorHandler](
+    def on_error[E: BaseException](
+        self, exception_type: type[E], /
+    ) -> Callable[[ErrorHook[E]], ErrorHook[E]]: ...
+
+    @overload
+    def on_error[A: BaseException, B: BaseException](
+        self, first: type[A], second: type[B], /
+    ) -> Callable[[ErrorHook[A | B]], ErrorHook[A | B]]: ...
+
+    @overload
+    def on_error(
         self, *exception_types: type[BaseException]
-    ) -> Callable[[H], H]: ...
+    ) -> Callable[[ErrorHook[Any]], ErrorHook[Any]]: ...
 
     def on_error(self, *targets: Any) -> Any:
         """Register `async def hook(ctx, error)` for this router's handler errors.
@@ -202,7 +211,7 @@ class Router:
             if not (isinstance(target, type) and issubclass(target, BaseException)):
                 raise TypeError(f"{target!r} is not an exception class")
 
-        def register(handler: ErrorHandler) -> ErrorHandler:
+        def register(handler: ErrorHook[Any]) -> ErrorHook[Any]:
             return self._on_error(handler, targets or (Exception,))
 
         return register
@@ -234,7 +243,7 @@ class Router:
         """The modal route for a custom_id and its placeholder values, or None."""
         return _match(self.modal_routes, custom_id)
 
-    def find_error_handlers(self, error: BaseException) -> Iterator[ErrorHandler]:
+    def find_error_handlers(self, error: BaseException) -> Iterator[ErrorHook[Any]]:
         """Hooks for `error`: this router's nearest match first, then each parent's."""
         for router in self._chain():
             handler = next(
@@ -265,7 +274,7 @@ class Router:
             )
         return listener
 
-    def _on_error[H: ErrorHandler](
+    def _on_error[H: ErrorHook[Any]](
         self, handler: H, exception_types: tuple[type[BaseException], ...]
     ) -> H:
         for exception_type in exception_types:

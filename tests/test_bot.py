@@ -22,6 +22,7 @@ from bostie import (
     CommandSyncError,
     ComponentContext,
     Context,
+    ErrorContext,
     Forbidden,
     HTTPException,
     Intents,
@@ -524,7 +525,8 @@ def test_modal_submits_are_routed_by_template_and_all_reach_listeners() -> None:
             raise RuntimeError("boom")
 
         @bot.on_error
-        async def explain(ctx: ModalContext, error: Exception) -> None:
+        async def explain(ctx: ErrorContext, error: Exception) -> None:
+            assert isinstance(ctx, ModalContext)
             await ctx.respond(f"{ctx.custom_id} failed: {error}")
 
         @bot.listen
@@ -1089,13 +1091,14 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
         channel_id = int(payloads.channel()["id"])
 
         @admin.on_error(Forbidden)
-        async def pass_up(ctx: Context, error: Forbidden) -> None:
+        async def pass_up(ctx: ErrorContext, error: Forbidden) -> None:
             hooks.append("admin")
             raise error
 
         @bot.on_error(HTTPException)
-        async def explain(ctx: Context, error: HTTPException) -> None:
+        async def explain(ctx: ErrorContext, error: HTTPException) -> None:
             hooks.append("bot")
+            assert isinstance(ctx, Context)
             await ctx.respond(f"Discord said {error.code}", ephemeral=True)
 
         @admin.command
