@@ -78,6 +78,46 @@ The bot running inside an aiohttp app, whose route sends messages through `bot.r
 --8<-- "examples/web_app.py"
 ```
 
+## Interactions over HTTP
+
+Slash commands served by an ASGI server instead of the gateway.
+
+`examples/http_interactions.py`:
+
+```python
+--8<-- "examples/http_interactions.py"
+```
+
+## REST without a gateway
+
+A script that reads the bot's guilds through a `RESTClient`.
+
+`examples/rest_script.py`:
+
+```python
+--8<-- "examples/rest_script.py"
+```
+
+## Webhooks
+
+Posting through a webhook URL with `WebhookClient` and `SyncWebhookClient`.
+
+`examples/webhook.py`:
+
+```python
+--8<-- "examples/webhook.py"
+```
+
+## Linked roles
+
+An OAuth2 login whose `BearerClient` sets the user's role connection.
+
+`examples/linked_roles.py`:
+
+```python
+--8<-- "examples/linked_roles.py"
+```
+
 ## Music
 
 A queue per guild with skip, loop and leave.

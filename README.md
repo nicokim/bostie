@@ -109,7 +109,7 @@ A few things the example takes for granted:
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
 
-[examples/][examples] holds runnable bots for commands, components, modals, events, background tasks, modules, a web app, music and recording.
+[examples/][examples] holds runnable bots for commands, components, modals, events, background tasks, modules, a web app, interactions over HTTP, music and recording, and scripts for REST without a gateway, webhooks and linked roles.
 
 `bot.rest` has every documented REST operation the bot token reaches, grouped by resource, once the bot has started. Those that need a user's OAuth2 token are on a `BearerClient`, below; interaction answers go through the contexts, and deprecated or legacy routes are left out.
 
