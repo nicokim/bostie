@@ -154,6 +154,7 @@ async fn a_stopped_lane_ends_its_connection_and_spares_the_others() {
                 volume: 1.0,
                 stall: StallPolicy::Hold,
                 after: None,
+                crossfade: Duration::ZERO,
             },
         )
         .unwrap();

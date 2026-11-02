@@ -26,6 +26,7 @@ pub(crate) struct Mixer {
 struct Strip {
     gain: f32,
     target: f32,
+    fade: Option<Fade>,
     live: bool,
     frame: Vec<f32>,
     packet: Option<(Bytes, u32)>,
@@ -142,20 +143,32 @@ impl Mixer {
         self.encode()
     }
 
-    fn waiting(&self, sink: &Sink, sinks: &[Arc<Sink>]) -> bool {
+    fn waiting(&mut self, sink: &Sink, sinks: &[Arc<Sink>]) -> bool {
         let Some(after) = sink.waits_for() else {
             return false;
         };
-        let done = sinks
-            .iter()
-            .find(|previous| previous.id() == after)
-            .is_none_or(|previous| {
-                previous.played_out() && !self.strips.get(&after).is_some_and(|strip| strip.live)
-            });
-        if done {
-            sink.release();
+        let overlap = match sinks.iter().find(|previous| previous.id() == after) {
+            None => Some(0),
+            Some(previous) => {
+                let live = self.strips.get(&after).is_some_and(|strip| strip.live);
+                let playing = if live { FRAME_SAMPLES as u64 } else { 0 };
+                previous
+                    .remaining()
+                    .map(|left| left + playing)
+                    .filter(|&ahead| ahead == 0 || ahead <= sink.crossfade())
+            }
+        };
+        let Some(overlap) = overlap else {
+            return true;
+        };
+        sink.release();
+        if overlap > 0 {
+            if let Some(previous) = self.strips.get_mut(&after) {
+                previous.fade = Some(Fade::new(overlap, true));
+            }
+            self.strip(sink).fade = Some(Fade::new(overlap, false));
         }
-        !done
+        false
     }
 
     fn strip(&mut self, sink: &Sink) -> &mut Strip {
@@ -203,6 +216,7 @@ impl Strip {
         Self {
             gain: volume,
             target: volume,
+            fade: None,
             live: false,
             frame: vec![0.0; FRAME_LEN],
             packet: None,
@@ -235,6 +249,7 @@ impl Strip {
     fn passes(&self) -> bool {
         self.gain == 1.0
             && self.target == 1.0
+            && self.fade.is_none()
             && !self.has_carry()
             && self
                 .packet
@@ -288,17 +303,48 @@ impl Strip {
     fn add_to(&mut self, sum: &mut [f32]) {
         let start = self.gain;
         let change = self.target - start;
+        let fade = self.fade;
         let (sum, _) = sum.as_chunks_mut::<CHANNELS>();
         let (frame, _) = self.frame.as_chunks::<CHANNELS>();
-        for (index, (mixed, frame)) in sum.iter_mut().zip(frame).enumerate() {
+        for (index, (mixed, frame)) in (1_u64..).zip(sum.iter_mut().zip(frame)) {
             #[expect(clippy::cast_precision_loss)]
-            let gain = start + change * ((index + 1) as f32 / FRAME_SAMPLES as f32);
+            let ramp = start + change * (index as f32 / FRAME_SAMPLES as f32);
+            let gain = ramp * fade.map_or(1.0, |fade| fade.at(index));
             mixed
                 .iter_mut()
                 .zip(frame)
                 .for_each(|(mixed, sample)| *mixed += sample * gain);
         }
         self.gain = self.target;
+        self.fade = fade.and_then(Fade::advance);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Fade {
+    length: u64,
+    done: u64,
+    out: bool,
+}
+
+impl Fade {
+    fn new(length: u64, out: bool) -> Self {
+        Self {
+            length,
+            done: 0,
+            out,
+        }
+    }
+
+    #[expect(clippy::cast_precision_loss)]
+    fn at(self, offset: u64) -> f32 {
+        let progress = (self.done + offset).min(self.length) as f32 / self.length as f32;
+        if self.out { 1.0 - progress } else { progress }
+    }
+
+    fn advance(self) -> Option<Self> {
+        let done = self.done + FRAME_SAMPLES as u64;
+        (self.out || done < self.length).then_some(Self { done, ..self })
     }
 }
 
@@ -322,13 +368,14 @@ mod tests {
         sink
     }
 
-    fn pcm_after(fixture: &mut Fixture, previous: &Sink) -> Arc<Sink> {
+    fn pcm_after(fixture: &mut Fixture, previous: &Sink, crossfade_ms: u64) -> Arc<Sink> {
         Arc::new(fixture.sink_with(SinkOptions {
             format: stereo_48k(),
             buffer: Duration::from_secs(1),
             volume: 1.0,
             stall: StallPolicy::Hold,
             after: Some(previous.id()),
+            crossfade: Duration::from_millis(crossfade_ms),
         }))
     }
 
@@ -465,7 +512,7 @@ mod tests {
         let mut fixture = Fixture::new();
         let first = pcm_sink(&mut fixture, 0.25, 1_920);
         first.flush().unwrap();
-        let second = pcm_after(&mut fixture, &first);
+        let second = pcm_after(&mut fixture, &first, 0);
         let (start, _) = second.mark().unwrap();
         second.write(&frames_of(0.5, 1_920)).unwrap();
         let sinks = [Arc::clone(&first), Arc::clone(&second)];
@@ -487,10 +534,39 @@ mod tests {
     }
 
     #[test]
+    fn a_crossfade_starts_early_and_fades_the_two_sinks_across() {
+        let mut fixture = Fixture::new();
+        let first = pcm_sink(&mut fixture, 0.5, 2_880);
+        first.flush().unwrap();
+        let second = pcm_after(&mut fixture, &first, 40);
+        second.write(&frames_of(0.25, 2_880)).unwrap();
+        let sinks = [Arc::clone(&first), Arc::clone(&second)];
+        let mut mixer = Mixer::new(settings()).unwrap();
+
+        let mut heard = Vec::new();
+        let mut started = Vec::new();
+        for _ in 0..4 {
+            mixer.mix(&sinks).unwrap();
+            heard.push(mixer.sum[959 * 2]);
+            started.push(consumed(&second));
+        }
+
+        assert_eq!(started, [0, 960, 1_920, 2_880]);
+        let expected = [0.5, 0.375, 0.25, 0.25];
+        assert!(
+            heard
+                .iter()
+                .zip(expected)
+                .all(|(got, want)| (got - want).abs() < 1e-6),
+            "{heard:?}"
+        );
+    }
+
+    #[test]
     fn a_sink_after_an_open_unflushed_one_waits_until_it_closes() {
         let mut fixture = Fixture::new();
         let first = pcm_sink(&mut fixture, 0.25, 960);
-        let second = pcm_after(&mut fixture, &first);
+        let second = pcm_after(&mut fixture, &first, 0);
         second.write(&frames_of(0.5, 960)).unwrap();
         let mut mixer = Mixer::new(settings()).unwrap();
         mixer

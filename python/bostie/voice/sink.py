@@ -70,10 +70,12 @@ class Sink:
         buffer: float,
         stall: SinkStall,
         volume: float,
+        crossfade: float = 0.0,
     ) -> None:
         self.format = format
         self.buffer = buffer
         self.stall = stall
+        self.crossfade = crossfade
         self._connection = connection
         self._native = native
         self._handle = native.id

@@ -123,6 +123,7 @@ class Defaults:
     jitter: float = 0.1
     overflow: Overflow = "drop_oldest"
     receive_stall: ReceiveStall = "wait"
+    crossfade: float = 0.0
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.timeout) and self.timeout > 0):
@@ -136,6 +137,9 @@ class Defaults:
                 "server_change_delay must be a number of seconds of at least 0, "
                 f"got {self.server_change_delay}"
             )
+        self._check_media()
+
+    def _check_media(self) -> None:
         if not self.speaking_flags:
             raise ValueError("speaking_flags must set at least one flag")
         if self.stage not in ("listen", "request", "speak"):
@@ -167,6 +171,11 @@ class Defaults:
             raise ValueError(
                 "overflow must be 'drop_oldest' or 'drop_newest', "
                 f"got {self.overflow!r}"
+            )
+        if not 0.0 <= self.crossfade <= MAX_BUFFER:
+            raise ValueError(
+                f"crossfade must be from 0 to {MAX_BUFFER} seconds, "
+                f"got {self.crossfade}"
             )
         if self.receive_stall not in ("wait", "end"):
             raise ValueError(

@@ -91,7 +91,7 @@ impl Sink {
             },
             SinkFormat::Opus => Producer::Opus,
         };
-        let high_water = frames_in(options.buffer);
+        let high_water = frames_in(options.buffer + options.crossfade);
         Ok(Self {
             id,
             options,
@@ -325,9 +325,13 @@ impl Sink {
         self.options.after.filter(|_| self.queue.lock().waiting)
     }
 
-    pub(crate) fn played_out(&self) -> bool {
+    pub(crate) fn remaining(&self) -> Option<u64> {
         let queue = self.queue.lock();
-        !queue.waiting && queue.flushed && queue.queued == 0
+        (!queue.waiting && queue.flushed).then_some(queue.queued)
+    }
+
+    pub(crate) fn crossfade(&self) -> u64 {
+        frames_in(self.options.crossfade)
     }
 
     pub(crate) fn release(&self) {
@@ -500,6 +504,7 @@ pub(crate) mod tests {
                 volume: 1.0,
                 stall,
                 after: None,
+                crossfade: Duration::ZERO,
             })
         }
 

@@ -207,6 +207,7 @@ pub struct SinkOptions {
     pub volume: f32,
     pub stall: StallPolicy,
     pub after: Option<Handle>,
+    pub crossfade: Duration,
 }
 
 impl SinkOptions {
@@ -215,6 +216,13 @@ impl SinkOptions {
             format.validate()?;
         }
         validate_buffer(self.buffer)?;
+        if self.crossfade > *BUFFERS.end() {
+            return Err(CoreError::InvalidRequest(format!(
+                "crossfade must be at most {:?}, got {:?}",
+                BUFFERS.end(),
+                self.crossfade
+            )));
+        }
         if !(self.volume.is_finite() && self.volume >= 0.0) {
             return Err(CoreError::InvalidRequest(format!(
                 "volume must be a finite number of at least 0, got {}",
@@ -469,6 +477,7 @@ mod tests {
             volume,
             stall: StallPolicy::Hold,
             after: None,
+            crossfade: Duration::ZERO,
         }
     }
 

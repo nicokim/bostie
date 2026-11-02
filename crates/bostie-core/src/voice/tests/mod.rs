@@ -618,6 +618,7 @@ impl Harness {
                     volume: 1.0,
                     stall,
                     after: None,
+                    crossfade: Duration::ZERO,
                 },
             )
             .unwrap()

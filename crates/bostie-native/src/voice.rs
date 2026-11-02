@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
     Application, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall, SampleFormat,
@@ -369,6 +369,7 @@ pub(crate) fn sink_options(
         volume,
         stall: stall.0,
         after: None,
+        crossfade: Duration::ZERO,
     })
 }
 

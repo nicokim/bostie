@@ -2,6 +2,7 @@ import asyncio
 from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, ClassVar, Self, Unpack, cast, override
 
 import pytest
@@ -17,6 +18,7 @@ from bostie.voice import layers
 from bostie.voice.formats import (
     DEFAULT_PCM,
     PCM,
+    Defaults,
     EncoderSettings,
     Format,
     Opus,
@@ -106,6 +108,8 @@ class FakeSink:
         self.vc = vc
         self.born = vc.clock.ticks + 1
         self.after = after
+        self.opened_after = after
+        self.crossfade = 0.0
         self.flushed = False
         self.format = format
         self.buffer = buffer
@@ -249,7 +253,7 @@ class FakeSink:
 class FakeConnection:
     def __init__(self, clock: Clock) -> None:
         self.clock = clock
-        self.manager = object()
+        self.manager = SimpleNamespace(defaults=Defaults())
         self.channel_id = 1
         self.state = State.READY
         self.held = False
@@ -261,6 +265,7 @@ class FakeConnection:
         *,
         volume: float = 1.0,
         after: FakeSink | None = None,
+        crossfade: float = 0.0,
         **options: Unpack[SinkOptions],
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
@@ -268,6 +273,7 @@ class FakeConnection:
         buffer = options.get("buffer", 0.2)
         stall = options.get("stall", "hold")
         sink = FakeSink(self, format, buffer, volume, stall, after)
+        sink.crossfade = crossfade
         self.sinks.append(sink)
         self.clock.sinks.append(sink)
         return sink
@@ -707,6 +713,22 @@ def test_skip_and_stop_reach_a_track_still_playing_on_the_last_sink() -> None:
         assert names(vc.sinks[0].sent) == "aaa"
         assert names(vc.sinks[1].sent) == "b"
         assert [sink.closed for sink in vc.sinks] == [True, True]
+
+    run(scenario)
+
+
+def test_a_crossfading_queue_chains_one_sink_per_track() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc, crossfade=2.0)
+        add(q, FakeSource(clock, "a", 5))
+        add(q, FakeSource(clock, "b", 5))
+        await q.join()
+        assert [sink.sent for sink in vc.sinks] == [frames("a", 5), frames("b", 5)]
+        assert [sink.opened_after for sink in vc.sinks] == [None, vc.sinks[0]]
+        assert [sink.crossfade for sink in vc.sinks] == [2.0, 2.0]
+        vc.manager.defaults = Defaults(crossfade=1.5)
+        assert (queue(vc).crossfade, queue(vc, crossfade=0.0).crossfade) == (1.5, 0.0)
 
     run(scenario)
 

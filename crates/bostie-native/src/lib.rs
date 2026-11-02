@@ -253,6 +253,7 @@ impl NativeCore {
 
     #[pyo3(signature = (
         guild_id, *, kind, rate, channels, sample, buffer, volume, stall, after=None,
+        crossfade=0.0,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn voice_sink(
@@ -266,9 +267,11 @@ impl NativeCore {
         volume: f32,
         stall: Choice<StallPolicy>,
         after: Option<u64>,
+        crossfade: f64,
     ) -> Result<NativeSink> {
         let mut options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
         options.after = after.map(Handle::from);
+        options.crossfade = seconds("crossfade", crossfade)?;
         Ok(self
             .voice()?
             .open_sink(GuildId::from(guild_id), options)

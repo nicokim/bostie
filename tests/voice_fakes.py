@@ -417,6 +417,7 @@ class FakeCore:
         volume: float,
         stall: SinkStall,
         after: int | None,
+        crossfade: float,
     ) -> FakeSink:
         self._record(
             "voice_sink",
@@ -429,6 +430,7 @@ class FakeCore:
             volume=volume,
             stall=stall,
             after=after,
+            crossfade=crossfade,
         )
         sink = FakeSink(
             self,

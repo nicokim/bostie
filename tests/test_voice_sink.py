@@ -51,6 +51,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "volume": 1.0,
                 "stall": "drop",
                 "after": None,
+                "crossfade": 0.0,
             },
             {
                 "kind": "pcm",
@@ -61,6 +62,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "volume": 0.3,
                 "stall": "hold",
                 "after": None,
+                "crossfade": 0.0,
             },
             {
                 "kind": "opus",
@@ -71,6 +73,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "volume": 1.0,
                 "stall": "drop",
                 "after": None,
+                "crossfade": 0.0,
             },
         ]
 

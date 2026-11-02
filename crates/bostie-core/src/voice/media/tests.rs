@@ -133,6 +133,7 @@ impl Rig {
             volume: 1.0,
             stall,
             after: None,
+            crossfade: Duration::ZERO,
         };
         let sink = Arc::new(
             Sink::new(

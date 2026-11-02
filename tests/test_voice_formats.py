@@ -83,6 +83,7 @@ def test_encoder_checks_its_bounds(
                 "stage": "speak",
                 "overflow": "drop_newest",
                 "receive_stall": "end",
+                "crossfade": 60.0,
             },
             VALID,
         ),
@@ -109,6 +110,9 @@ def test_encoder_checks_its_bounds(
         ({"jitter": math.nan}, invalid("jitter")),
         ({"overflow": "drop_all"}, invalid("overflow")),
         ({"receive_stall": "hold"}, invalid("receive_stall")),
+        ({"crossfade": -0.1}, invalid("crossfade")),
+        ({"crossfade": 60.1}, invalid("crossfade")),
+        ({"crossfade": math.nan}, invalid("crossfade")),
     ],
 )
 def test_defaults_check_their_bounds(

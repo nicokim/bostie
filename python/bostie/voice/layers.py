@@ -177,12 +177,18 @@ class Track:
 
 class _Player:
     def __init__(
-        self, vc: "VoiceConnection", *, volume: float, options: SinkOptions
+        self,
+        vc: "VoiceConnection",
+        *,
+        volume: float,
+        options: SinkOptions,
+        crossfade: float = 0.0,
     ) -> None:
         self.vc = vc
         self.closed = False
         self._volume = volume
         self._options = options
+        self._crossfade = crossfade
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
         self._retiring: set[Sink] = set()
@@ -499,11 +505,15 @@ class _Player:
         spawn(self._tasks, self._finish(entry, entry.end))
 
     def _sink_for(self, format: Format) -> "Sink":
-        if self._sink is not None and format == self._format:
+        if self._sink is not None and format == self._format and not self._crossfade:
             return self._sink
         previous = self._sink
         self._sink = self.vc.sink(
-            format, volume=self._volume, after=previous, **self._options
+            format,
+            volume=self._volume,
+            after=previous,
+            crossfade=self._crossfade,
+            **self._options,
         )
         self._format = format
         if previous is not None:
@@ -588,18 +598,24 @@ class _Player:
 
 
 class Queue:
-    """Plays tracks back to back without gaps."""
+    """Plays tracks back to back without gaps, or overlapping by `crossfade` seconds."""
 
     def __init__(
         self,
         vc: "VoiceConnection",
         *,
         volume: float = 1.0,
+        crossfade: float | None = None,
         **options: Unpack[SinkOptions],
     ) -> None:
         check_keys(options, SINK_OPTIONS, "options")
         self.vc = vc
-        self._player = _Player(vc, volume=volume, options=options)
+        self.crossfade = (
+            vc.manager.defaults.crossfade if crossfade is None else crossfade
+        )
+        self._player = _Player(
+            vc, volume=volume, options=options, crossfade=self.crossfade
+        )
 
     @property
     def closed(self) -> bool:

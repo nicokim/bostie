@@ -155,6 +155,7 @@ class VoiceCore(Protocol):
         volume: float,
         stall: SinkStall,
         after: int | None,
+        crossfade: float,
     ) -> NativeSink: ...
     def voice_file(self, path: str) -> NativeSource: ...
     def voice_bytes(self, data: bytes, hint: str | None) -> NativeSource: ...
@@ -622,12 +623,14 @@ class VoiceConnection:
         *,
         volume: float = 1.0,
         after: Sink | None = None,
+        crossfade: float = 0.0,
         **options: Unpack[SinkOptions],
     ) -> Sink:
         """Open a bounded writer whose audio is mixed into this connection.
 
         With `after`, it stays silent until `after` closes, or plays out what was
-        written before its last drain().
+        written before its last drain(). With `crossfade` too, it starts that many
+        seconds before `after` ends and fades across, buffering that much more.
         """
         check_keys(options, SINK_OPTIONS, "options")
         self._check_live()
@@ -646,8 +649,17 @@ class VoiceConnection:
             volume=volume,
             stall=stall,
             after=None if after is None or after.closed else after._handle,
+            crossfade=crossfade,
         )
-        sink = Sink(self, native, format, buffer=buffer, stall=stall, volume=volume)
+        sink = Sink(
+            self,
+            native,
+            format,
+            buffer=buffer,
+            stall=stall,
+            volume=volume,
+            crossfade=crossfade,
+        )
         self._sinks[sink] = None
         self.manager._handles[native.id] = sink
         return sink
