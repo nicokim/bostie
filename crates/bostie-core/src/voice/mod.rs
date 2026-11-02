@@ -71,6 +71,7 @@ pub(crate) struct Tuning {
     pub(crate) connection: ConnectionTuning,
     pub(crate) source_prefetch: Duration,
     pub(crate) http_buffer: usize,
+    pub(crate) http_retry: Duration,
 }
 
 impl Default for Tuning {
@@ -79,6 +80,7 @@ impl Default for Tuning {
             connection: ConnectionTuning::default(),
             source_prefetch: Duration::from_secs(1),
             http_buffer: 256 * 1024,
+            http_retry: Duration::from_millis(500),
         }
     }
 }
@@ -143,7 +145,7 @@ impl Voice {
                 send,
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 pacer,
-                http: Http::new(runtime.clone(), tuning.http_buffer),
+                http: Http::new(runtime.clone(), tuning.http_buffer, tuning.http_retry),
                 tuning,
                 next_handle: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),

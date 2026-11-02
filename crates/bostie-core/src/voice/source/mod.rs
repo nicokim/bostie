@@ -351,7 +351,11 @@ pub(crate) mod tests {
             Self {
                 inbox: Arc::new(Inbox::new(bell)),
                 _bell: receiver,
-                http: Http::new(crate::runtime::shared().unwrap(), HTTP_BUFFER),
+                http: Http::new(
+                    crate::runtime::shared().unwrap(),
+                    HTTP_BUFFER,
+                    Duration::ZERO,
+                ),
                 next: 1,
             }
         }

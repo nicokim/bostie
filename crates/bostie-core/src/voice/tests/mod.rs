@@ -66,6 +66,7 @@ fn tuning() -> Tuning {
         },
         source_prefetch: Duration::from_millis(100),
         http_buffer: 4 * 1024,
+        http_retry: Duration::ZERO,
     }
 }
 

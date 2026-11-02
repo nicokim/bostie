@@ -1,5 +1,6 @@
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::OnceLock;
+use std::thread;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -15,19 +16,22 @@ const USER_AGENT: &str = concat!("bostie/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_PIECES: usize = 16;
+const RESUME_ATTEMPTS: u32 = 3;
 
 pub struct Http {
     runtime: Handle,
     client: OnceLock<reqwest::Client>,
     piece: usize,
+    retry: Duration,
 }
 
 impl Http {
-    pub fn new(runtime: Handle, buffer: usize) -> Self {
+    pub fn new(runtime: Handle, buffer: usize, retry: Duration) -> Self {
         Self {
             runtime,
             client: OnceLock::new(),
             piece: (buffer / HTTP_PIECES).max(1),
+            retry,
         }
     }
 
@@ -52,12 +56,14 @@ pub(crate) struct HttpMedia {
     runtime: Handle,
     client: reqwest::Client,
     piece: usize,
+    retry: Duration,
     url: Url,
     headers: HeaderMap,
     length: Option<u64>,
     ranges: bool,
     content_type: Option<String>,
     position: u64,
+    failures: u32,
     body: Option<Body>,
 }
 
@@ -103,12 +109,14 @@ impl HttpMedia {
             runtime: http.runtime.clone(),
             client: http.client()?,
             piece: http.piece,
+            retry: http.retry,
             url,
             headers: map,
             length: None,
             ranges: false,
             content_type: None,
             position: 0,
+            failures: 0,
             body: None,
         })
     }
@@ -131,7 +139,7 @@ impl HttpMedia {
     }
 
     fn request(&mut self) -> io::Result<Head> {
-        let ranged = self.position > 0;
+        let ranged = self.position > 0 && self.length.is_some();
         let mut request = self
             .client
             .get(self.url.clone())
@@ -165,6 +173,22 @@ impl HttpMedia {
     fn at_end(&self) -> bool {
         self.length.is_some_and(|length| self.position >= length)
     }
+
+    fn resume(&mut self, mut error: io::Error) -> io::Result<()> {
+        if self.length.is_some() && !self.is_seekable() {
+            return Err(error);
+        }
+        while self.failures < RESUME_ATTEMPTS {
+            tracing::debug!(%error, position = self.position, "resuming a dropped HTTP body");
+            thread::sleep(self.retry * (1 << self.failures));
+            self.failures += 1;
+            match self.request() {
+                Ok(_) => return Ok(()),
+                Err(failed) => error = failed,
+            }
+        }
+        Err(error)
+    }
 }
 
 impl Read for HttpMedia {
@@ -175,22 +199,26 @@ impl Read for HttpMedia {
         if self.body.is_none() {
             self.request()?;
         }
-        let Some(body) = self.body.as_mut() else {
-            return Ok(0);
-        };
-        while body.current.is_empty() {
+        let body = loop {
+            let Some(body) = self.body.as_mut() else {
+                return Ok(0);
+            };
+            if !body.current.is_empty() {
+                break body;
+            }
             match body.pieces.blocking_recv() {
                 Some(Ok(piece)) => body.current = piece,
-                Some(Err(error)) => return Err(error),
+                Some(Err(error)) => self.resume(error)?,
                 None => return Ok(0),
             }
-        }
+        };
         let count = buf.len().min(body.current.len());
         let piece = body.current.split_to(count);
         if let Some(target) = buf.get_mut(..count) {
             target.copy_from_slice(&piece);
         }
         self.position += count as u64;
+        self.failures = 0;
         Ok(count)
     }
 }
@@ -308,8 +336,8 @@ fn content_type(headers: &HeaderMap) -> Option<String> {
 mod tests {
     use std::io::Write;
     use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, mpsc};
-    use std::thread;
 
     use super::*;
     use crate::voice::source::SourceKind;
@@ -329,15 +357,17 @@ mod tests {
             let base = format!("http://{}", listener.local_addr().unwrap());
             let (sender, requests) = mpsc::channel();
             let body = Arc::new(body);
+            let served = Arc::new(AtomicUsize::new(0));
             thread::spawn(move || {
                 for stream in listener.incoming() {
                     let Ok(mut stream) = stream else { return };
                     let body = Arc::clone(&body);
                     let sender = sender.clone();
+                    let attempt = served.fetch_add(1, Ordering::Relaxed);
                     thread::spawn(move || {
                         let head = read_head(&mut stream);
                         drop(sender.send(head.clone()));
-                        answer(&mut stream, &head, &body, ranges);
+                        answer(&mut stream, &head, &body, ranges, attempt);
                     });
                 }
             });
@@ -365,13 +395,18 @@ mod tests {
         String::from_utf8_lossy(&head).to_ascii_lowercase()
     }
 
-    fn answer(stream: &mut TcpStream, head: &str, body: &[u8], ranges: bool) {
+    fn answer(stream: &mut TcpStream, head: &str, body: &[u8], ranges: bool, attempt: usize) {
         if head.starts_with("get /missing ") {
             drop(stream.write_all(
                 b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
             ));
             return;
         }
+        if head.starts_with("get /live ") {
+            return stream_live(stream, body, attempt == 0);
+        }
+        let cut = head.starts_with("get /cut-always ")
+            || (head.starts_with("get /cut-once ") && attempt == 0);
         let start = head
             .lines()
             .find_map(|line| line.strip_prefix("range: bytes="))
@@ -397,11 +432,41 @@ mod tests {
             ),
         };
         drop(stream.write_all(response.as_bytes()));
-        for piece in body[start.unwrap_or(0)..].chunks(1_000) {
+        let rest = &body[start.unwrap_or(0)..];
+        let kept = match (cut, attempt) {
+            (false, _) => rest.len(),
+            (true, 0) => rest.len() / 2,
+            (true, _) => 0,
+        };
+        for piece in rest[..kept].chunks(1_000) {
             if stream.write_all(piece).is_err() {
                 return;
             }
         }
+    }
+
+    fn stream_live(stream: &mut TcpStream, body: &[u8], cut: bool) {
+        let head = "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n";
+        drop(stream.write_all(head.as_bytes()));
+        let sent = if cut { &body[..body.len() / 2] } else { body };
+        for piece in sent.chunks(1_000) {
+            let chunk = [format!("{:x}\r\n", piece.len()).as_bytes(), piece, b"\r\n"].concat();
+            if stream.write_all(&chunk).is_err() {
+                return;
+            }
+        }
+        if !cut {
+            drop(stream.write_all(b"0\r\n\r\n"));
+        }
+    }
+
+    fn body_of(size: u32) -> Vec<u8> {
+        (0..size)
+            .map(|index| {
+                let [low, high, ..] = index.to_le_bytes();
+                low ^ high
+            })
+            .collect()
     }
 
     fn url_source(harness: &mut Harness, url: String) -> crate::voice::source::Source {
@@ -445,14 +510,56 @@ mod tests {
     }
 
     #[test]
+    fn a_dropped_body_resumes_with_a_range_from_where_it_broke() {
+        let harness = Harness::new();
+        let body = body_of(100_000);
+        let server = Server::start(body.clone(), true);
+        let mut media = HttpMedia::new(&harness.http, &server.url("/cut-once"), &[]).unwrap();
+        media.connect().unwrap();
+        let mut read = Vec::new();
+
+        media.read_to_end(&mut read).unwrap();
+
+        assert_eq!(read, body);
+        let requests = server.received();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].contains("range: bytes=50000-\r\n"));
+    }
+
+    #[test]
+    fn a_dropped_live_stream_reconnects_without_a_range() {
+        let harness = Harness::new();
+        let body = body_of(10_000);
+        let server = Server::start(body.clone(), false);
+        let mut media = HttpMedia::new(&harness.http, &server.url("/live"), &[]).unwrap();
+        media.connect().unwrap();
+        let mut read = Vec::new();
+
+        media.read_to_end(&mut read).unwrap();
+
+        assert_eq!(read, [&body[..5_000], &body].concat());
+        let requests = server.received();
+        assert_eq!(requests.len(), 2);
+        assert!(!requests[1].contains("range:"));
+    }
+
+    #[test]
+    fn a_body_that_keeps_dropping_fails_after_three_resumes_in_a_row() {
+        let mut harness = Harness::new();
+        let bytes = std::fs::read(fixture("tone-s16.wav")).unwrap();
+        let server = Server::start(bytes, true);
+        let source = url_source(&mut harness, server.url("/cut-always"));
+
+        let (_, error) = read_to_end(&source);
+
+        assert!(error.is_some());
+        assert_eq!(server.received().len(), 4);
+    }
+
+    #[test]
     fn http_media_seeks_with_a_range_request_from_the_new_position() {
         let harness = Harness::new();
-        let body: Vec<u8> = (0..200_000_u32)
-            .map(|index| {
-                let [low, high, ..] = index.to_le_bytes();
-                low ^ high
-            })
-            .collect();
+        let body = body_of(200_000);
         let server = Server::start(body.clone(), true);
         let mut media = HttpMedia::new(&harness.http, &server.url("/body"), &[]).unwrap();
         media.connect().unwrap();
