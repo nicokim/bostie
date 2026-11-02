@@ -5,7 +5,6 @@ import logging
 import os
 import signal
 import threading
-import time
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -16,14 +15,14 @@ from collections.abc import (
     Mapping,
 )
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Literal, Unpack, cast, override
 
 import msgspec
 
-from bostie import sync
+from bostie import fmt, sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.activity import ActivityDict
@@ -125,6 +124,7 @@ from bostie.models import (
 from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
+from bostie.snowflake import snowflake_time
 from bostie.tasks import TaskCallback
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import VoiceEvent
@@ -133,8 +133,7 @@ from bostie.voice.formats import Defaults
 log = logging.getLogger("bostie.bot")
 
 TOKEN_VARIABLE = "BOSTIE_TOKEN"
-DISCORD_EPOCH_MS = 1_420_070_400_000
-STALE_INTERACTION_MS = 5000
+STALE_INTERACTION = 5.0
 SLOW_HANDLER_START = 1.0
 TASK_CANCEL_TIMEOUT = 5.0
 FAILURE_ANSWER = "Something went wrong."
@@ -686,7 +685,7 @@ class Bot(Router):
                     ids = {}
                 self._command_ids[scope] = ids
             if top in ids:
-                return f"</{name}:{ids[top]}>"
+                return fmt.command(name, ids[top])
         raise LookupError(f"no slash command named {top!r} is registered there")
 
     def _remember_ids(self, results: Iterable[sync.SyncResult]) -> None:
@@ -1046,16 +1045,16 @@ class Bot(Router):
     def _route(self, interaction: Interaction, received: float, shard_id: int) -> None:
         anchor = received
         if shard_id in self._replaying:
-            age = time.time() * 1000 - ((interaction.id >> 22) + DISCORD_EPOCH_MS)
-            if age > STALE_INTERACTION_MS:
+            age = (datetime.now(UTC) - snowflake_time(interaction.id)).total_seconds()
+            if age > STALE_INTERACTION:
                 log.warning(
                     "interaction %d was replayed %.1f s after it was created; "
                     "its token is dead, so no handler runs",
                     interaction.id,
-                    age / 1000,
+                    age,
                 )
                 return
-            anchor = min(received, asyncio.get_running_loop().time() - age / 1000)
+            anchor = min(received, asyncio.get_running_loop().time() - age)
         if self._claimed(interaction, anchor):
             return
         handler = self._handler(interaction, anchor)
