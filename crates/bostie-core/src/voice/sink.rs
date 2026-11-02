@@ -375,7 +375,17 @@ impl Sink {
 
     pub(crate) fn remaining(&self) -> Option<u64> {
         let queue = self.queue.lock();
-        (!queue.waiting && queue.flushed).then(|| queue.queued + queue.held.unwrap_or(0))
+        let speed = queue
+            .filters
+            .as_deref()
+            .map_or(1.0, |filters| f64::from(filters.speed));
+        #[expect(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss
+        )]
+        let left = ((queue.queued + queue.held.unwrap_or(0)) as f64 / speed).round() as u64;
+        (!queue.waiting && queue.flushed).then_some(left)
     }
 
     pub(crate) fn crossfade(&self) -> u64 {

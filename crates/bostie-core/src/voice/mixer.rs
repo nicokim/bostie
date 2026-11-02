@@ -605,31 +605,41 @@ mod tests {
 
     #[test]
     fn a_crossfade_starts_early_and_fades_the_two_sinks_across() {
-        let mut fixture = Fixture::new();
-        let first = pcm_sink(&mut fixture, 0.5, 2_880);
-        first.flush().unwrap();
-        let second = pcm_after(&mut fixture, &first, 40);
-        second.write(&frames_of(0.25, 2_880)).unwrap();
-        let sinks = [Arc::clone(&first), Arc::clone(&second)];
-        let mut mixer = Mixer::new(settings()).unwrap();
+        for (speed, frames) in [(1.0, 2_880), (2.0, 5_760)] {
+            let mut fixture = Fixture::new();
+            let first = pcm_sink(&mut fixture, 0.5, frames);
+            first
+                .set_filters(Filters {
+                    bands: Vec::new(),
+                    bass: 0.0,
+                    speed,
+                    pitch: 1.0,
+                })
+                .unwrap();
+            first.flush().unwrap();
+            let second = pcm_after(&mut fixture, &first, 40);
+            second.write(&frames_of(0.25, 2_880)).unwrap();
+            let sinks = [Arc::clone(&first), Arc::clone(&second)];
+            let mut mixer = Mixer::new(settings()).unwrap();
 
-        let mut heard = Vec::new();
-        let mut started = Vec::new();
-        for _ in 0..4 {
-            mixer.mix(&sinks).unwrap();
-            heard.push(mixer.sum[959 * 2]);
-            started.push(consumed(&second));
+            let mut heard = Vec::new();
+            let mut started = Vec::new();
+            for _ in 0..4 {
+                mixer.mix(&sinks).unwrap();
+                heard.push(mixer.sum[959 * 2]);
+                started.push(consumed(&second));
+            }
+
+            assert_eq!(started, [0, 960, 1_920, 2_880], "{speed}");
+            let expected = [0.5, 0.375, 0.25, 0.25];
+            assert!(
+                heard
+                    .iter()
+                    .zip(expected)
+                    .all(|(got, want)| (got - want).abs() < 1e-5),
+                "{speed}: {heard:?}"
+            );
         }
-
-        assert_eq!(started, [0, 960, 1_920, 2_880]);
-        let expected = [0.5, 0.375, 0.25, 0.25];
-        assert!(
-            heard
-                .iter()
-                .zip(expected)
-                .all(|(got, want)| (got - want).abs() < 1e-6),
-            "{heard:?}"
-        );
     }
 
     #[test]
