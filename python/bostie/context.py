@@ -257,13 +257,7 @@ class _ReplyingContext[
 
         Slow means no answer `auto_defer` seconds after the interaction arrived.
         """
-        timer = (
-            None
-            if self._auto_defer is None
-            else self._loop.call_at(
-                self.received + self._auto_defer, self._auto_defer_due
-            )
-        )
+        timer = self._defer_when_slow()
         try:
             yield
         finally:
@@ -352,6 +346,13 @@ class _ReplyingContext[
     def _finish_deferred(self) -> None:
         if self.state is ResponseState.DEFERRED:
             self.state = ResponseState.RESPONDED
+
+    def _defer_when_slow(self) -> asyncio.TimerHandle | None:
+        if self._auto_defer is None:
+            return None
+        return self._loop.call_at(
+            self.received + self._auto_defer, self._auto_defer_due
+        )
 
     def _auto_defer_due(self) -> None:
         if self.state is ResponseState.PENDING:

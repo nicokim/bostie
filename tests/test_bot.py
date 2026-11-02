@@ -631,6 +631,49 @@ def test_a_modal_route_defers_with_its_own_ephemeral_and_auto_defer() -> None:
     run(scenario)
 
 
+def test_a_wait_takes_its_users_press_and_others_reach_the_route() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        routed: list[str] = []
+        pressed: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+        @bot.on_component("confirm:{id}")
+        async def stale(ctx: ComponentContext, id: str) -> None:
+            routed.append(id)
+            await ctx.update(content="expired")
+
+        @bot.command
+        async def ban(ctx: Context) -> None:
+            """Ban after a confirmation."""
+            confirm = f"confirm:{ctx.interaction.id}"
+            await ctx.respond(
+                "Sure?", components=[ui.row(ui.button("Yes", custom_id=confirm))]
+            )
+            press = await bot.wait_for_component(
+                confirm, check=lambda press: press.user.id == ctx.user.id
+            )
+            await press.update(content="banned", components=[])
+            pressed.set_result(press.custom_id)
+
+        async with running(bot, fake):
+            asked = await fake.interaction(2, payloads.command("ban"))
+            confirm = asked.json["data"]["components"][0]["components"][0]
+            press = payloads.button(confirm["custom_id"])
+            other = await fake.interaction(3, press)
+            member = payloads.fixture("events/INTERACTION_CREATE.command")["member"]
+            update = await fake.interaction(3, press, member=member)
+            assert await pressed == confirm["custom_id"]
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0.01):
+                    await bot.wait_for_modal("never")
+
+        assert other.json["data"]["content"] == "expired"
+        assert update.json["data"]["content"] == "banned"
+        assert routed == [confirm["custom_id"].removeprefix("confirm:")]
+
+    run(scenario)
+
+
 def test_a_handler_that_closes_the_bot_finishes_the_shutdown() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)

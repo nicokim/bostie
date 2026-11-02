@@ -15,14 +15,20 @@ PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 KINDS = frozenset({"", "int"})
 
 
-class RouteSettings(TypedDict, total=False):
-    """How a component or modal route answers; `auto_defer` defaults to the bot's."""
+class AnswerSettings(TypedDict, total=False):
+    """How a component or modal context answers; `auto_defer` defaults to the bot's."""
 
     ephemeral: bool
     auto_defer: float | None
+
+
+class RouteSettings(AnswerSettings, total=False):
+    """How a route answers, and the checks that run before its handler."""
+
     checks: Iterable[Check]
 
 
+ANSWER_SETTINGS = AnswerSettings.__optional_keys__
 ROUTE_SETTINGS = RouteSettings.__optional_keys__
 
 

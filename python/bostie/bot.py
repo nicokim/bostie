@@ -47,7 +47,7 @@ from bostie.context import (
     ResponseState,
     _split_subcommands,
 )
-from bostie.custom_id import ComponentRoute
+from bostie.custom_id import ANSWER_SETTINGS, AnswerSettings, ComponentRoute
 from bostie.enums import (
     ApplicationIntegrationType,
     CommandType,
@@ -164,6 +164,15 @@ class _Waiter[E: AnyEvent]:
 
 
 @dataclass(slots=True)
+class _Claim:
+    kind: type[ComponentInteraction | ModalSubmitInteraction]
+    custom_ids: frozenset[str]
+    check: Callable[[Any], bool] | None
+    settings: AnswerSettings
+    future: asyncio.Future[Any]
+
+
+@dataclass(slots=True)
 class _Request:
     shard_id: int
     answers: asyncio.Queue[Event | Exception] = field(
@@ -234,18 +243,14 @@ class Bot(Router):
         shutdown_grace: float = 0.0,
     ) -> None:
         super().__init__()
-        for name, value in (
-            ("max_messages", max_messages),
-            ("members", members),
-            ("presences", presences),
-            ("max_dm_channels", max_dm_channels),
-        ):
-            if value and not cache:
-                raise ValueError(f"{name} needs cache=True")
-        if members and not intents & Intents.GUILD_MEMBERS:
-            raise MissingIntent("members=True needs Intents.GUILD_MEMBERS")
-        if presences and not intents & Intents.GUILD_PRESENCES:
-            raise MissingIntent("presences=True needs Intents.GUILD_PRESENCES")
+        _check_cache_options(
+            intents,
+            cache=cache,
+            max_messages=max_messages,
+            members=members,
+            presences=presences,
+            max_dm_channels=max_dm_channels,
+        )
         if large_threshold not in LARGE_THRESHOLD:
             raise ValueError(
                 f"large_threshold must be 50 to 250, got {large_threshold}"
@@ -297,6 +302,7 @@ class Bot(Router):
         self._readiness: Readiness | None = None
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
+        self._claims: list[_Claim] = []
         self._tasks: set[asyncio.Task[None]] = set()
         self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
         self._tasks_on = False
@@ -484,6 +490,55 @@ class Bot(Router):
         """Queue each `event` passing `check` for `async for` while the block runs."""
         async with self._waiting(event, check, once=False) as events:
             yield events
+
+    async def wait_for_component(
+        self,
+        *custom_ids: str,
+        check: Callable[[ComponentContext], bool] | None = None,
+        **settings: Unpack[AnswerSettings],
+    ) -> ComponentContext:
+        """Wait for a use of a component with one of `custom_ids`, or of any.
+
+        The context answers like a route's, and no route runs for that use. An
+        exception from `check` is raised here; bound the wait with asyncio.timeout().
+        """
+        context: ComponentContext = await self._claim(
+            ComponentInteraction, custom_ids, check, settings
+        )
+        return context
+
+    async def wait_for_modal(
+        self,
+        *custom_ids: str,
+        check: Callable[[ModalContext], bool] | None = None,
+        **settings: Unpack[AnswerSettings],
+    ) -> ModalContext:
+        """Wait for the submit of a modal with one of `custom_ids`, or of any.
+
+        The context answers like a route's, and no route runs for that submit.
+        """
+        context: ModalContext = await self._claim(
+            ModalSubmitInteraction, custom_ids, check, settings
+        )
+        return context
+
+    async def _claim(
+        self,
+        kind: type[ComponentInteraction | ModalSubmitInteraction],
+        custom_ids: Iterable[str],
+        check: Callable[[Any], bool] | None,
+        settings: AnswerSettings,
+    ) -> Any:
+        check_keys(settings, ANSWER_SETTINGS, "settings")
+        future = asyncio.get_running_loop().create_future()
+        claim = _Claim(kind, frozenset(custom_ids), check, settings, future)
+        self._claims.append(claim)
+        self._refresh_filter()
+        try:
+            return await future
+        finally:
+            self._claims.remove(claim)
+            self._refresh_filter()
 
     @contextlib.asynccontextmanager
     async def _waiting[E: AnyEvent](
@@ -720,6 +775,7 @@ class Bot(Router):
             or self.context_menus
             or self.component_routes
             or self.modal_routes
+            or self._claims
         ):
             names.add(InteractionCreate.NAME)
         return sorted(names)
@@ -1002,6 +1058,8 @@ class Bot(Router):
                 )
                 return
             anchor = min(received, asyncio.get_running_loop().time() - age / 1000)
+        if self._claimed(interaction, anchor):
+            return
         handler = self._handler(interaction, anchor)
         if handler is None:
             log.debug("no command or component route handles %d", interaction.id)
@@ -1015,6 +1073,35 @@ class Bot(Router):
                 delay,
             )
         spawn(self._tasks, handler, eager=True)
+
+    def _claimed(self, interaction: Interaction, received: float) -> bool:
+        for claim in self._claims:
+            if claim.future.done() or not isinstance(interaction, claim.kind):
+                continue
+            if claim.custom_ids and interaction.data.custom_id not in claim.custom_ids:
+                continue
+            settings = claim.settings
+            answer: dict[str, Any] = {
+                "received": received,
+                "ephemeral": settings.get("ephemeral", False),
+                "auto_defer": settings.get("auto_defer", self.auto_defer),
+                "allowed_mentions": self._allowed_mentions,
+            }
+            ctx = (
+                ComponentContext(interaction, self, **answer)
+                if isinstance(interaction, ComponentInteraction)
+                else ModalContext(interaction, self, **answer)
+            )
+            try:
+                matched = claim.check is None or claim.check(ctx)
+            except Exception as error:
+                claim.future.set_exception(error)
+                continue
+            if matched:
+                ctx._defer_when_slow()
+                claim.future.set_result(ctx)
+                return True
+        return False
 
     def _handler(
         self, interaction: Interaction, received: float
@@ -1200,18 +1287,6 @@ class Bot(Router):
         await _answer_failure(ctx)
 
 
-def _command_defaults(
-    contexts: Iterable[InteractionContextType] | None,
-    integration_types: Iterable[ApplicationIntegrationType] | None,
-) -> CommandDefaults:
-    defaults = CommandDefaults()
-    if contexts is not None:
-        defaults["contexts"] = tuple(contexts)
-    if integration_types is not None:
-        defaults["integration_types"] = tuple(integration_types)
-    return defaults
-
-
 def _resolve_token(token: str | None) -> str:
     token = token or os.environ.get(TOKEN_VARIABLE)
     if not token:
@@ -1258,6 +1333,41 @@ async def _answer_failure(
             await ctx.respond(answer)
     except Exception:
         log.exception("answering interaction %d failed", ctx.interaction.id)
+
+
+def _command_defaults(
+    contexts: Iterable[InteractionContextType] | None,
+    integration_types: Iterable[ApplicationIntegrationType] | None,
+) -> CommandDefaults:
+    defaults = CommandDefaults()
+    if contexts is not None:
+        defaults["contexts"] = tuple(contexts)
+    if integration_types is not None:
+        defaults["integration_types"] = tuple(integration_types)
+    return defaults
+
+
+def _check_cache_options(
+    intents: Intents,
+    *,
+    cache: bool,
+    max_messages: int,
+    members: bool,
+    presences: bool,
+    max_dm_channels: int,
+) -> None:
+    for name, value in (
+        ("max_messages", max_messages),
+        ("members", members),
+        ("presences", presences),
+        ("max_dm_channels", max_dm_channels),
+    ):
+        if value and not cache:
+            raise ValueError(f"{name} needs cache=True")
+    if members and not intents & Intents.GUILD_MEMBERS:
+        raise MissingIntent("members=True needs Intents.GUILD_MEMBERS")
+    if presences and not intents & Intents.GUILD_PRESENCES:
+        raise MissingIntent("presences=True needs Intents.GUILD_PRESENCES")
 
 
 def _nodes(
