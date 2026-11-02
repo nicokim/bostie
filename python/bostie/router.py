@@ -1,3 +1,4 @@
+import datetime as dt
 import inspect
 import typing
 from collections.abc import Callable, Coroutine, Iterable, Iterator
@@ -23,11 +24,13 @@ from bostie.commands import (
     Group,
     GroupSettings,
     TargetType,
+    _python_name,
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType
 from bostie.errors import CommandDefinitionError, ErrorHook, StateError
 from bostie.events import BotEvent, Event, RawEvent
+from bostie.tasks import Task, TaskCallback
 from bostie.voice.events import VoiceEvent
 
 if TYPE_CHECKING:
@@ -65,6 +68,7 @@ class Router:
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
         self.error_handlers: dict[type[BaseException], ErrorHook[Any]] = {}
+        self.tasks: dict[TaskCallback, Task] = {}
 
     @property
     def bot(self) -> "Bot":
@@ -181,6 +185,25 @@ class Router:
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route the submits of modals whose custom_id fits `template`."""
         return self._custom_id_route(MODAL_ROUTES, template)
+
+    def every[T: TaskCallback](
+        self,
+        *,
+        seconds: float | None = None,
+        time: dt.time | Iterable[dt.time] = (),
+    ) -> Callable[[T], T]:
+        """Run `async def task()` while the bot is ready, every `seconds` or daily.
+
+        `time` names the times of day; one without tzinfo is in UTC.
+        """
+        times = (time,) if isinstance(time, dt.time) else tuple(time)
+
+        def register(callback: T) -> T:
+            task = Task(callback, seconds, times)
+            self._add(TASKS, task.callback, task)
+            return callback
+
+        return register
 
     @overload
     def on_error[H: ErrorHook[Exception]](self, handler: H, /) -> H: ...
@@ -357,11 +380,16 @@ MODAL_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
         f"the modal template {template!r} is already registered"
     ),
 )
+TASKS: _Registry[TaskCallback, Task] = _Registry(
+    lambda router: router.tasks,
+    lambda callback: ValueError(f"{_python_name(callback)} already runs as a task"),
+)
 REGISTRIES: tuple[_Registry[Any, Any], ...] = (
     COMMANDS,
     CONTEXT_MENUS,
     COMPONENT_ROUTES,
     MODAL_ROUTES,
+    TASKS,
 )
 
 

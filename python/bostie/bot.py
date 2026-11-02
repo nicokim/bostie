@@ -74,6 +74,7 @@ from bostie.events import (
     Starting,
     Stopped,
     Stopping,
+    TaskError,
     UserUpdate,
     decode_event,
 )
@@ -111,6 +112,7 @@ from bostie.models import (
 from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
+from bostie.tasks import TaskCallback
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults
@@ -275,6 +277,7 @@ class Bot(Router):
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
         self._requests: dict[tuple[str, object], list[_Request]] = {}
@@ -607,6 +610,7 @@ class Bot(Router):
             task.cancel()
         if tasks:
             await asyncio.wait(tasks, timeout=TASK_CANCEL_TIMEOUT)
+        self._running_tasks.clear()
         if self._bridge is not None:
             await self._bridge.close()
         self._bridge = None
@@ -662,6 +666,7 @@ class Bot(Router):
     @override
     def _registered(self, listener: Listener | None = None) -> None:
         self._refresh_filter()
+        self._run_tasks()
         event = None if listener is None else listener.event
         if listener is None or event is None or not event.INTENTS:
             return
@@ -787,6 +792,23 @@ class Bot(Router):
                 ListenerError(listener=listener.callback, event=event, error=error)
             )
 
+    def _run_tasks(self) -> None:
+        if not self._ready:
+            return
+        for callback, task in self.tasks.items():
+            if callback not in self._running_tasks:
+                running = asyncio.ensure_future(task.run(self._task_failed))
+                running.add_done_callback(self._tasks.discard)
+                self._tasks.add(running)
+                self._running_tasks[callback] = running
+        for callback in self._running_tasks.keys() - self.tasks.keys():
+            self._running_tasks.pop(callback).cancel()
+
+    def _task_failed(self, task: TaskCallback, error: Exception) -> None:
+        if TaskError.NAME not in self.listeners:
+            log.error("the task %s raised", _python_name(task), exc_info=error)
+        self._emit(TaskError(task=task, error=error))
+
     def _shard_ready(self, shard_id: int) -> None:
         self._emit(ShardReady(shard_id=shard_id))
         self._unready.discard(shard_id)
@@ -796,6 +818,7 @@ class Bot(Router):
         for future in self._ready_waiters:
             if not future.done():
                 future.set_result(None)
+        self._run_tasks()
         self._emit(Started())
 
     def _dispatch(

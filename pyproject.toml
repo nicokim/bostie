@@ -93,7 +93,7 @@ banned-module-level-imports = [
 [tool.ruff.lint.per-file-ignores]
 "!python/bostie/voice/layers.py" = ["SLF001", "TID251", "TID253", "PLC0415"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
-"python/bostie/{_bridge,bot}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
+"python/bostie/{_bridge,bot,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
 "python/bostie/voice/layers.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
 "python/bostie/models/**" = ["RUF012"]  # msgspec copies an empty mutable default for each instance
 "crates/**/vectors.py" = ["T201"]  # the script prints the vectors

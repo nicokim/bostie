@@ -1314,6 +1314,15 @@ class ListenerError(BotEvent, kw_only=True):
     error: Exception
 
 
+class TaskError(BotEvent, kw_only=True):
+    """A task raised and runs again at its next time; logged without listeners."""
+
+    NAME = "bot.task_error"
+
+    task: Callable[[], Any]
+    error: Exception
+
+
 EVENTS: dict[str, type[Event]] = {
     event.NAME: event
     for event in (

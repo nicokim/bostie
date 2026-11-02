@@ -69,6 +69,7 @@ from bostie.events import (
     Starting,
     Stopped,
     Stopping,
+    TaskError,
     ThreadMembersUpdate,
     UserUpdate,
 )
@@ -1553,6 +1554,46 @@ def test_a_raising_starting_listener_stops_start_before_it_connects() -> None:
         assert len(stopped) == 1
 
     run(scenario)
+
+
+def test_tasks_run_while_ready_report_errors_and_stop_on_close(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        ready: list[bool] = []
+        reported: asyncio.Queue[TaskError] = asyncio.Queue()
+        stuck = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        @bot.every(seconds=0.01)
+        async def tick() -> None:
+            ready.append(bot.is_ready)
+            if len(ready) == 1:
+                raise RuntimeError("first run")
+            if len(ready) == 3:
+                stuck.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+
+        @bot.listen
+        async def report(failure: TaskError) -> None:
+            reported.put_nowait(failure)
+
+        async with running(bot, fake):
+            failure = await reported.get()
+            await stuck.wait()
+
+        assert cancelled.is_set()
+        assert ready == [True, True, True]
+        assert failure.task is tick
+        assert str(failure.error) == "first run"
+
+    run(scenario)
+
+    assert failures(caplog) == []
 
 
 def test_close_sends_1000_and_cancels_running_listeners(
