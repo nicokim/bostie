@@ -305,19 +305,15 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 `pip install "bostie[testing]"` adds `bostie.testing`: a fake Discord gateway, REST API and voice server that runs in your test process. bostie's own tests run on it.
 
 ```python
-from bostie import Bot, Context
+import pytest
+
 from bostie.testing import FakeDiscord, payloads, run, running
+from mybot import bot
 
 
-def test_ping_answers_pong() -> None:
+def test_ping_answers_pong(monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-
-        @bot.command
-        async def ping(ctx: Context) -> None:
-            """Answer pong."""
-            await ctx.respond("pong")
-
+        monkeypatch.setenv("BOSTIE_API_URL", fake.api_url)
         async with running(bot, fake):
             reply = await fake.interaction(2, payloads.command("ping"))
             assert reply.json["data"]["content"] == "pong"
@@ -325,7 +321,10 @@ def test_ping_answers_pong() -> None:
     run(scenario)
 ```
 
-- `run(scenario)` runs `async def scenario(fake)` against a new `FakeDiscord` within 10 s. `running(bot, fake)` starts the bot, waits until it is ready, and closes it at the end.
+Here `mybot.py` holds `bot = Bot()` and a `/ping` command that answers pong.
+
+- `run(scenario)` runs `async def scenario(fake)` against a new `FakeDiscord` within 10 s. `running(bot, fake)` starts the bot with the fake's token, waits until it is ready, and closes it at the end.
+- `BOSTIE_API_URL` is the `api_url` the bot and the clients use when you pass none, so setting it to `fake.api_url` points a bot built at import time at the fake without changing how it is built. A bot made inside the test can take `Bot(api_url=fake.api_url)` instead.
 - `fake.dispatch(name, d)` sends a gateway event, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `payloads` builds both from Discord's documented examples, and `payloads.fixture("events/MESSAGE_CREATE")` returns any of them.
 - `fake.requests` records every REST request. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that error, and `fake.hold(method, route_prefix)` keeps it waiting until you set the event it returns.
 - `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `fake.move_bot()` and `fake.kick_bot()` move the bot around. It does not speak DAVE.
@@ -350,7 +349,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `allowed_mentions`: who the bot's messages may ping. The default allows users and roles, not `@everyone`. A message's own `allowed_mentions` changes only the kinds of mention it sets, so `AllowedMentions(replied_user=True)` keeps the default for users and roles.
 - `status`, `activities`, `afk` and `idle_since`: the presence the bot shows, online with no activity by default. `bostie.activity` builds activities, such as `activity.playing("chess")` or `activity.custom("Rolling dice")`. `await bot.update_presence(...)` changes any of them on every shard, and sessions that start later show the change too.
 - `http_settings`: a `bostie.HTTPSettings` with how REST requests are paced, retried and timed out. `global_rate_limit` is the requests per second across all routes, 50 by default; interaction responses and follow-ups do not count. `max_rate_limit_wait` is the longest rate limit bostie waits out before it raises `RateLimited`, 30 s. `retries` is how often a request that is safe to send again is retried after a 5xx or a dropped connection, 2. `connect_timeout` and `read_timeout` are 10 s and 60 s. `proxy` sends REST requests and the gateway connection through an HTTP proxy, such as `"http://user:password@proxy:3128"`; bostie reads no proxy from the environment, and voice connects directly, since its UDP audio cannot go through one. `RESTClient`, `BearerClient`, `WebhookClient` and `SyncWebhookClient` take the same `http_settings=`.
-- `api_url`: the REST API base URL, for a rate-limit proxy or a fake Discord in tests. Processes of one bot share Discord's rate limits through a rate-limit proxy such as nirn-proxy or twilight-http-proxy: point `api_url` at it and pass `HTTPSettings(rate_limiter=False)`, so bostie leaves the waiting to the proxy and only waits out a 429 that still comes back.
+- `api_url`: the REST API base URL, for a rate-limit proxy or a fake Discord in tests. Left out, it is read from `BOSTIE_API_URL` when the bot starts, and is Discord's when that is unset; the clients do the same. Processes of one bot share Discord's rate limits through a rate-limit proxy such as nirn-proxy or twilight-http-proxy: point `api_url` at it and pass `HTTPSettings(rate_limiter=False)`, so bostie leaves the waiting to the proxy and only waits out a 429 that still comes back.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
 - `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
 - `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `Started` waits for every shard here, and each event carries its `shard_id`.

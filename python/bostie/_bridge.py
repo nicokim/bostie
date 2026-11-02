@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import socket
 import weakref
 from collections.abc import Callable
@@ -19,6 +20,8 @@ from bostie.http import DEFAULT_HTTP, HTTPSettings
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceDelivery
 
+API_URL = "https://discord.com/api/v10"
+API_URL_VARIABLE = "BOSTIE_API_URL"
 BELL_READ_SIZE = 4096
 FAILURE_ERRORS = {
     "transport": TransportError,
@@ -46,7 +49,7 @@ class Bridge:
     def __init__(
         self,
         token: str | None,
-        api_url: str,
+        api_url: str | None,
         on_gateway: OnGateway,
         *,
         http: HTTPSettings = DEFAULT_HTTP,
@@ -54,7 +57,7 @@ class Bridge:
     ) -> None:
         self.core, bell_handle = _native.Core.create(
             token,
-            api_url,
+            api_url or os.environ.get(API_URL_VARIABLE) or API_URL,
             global_limit=http.global_rate_limit,
             max_rate_limit_wait=http.max_rate_limit_wait,
             retries=http.retries,

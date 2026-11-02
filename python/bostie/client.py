@@ -26,7 +26,6 @@ from bostie.rest.webhooks import (
 
 log = logging.getLogger("bostie.rest")
 
-API_URL = "https://discord.com/api/v10"
 WEBHOOK_PATH = re.compile(r"/webhooks/(?P<id>\d+)/(?P<token>[^/]+)/?")
 
 
@@ -36,7 +35,7 @@ class _Client[G](ABC):
         token: str | None,
         *,
         bearer: bool,
-        api_url: str,
+        api_url: str | None,
         http_settings: HTTPSettings,
     ) -> None:
         self._token = token
@@ -102,7 +101,7 @@ class RESTClient(_Client[REST]):
         self,
         token: str | None = None,
         *,
-        api_url: str = API_URL,
+        api_url: str | None = None,
         http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
@@ -135,7 +134,7 @@ class BearerClient(_Client[BearerREST]):
         self,
         access_token: str | None = None,
         *,
-        api_url: str = API_URL,
+        api_url: str | None = None,
         http_settings: HTTPSettings = DEFAULT_HTTP,
     ) -> None:
         super().__init__(
@@ -164,7 +163,7 @@ class WebhookClient(_Client[Webhooks]):
         self,
         url: str,
         *,
-        api_url: str = API_URL,
+        api_url: str | None = None,
         http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
@@ -235,7 +234,7 @@ class SyncWebhookClient:
         self,
         url: str,
         *,
-        api_url: str = API_URL,
+        api_url: str | None = None,
         http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:

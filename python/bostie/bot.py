@@ -249,7 +249,7 @@ class Bot(Router):
         afk: bool = False,
         idle_since: datetime | None = None,
         http_settings: HTTPSettings = DEFAULT_HTTP,
-        api_url: str = "https://discord.com/api/v10",
+        api_url: str | None = None,
         voice: Defaults = DEFAULT_VOICE,
         shard_count: int | Literal["auto"] = "auto",
         shard_ids: Iterable[int] | Literal["all"] = "all",
