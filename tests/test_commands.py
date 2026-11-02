@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import re
 from enum import Enum, IntEnum
@@ -11,6 +12,7 @@ from bostie.commands import (
     Command,
     CommandCallback,
     CommandDefaults,
+    Convert,
     Option,
     Range,
     autocomplete_choices,
@@ -522,6 +524,44 @@ def test_group_tree_payload_and_names() -> None:
         "nsfw": False,
         "contexts": [0],
     }
+
+
+def hex_color(ctx: object, value: Range[str, 7, 7]) -> int:
+    return int(value[1:], 16)
+
+
+async def doubled(ctx: object, value: int) -> int:
+    return value * 2
+
+
+def test_convert_takes_the_value_hints_type_and_runs_on_given_options() -> None:
+    @Router().command
+    async def paint(
+        ctx: object,
+        color: Annotated[int, Convert(hex_color), "A hex color"],
+        times: Annotated[int, Convert(doubled)] = 1,
+    ) -> None:
+        pass
+
+    given = [filled("color", 3, "#ff0000"), filled("times", 4, 3)]
+    color, times = paint.payload("guild")["options"]
+
+    assert color == {
+        "type": 3,
+        "name": "color",
+        "description": "A hex color",
+        "required": True,
+        "min_length": 7,
+        "max_length": 7,
+    }
+    assert (times["type"], times["required"]) == (4, False)
+    assert asyncio.run(paint.arguments(None, given, Resolved())) == {
+        "color": 0xFF0000,
+        "times": 6,
+    }
+    assert asyncio.run(paint.arguments(None, given[:1], Resolved()))["times"] == 1
+    with pytest.raises(CommandDefinitionError, match="Convert takes a function"):
+        command_with(Annotated[int, Convert(int)])
 
 
 def test_localizations_reach_every_level_and_follow_the_name_rules() -> None:

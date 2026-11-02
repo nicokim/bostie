@@ -151,6 +151,7 @@ DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
+type Arguments = Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
 type LocalEvent = VoiceEvent | BotEvent
 
 
@@ -1149,12 +1150,12 @@ class Bot(Router):
     ) -> Coroutine[Any, Any, None] | None:
         data = interaction.data
         command: Command | ContextMenuCommand
+        options: tuple[InteractionDataOption, ...] = ()
         found = self._command(data)
         if found is not None:
             command, options = found
-            arguments = partial(command.bind, options, data.resolved)
         elif (menu := self.context_menus.get((data.type, data.name))) is not None:
-            command, arguments = menu, partial(menu.bind, interaction)
+            command = menu
         else:
             return None
         ctx = Context(
@@ -1164,6 +1165,11 @@ class Bot(Router):
             ephemeral=command.ephemeral,
             auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
+        )
+        arguments: Arguments = (
+            partial(command.arguments, ctx, options, data.resolved)
+            if isinstance(command, Command)
+            else partial(command.bind, interaction)
         )
         return self._run_handler(ctx, command, command.callback, arguments)
 
@@ -1197,7 +1203,7 @@ class Bot(Router):
         ctx: Context | ComponentContext | ModalContext,
         node: Command | ContextMenuCommand | ComponentRoute[...],
         handler: Handler,
-        arguments: Callable[[], Mapping[str, Any]],
+        arguments: Arguments,
     ) -> None:
         passed: list[Check] = []
         routers = [*node.router._chain()][::-1]
@@ -1210,7 +1216,10 @@ class Bot(Router):
                     for hook in router.before_hooks:
                         await hook(ctx)
                 try:
-                    await handler(ctx, **arguments())
+                    bound = arguments()
+                    if inspect.isawaitable(bound):
+                        bound = await bound
+                    await handler(ctx, **bound)
                 finally:
                     await _after(ctx, routers)
             except Exception as error:

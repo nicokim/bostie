@@ -4,7 +4,7 @@ from bostie import activity, cdn, checks, color, fmt, oauth2, ui, voice
 from bostie.asgi import ASGIApp
 from bostie.bot import Bot
 from bostie.client import BearerClient, RESTClient, SyncWebhookClient, WebhookClient
-from bostie.commands import Choice, Option, Range
+from bostie.commands import Choice, Convert, Option, Range
 from bostie.context import (
     AutocompleteContext,
     ComponentContext,
@@ -446,6 +446,7 @@ __all__ = [
     "ContentScanMetadata",
     "ContentScanMetadataFlags",
     "Context",
+    "Convert",
     "CooldownActive",
     "CurrentUser",
     "CurrentUserGuild",

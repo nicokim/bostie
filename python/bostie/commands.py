@@ -77,6 +77,7 @@ __all__ = [
     "CommandSettings",
     "ContextMenuCommand",
     "ContextMenuSettings",
+    "Convert",
     "Group",
     "GroupSettings",
     "Option",
@@ -108,6 +109,7 @@ MAX_INTEGER = 2**53 - 1
 MAX_NUMBER = 2**53
 TEXT_BUDGET = 8000
 MAX_FILE_TYPES = 10
+CONVERTER_ARITY = 2
 DEFAULT_DESCRIPTION = "\N{HORIZONTAL ELLIPSIS}"
 NAME_SYMBOLS = frozenset({"-", "_", "\N{MODIFIER LETTER APOSTROPHE}"})
 NAME_SCRIPTS = (range(0x0900, 0x0980), range(0x0E00, 0x0E80))
@@ -260,6 +262,16 @@ class Option:
 
 
 @dataclass(frozen=True, slots=True)
+class Convert:
+    """`Annotated[T, Convert(f)]`: `f(ctx, value)` turns the value into a T.
+
+    `f` may be async, and the option's type comes from its value's type hint.
+    """
+
+    function: Callable[[Any, Any], Any]
+
+
+@dataclass(frozen=True, slots=True)
 class _Bounds:
     low: Any
     high: Any
@@ -283,6 +295,7 @@ class _Parameter:
     models: tuple[OptionModel, ...]
     lookup: Callable[[Any], object] | None
     autocomplete: AutocompleteCallback | None
+    converter: Callable[[Any, Any], Any] | None = None
 
     @property
     def name(self) -> str:
@@ -501,6 +514,24 @@ class Command(_Node):
                     f"required option {parameter.name!r} is missing"
                 )
             arguments[parameter.python_name] = parameter.default
+        return arguments
+
+    async def arguments(
+        self,
+        ctx: object,
+        options: Sequence[InteractionDataOption],
+        resolved: Resolved,
+    ) -> dict[str, Any]:
+        """The keyword arguments of an invocation, with `Convert` functions applied."""
+        arguments = self.bind(options, resolved)
+        given = {option.name for option in options}
+        for parameter in self._parameters:
+            if parameter.converter is None or parameter.name not in given:
+                continue
+            value = parameter.converter(ctx, arguments[parameter.python_name])
+            if inspect.isawaitable(value):
+                value = await value
+            arguments[parameter.python_name] = value
         return arguments
 
     @override
@@ -732,6 +763,13 @@ def _hint(parameter: inspect.Parameter, hints: Mapping[str, object]) -> object:
 
 def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
     members, optional, metadata = _unwrap(hint)
+    converter = next(
+        (item.function for item in reversed(metadata) if isinstance(item, Convert)),
+        None,
+    )
+    if converter is not None:
+        members, _, source = _unwrap(_value_hint(converter))
+        metadata = [*source, *metadata]
     option_type, choices, models, lookup = _kind(members)
     settings = _merge(
         [
@@ -793,8 +831,27 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
         None if parameter.default is inspect.Parameter.empty else parameter.default
     )
     return _Parameter(
-        parameter.name, payload, default, models, lookup, settings.autocomplete
+        parameter.name,
+        payload,
+        default,
+        models,
+        lookup,
+        settings.autocomplete,
+        converter,
     )
+
+
+def _value_hint(converter: Callable[[Any, Any], Any]) -> object:
+    try:
+        parameters = list(inspect.signature(converter).parameters)
+        hints = typing.get_type_hints(converter, include_extras=True)
+    except (TypeError, ValueError):
+        parameters, hints = [], {}
+    if len(parameters) != CONVERTER_ARITY or parameters[-1] not in hints:
+        raise CommandDefinitionError(
+            "Convert takes a function of the context and a value with a type hint"
+        )
+    return hints[parameters[-1]]
 
 
 def _unwrap(hint: object) -> tuple[tuple[object, ...], bool, list[object]]:
