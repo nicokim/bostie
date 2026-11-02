@@ -189,6 +189,7 @@ class EditOptions(TypedDict, total=False):
 
     self_mute: bool
     self_deaf: bool
+    timeout: float
 
 
 class MoveOptions(TypedDict, total=False):
@@ -835,15 +836,18 @@ class VoiceConnection:
         )
 
     async def edit(self, **options: Unpack[EditOptions]) -> None:
-        """Change the bot's own mute or deafen in this channel."""
+        """Change the bot's own mute or deafen, and return once Discord applied it."""
         check_keys(options, EDIT_OPTIONS, "options")
         self._check_live()
         mute, deaf = self._requested
-        self._update(
-            self._channel_id,
-            self_mute=options.get("self_mute", mute),
-            self_deaf=options.get("self_deaf", deaf),
-        )
+        wanted = (options.get("self_mute", mute), options.get("self_deaf", deaf))
+        self._update(self._channel_id, self_mute=wanted[0], self_deaf=wanted[1])
+        async with asyncio.timeout(options.get("timeout", self._settings.timeout)):
+            applied = await self._until(
+                lambda: (self._self_mute, self._self_deaf) == wanted
+            )
+        if not applied:
+            raise self._ended()
 
     async def stage(self, role: StageRole) -> None:
         """Listen, ask to speak, or speak on this stage channel."""
@@ -1012,6 +1016,7 @@ class VoiceConnection:
             case ("voice_self", _, self_mute, self_deaf, mute, suppress):
                 self._self_mute, self._self_deaf = self_mute, self_deaf
                 self._mute, self._suppress = mute, suppress
+                self._changed()
             case ("voice_speaking", _, user_id, ssrc, flags):
                 self._emit(
                     SpeakingUpdate(

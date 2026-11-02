@@ -43,7 +43,7 @@ async def awaited(result: object) -> None:
         ("receive", "volume"),
         ("packets", "jitter"),
         ("move", "self_mute"),
-        ("edit", "timeout"),
+        ("edit", "stage"),
     ],
 )
 def test_options_a_call_does_not_take_raise_type_error(call: str, option: str) -> None:
@@ -410,6 +410,22 @@ def test_edit_sends_the_flags_for_the_same_channel() -> None:
             voice_state(VOICE, self_mute=True, self_deaf=True),
             voice_state(VOICE, self_mute=True),
         ]
+
+    run(scenario)
+
+
+def test_edit_returns_once_discord_applied_it_or_raises_on_timeout() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot)
+        bot.core.applies_self = False
+        editing = asyncio.ensure_future(vc.edit(self_deaf=True))
+        await settle()
+        assert not editing.done()
+        bot.deliver(("voice_self", GUILD_ID, False, True, False, False))
+        await editing
+        assert vc.self_deaf
+        with pytest.raises(TimeoutError):
+            await vc.edit(self_mute=True, timeout=0.01)
 
     run(scenario)
 

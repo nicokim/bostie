@@ -308,6 +308,7 @@ class FakeCore:
         self.ssrc_map: dict[int, int] = {}
         self.handle: Callable[[VoiceDelivery], None] | None = None
         self.auto_disconnect = True
+        self.applies_self = True
         self.probe: tuple[Literal["pcm", "opus"], float | None, bool] | None = (
             "pcm",
             3.0,
@@ -354,6 +355,8 @@ class FakeCore:
                 channel_id, self_mute=self_mute, self_deaf=self_deaf, guild_id=guild_id
             )
         )
+        if self.applies_self:
+            self.deliver(("voice_self", guild_id, self_mute, self_deaf, False, False))
 
     def voice_disconnect(self, guild_id: int) -> None:
         self.calls.append(("voice_disconnect", (guild_id,), {}))
