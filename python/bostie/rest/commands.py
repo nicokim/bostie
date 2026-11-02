@@ -12,6 +12,7 @@ from bostie.enums import (
 from bostie.models import (
     ApplicationCommand,
     ApplicationCommandOption,
+    CommandPermission,
     GuildCommandPermissions,
     decode,
 )
@@ -60,7 +61,32 @@ class CommandList(TypedDict, total=False):
     with_localizations: bool
 
 
-class Commands(Group):
+class _CommandPermissions(Group):
+    async def fetch_permissions(
+        self, application_id: int, guild_id: int, command_id: int, /
+    ) -> GuildCommandPermissions:
+        return await self._http._decoded(
+            partial(decode, GuildCommandPermissions),
+            "GET",
+            "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions",
+            application_id=application_id,
+            guild_id=guild_id,
+            command_id=command_id,
+        )
+
+    async def list_permissions(
+        self, application_id: int, guild_id: int, /
+    ) -> tuple[GuildCommandPermissions, ...]:
+        return await self._http._decoded(
+            each(partial(decode, GuildCommandPermissions)),
+            "GET",
+            "/applications/{application_id}/guilds/{guild_id}/commands/permissions",
+            application_id=application_id,
+            guild_id=guild_id,
+        )
+
+
+class Commands(_CommandPermissions):
     async def bulk_overwrite(
         self, application_id: int, /, commands: Sequence[CommandBulkOverwrite]
     ) -> tuple[ApplicationCommand, ...]:
@@ -191,18 +217,6 @@ class Commands(Group):
             command_id=command_id,
         )
 
-    async def fetch_permissions(
-        self, application_id: int, guild_id: int, command_id: int, /
-    ) -> GuildCommandPermissions:
-        return await self._http._decoded(
-            partial(decode, GuildCommandPermissions),
-            "GET",
-            "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions",
-            application_id=application_id,
-            guild_id=guild_id,
-            command_id=command_id,
-        )
-
     async def list(
         self, application_id: int, /, **options: Unpack[CommandList]
     ) -> tuple[ApplicationCommand, ...]:
@@ -226,13 +240,32 @@ class Commands(Group):
             guild_id=guild_id,
         )
 
-    async def list_permissions(
-        self, application_id: int, guild_id: int, /
-    ) -> tuple[GuildCommandPermissions, ...]:
+
+class BearerCommands(_CommandPermissions):
+    async def edit_permissions(
+        self,
+        application_id: int,
+        guild_id: int,
+        command_id: int,
+        /,
+        permissions: Sequence[CommandPermission],
+    ) -> GuildCommandPermissions:
+        """Overwrite who may use the command in the guild; at most 100 entries."""
         return await self._http._decoded(
-            each(partial(decode, GuildCommandPermissions)),
-            "GET",
-            "/applications/{application_id}/guilds/{guild_id}/commands/permissions",
+            partial(decode, GuildCommandPermissions),
+            "PUT",
+            "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions",
+            json={
+                "permissions": [
+                    {
+                        "id": entry.id,
+                        "type": entry.type,
+                        "permission": entry.permission,
+                    }
+                    for entry in permissions
+                ]
+            },
             application_id=application_id,
             guild_id=guild_id,
+            command_id=command_id,
         )

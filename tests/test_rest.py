@@ -14,7 +14,7 @@ from bostie import Bot, File, NotFound, UnexpectedResponse
 from bostie.cache import Cache
 from bostie.events import GuildCreate
 from bostie.models import AllowedMentions
-from bostie.rest import REST
+from bostie.rest import REST, BearerREST
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient
@@ -39,11 +39,11 @@ def operation(verb: str, path: str) -> tuple[str, str]:
     return verb, re.sub(r"\{\w+\}", "{}", path)
 
 
-def implemented(rest: REST) -> dict[str, Shape]:
+def implemented(rest: REST | BearerREST) -> dict[str, Shape]:
     found: dict[str, Shape] = {}
     for group_name, group in vars(rest).items():
-        for name, function in vars(type(group)).items():
-            if name.startswith("_") or not inspect.isfunction(function):
+        for name, function in inspect.getmembers(type(group), inspect.isfunction):
+            if name.startswith("_"):
                 continue
             tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
             texts = [
@@ -66,10 +66,17 @@ def implemented(rest: REST) -> dict[str, Shape]:
     return found
 
 
-def test_the_rest_groups_implement_every_table_row_not_pending() -> None:
-    table = rows(FIXTURES / "operations.txt")
+@pytest.mark.parametrize(("surface", "bearer"), [(REST, False), (BearerREST, True)])
+def test_the_rest_groups_implement_every_table_row_not_pending(
+    surface: type[REST | BearerREST], bearer: bool
+) -> None:
+    table = [
+        row
+        for row in rows(FIXTURES / "operations.txt")
+        if ("bearer" in row[3:]) == bearer
+    ]
     pending = {row[2] for path in pending_files() for row in rows(path)}
-    rest = REST(cast("HTTPClient", None), AllowedMentions(), Cache())
+    rest = surface(cast("HTTPClient", None), AllowedMentions(), Cache())
 
     groups = {name.split(".")[0] for _, _, name, *_ in table}
     assert {name: type(group).__module__ for name, group in vars(rest).items()} == {

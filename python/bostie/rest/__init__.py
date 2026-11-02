@@ -6,15 +6,16 @@ from bostie.rest.audit_log import AuditLog
 from bostie.rest.auto_moderation import AutoModeration
 from bostie.rest.bans import Bans
 from bostie.rest.channels import Channels
-from bostie.rest.commands import Commands
+from bostie.rest.commands import BearerCommands, Commands
 from bostie.rest.emojis import Emojis
 from bostie.rest.gateway import Gateway
-from bostie.rest.guilds import Guilds
+from bostie.rest.guilds import BearerGuilds, Guilds
 from bostie.rest.integrations import Integrations
 from bostie.rest.invites import Invites
-from bostie.rest.members import Members
+from bostie.rest.members import BearerMembers, Members
 from bostie.rest.messages import Messages
 from bostie.rest.monetization import Monetization
+from bostie.rest.oauth2 import OAuth2
 from bostie.rest.onboarding import Onboarding
 from bostie.rest.polls import Polls
 from bostie.rest.reactions import Reactions
@@ -25,7 +26,7 @@ from bostie.rest.stage_instances import StageInstances
 from bostie.rest.stickers import Stickers
 from bostie.rest.templates import Templates
 from bostie.rest.threads import Threads
-from bostie.rest.users import Users
+from bostie.rest.users import BearerUsers, Users
 from bostie.rest.voice import Voice
 from bostie.rest.webhooks import Webhooks
 
@@ -64,3 +65,17 @@ class REST:
         self.users = Users(*shared)
         self.voice = Voice(*shared)
         self.webhooks = Webhooks(*shared)
+
+
+class BearerREST:
+    """What an OAuth2 access token reaches, for the user who granted it."""
+
+    def __init__(
+        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache
+    ) -> None:
+        shared = (http, allowed_mentions, cache)
+        self.commands = BearerCommands(*shared)
+        self.guilds = BearerGuilds(*shared)
+        self.members = BearerMembers(*shared)
+        self.oauth2 = OAuth2(*shared)
+        self.users = BearerUsers(*shared)

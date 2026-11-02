@@ -12,7 +12,7 @@ from bostie.cache import Cache
 from bostie.errors import StateError
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
-from bostie.rest import REST
+from bostie.rest import REST, BearerREST
 from bostie.rest.webhooks import (
     WebhookEditMessage,
     WebhookEditWithToken,
@@ -120,6 +120,36 @@ class RESTClient(_Client[REST]):
     @override
     def _open(self, http: HTTPClient) -> REST:
         return REST(http, self._allowed_mentions, Cache())
+
+
+class BearerClient(_Client[BearerREST]):
+    """What an OAuth2 access token reaches, for the user who granted it.
+
+    Open it with `async with BearerClient(access_token) as user:`. Without a token
+    it only reaches `rest.oauth2`, to exchange a code or credentials for one.
+    """
+
+    def __init__(
+        self,
+        access_token: str | None = None,
+        *,
+        api_url: str = API_URL,
+        global_rate_limit: int = 50,
+    ) -> None:
+        super().__init__(
+            access_token,
+            bearer=True,
+            api_url=api_url,
+            global_rate_limit=global_rate_limit,
+        )
+
+    @property
+    def rest(self) -> BearerREST:
+        return self._opened
+
+    @override
+    def _open(self, http: HTTPClient) -> BearerREST:
+        return BearerREST(http, DEFAULT_ALLOWED_MENTIONS, Cache())
 
 
 class WebhookClient(_Client[Webhooks]):

@@ -6,7 +6,9 @@ import msgspec
 
 from bostie.enums import Permissions
 
-HIDDEN_FIELDS = frozenset({"raw_json", "token"})
+HIDDEN_FIELDS = frozenset(
+    {"raw_json", "token", "access_token", "refresh_token", "id_token"}
+)
 
 
 def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:

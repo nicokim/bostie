@@ -117,6 +117,7 @@ A few things the example takes for granted:
 - Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
 - `async with bostie.RESTClient(token) as client:` opens the same operations on `client.rest` without a gateway, for scripts and web backends. The token defaults to `BOSTIE_TOKEN`.
 - `async with bostie.WebhookClient(url) as webhook:` posts through one webhook from its URL alone, with no bot token: `await webhook.execute("deploy done")`, and `edit_message`, `fetch_message` and `delete_message` for what it sent. `execute_slack` and `execute_github` take a payload in Slack's or GitHub's format.
+- `bostie.oauth2.invite_url(client_id, permissions=..., scopes=["bot"])` builds an install link, and `oauth2.authorize_url(client_id, scopes=[...], redirect_uri=...)` the link that starts an OAuth2 code grant. `async with bostie.BearerClient() as oauth:` turns the code into a token with `oauth.rest.oauth2.exchange_code(...)`, and refreshes, revokes or gets one from client credentials. `BearerClient(token.access_token)` then reaches what the user granted on its `rest`: `users.fetch_current()`, `guilds.list()`, `users.list_connections()`, `members.fetch_current(guild_id)`, `commands.edit_permissions(...)`, and `users.update_role_connection(application_id, ...)` for linked roles.
 
 Everything bostie does not model yet stays reachable:
 

@@ -39,12 +39,15 @@ DELETE /applications/{application_id}/commands/{command_id} commands.delete
 DELETE /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.delete_guild
 PATCH /applications/{application_id}/commands/{command_id} commands.edit
 PATCH /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.edit_guild
+PUT /applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions commands.edit_permissions bearer
 GET /applications/{application_id}/commands/{command_id} commands.fetch
 GET /applications/{application_id}/guilds/{guild_id}/commands/{command_id} commands.fetch_guild
 GET /applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions commands.fetch_permissions
+GET /applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions commands.fetch_permissions bearer
 GET /applications/{application_id}/commands commands.list
 GET /applications/{application_id}/guilds/{guild_id}/commands commands.list_guild
 GET /applications/{application_id}/guilds/{guild_id}/commands/permissions commands.list_permissions
+GET /applications/{application_id}/guilds/{guild_id}/commands/permissions commands.list_permissions bearer
 POST /guilds/{guild_id}/emojis emojis.create reason
 POST /applications/{application_id}/emojis emojis.create_application
 DELETE /guilds/{guild_id}/emojis/{emoji_id} emojis.delete reason
@@ -72,6 +75,7 @@ GET /guilds/{guild_id}/widget.png guilds.fetch_widget_image
 GET /guilds/{guild_id}/widget guilds.fetch_widget_settings
 DELETE /users/@me/guilds/{guild_id} guilds.leave
 GET /users/@me/guilds guilds.list
+GET /users/@me/guilds guilds.list bearer
 DELETE /guilds/{guild_id}/integrations/{integration_id} integrations.delete reason
 GET /guilds/{guild_id}/integrations integrations.list
 PUT /invites/{code}/target-users/{user_id} invites.add_target_user
@@ -91,6 +95,7 @@ PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} members.add_role reason
 PATCH /guilds/{guild_id}/members/{user_id} members.edit reason
 PATCH /guilds/{guild_id}/members/@me members.edit_current reason
 GET /guilds/{guild_id}/members/{user_id} members.fetch
+GET /users/@me/guilds/{guild_id}/member members.fetch_current bearer
 GET /guilds/{guild_id}/permissions/member/{user_id} members.fetch_permissions
 GET /guilds/{guild_id}/members members.list
 DELETE /guilds/{guild_id}/members/{user_id} members.remove reason
@@ -115,6 +120,11 @@ GET /skus/{sku_id}/subscriptions/{subscription_id} monetization.fetch_subscripti
 GET /applications/{application_id}/entitlements monetization.list_entitlements
 GET /applications/{application_id}/skus monetization.list_skus
 GET /skus/{sku_id}/subscriptions monetization.list_subscriptions
+POST /oauth2/token oauth2.exchange_client_credentials bearer
+POST /oauth2/token oauth2.exchange_code bearer
+GET /oauth2/@me oauth2.fetch_authorization bearer
+POST /oauth2/token oauth2.refresh bearer
+POST /oauth2/token/revoke oauth2.revoke bearer
 PUT /guilds/{guild_id}/onboarding onboarding.edit reason
 GET /guilds/{guild_id}/onboarding onboarding.fetch
 POST /channels/{channel_id}/polls/{message_id}/expire polls.end
@@ -177,9 +187,14 @@ DELETE /channels/{channel_id}/thread-members/{user_id} threads.remove_member
 POST /channels/{channel_id}/threads threads.start reason
 POST /channels/{channel_id}/messages/{message_id}/threads threads.start_from_message reason
 POST /channels/{channel_id}/threads threads.start_in_forum reason
+DELETE /users/@me/applications/{application_id}/role-connection users.delete_role_connection bearer
 PATCH /users/@me users.edit_current
 GET /users/{user_id} users.fetch
 GET /users/@me users.fetch_current
+GET /users/@me users.fetch_current bearer
+GET /users/@me/applications/{application_id}/role-connection users.fetch_role_connection bearer
+GET /users/@me/connections users.list_connections bearer
+PUT /users/@me/applications/{application_id}/role-connection users.update_role_connection bearer
 PATCH /guilds/{guild_id}/voice-states/@me voice.edit_current_state
 PATCH /guilds/{guild_id}/voice-states/{user_id} voice.edit_state
 GET /guilds/{guild_id}/voice-states/@me voice.fetch_current_state

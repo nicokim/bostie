@@ -200,3 +200,13 @@ class Members(Group):
             query=wire(options, MemberSearch),
             guild_id=guild_id,
         )
+
+
+class BearerMembers(Group):
+    async def fetch_current(self, guild_id: int, /) -> Member:
+        return await self._http._decoded(
+            partial(decode, Member),
+            "GET",
+            "/users/@me/guilds/{guild_id}/member",
+            guild_id=guild_id,
+        )

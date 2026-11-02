@@ -405,6 +405,37 @@ class MembershipState(DiscordIntEnum):
     ACCEPTED = 2
 
 
+class ConnectionService(DiscordStrEnum):
+    AMAZON_MUSIC = "amazon-music"
+    BLUESKY = "bluesky"
+    BUNGIE = "bungie"
+    CRUNCHYROLL = "crunchyroll"
+    DOMAIN = "domain"
+    EBAY = "ebay"
+    EPIC_GAMES = "epicgames"
+    FACEBOOK = "facebook"
+    GITHUB = "github"
+    INSTAGRAM = "instagram"
+    MASTODON = "mastodon"
+    PAYPAL = "paypal"
+    PLAYSTATION = "playstation"
+    REDDIT = "reddit"
+    ROBLOX = "roblox"
+    SKYPE = "skype"
+    SPOTIFY = "spotify"
+    STEAM = "steam"
+    TIKTOK = "tiktok"
+    TWITCH = "twitch"
+    TWITTER = "twitter"
+    XBOX = "xbox"
+    YOUTUBE = "youtube"
+
+
+class ConnectionVisibility(DiscordIntEnum):
+    NONE = 0
+    EVERYONE = 1
+
+
 class ActivityLocationKind(DiscordStrEnum):
     GUILD_CHANNEL = "gc"
     PRIVATE_CHANNEL = "pc"

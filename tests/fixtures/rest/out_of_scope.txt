@@ -3,7 +3,6 @@ PATCH /applications/{application_id} undocumented: in the spec, not in the docs
 GET /applications/{application_id}/application-identities/{provider_type}/{provider_issued_user_id} Social SDK game data, like lobbies
 POST /applications/{application_id}/attachment undocumented: in the spec, not in the docs
 PUT /applications/{application_id}/guilds/{guild_id}/commands/permissions disabled by Discord since command permissions v2
-PUT /applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions OAuth2 only: needs a Bearer token with applications.commands.permissions.update
 GET /applications/{application_id}/users/{user_id}/identities/{provider_issued_user_id}/profile Social SDK game data, like lobbies
 PATCH /applications/{application_id}/users/{user_id}/identities/{provider_issued_user_id}/profile Social SDK game data, like lobbies
 GET /channels/{channel_id}/pins deprecated: messages.list_pins replaces it
@@ -35,21 +34,15 @@ POST /lobbies/{lobby_id}/members/{user_id}/invites Social SDK lobby
 GET /lobbies/{lobby_id}/messages Social SDK lobby
 POST /lobbies/{lobby_id}/messages Social SDK lobby
 PUT /lobbies/{lobby_id}/messages/{message_id}/moderation-metadata Social SDK lobby
-GET /oauth2/@me OAuth2 only: needs a Bearer token
 GET /oauth2/applications/@me older path of GET /applications/@me (application.fetch)
-GET /oauth2/keys OAuth2 only: OpenID Connect signing keys
-GET /oauth2/userinfo OAuth2 only: OpenID Connect user info
+GET /oauth2/keys undocumented: in the spec, not in the docs
+GET /oauth2/userinfo undocumented: in the spec, not in the docs
 PUT /partner-sdk/dms/{user_id_1}/{user_id_2}/messages/{message_id}/moderation-metadata Social SDK partner endpoint
 POST /partner-sdk/provisional-accounts/unmerge Social SDK partner endpoint
 POST /partner-sdk/provisional-accounts/unmerge/bot Social SDK partner endpoint
 POST /partner-sdk/token Social SDK partner endpoint
 POST /partner-sdk/token/bot Social SDK partner endpoint
-GET /users/@me/applications/{application_id}/entitlements OAuth2 only, and undocumented
-DELETE /users/@me/applications/{application_id}/role-connection OAuth2 only: needs the role_connections.write scope
-GET /users/@me/applications/{application_id}/role-connection OAuth2 only: needs the role_connections.write scope
-PUT /users/@me/applications/{application_id}/role-connection OAuth2 only: needs the role_connections.write scope
-GET /users/@me/connections OAuth2 only: needs the connections scope
-GET /users/@me/guilds/{guild_id}/member OAuth2 only: needs the guilds.members.read scope
+GET /users/@me/applications/{application_id}/entitlements undocumented: in the spec, not in the docs
 GET /users/{user_id}/application-identities/{application_id} Social SDK game data, like lobbies
 POST /users/{user_id}/application-identities/{application_id}/{provider_type}/{provider_issued_user_id}/delete Social SDK game data, like lobbies
 DELETE /webhooks/{webhook_id}/{webhook_token}/messages/@original interaction contexts cover it: ctx.delete

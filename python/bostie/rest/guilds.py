@@ -99,7 +99,23 @@ class _Pruned(Model, kw_only=True):
     pruned: int | None
 
 
-class Guilds(Group):
+class BearerGuilds(Group):
+    def list(self, **options: Unpack[GuildList]) -> AsyncIterator[CurrentUserGuild]:
+        """Walk the user's guilds oldest first, or newest first with `before`."""
+        pages = paginate(
+            self._http,
+            "/users/@me/guilds",
+            wire(options, GuildList),
+            decode=each(partial(decode, CurrentUserGuild)),
+            items=tuple,
+            cursor=lambda guild: guild.id,
+            page_size=200,
+            forward=True,
+        )
+        return (guild async for page in pages for guild in page)
+
+
+class Guilds(BearerGuilds):
     async def begin_prune(
         self,
         guild_id: int,
@@ -262,17 +278,3 @@ class Guilds(Group):
         await self._http._request(
             "DELETE", "/users/@me/guilds/{guild_id}", guild_id=guild_id
         )
-
-    def list(self, **options: Unpack[GuildList]) -> AsyncIterator[CurrentUserGuild]:
-        """Walk the bot's guilds oldest first, or newest first with `before`."""
-        pages = paginate(
-            self._http,
-            "/users/@me/guilds",
-            wire(options, GuildList),
-            decode=each(partial(decode, CurrentUserGuild)),
-            items=tuple,
-            cursor=lambda guild: guild.id,
-            page_size=200,
-            forward=True,
-        )
-        return (guild async for page in pages for guild in page)

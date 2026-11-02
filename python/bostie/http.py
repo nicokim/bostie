@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import urlencode
 
 import msgspec
 
@@ -23,6 +24,7 @@ from bostie.file import File
 from bostie.models.base import encoder
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
+OAUTH2_TOKEN_ROUTES = ("/oauth2/token", "/oauth2/token/revoke")
 
 type QueryValue = str | int | float | bool | datetime
 type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
@@ -37,6 +39,8 @@ STATUS_ERRORS: dict[int, type[HTTPException]] = {
 class _ErrorBody(msgspec.Struct):
     code: int = 0
     message: str = ""
+    error: str = ""
+    error_description: str = ""
     errors: dict[str, Any] = {}
     retry_after: float | None = None
     is_global: bool = msgspec.field(default=False, name="global")
@@ -60,6 +64,7 @@ class HTTPClient:
         json: Any = None,
         files: Sequence[File] = (),
         form: Mapping[str, object] | None = None,
+        urlencoded: Mapping[str, str] | None = None,
         query: Query | None = None,
         reason: str | None = None,
         **params: object,
@@ -67,8 +72,8 @@ class HTTPClient:
         """Send a request to a route like ``/channels/{channel_id}``; return its JSON.
 
         `form` adds named form fields, and files under their own names, to the
-        multipart body. An empty body returns None; an error status raises the
-        matching bostie error.
+        multipart body; `urlencoded` sends fields as a form-urlencoded body. An empty
+        body returns None; an error status raises the matching bostie error.
         """
         body = await self._request(
             method,
@@ -76,6 +81,7 @@ class HTTPClient:
             json=json,
             files=files,
             form=form,
+            urlencoded=urlencoded,
             query=query,
             reason=reason,
             **params,
@@ -102,6 +108,7 @@ class HTTPClient:
         json: Any = None,
         files: Sequence[File] = (),
         form: Mapping[str, object] | None = None,
+        urlencoded: Mapping[str, str] | None = None,
         query: Query | None = None,
         reason: str | None = None,
         **params: object,
@@ -114,6 +121,9 @@ class HTTPClient:
         parts.update(form or {})
         if parts:
             content_type, body = _multipart(json, parts)
+        elif urlencoded is not None:
+            content_type = "application/x-www-form-urlencoded"
+            body = urlencode(urlencoded).encode()
         elif json is not None:
             body = encoder.encode(json)
         status, data = await self._bridge.request(
@@ -126,7 +136,9 @@ class HTTPClient:
             reason=reason,
         )
         if status >= HTTPStatus.BAD_REQUEST:
-            bot_route = not any(token in route for token in TOKEN_PLACEHOLDERS)
+            bot_route = route not in OAUTH2_TOKEN_ROUTES and not any(
+                token in route for token in TOKEN_PLACEHOLDERS
+            )
             raise _status_error(status, data, bot_route=bot_route)
         return data
 
@@ -191,6 +203,7 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
         error = _error_decoder.decode(body)
     except msgspec.DecodeError:
         error = _ErrorBody()
+    error.message = error.message or error.error_description or error.error
     if status == HTTPStatus.UNAUTHORIZED and bot_route:
         return InvalidToken(error.message or "401: Unauthorized")
     if status == HTTPStatus.TOO_MANY_REQUESTS:

@@ -1,6 +1,6 @@
-from bostie import activity, ui, voice
+from bostie import activity, oauth2, ui, voice
 from bostie.bot import Bot
-from bostie.client import RESTClient, WebhookClient
+from bostie.client import BearerClient, RESTClient, WebhookClient
 from bostie.commands import Choice, Option, Range
 from bostie.context import (
     AutocompleteContext,
@@ -29,6 +29,8 @@ from bostie.enums import (
     CommandPermissionType,
     CommandType,
     ComponentType,
+    ConnectionService,
+    ConnectionVisibility,
     ContentScanMetadataFlags,
     DefaultMessageNotificationLevel,
     EmbedFlags,
@@ -126,6 +128,7 @@ from bostie.file import File
 from bostie.gateway import RequestedMembers
 from bostie.models import (
     SKU,
+    AccessToken,
     ActionRow,
     ActiveThreads,
     Activity,
@@ -143,12 +146,14 @@ from bostie.models import (
     ApplicationCommandOption,
     ApplicationCommandOptionChoice,
     ApplicationIntegrationTypeConfiguration,
+    ApplicationRoleConnection,
     ApplicationRoleConnectionMetadata,
     Attachment,
     AuditLogChange,
     AuditLogEntry,
     AuditLogEntryInfo,
     AuditLogPage,
+    Authorization,
     AutocompleteInteraction,
     AutoModerationAction,
     AutoModerationActionMetadata,
@@ -170,6 +175,7 @@ from bostie.models import (
     ComponentData,
     ComponentInteraction,
     ComponentInteractionMetadata,
+    Connection,
     Container,
     ContentScanMetadata,
     CurrentUser,
@@ -319,6 +325,7 @@ from bostie.sync import SyncResult
 
 __all__ = [
     "SKU",
+    "AccessToken",
     "ActionRow",
     "ActiveThreads",
     "Activity",
@@ -343,6 +350,7 @@ __all__ = [
     "ApplicationFlags",
     "ApplicationIntegrationType",
     "ApplicationIntegrationTypeConfiguration",
+    "ApplicationRoleConnection",
     "ApplicationRoleConnectionMetadata",
     "ApplicationRoleConnectionMetadataType",
     "Attachment",
@@ -352,6 +360,7 @@ __all__ = [
     "AuditLogEntryInfo",
     "AuditLogEvent",
     "AuditLogPage",
+    "Authorization",
     "AutoModerationAction",
     "AutoModerationActionMetadata",
     "AutoModerationActionType",
@@ -365,6 +374,7 @@ __all__ = [
     "BadRequest",
     "Ban",
     "BaseTheme",
+    "BearerClient",
     "BostieError",
     "Bot",
     "BulkBan",
@@ -392,6 +402,9 @@ __all__ = [
     "ComponentInteraction",
     "ComponentInteractionMetadata",
     "ComponentType",
+    "Connection",
+    "ConnectionService",
+    "ConnectionVisibility",
     "Container",
     "ContentScanMetadata",
     "ContentScanMetadataFlags",
@@ -631,6 +644,7 @@ __all__ = [
     "WelcomeScreen",
     "WelcomeScreenChannel",
     "activity",
+    "oauth2",
     "ui",
     "voice",
 ]

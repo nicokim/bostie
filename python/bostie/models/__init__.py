@@ -181,6 +181,12 @@ from bostie.models.monetization import (
     PartialEntitlement,
     Subscription,
 )
+from bostie.models.oauth2 import (
+    AccessToken,
+    ApplicationRoleConnection,
+    Authorization,
+    Connection,
+)
 from bostie.models.onboarding import (
     GuildOnboarding,
     OnboardingPrompt,
@@ -218,6 +224,7 @@ from bostie.models.webhook import Webhook, WebhookSourceChannel, WebhookSourceGu
 
 __all__ = [
     "SKU",
+    "AccessToken",
     "ActionRow",
     "ActiveThreads",
     "Activity",
@@ -235,12 +242,14 @@ __all__ = [
     "ApplicationCommandOption",
     "ApplicationCommandOptionChoice",
     "ApplicationIntegrationTypeConfiguration",
+    "ApplicationRoleConnection",
     "ApplicationRoleConnectionMetadata",
     "Attachment",
     "AuditLogChange",
     "AuditLogEntry",
     "AuditLogEntryInfo",
     "AuditLogPage",
+    "Authorization",
     "AutoModerationAction",
     "AutoModerationActionMetadata",
     "AutoModerationRule",
@@ -264,6 +273,7 @@ __all__ = [
     "ComponentData",
     "ComponentInteraction",
     "ComponentInteractionMetadata",
+    "Connection",
     "Container",
     "ContentScanMetadata",
     "CurrentUser",

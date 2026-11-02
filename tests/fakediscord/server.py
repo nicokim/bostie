@@ -49,7 +49,8 @@ class Part:
 class Recorded:
     """A REST request, with ``path`` relative to ``api_url``.
 
-    ``json`` holds the JSON body, or the ``payload_json`` part of a multipart body.
+    ``json`` holds the JSON body, the ``payload_json`` part of a multipart body, or
+    the fields of a form-urlencoded body.
     """
 
     method: str
@@ -835,6 +836,8 @@ async def _record(request: web.Request) -> Recorded:
         )
     elif request.content_type == "application/json":
         body = msgspec.json.decode(await request.read())
+    elif request.content_type == "application/x-www-form-urlencoded":
+        body = dict(await request.post())
     headers = {name.lower(): value for name, value in request.headers.items()}
     path = request.path.removeprefix(API)
     return Recorded(request.method, path, dict(request.query), headers, body, parts)
