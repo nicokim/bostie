@@ -499,7 +499,7 @@ class VoiceConnection:
         self._speech_ssrcs: dict[int, int] = {}
         self._ssrcs: Mapping[int, int] = MappingProxyType({})
         self._dave = Dave(0, None, None, self)
-        self._sinks: set[Sink] = set()
+        self._sinks: dict[Sink, None] = {}
         self._receivers: set[Receiver[Any]] = set()
         self._watchers: list[tuple[Callable[[], bool], asyncio.Future[bool]]] = []
         self._warned = False
@@ -553,6 +553,11 @@ class VoiceConnection:
         if self._state is not State.DISCONNECTED:
             self._ssrcs = MappingProxyType(self._core().voice_ssrcs(self.guild_id))
         return self._ssrcs
+
+    @property
+    def sinks(self) -> tuple[Sink, ...]:
+        """The open sinks, oldest first: every track and queue plays through one."""
+        return tuple(self._sinks)
 
     @property
     def latency(self) -> Latency:
@@ -634,7 +639,7 @@ class VoiceConnection:
             stall=stall,
         )
         sink = Sink(self, native, format, buffer=buffer, stall=stall, volume=volume)
-        self._sinks.add(sink)
+        self._sinks[sink] = None
         self.manager._handles[native.id] = sink
         return sink
 
@@ -785,6 +790,11 @@ class VoiceConnection:
         """Play a source on its own sink, mixed with anything else playing."""
         self._check_live()
         return await layers.play(self, source, volume=volume, meta=meta, **options)
+
+    def stop(self) -> None:
+        """Close every sink, so nothing plays; their tracks end STOPPED."""
+        for sink in tuple(self._sinks):
+            sink.close()
 
     async def move(self, channel_id: int, **options: Unpack[MoveOptions]) -> None:
         """Move to another voice or stage channel and wait until media flows there."""
@@ -1191,7 +1201,7 @@ class VoiceConnection:
             )
 
     def _forget(self, sink: Sink) -> None:
-        self._sinks.discard(sink)
+        self._sinks.pop(sink, None)
         self.manager._handles.pop(sink._handle, None)
 
     def _forget_receiver(self, receiver: Receiver[Any]) -> None:

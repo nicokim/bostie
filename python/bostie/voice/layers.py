@@ -82,6 +82,7 @@ class _Entry:
     source: "Source"
     meta: Any
     done: asyncio.Future[TrackEnd]
+    began: asyncio.Future[bool]
     track: "Track" = field(init=False)
     opened: bool = False
     opening: asyncio.Task[Exception | None] | None = None
@@ -128,6 +129,10 @@ class Track:
     async def wait(self) -> TrackEnd:
         """Wait for the end; cancelling one wait never cancels the track."""
         return await asyncio.shield(self._entry.done)
+
+    async def started(self) -> bool:
+        """Wait until the track starts playing; False if it ended first."""
+        return await asyncio.shield(self._entry.began)
 
     @property
     def position(self) -> float:
@@ -226,7 +231,7 @@ class _Player:
 
     def add(self, source: "Source", meta: Any) -> Track:
         if self.closed or self.vc.state is State.DISCONNECTED:
-            self._cleanup()
+            self._lost()
             raise VoiceNotConnected("the voice connection has ended")
         entry = self._enlist(source, meta)
         if self._feeder is None:
@@ -316,7 +321,8 @@ class _Player:
             raise
 
     def _enlist(self, source: "Source", meta: Any) -> _Entry:
-        entry = _Entry(source, meta, asyncio.get_running_loop().create_future())
+        loop = asyncio.get_running_loop()
+        entry = _Entry(source, meta, loop.create_future(), loop.create_future())
         entry.track = Track(self, entry)
         self._entries.append(entry)
         self._idle.clear()
@@ -385,7 +391,7 @@ class _Player:
             await self._feed_all()
         except (SinkClosed, VoiceNotConnected):
             self._feeder = None
-            self._cleanup()
+            self._lost()
             return
         self._feeder = None
         self._settle()
@@ -422,6 +428,7 @@ class _Player:
         sink = await self._sink_for(entry.source.format)
         entry.sink = sink
         entry.start = sink.mark()
+        spawn(self._tasks, self._begin(entry, sink, entry.start))
         self._open_ahead()
         for chunk in tuple(entry.kept):
             await self._gate.wait()
@@ -456,13 +463,18 @@ class _Player:
         if not await sink.drain() and sink.closed:
             raise SinkClosed("the sink is closed")
 
+    async def _begin(self, entry: _Entry, sink: "Sink", marker: "Marker") -> None:
+        await marker
+        if entry.start is marker and not sink.closed and not entry.began.done():
+            entry.began.set_result(True)
+
     async def _finish(self, entry: _Entry, marker: "Marker") -> None:
         await marker
         if entry.end is not marker or entry.done.done():
             return
         sink = entry.sink
         if sink is not None and sink is self._sink and sink.closed:
-            self._cleanup()
+            self._lost()
             return
         self._end(entry, EndReason.FINISHED)
         self._settle()
@@ -478,6 +490,8 @@ class _Player:
         if self._entries:
             self._entries[0].kept.clear()
         may_start_next = reason in (EndReason.FINISHED, EndReason.ERROR)
+        if not entry.began.done():
+            entry.began.set_result(reason is EndReason.FINISHED)
         entry.done.set_result(TrackEnd(entry.track, reason, error, may_start_next))
         spawn(self._tasks, self._release(entry, blocker), eager=True)
 
@@ -492,10 +506,13 @@ class _Player:
         except Exception:
             log.exception("closing %r failed", entry.source)
 
-    def _cleanup(self) -> None:
-        self.closed = True
+    def _lost(self) -> None:
+        ended = self.vc.state is State.DISCONNECTED
+        self.closed = self.closed or ended
+        reason = EndReason.CLEANUP if ended else EndReason.STOPPED
         for entry in tuple(self._entries):
-            self._end(entry, EndReason.CLEANUP)
+            self._end(entry, reason)
+        self._sink = None
         self._settle()
 
     def _settle(self) -> None:

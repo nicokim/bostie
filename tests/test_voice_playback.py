@@ -694,6 +694,39 @@ def test_a_disconnect_while_the_next_track_opens_cleans_the_playing_one_up() -> 
     run(scenario)
 
 
+def test_started_waits_for_the_audio_and_is_false_for_a_track_never_played() -> None:
+    async def scenario(clock: Clock) -> None:
+        q = queue(FakeConnection(clock))
+        first = add(q, FakeSource(clock, "a", 20))
+        second = add(q, FakeSource(clock, "b", 10))
+        removed = add(q, FakeSource(clock, "c", 10))
+        assert await first.started()
+        q.remove(removed)
+        assert await second.started()
+        assert clock.ticks == 20
+        assert not await removed.started()
+
+    run(scenario)
+
+
+def test_closing_the_sink_from_outside_stops_the_queue_but_keeps_it_open() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        tracks = [add(q, FakeSource(clock, name, 50)) for name in "ab"]
+        await clock.sleep(0.1)
+        vc.sinks[0].close()
+        await q.join()
+        assert [reason(track) for track in tracks] == [EndReason.STOPPED] * 2
+        assert not q.closed
+        later = add(q, FakeSource(clock, "c", 5))
+        await q.join()
+        assert reason(later) is EndReason.FINISHED
+        assert vc.sinks[1].sent == frames("c", 5)
+
+    run(scenario)
+
+
 def test_adding_to_a_queue_on_an_ended_connection_raises() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)

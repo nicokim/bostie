@@ -199,6 +199,18 @@ def test_ending_the_connection_closes_its_sinks_and_frees_their_waiters() -> Non
     run(scenario)
 
 
+def test_vc_sinks_lists_the_open_sinks_and_stop_closes_them_all() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot)
+        first, second = vc.sink(), vc.sink(voice.Opus())
+        assert vc.sinks == (first, second)
+        vc.stop()
+        assert [first.closed, second.closed, len(vc.sinks)] == [True, True, 0]
+        assert all(native.closed for native in bot.core.sinks)
+
+    run(scenario)
+
+
 def test_close_succeeds_when_the_core_already_closed_the_sink() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, native = await open_sink(bot)
