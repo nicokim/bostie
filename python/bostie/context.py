@@ -31,8 +31,10 @@ from bostie.models import (
     AutocompleteInteraction,
     CommandData,
     CommandInteraction,
+    ComponentData,
     ComponentInteraction,
     EditParts,
+    EntitySelectData,
     InteractionDataOption,
     Member,
     Message,
@@ -40,6 +42,9 @@ from bostie.models import (
     ModalSubmitInteraction,
     PartialChannel,
     PartialMessage,
+    ResolvedMember,
+    Role,
+    StringSelectData,
     SubmittedCheckbox,
     SubmittedFileUpload,
     SubmittedIds,
@@ -536,12 +541,50 @@ class ComponentContext(_UpdatingContext[ComponentInteraction]):
 
     @property
     def values(self) -> tuple[str, ...]:
-        """The values picked in a select menu."""
-        return self.interaction.data.values
+        """The options picked in a string select."""
+        return self._data(StringSelectData).values
+
+    @property
+    def ids(self) -> tuple[int, ...]:
+        """The ids of the users, roles or channels picked in a select."""
+        return self._data(EntitySelectData).values
+
+    @property
+    def users(self) -> tuple[User, ...]:
+        """The users picked in a user or mentionable select."""
+        data = self._data(EntitySelectData)
+        return _picked(data.values, data.resolved.users.get)
+
+    @property
+    def members(self) -> tuple[ResolvedMember, ...]:
+        """The members picked in a user or mentionable select in a guild."""
+        data = self._data(EntitySelectData)
+        return _picked(data.values, data.resolved.member)
+
+    @property
+    def roles(self) -> tuple[Role, ...]:
+        """The roles picked in a role or mentionable select."""
+        data = self._data(EntitySelectData)
+        return _picked(data.values, data.resolved.roles.get)
+
+    @property
+    def channels(self) -> tuple[PartialChannel, ...]:
+        """The channels picked in a channel select."""
+        data = self._data(EntitySelectData)
+        return _picked(data.values, data.resolved.channels.get)
 
     async def modal(self, modal: ModalDict) -> None:
         """Answer with a modal built by `ui.modal`; nothing can answer after it."""
         await self._open_modal(modal)
+
+    def _data[D: ComponentData](self, kind: type[D]) -> D:
+        data = self.interaction.data
+        if not isinstance(data, kind):
+            raise TypeError(
+                f"{self.custom_id!r} is a {data.component_type.name}, "
+                f"not a {kind.__name__}"
+            )
+        return data
 
     @property
     @override
@@ -568,11 +611,30 @@ class ModalContext(_UpdatingContext[ModalSubmitInteraction]):
         """The ids of the users, roles, channels or files picked in `custom_id`."""
         return self._submitted(custom_id, SubmittedIds).values
 
+    def users(self, custom_id: str) -> tuple[User, ...]:
+        """The users picked in the user or mentionable select `custom_id`."""
+        resolved = self.interaction.data.resolved
+        return _picked(self.ids(custom_id), resolved.users.get)
+
+    def members(self, custom_id: str) -> tuple[ResolvedMember, ...]:
+        """The members picked in the user or mentionable select `custom_id`."""
+        resolved = self.interaction.data.resolved
+        return _picked(self.ids(custom_id), resolved.member)
+
+    def roles(self, custom_id: str) -> tuple[Role, ...]:
+        """The roles picked in the role or mentionable select `custom_id`."""
+        resolved = self.interaction.data.resolved
+        return _picked(self.ids(custom_id), resolved.roles.get)
+
+    def channels(self, custom_id: str) -> tuple[PartialChannel, ...]:
+        """The channels picked in the channel select `custom_id`."""
+        resolved = self.interaction.data.resolved
+        return _picked(self.ids(custom_id), resolved.channels.get)
+
     def attachments(self, custom_id: str) -> tuple[Attachment, ...]:
         """The files uploaded with the file upload `custom_id`."""
         uploaded = self._submitted(custom_id, SubmittedFileUpload).values
-        files = self.interaction.data.resolved.attachments
-        return tuple(files[id] for id in uploaded)
+        return _picked(uploaded, self.interaction.data.resolved.attachments.get)
 
     def choice(self, custom_id: str) -> str | None:
         """The option picked in the radio group `custom_id`, if any."""
@@ -643,6 +705,10 @@ def _split_subcommands(
 def _command_name(data: CommandData) -> str:
     names, _ = _split_subcommands(data.options)
     return " ".join((data.name, *names))
+
+
+def _picked[T](ids: tuple[int, ...], find: Callable[[int], T | None]) -> tuple[T, ...]:
+    return tuple(found for id in ids if (found := find(id)) is not None)
 
 
 def _with_ephemeral(body: dict[str, Any], *, ephemeral: bool) -> dict[str, Any]:

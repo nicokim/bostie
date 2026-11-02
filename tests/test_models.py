@@ -48,6 +48,7 @@ from bostie.models import (
     ChannelSelect,
     CommandInteraction,
     CommandInteractionMetadata,
+    ComponentData,
     ComponentInteraction,
     ComponentInteractionMetadata,
     Container,
@@ -76,6 +77,7 @@ from bostie.models import (
     Section,
     Separator,
     StringSelect,
+    StringSelectData,
     SubmittedCheckbox,
     SubmittedFileUpload,
     SubmittedLabel,
@@ -544,7 +546,9 @@ def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> N
     assert button.data.custom_id == "ticket:close:42"
     assert button.data.component_type is ComponentType.BUTTON
     assert len(button.message.components) == 3
+    assert type(button.data) is ComponentData
     assert isinstance(select, ComponentInteraction)
+    assert isinstance(select.data, StringSelectData)
     assert select.data.values == ("ant", "lyrebird")
     assert isinstance(autocomplete, AutocompleteInteraction)
     assert [option.focused for option in autocomplete.data.options] == [False, True]

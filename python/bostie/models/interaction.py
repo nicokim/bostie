@@ -53,12 +53,33 @@ class CommandData(Model, kw_only=True):
 
 
 class ComponentData(Model, kw_only=True):
-    """The component an interaction comes from and the values picked in it."""
+    """The component an interaction comes from: a button, or a type with no model."""
 
     custom_id: str
     component_type: ComponentType
-    values: tuple[str, ...] = ()
+    id: int | None = None
+
+
+class StringSelectData(ComponentData, kw_only=True):
+    """A string select and the options picked in it."""
+
+    values: tuple[str, ...]
+
+
+class EntitySelectData(ComponentData, kw_only=True):
+    """A user, role, mentionable or channel select and the ids picked in it."""
+
+    values: tuple[int, ...]
     resolved: Resolved = msgspec.field(default_factory=Resolved)
+
+
+COMPONENT_DATA: dict[ComponentType, type[ComponentData]] = {
+    ComponentType.STRING_SELECT: StringSelectData,
+    ComponentType.USER_SELECT: EntitySelectData,
+    ComponentType.ROLE_SELECT: EntitySelectData,
+    ComponentType.MENTIONABLE_SELECT: EntitySelectData,
+    ComponentType.CHANNEL_SELECT: EntitySelectData,
+}
 
 
 class ApplicationCommandOptionChoice(Builder, kw_only=True):
@@ -179,8 +200,17 @@ class AutocompleteInteraction(_Interaction, kw_only=True):
 class ComponentInteraction(_Interaction, kw_only=True):
     """A button press or a select menu pick."""
 
-    data: ComponentData
+    _data: msgspec.Raw = msgspec.field(name="data")
     _message: msgspec.Raw = msgspec.field(name="message")
+
+    @property
+    def data(self) -> ComponentData:
+        """The component and what was picked in it, decoded on each access."""
+        kind = decoder(_ComponentKind).decode(self._data).component_type
+        data: ComponentData = decoder(COMPONENT_DATA.get(kind, ComponentData)).decode(
+            self._data
+        )
+        return data
 
     @property
     def message(self) -> Message | WebhookMessage:
@@ -239,6 +269,10 @@ INTERACTIONS: dict[InteractionType, type[Interaction]] = {
 
 class _InteractionKind(msgspec.Struct, gc=False):
     type: InteractionType
+
+
+class _ComponentKind(msgspec.Struct, gc=False):
+    component_type: ComponentType
 
 
 def decode_interaction(data: bytes) -> Interaction:

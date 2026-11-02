@@ -6,6 +6,7 @@ from functools import partial
 from typing import Annotated, Any
 
 import pytest
+from msgspec.json import encode
 
 from bostie import (
     AllowedMentions,
@@ -27,6 +28,7 @@ from bostie import (
     ui,
 )
 from bostie.context import ResponseState
+from bostie.models import ComponentInteraction, ModalSubmitInteraction, decode
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 EPHEMERAL = 64
@@ -234,6 +236,64 @@ def test_a_modal_context_reads_each_answer_by_custom_id() -> None:
         await on.answer(ModalContext, handler)
 
     run_bot(scenario)
+
+
+def test_selects_give_the_users_members_roles_and_channels_picked() -> None:
+    user, role, channel = (
+        "820774541721731073",
+        "1335174302269571073",
+        "1335173547294851073",
+    )
+    resolved = payloads.resolved()
+    picked = {"custom_id": "pick", "values": [user, role, channel]}
+    select = payloads.interaction(
+        3, picked | {"component_type": 7, "resolved": resolved}
+    )
+    label = {"type": 18, "id": 1, "component": picked | {"type": 7, "id": 2}}
+    modal = payloads.interaction(
+        5,
+        {"custom_id": "form", "components": [label], "resolved": resolved},
+    )
+
+    async def main() -> None:
+        bot = Bot()
+        options: Any = {
+            "received": 0.0,
+            "ephemeral": False,
+            "auto_defer": None,
+            "allowed_mentions": AllowedMentions(),
+        }
+        component = ComponentContext(
+            decode(ComponentInteraction, encode(select)), bot, **options
+        )
+        submit = ModalContext(
+            decode(ModalSubmitInteraction, encode(modal)), bot, **options
+        )
+        for ids, users, members, roles, channels in (
+            (
+                component.ids,
+                component.users,
+                component.members,
+                component.roles,
+                component.channels,
+            ),
+            (
+                submit.ids("pick"),
+                submit.users("pick"),
+                submit.members("pick"),
+                submit.roles("pick"),
+                submit.channels("pick"),
+            ),
+        ):
+            assert ids == (int(user), int(role), int(channel))
+            assert [found.id for found in users] == [int(user)]
+            assert [found.display_name for found in members] == ["linus"]
+            assert [found.name for found in roles] == ["Moderator"]
+            assert [found.name for found in channels] == ["Voice Lounge"]
+        with pytest.raises(TypeError, match="'pick' is a MENTIONABLE_SELECT"):
+            _ = component.values
+
+    asyncio.run(main())
 
 
 @pytest.mark.parametrize("from_component", [False, True])

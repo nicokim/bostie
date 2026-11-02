@@ -126,7 +126,7 @@ MISSING = re.compile(
 NULL = re.compile(r"got `null`(?: - at `\$(?P<at>.*)`)?$")
 SNOWFLAKE_KEY = re.compile(r"\.\d+(?=\.|\[|$)")
 SHAPE_KEYS = {("GUILD_CREATE.unavailable", "$.unavailable")}
-LAZY_KEYS = ("message", "triggering_interaction_metadata")
+LAZY_KEYS = ("message", "triggering_interaction_metadata", "data")
 
 type Decoder = Callable[[bytes], object]
 
