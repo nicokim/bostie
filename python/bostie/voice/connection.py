@@ -5,7 +5,6 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
 
@@ -34,7 +33,7 @@ from bostie.errors import (
 from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT, GatewayClient
 from bostie.http import HTTPClient
-from bostie.models import Channel, User, VoiceState, decode
+from bostie.models import Channel, User
 from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.voice import layers
@@ -1148,22 +1147,24 @@ class VoiceConnection:
             )
 
     async def _request_stage(self, role: StageRole) -> None:
-        body: dict[str, Any] = {"channel_id": str(self._channel_id)}
+        voice = self.manager._bot.rest.voice
         match role:
             case "listen" | "speak":
-                body["suppress"] = role == "listen"
+                await voice.edit_current_state(
+                    self.guild_id,
+                    channel_id=self._channel_id,
+                    suppress=role == "listen",
+                )
             case "request":
-                body["request_to_speak_timestamp"] = datetime.now(UTC).isoformat()
+                await voice.edit_current_state(
+                    self.guild_id,
+                    channel_id=self._channel_id,
+                    request_to_speak_timestamp=datetime.now(UTC),
+                )
             case _:
                 raise ValueError(
                     f"stage must be 'listen', 'request' or 'speak', got {role!r}"
                 )
-        await self.manager._bot.http.request(
-            "PATCH",
-            "/guilds/{guild_id}/voice-states/@me",
-            json=body,
-            guild_id=self.guild_id,
-        )
 
     async def _verification_code(self, user_id: int) -> str:
         self._check_live()
@@ -1276,12 +1277,8 @@ class ContextVoice:
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
         try:
-            state = await self._manager._bot.http._decoded(
-                partial(decode, VoiceState),
-                "GET",
-                "/guilds/{guild_id}/voice-states/{user_id}",
-                guild_id=self._guild_id,
-                user_id=self._user_id,
+            state = await self._manager._bot.rest.voice.fetch_state(
+                self._guild_id, self._user_id
             )
         except NotFound as error:
             if error.code != JSONErrorCode.UNKNOWN_VOICE_STATE:

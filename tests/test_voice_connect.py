@@ -201,7 +201,7 @@ def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
         sent = [request for request in bot.api.requests if request.method == "PATCH"]
         assert [request.path for request in sent] == [PATCH_ME] * len(patches)
         assert [request.json for request in sent] == [
-            {"channel_id": str(channel)} | patch for patch in patches
+            {"channel_id": channel} | patch for patch in patches
         ]
 
     run(scenario, defaults=voice.Defaults(stage=default))
@@ -336,7 +336,7 @@ def test_entering_a_stage_asks_for_the_connections_stage_role(
         await task
         sent = [r for r in bot.api.requests[before:] if r.method == "PATCH"]
         assert [r.json for r in sent] == [
-            {"channel_id": str(STAGE)} | patch for patch in patches
+            {"channel_id": STAGE} | patch for patch in patches
         ]
 
     run(scenario, defaults=voice.Defaults(stage=default))
