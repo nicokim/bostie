@@ -34,7 +34,9 @@ LIMITS = {
 }
 COMMAND_DEFAULTS: dict[str, Any] = {
     "name": None,
+    "name_localizations": None,
     "description": "",
+    "description_localizations": None,
     "options": [],
     "default_member_permissions": None,
     "nsfw": False,
@@ -42,7 +44,9 @@ COMMAND_DEFAULTS: dict[str, Any] = {
 OPTION_DEFAULTS: dict[str, Any] = {
     "type": None,
     "name": None,
+    "name_localizations": None,
     "description": None,
+    "description_localizations": None,
     "required": False,
     "choices": [],
     "options": [],
@@ -209,7 +213,11 @@ def _canonical_option(
 ) -> dict[str, Any]:
     canonical = _project(option, local, OPTION_DEFAULTS)
     canonical["choices"] = [
-        {"name": choice["name"], "value": choice["value"]}
+        {
+            "name": choice["name"],
+            "name_localizations": choice.get("name_localizations") or None,
+            "value": choice["value"],
+        }
         for choice in canonical["choices"]
     ]
     canonical["channel_types"] = sorted(canonical["channel_types"])
@@ -225,7 +233,7 @@ def _project(
     canonical: dict[str, Any] = {}
     for key in defaults.keys() | local.keys():
         value = payload.get(key)
-        canonical[key] = defaults.get(key) if value is None else value
+        canonical[key] = defaults.get(key) if value in (None, {}) else value
     return canonical
 
 

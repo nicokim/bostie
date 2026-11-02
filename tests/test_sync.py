@@ -42,6 +42,8 @@ kit = router.group(
     "kit",
     "Exercise every option type",
     contexts=[InteractionContextType.GUILD, InteractionContextType.BOT_DM],
+    name_localizations={"de": "werkzeug"},
+    description_localizations={"de": "Jeden Optionstyp ausprobieren"},
 )
 inspect_group = kit.group("inspect", "Inspect things")
 
@@ -49,7 +51,17 @@ inspect_group = kit.group("inspect", "Inspect things")
 @inspect_group.command(name="all", description="Use every option type")
 async def kit_all(
     ctx: object,
-    mode: Annotated[Mode, "How deep to look"],
+    mode: Annotated[
+        Mode,
+        "How deep to look",
+        Option(
+            description_localizations={"de": "Wie gründlich gesucht wird"},
+            choices=[
+                Choice("Fast", "fast", name_localizations={"de": "Schnell"}),
+                Choice("Thorough", "thorough", name_localizations={"de": "Gründlich"}),
+            ],
+        ),
+    ],
     count: Annotated[Range[int, 1, 10], "How many times"],
     ratio: Annotated[Range[float, 0.0, 1.0] | None, "A fraction"] = None,
     loud: Annotated[bool | None, "Announce the result"] = None,
@@ -83,7 +95,11 @@ async def search(
     """Search the bostie docs."""
 
 
-@router.user_command("User Info", contexts=[InteractionContextType.GUILD])
+@router.user_command(
+    "User Info",
+    contexts=[InteractionContextType.GUILD],
+    name_localizations={"de": "Benutzerinfo"},
+)
 async def user_info(ctx: object, user: User) -> None:
     pass
 
@@ -203,11 +219,20 @@ def reversed_category_choices() -> dict[str, Any]:
     return {"options": options}
 
 
+def localized_category_choice() -> dict[str, Any]:
+    options = copy.deepcopy(REMOTE[1]["options"])
+    options[1]["choices"][0]["name_localizations"] = {"de": "Doku"}
+    return {"options": options}
+
+
 @pytest.mark.parametrize(
     ("changes", "changed"),
     [
         ({"search": swapped_search_options()}, ("search",)),
         ({"search": reversed_category_choices()}, ("search",)),
+        ({"search": localized_category_choice()}, ("search",)),
+        ({"search": {"name_localizations": {"fr": "chercher"}}}, ("search",)),
+        ({"kit": {"description_localizations": None}}, ("kit",)),
         ({"kit": {"description": "Old text"}}, ("kit",)),
         ({"kit": {"contexts": [0]}}, ("kit",)),
         ({"search": {"default_member_permissions": None}}, ("search",)),

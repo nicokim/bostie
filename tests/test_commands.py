@@ -310,7 +310,7 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
             "longer than 100",
         ),
         (Annotated[str, Option(choices=[1])], "int value for a STRING option"),
-        (Annotated[Literal["a"], Option(choices=["b"])], "already sets the choices"),
+        (Annotated[Literal["a"], Option(choices=["b"])], "values the hint gives"),
         (Annotated[int, Option(name="Bad")], "not a valid name"),
         (Annotated[int, "x" * 101], "description 'x+' must be 1-100"),
         (Annotated[int, Option(description="")], "description '' must be"),
@@ -516,6 +516,48 @@ def test_group_tree_payload_and_names() -> None:
         "nsfw": False,
         "contexts": [0],
     }
+
+
+def test_localizations_reach_every_level_and_follow_the_name_rules() -> None:
+    router = Router()
+    role = router.group(
+        "role",
+        "Roles",
+        name_localizations={"fr": "rôle"},
+        description_localizations={"fr": "Rôles"},
+    )
+    color = role.group("color", "Colors", name_localizations={"fr": "couleur"})
+
+    @color.command(name="set", description_localizations={"fr": "Choisir"})
+    async def color_set(
+        ctx: object,
+        shade: Annotated[
+            int,
+            Option(
+                name_localizations={"fr": "teinte"},
+                choices=[Choice("Light", 1, name_localizations={"fr": "Claire"})],
+            ),
+        ],
+    ) -> None:
+        """Pick a color."""
+
+    payload = role.payload("guild")
+    (group,) = payload["options"]
+    (command,) = group["options"]
+    (option,) = command["options"]
+    assert (payload["name_localizations"], payload["description_localizations"]) == (
+        {"fr": "rôle"},
+        {"fr": "Rôles"},
+    )
+    assert group["name_localizations"] == {"fr": "couleur"}
+    assert "description_localizations" not in group
+    assert command["description_localizations"] == {"fr": "Choisir"}
+    assert option["name_localizations"] == {"fr": "teinte"}
+    assert option["choices"] == [
+        {"name": "Light", "name_localizations": {"fr": "Claire"}, "value": 1}
+    ]
+    with pytest.raises(CommandDefinitionError, match="'Rôle' is not a valid name"):
+        router.group("other", "Other", name_localizations={"fr": "Rôle"})
 
 
 def test_groups_nest_one_level_and_names_stay_unique() -> None:

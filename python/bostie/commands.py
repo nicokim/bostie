@@ -4,7 +4,7 @@ import unicodedata
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
 from types import NoneType, UnionType
@@ -17,6 +17,7 @@ from typing import (
     TypedDict,
     Union,
     Unpack,
+    cast,
     get_args,
     get_origin,
     overload,
@@ -73,6 +74,7 @@ __all__ = [
     "Range",
     "Scope",
     "SubcommandSettings",
+    "SubgroupSettings",
     "autocomplete_choices",
 ]
 
@@ -155,32 +157,45 @@ class CommandDefaults(TypedDict, total=False):
     integration_types: Iterable[ApplicationIntegrationType]
 
 
-class GroupSettings(CommandDefaults, total=False):
-    """Settings of a top-level command or group.
-
-    `contexts` and `integration_types` apply to global commands only.
-    """
-
+class _TopLevelSettings(CommandDefaults, total=False):
     default_permissions: Permissions
     nsfw: bool
+    name_localizations: Mapping[str, str]
     extra: Mapping[str, Any]
 
 
-class SubcommandSettings(TypedDict, total=False):
+class GroupSettings(_TopLevelSettings, total=False):
+    """Settings of a top-level command or group.
+
+    `contexts` and `integration_types` apply to global commands only.
+    Localizations map a locale such as "fr" to the text shown in it.
+    """
+
+    description_localizations: Mapping[str, str]
+
+
+class SubgroupSettings(TypedDict, total=False):
+    """Settings of a subcommand group inside a command."""
+
+    name_localizations: Mapping[str, str]
+    description_localizations: Mapping[str, str]
+    extra: Mapping[str, Any]
+
+
+class SubcommandSettings(SubgroupSettings, total=False):
     """Settings of a subcommand; without `auto_defer` it follows the bot's."""
 
     name: str
     description: str
     ephemeral: bool
     auto_defer: float | None
-    extra: Mapping[str, Any]
 
 
 class CommandSettings(SubcommandSettings, GroupSettings, total=False):
     """Settings of a top-level slash command."""
 
 
-class ContextMenuSettings(GroupSettings, total=False):
+class ContextMenuSettings(_TopLevelSettings, total=False):
     """Settings of a user or message command; `auto_defer` defaults to the bot's."""
 
     ephemeral: bool
@@ -188,6 +203,7 @@ class ContextMenuSettings(GroupSettings, total=False):
 
 
 GROUP_SETTINGS = GroupSettings.__optional_keys__
+SUBGROUP_SETTINGS = SubgroupSettings.__optional_keys__
 SUBCOMMAND_SETTINGS = SubcommandSettings.__optional_keys__
 COMMAND_SETTINGS = CommandSettings.__optional_keys__
 CONTEXT_MENU_SETTINGS = ContextMenuSettings.__optional_keys__
@@ -199,6 +215,7 @@ class Choice:
 
     name: str
     value: ChoiceValue
+    name_localizations: Mapping[str, str] | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -210,6 +227,8 @@ class Option:
 
     name: str | None = None
     description: str | None = None
+    name_localizations: Mapping[str, str] | None = None
+    description_localizations: Mapping[str, str] | None = None
     autocomplete: AutocompleteCallback | None = None
     min: float | None = None
     max: float | None = None
@@ -295,18 +314,22 @@ class _Registered:
         name: str,
         *,
         router: "Router",
-        settings: GroupSettings,
+        settings: _TopLevelSettings | SubgroupSettings,
     ) -> None:
         self.type = type
         self.name = name
         self.router = router
-        self.default_permissions = settings.get("default_permissions")
-        self.nsfw = settings.get("nsfw", False)
+        self.name_localizations = dict(settings.get("name_localizations", {}))
+        for localized in self.name_localizations.values():
+            _check_name(localized, spaced=type is not CommandType.CHAT_INPUT)
+        top: _TopLevelSettings = cast("_TopLevelSettings", settings)
+        self.default_permissions = top.get("default_permissions")
+        self.nsfw = top.get("nsfw", False)
         self.places = CommandDefaults()
-        if "contexts" in settings:
-            self.places["contexts"] = tuple(settings["contexts"])
-        if "integration_types" in settings:
-            self.places["integration_types"] = tuple(settings["integration_types"])
+        if "contexts" in top:
+            self.places["contexts"] = tuple(top["contexts"])
+        if "integration_types" in top:
+            self.places["integration_types"] = tuple(top["integration_types"])
         self.extra = dict(settings.get("extra", {}))
 
     def payload(
@@ -317,6 +340,7 @@ class _Registered:
         payload: dict[str, Any] = {
             "type": self.type,
             "name": self.name,
+            **_localized("name_localizations", self.name_localizations),
             **self._fields(),
             "default_member_permissions": None
             if permissions is None
@@ -345,12 +369,17 @@ class _Node(_Registered, ABC):
         *,
         router: "Router",
         parent: "Group | None",
-        settings: GroupSettings,
+        settings: GroupSettings | SubgroupSettings,
     ) -> None:
         _check_name(name)
         _check_description(description)
         super().__init__(CommandType.CHAT_INPUT, name, router=router, settings=settings)
         self.description = description
+        self.description_localizations = dict(
+            settings.get("description_localizations", {})
+        )
+        for localized in self.description_localizations.values():
+            _check_description(localized)
         self.parent = parent
 
     @property
@@ -362,14 +391,18 @@ class _Node(_Registered, ABC):
 
     @override
     def _fields(self) -> dict[str, Any]:
-        return {"description": self.description, "options": self._options()}
+        return {
+            "description": self.description,
+            **_localized("description_localizations", self.description_localizations),
+            "options": self._options(),
+        }
 
     def _as_option(self) -> dict[str, Any]:
         return {
             "type": self._option_type,
             "name": self.name,
-            "description": self.description,
-            "options": self._options(),
+            **_localized("name_localizations", self.name_localizations),
+            **self._fields(),
         } | self.extra
 
     @abstractmethod
@@ -466,7 +499,11 @@ class Group(_Node):
         parent: "Group | None" = None,
         **settings: Unpack[GroupSettings],
     ) -> None:
-        check_keys(settings, GROUP_SETTINGS, "settings")
+        check_keys(
+            settings,
+            GROUP_SETTINGS if parent is None else SUBGROUP_SETTINGS,
+            "settings",
+        )
         try:
             super().__init__(
                 name, description, router=router, parent=parent, settings=settings
@@ -475,13 +512,17 @@ class Group(_Node):
             raise CommandDefinitionError(f"group {name!r}: {error}") from None
         self.commands: dict[str, Command | Group] = {}
 
-    def group(self, name: str, description: str) -> "Group":
+    def group(
+        self, name: str, description: str, **settings: Unpack[SubgroupSettings]
+    ) -> "Group":
         """Add a subcommand group; groups nest one level deep at most."""
         if self.parent is not None:
             raise CommandDefinitionError(
                 f"/{self.qualified_name} {name}: groups nest one level deep at most"
             )
-        return self._add(Group(name, description, router=self.router, parent=self))
+        return self._add(
+            Group(name, description, router=self.router, parent=self, **settings)
+        )
 
     @overload
     def command(self, callback: CommandCallback, /) -> Command: ...
@@ -585,7 +626,7 @@ def autocomplete_choices(
             dropped = True
             continue
         truncated = truncated or len(choice.name) > MAX_TEXT
-        choices.append({"name": choice.name[:MAX_TEXT], "value": choice.value})
+        choices.append(_choice(replace(choice, name=choice.name[:MAX_TEXT])))
     where = _python_name(function)
     if dropped:
         _warn(
@@ -680,14 +721,17 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
         ]
     )
     if settings.choices is not None:
-        if choices:
-            raise CommandDefinitionError(
-                "the hint already sets the choices; remove Option(choices=)"
-            )
-        choices = [
+        given = [
             choice if isinstance(choice, Choice) else Choice(str(choice), choice)
             for choice in settings.choices
         ]
+        if choices and [choice.value for choice in given] != [
+            choice.value for choice in choices
+        ]:
+            raise CommandDefinitionError(
+                "Option(choices=) must list the values the hint gives, in order"
+            )
+        choices = given
     descriptions = [item for item in metadata if isinstance(item, str)]
     if descriptions:
         description = descriptions[-1]
@@ -698,12 +742,13 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
     payload: dict[str, Any] = {
         "type": option_type,
         "name": parameter.name if settings.name is None else settings.name,
+        **_localized("name_localizations", settings.name_localizations),
         "description": description,
+        **_localized("description_localizations", settings.description_localizations),
         "required": parameter.default is inspect.Parameter.empty and not optional,
     }
     optional_fields = {
-        "choices": [{"name": choice.name, "value": choice.value} for choice in choices]
-        or None,
+        "choices": [_choice(choice) for choice in choices] or None,
         "autocomplete": True if settings.autocomplete is not None else None,
         "min_value": settings.min,
         "max_value": settings.max,
@@ -818,10 +863,14 @@ def _check_option(payload: Mapping[str, Any]) -> None:
     option_type = OptionType(payload["type"])
     _check_name(payload["name"])
     _check_description(payload["description"])
-    for field, allowed in FIELD_TYPES.items():
-        if field in payload and option_type not in allowed:
+    for localized in payload.get("name_localizations", {}).values():
+        _check_name(localized)
+    for localized in payload.get("description_localizations", {}).values():
+        _check_description(localized)
+    for key, allowed in FIELD_TYPES.items():
+        if key in payload and option_type not in allowed:
             raise CommandDefinitionError(
-                f"{field} does not apply to {option_type.name} options"
+                f"{key} does not apply to {option_type.name} options"
             )
     if "choices" in payload and "autocomplete" in payload:
         raise CommandDefinitionError("autocomplete cannot be combined with choices")
@@ -862,6 +911,18 @@ def _check_bounds(option_type: OptionType, payload: Mapping[str, Any]) -> None:
     for low, high in (("min_value", "max_value"), ("min_length", "max_length")):
         if low in payload and high in payload and payload[low] > payload[high]:
             raise CommandDefinitionError(f"{low} is greater than {high}")
+
+
+def _choice(choice: Choice) -> dict[str, Any]:
+    return {
+        "name": choice.name,
+        **_localized("name_localizations", choice.name_localizations),
+        "value": choice.value,
+    }
+
+
+def _localized(key: str, texts: Mapping[str, str] | None) -> dict[str, Any]:
+    return {key: dict(texts)} if texts else {}
 
 
 def _check_name(name: str, *, spaced: bool = False) -> None:
