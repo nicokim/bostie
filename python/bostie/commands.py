@@ -40,6 +40,7 @@ from bostie.enums import (
     Permissions,
 )
 from bostie.errors import CommandDefinitionError, OptionConversionError
+from bostie.hooks import ErrorHooks
 from bostie.models import (
     Attachment,
     Channel,
@@ -326,7 +327,7 @@ class _Parameter:
         )
 
 
-class _Registered:
+class _Registered(ErrorHooks):
     def __init__(
         self,
         type: CommandType,
@@ -335,6 +336,7 @@ class _Registered:
         router: "Router",
         settings: _TopLevelSettings | SubgroupSettings,
     ) -> None:
+        super().__init__()
         self.type = type
         self.name = name
         self.router = router

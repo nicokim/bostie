@@ -4,6 +4,7 @@ from functools import cache
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
 from bostie.commands import Check
+from bostie.hooks import ErrorHooks
 from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ class RouteSettings(TypedDict, total=False):
 ROUTE_SETTINGS = RouteSettings.__optional_keys__
 
 
-class ComponentRoute[**P]:
+class ComponentRoute[**P](ErrorHooks):
     """A component or modal handler for a custom_id template like "vote:{up:int}"."""
 
     def __init__(
@@ -36,6 +37,7 @@ class ComponentRoute[**P]:
         router: "Router",
         **settings: Unpack[RouteSettings],
     ) -> None:
+        super().__init__()
         check_keys(settings, ROUTE_SETTINGS, "settings")
         pieces = PLACEHOLDER.split(template)
         literals = pieces[::2]

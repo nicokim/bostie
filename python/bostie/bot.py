@@ -1103,7 +1103,7 @@ class Bot(Router):
         if focused is None or function is None:
             return None
         ctx = AutocompleteContext(interaction, self, received=received)
-        return self._autocomplete(ctx, command.router, function, focused.value)
+        return self._autocomplete(ctx, command, function, focused.value)
 
     async def _run_handler(
         self,
@@ -1113,14 +1113,21 @@ class Bot(Router):
         arguments: Callable[[], Mapping[str, Any]],
     ) -> None:
         passed: list[Check] = []
+        routers = [*node.router._chain()][::-1]
         with ctx.auto_defer():
             try:
-                for check in _checks(node):
+                for check in _checks(node, routers):
                     await _run_check(check, ctx)
                     passed.append(check)
-                await handler(ctx, **arguments())
+                for router in routers:
+                    for hook in router.before_hooks:
+                        await hook(ctx)
+                try:
+                    await handler(ctx, **arguments())
+                finally:
+                    await _after(ctx, routers)
             except Exception as error:
-                await self._handle_error(ctx, node.router, handler, error)
+                await self._handle_error(ctx, node, handler, error)
                 return
             finally:
                 for check in passed:
@@ -1142,7 +1149,7 @@ class Bot(Router):
     async def _autocomplete(
         self,
         ctx: AutocompleteContext,
-        owner: Router,
+        command: Command,
         function: AutocompleteCallback,
         value: Any,
     ) -> None:
@@ -1151,16 +1158,20 @@ class Bot(Router):
                 autocomplete_choices(await function(ctx, value), function)
             )
         except Exception as error:
-            await self._handle_error(ctx, owner, function, error)
+            await self._handle_error(ctx, command, function, error)
 
     async def _handle_error(
         self,
         ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
-        owner: Router,
+        node: Command | ContextMenuCommand | ComponentRoute[...],
         handler: Callable[..., object],
         error: Exception,
     ) -> None:
-        for hook in owner.find_error_handlers(error):
+        hooks = (scope.error_handler(error) for scope in _nodes(node))
+        for hook in (
+            *(hook for hook in hooks if hook is not None),
+            *node.router.find_error_handlers(error),
+        ):
             try:
                 await hook(ctx, error)
             except Exception as raised:
@@ -1249,18 +1260,33 @@ async def _answer_failure(
         log.exception("answering interaction %d failed", ctx.interaction.id)
 
 
-def _checks(node: Command | ContextMenuCommand | ComponentRoute[...]) -> list[Check]:
+def _nodes(
+    node: Command | ContextMenuCommand | ComponentRoute[...],
+) -> list[Command | Group | ContextMenuCommand | ComponentRoute[...]]:
     nodes: list[Command | Group | ContextMenuCommand | ComponentRoute[...]] = [node]
     while isinstance(parent := nodes[-1], Command | Group) and parent.parent:
         nodes.append(parent.parent)
+    return nodes
+
+
+def _checks(
+    node: Command | ContextMenuCommand | ComponentRoute[...], routers: list[Router]
+) -> list[Check]:
     return [
-        *(
-            check
-            for router in reversed([*node.router._chain()])
-            for check in router.checks
-        ),
-        *(check for scope in reversed(nodes) for check in scope.checks),
+        *(check for router in routers for check in router.checks),
+        *(check for scope in reversed(_nodes(node)) for check in scope.checks),
     ]
+
+
+async def _after(
+    ctx: Context | ComponentContext | ModalContext, routers: list[Router]
+) -> None:
+    for router in reversed(routers):
+        for hook in router.after_hooks:
+            try:
+                await hook(ctx)
+            except Exception:
+                log.exception("the after_invoke hook %s raised", _python_name(hook))
 
 
 async def _run_check(

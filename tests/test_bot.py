@@ -5,7 +5,7 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Awaitable, Callable, Iterable, Iterator
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from enum import Enum
@@ -1268,6 +1268,56 @@ def test_checks_run_from_the_bot_inward_and_a_refusal_answers_the_user(
     run(scenario)
 
     assert failures(caplog) == []
+
+
+def test_invoke_hooks_wrap_the_handler_and_its_own_error_hook_goes_first() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        admin = Router()
+        order: list[str] = []
+
+        def note(text: str) -> Callable[[object], Coroutine[Any, Any, None]]:
+            async def hook(ctx: object) -> None:
+                order.append(text)
+
+            return hook
+
+        bot.before_invoke(note("bot before"))
+        admin.before_invoke(note("admin before"))
+        admin.after_invoke(note("admin after"))
+        bot.after_invoke(note("bot after"))
+
+        @admin.command
+        async def boom(ctx: Context) -> None:
+            """Fail."""
+            order.append("handler")
+            raise ValueError("boom")
+
+        @boom.on_error(ValueError)
+        async def own(ctx: ErrorContext, error: ValueError) -> None:
+            order.append("own hook")
+            assert isinstance(ctx, Context)
+            await ctx.respond("handled")
+
+        @admin.on_error
+        async def general(ctx: ErrorContext, error: Exception) -> None:
+            order.append("router hook")
+
+        bot.include(admin)
+        async with running(bot, fake):
+            answer = await fake.interaction(2, payloads.command("boom"))
+
+        assert order == [
+            "bot before",
+            "admin before",
+            "handler",
+            "admin after",
+            "bot after",
+            "own hook",
+        ]
+        assert answer.json["data"]["content"] == "handled"
+
+    run(scenario)
 
 
 FAILED = {"content": "Something went wrong.", "allowed_mentions": MENTIONS}
