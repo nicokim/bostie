@@ -136,6 +136,8 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 
 `@bot.every(seconds=300)` runs `async def task()` every 5 minutes while the bot is ready: first when `Started` fires, then on a fixed beat, skipping the beats a slow run overlaps. `@bot.every(time=datetime.time(9, 30))` runs it daily at 09:30 UTC, or in the time's `tzinfo`, and takes a list of times too. `close()` cancels tasks, and a task that raises goes on at its next time; the error reaches `TaskError` listeners, or the log when there are none.
 
+`await bot.start()` and `await bot.close()` run the bot inside an asyncio program that owns the event loop, such as a web app; [docs/running.md][running] shows how, with FastAPI.
+
 ## Events
 
 `@bot.listen` takes the typed events of `bostie.events`. `await bot.wait_for(Event, check=...)` waits for the next one, and `async with bot.stream(Event, check=...) as events:` queues every match for `async for` until the block ends; bound either with `asyncio.timeout()`.
@@ -277,7 +279,7 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 - `voice.utterances(rx)` groups frames into one utterance per stretch of speech, and with `level=-45.0` cuts by loudness instead, which `frame.level` reports in dBFS. `voice.Recorder(vc, "recordings/{guild_id}/{user_id}.ogg")` records each person to an Ogg Opus file, or a WAV file for a `.wav` path, and `mix=True` records the whole call to one file. `max_duration` and `max_size` end a recording on its own.
 - `voice.SpeechStart` and `voice.SpeechStop` fire for everyone in the call, and `vc.speaking` says who is talking now.
 - A receiver ends when the bot leaves or is moved to another channel, which ends `captions` above.
-- Tell people before you record or transcribe them. [docs/voice.md](docs/voice.md#receiving-audio) covers every option, and privacy and consent.
+- Tell people before you record or transcribe them. [docs/voice.md][voice-receiving] covers every option, and privacy and consent.
 
 ## Helpers
 
@@ -364,3 +366,5 @@ Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-M
 bostie is not affiliated with Discord Inc.
 
 [examples]: examples
+[running]: docs/running.md
+[voice-receiving]: docs/voice.md#receiving-audio

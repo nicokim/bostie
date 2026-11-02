@@ -53,6 +53,9 @@ cache-keys = [
 [tool.ruff]
 src = ["python"]
 
+[tool.ruff.format]
+exclude = ["docs/examples.md"]  # its code blocks include the example files when the docs build
+
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
