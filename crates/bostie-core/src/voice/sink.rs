@@ -56,6 +56,8 @@ struct Queue {
     playing: bool,
     flushed: bool,
     waiting: bool,
+    held: Option<u64>,
+    cut: bool,
     stats: SinkStats,
 }
 
@@ -186,6 +188,9 @@ impl Sink {
                 None => return Ok(()),
             },
         };
+        if end >= queue.stats.consumed {
+            self.cut(&mut queue);
+        }
         let frames = end.saturating_sub(queue.stats.consumed);
         let taken = queue.take(frames);
         self.consume(&mut queue, taken, Fate::Cleared);
@@ -287,13 +292,39 @@ impl Sink {
         self.queue.lock().volume
     }
 
-    pub(crate) fn controls(&self) -> (f32, Option<Arc<Filters>>) {
+    pub(crate) fn controls(&self) -> (f32, Option<Arc<Filters>>, bool) {
+        let mut queue = self.queue.lock();
+        (
+            queue.volume,
+            queue.filters.clone(),
+            mem::take(&mut queue.cut),
+        )
+    }
+
+    pub(crate) fn stretch(&self) {
+        self.queue.lock().held.get_or_insert(0);
+    }
+
+    pub(crate) fn hold_back(&self, frames: u64) {
+        let mut queue = self.queue.lock();
+        let from = queue.played();
+        queue.held = Some(frames);
+        self.reach(&mut queue, from, false);
+    }
+
+    pub(crate) fn awaits_held(&self) -> bool {
         let queue = self.queue.lock();
-        (queue.volume, queue.filters.clone())
+        queue
+            .markers
+            .front()
+            .is_some_and(|marker| marker.position <= queue.stats.consumed)
     }
 
     pub fn pull_pcm(&self, frame: &mut [f32]) -> bool {
         let mut queue = self.queue.lock();
+        if queue.cut {
+            return false;
+        }
         if queue.pcm.len() < FRAME_LEN {
             queue.starve();
             return false;
@@ -309,6 +340,9 @@ impl Sink {
 
     pub fn pull_opus(&self) -> Option<(Bytes, u32)> {
         let mut queue = self.queue.lock();
+        if queue.cut {
+            return None;
+        }
         let Some((packet, samples)) = queue.opus.pop_front() else {
             queue.starve();
             return None;
@@ -324,6 +358,7 @@ impl Sink {
         if self.options.stall == StallPolicy::Hold {
             return;
         }
+        self.cut(&mut queue);
         queue.owed += FRAME_FRAMES;
         let owed = queue.owed;
         let taken = queue.take(owed);
@@ -340,7 +375,7 @@ impl Sink {
 
     pub(crate) fn remaining(&self) -> Option<u64> {
         let queue = self.queue.lock();
-        (!queue.waiting && queue.flushed).then_some(queue.queued)
+        (!queue.waiting && queue.flushed).then(|| queue.queued + queue.held.unwrap_or(0))
     }
 
     pub(crate) fn crossfade(&self) -> u64 {
@@ -350,9 +385,9 @@ impl Sink {
     pub(crate) fn release(&self) {
         let mut queue = self.queue.lock();
         queue.waiting = false;
-        let consumed = queue.stats.consumed;
+        let played = queue.played();
         while let Some(marker) = queue.markers.front().copied()
-            && marker.position <= consumed
+            && marker.position <= played
         {
             queue.markers.pop_front();
             self.resolve(marker.id, true);
@@ -379,7 +414,7 @@ impl Sink {
         let id = queue.next_marker;
         queue.next_marker += 1;
         let position = queue.written;
-        if position <= queue.stats.consumed && !queue.waiting {
+        if position <= queue.played() && !queue.waiting {
             let played = !mem::take(&mut queue.tainted);
             self.resolve(id, played);
         } else {
@@ -389,17 +424,39 @@ impl Sink {
     }
 
     fn consume(&self, queue: &mut Queue, frames: u64, fate: Fate) {
+        let from = queue.played();
         queue.queued = queue.queued.saturating_sub(frames);
         match fate {
-            Fate::Pulled => queue.stats.sent += frames,
+            Fate::Pulled => {
+                queue.stats.sent += frames;
+                if let Some(held) = &mut queue.held {
+                    *held += frames;
+                }
+            }
             Fate::Stalled => queue.stats.dropped += frames,
             Fate::Cleared => {}
         }
-        let dropped = fate != Fate::Pulled && frames > 0;
-        let end = queue.stats.consumed + frames;
-        let mut cursor = queue.stats.consumed;
+        queue.stats.consumed += frames;
+        self.reach(queue, from, fate != Fate::Pulled && frames > 0);
+        if queue.queued <= self.low_water {
+            self.wake(queue);
+        }
+    }
+
+    fn cut(&self, queue: &mut Queue) {
+        let from = queue.played();
+        if let Some(held) = &mut queue.held {
+            *held = 0;
+        }
+        queue.cut = true;
+        self.reach(queue, from, true);
+    }
+
+    fn reach(&self, queue: &mut Queue, from: u64, dropped: bool) {
+        let to = queue.played();
+        let mut cursor = from;
         while let Some(marker) = queue.markers.front().copied()
-            && marker.position <= end
+            && marker.position <= to
         {
             queue.markers.pop_front();
             let played = !(queue.tainted || (dropped && marker.position > cursor));
@@ -407,11 +464,7 @@ impl Sink {
             cursor = cursor.max(marker.position);
             self.resolve(marker.id, played);
         }
-        queue.tainted |= dropped && end > cursor;
-        queue.stats.consumed = end;
-        if queue.queued <= self.low_water {
-            self.wake(queue);
-        }
+        queue.tainted |= dropped && to > cursor;
     }
 
     fn resolve(&self, marker: u64, played: bool) {
@@ -430,6 +483,10 @@ impl Sink {
 }
 
 impl Queue {
+    fn played(&self) -> u64 {
+        self.stats.consumed.saturating_sub(self.held.unwrap_or(0))
+    }
+
     fn add(&mut self, frames: u64) {
         self.queued += frames;
         self.written += frames;
@@ -563,6 +620,7 @@ pub(crate) mod tests {
 
     fn pull(sink: &Sink) -> Option<f32> {
         let mut frame = vec![0.0; FRAME_LEN];
+        sink.controls();
         sink.pull_pcm(&mut frame).then(|| frame[0])
     }
 

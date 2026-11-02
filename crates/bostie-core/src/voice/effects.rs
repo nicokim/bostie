@@ -6,7 +6,7 @@ use rubato::{
     WindowFunction,
 };
 
-use crate::voice::types::{CHANNELS, FRAME_SAMPLES, Filters};
+use crate::voice::types::{CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters};
 
 const RATE: f32 = 48_000.0;
 const BASS_HZ: f32 = 100.0;
@@ -17,6 +17,7 @@ const OVERLAP: usize = HOP / 2;
 const COARSE: usize = 4;
 const SINC_LEN: usize = 64;
 const OVERSAMPLING: usize = 64;
+const SILENCE: [f32; FRAME_LEN] = [0.0; FRAME_LEN];
 
 type Frame = [f32; CHANNELS];
 
@@ -44,6 +45,7 @@ struct Stretch {
     input: Vec<Frame>,
     next: f64,
     last: Option<usize>,
+    end: Option<usize>,
     tail: Vec<Frame>,
     window: Vec<f32>,
 }
@@ -153,16 +155,54 @@ impl Rate {
     }
 
     pub(crate) fn push(&mut self, frame: &[f32]) {
+        if let Some(end) = self.stretch.end.take() {
+            self.stretch.input.truncate(end);
+        }
+        self.feed(frame);
+    }
+
+    pub(crate) fn pad(&mut self) {
+        if self.stretch.end.is_none() {
+            let delay = self
+                .shift
+                .as_ref()
+                .map_or(0, |shift| shift.resampler.output_delay());
+            self.stretch.end = Some(self.stretch.input.len() + delay);
+            self.feed(&SILENCE);
+        }
+        self.stretch.pad();
+    }
+
+    pub(crate) fn render(&mut self, out: &mut [f32]) -> bool {
+        let rendered = self.stretch.step(self.speed / self.pitch, out);
+        if self.stretch.is_drained() {
+            self.reset();
+        }
+        rendered
+    }
+
+    pub(crate) fn held(&self) -> u64 {
+        let end = self.stretch.end.unwrap_or(self.stretch.input.len());
+        let ahead = (as_position(end) - self.stretch.next).max(0.0) * f64::from(self.pitch);
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let held = ahead.round() as u64;
+        held
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.stretch.reset();
+        if let Some(shift) = &mut self.shift {
+            shift.resampler.reset();
+        }
+    }
+
+    fn feed(&mut self, frame: &[f32]) {
         if let Some(shift) = &mut self.shift {
             shift.process(frame, &mut self.stretch.input);
         } else {
             let (frames, _) = frame.as_chunks::<CHANNELS>();
             self.stretch.input.extend_from_slice(frames);
         }
-    }
-
-    pub(crate) fn render(&mut self, out: &mut [f32]) -> bool {
-        self.stretch.step(self.speed / self.pitch, out)
     }
 }
 
@@ -218,9 +258,22 @@ impl Stretch {
             input: Vec::new(),
             next: 0.0,
             last: None,
+            end: None,
             tail: vec![[0.0; CHANNELS]; HOP],
             window,
         }
+    }
+
+    fn reset(&mut self) {
+        self.input.clear();
+        self.next = 0.0;
+        self.last = None;
+        self.end = None;
+        self.tail.fill([0.0; CHANNELS]);
+    }
+
+    fn is_drained(&self) -> bool {
+        self.end.is_some_and(|end| self.next >= as_position(end))
     }
 
     fn ideal(&self) -> usize {
@@ -229,9 +282,17 @@ impl Stretch {
         ideal
     }
 
+    fn reach(&self) -> usize {
+        (self.ideal() + SEEK).max(self.last.map_or(0, |last| last + HOP)) + WINDOW
+    }
+
     fn is_ready(&self) -> bool {
-        let reach = (self.ideal() + SEEK).max(self.last.map_or(0, |last| last + HOP));
-        self.input.len() >= reach + WINDOW
+        self.input.len() >= self.reach()
+    }
+
+    fn pad(&mut self) {
+        let reach = self.reach().max(self.input.len());
+        self.input.resize(reach, [0.0; CHANNELS]);
     }
 
     fn step(&mut self, tempo: f32, out: &mut [f32]) -> bool {
@@ -315,6 +376,7 @@ impl Stretch {
             self.input.drain(..spent);
             self.next -= as_position(spent);
             self.last = self.last.map(|last| last - spent);
+            self.end = self.end.map(|end| end.saturating_sub(spent));
         }
     }
 }
@@ -327,7 +389,6 @@ fn as_position(frames: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voice::types::FRAME_LEN;
 
     fn tone(hz: f32, frames: usize) -> Vec<f32> {
         #[expect(clippy::cast_precision_loss)]

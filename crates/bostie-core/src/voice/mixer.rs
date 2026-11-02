@@ -11,7 +11,6 @@ use crate::voice::effects::{Equalizer, Rate};
 use crate::voice::sink::Sink;
 use crate::voice::types::{
     CHANNELS, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, Filters, SAMPLE_RATE, SinkFormat,
-    StallPolicy,
 };
 
 pub(crate) struct Mixer {
@@ -69,21 +68,6 @@ impl Mixer {
         self.strips.retain(|&id, _| live(id));
         if self.passing.is_some_and(|id| !live(id)) {
             self.passing = None;
-        }
-    }
-
-    pub(crate) fn hold(&mut self, sinks: &[Arc<Sink>]) {
-        for sink in sinks {
-            if sink.waits_for().is_some() {
-                continue;
-            }
-            if sink.options().stall == StallPolicy::Drop
-                && let Some(strip) = self.strips.get_mut(&sink.id())
-            {
-                strip.carry.clear();
-                strip.carried = 0;
-            }
-            sink.hold();
         }
     }
 
@@ -238,22 +222,41 @@ impl Strip {
     }
 
     fn gather(&mut self, sink: &Sink) -> bool {
-        let (volume, filters) = sink.controls();
+        let (volume, filters, cut) = sink.controls();
         self.target = volume;
-        self.adopt(filters);
+        self.adopt(filters, sink);
+        if cut {
+            self.cut();
+        }
         self.packet = None;
         self.live = match self.rate.take() {
             Some(mut rate) => {
-                while rate.wants_input() && self.pull(sink) {
-                    rate.push(&self.frame);
+                while rate.wants_input() {
+                    if self.pull(sink) {
+                        rate.push(&self.frame);
+                    } else if sink.awaits_held() {
+                        rate.pad();
+                    } else {
+                        break;
+                    }
                 }
                 let live = rate.render(&mut self.frame);
+                let carried = self.carry.len().saturating_sub(self.carried) / CHANNELS;
+                sink.hold_back(rate.held() + carried as u64);
                 self.rate = Some(rate);
                 live
             }
             None => self.take(sink),
         };
         self.live
+    }
+
+    fn cut(&mut self) {
+        self.carry.clear();
+        self.carried = 0;
+        if let Some(rate) = &mut self.rate {
+            rate.reset();
+        }
     }
 
     fn take(&mut self, sink: &Sink) -> bool {
@@ -277,7 +280,7 @@ impl Strip {
     }
 
     #[expect(clippy::float_cmp)]
-    fn adopt(&mut self, filters: Option<Arc<Filters>>) {
+    fn adopt(&mut self, filters: Option<Arc<Filters>>, sink: &Sink) {
         let unchanged = match (&self.filters, &filters) {
             (Some(old), Some(new)) => Arc::ptr_eq(old, new),
             (old, new) => old.is_none() && new.is_none(),
@@ -294,7 +297,10 @@ impl Strip {
             .and_then(|filters| Equalizer::new(filters, previous));
         if self.rate.is_some() || speed != 1.0 || pitch != 1.0 {
             self.rate
-                .get_or_insert_with(|| Box::new(Rate::new()))
+                .get_or_insert_with(|| {
+                    sink.stretch();
+                    Box::new(Rate::new())
+                })
                 .set(speed, pitch);
         }
         self.filters = filters;
@@ -420,7 +426,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::inbox::Delivery;
-    use crate::voice::types::{SILENCE_FRAME, SinkOptions};
+    use crate::voice::types::{SILENCE_FRAME, SinkOptions, StallPolicy};
 
     fn opus_sink(fixture: &mut Fixture) -> Arc<Sink> {
         Arc::new(fixture.sink(SinkFormat::Opus, 1_000, StallPolicy::Hold))
@@ -782,6 +788,63 @@ mod tests {
         assert!(fast.set_filters(filters(0.0, 3.0)).is_err());
     }
 
+    fn stretched(fixture: &mut Fixture, value: f32, frames: usize) -> Arc<Sink> {
+        let sink = pcm_sink(fixture, value, frames);
+        sink.set_filters(Filters {
+            bands: Vec::new(),
+            bass: 0.0,
+            speed: 2.0,
+            pitch: 1.0,
+        })
+        .unwrap();
+        sink
+    }
+
+    #[test]
+    fn a_stretched_sink_plays_out_its_tail_before_its_end_marker() {
+        let mut fixture = Fixture::new();
+        let sink = stretched(&mut fixture, 0.25, 960 * 20);
+        let (end, _) = sink.flush().unwrap();
+        let mut mixer = Mixer::new(settings()).unwrap();
+
+        let mut heard = Vec::new();
+        let mut ended = None;
+        for tick in 0..14 {
+            let live = mixer.mix(std::slice::from_ref(&sink)).is_some();
+            heard.push(live && (mixer.sum[FRAME_LEN - 1] - 0.25).abs() < 1e-3);
+            if fixture.inbox.drain().iter().any(|delivery| {
+                matches!(delivery, Delivery::VoiceMarker { marker, played: true, .. } if *marker == end)
+            }) {
+                ended = Some(tick);
+            }
+        }
+
+        assert_eq!(heard, [[true; 10].as_slice(), &[false; 4]].concat());
+        assert_eq!(ended, Some(9));
+    }
+
+    #[test]
+    fn clear_drops_the_audio_a_stretch_holds() {
+        let mut fixture = Fixture::new();
+        let sink = stretched(&mut fixture, 0.25, 960 * 20);
+        let mut mixer = Mixer::new(settings()).unwrap();
+        for _ in 0..3 {
+            mixer.mix(std::slice::from_ref(&sink)).unwrap();
+        }
+
+        sink.clear(None).unwrap();
+        sink.write(&frames_of(-0.25, 960 * 20)).unwrap();
+        let mut stale = false;
+        for _ in 0..6 {
+            if mixer.mix(std::slice::from_ref(&sink)).is_some() {
+                stale |= mixer.sum.iter().any(|sample| *sample > 0.0);
+            }
+        }
+
+        assert!(!stale);
+        assert!(mixer.sum.iter().all(|sample| (sample + 0.25).abs() < 1e-3));
+    }
+
     #[test]
     fn hold_drops_the_carry_of_drop_sinks_only() {
         let mut fixture = Fixture::new();
@@ -793,7 +856,8 @@ mod tests {
             mixer.mix(std::slice::from_ref(sink)).unwrap();
         }
 
-        mixer.hold(&[Arc::clone(&dropping), Arc::clone(&holding)]);
+        dropping.hold();
+        holding.hold();
 
         assert!(mixer.mix(&[dropping]).is_none());
         assert!(mixer.mix(&[holding]).is_some());

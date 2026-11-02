@@ -460,7 +460,9 @@ impl Lane {
     }
 
     fn hold(&mut self, now: Instant) {
-        self.mixer.hold(&self.sinks);
+        for sink in self.sinks.iter().filter(|sink| sink.waits_for().is_none()) {
+            sink.hold();
+        }
         self.stalling(now);
     }
 

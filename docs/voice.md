@@ -46,7 +46,6 @@ queue.filters = voice.Filters(speed=1.25, pitch=1.25)
 - `speed=1.5` plays 50% faster at the same pitch, and `pitch=1.5` plays a fifth higher at the same speed. Both go from 0.5 to 2. The same value for both changes them together, like a record played faster.
 - `vc.sink(filters=...)`, `vc.play(filters=...)` and `voice.Queue(vc, filters=...)` start with filters. `sink.filters`, `track.filters` and `queue.filters` change them while audio plays, from the next 20 ms frame; a track's filters are its queue's. `voice.Filters()` turns them off.
 - A sink with filters is decoded and encoded again, as one at a volume other than 1 is, so Opus passes through only without them. On one core of a desktop CPU, ten bands with bass take about 20 µs per 20 ms frame, speed about 25 µs, and pitch 40 to 50 µs. A sink without filters costs nothing more.
-- Speed and pitch work on about 50 ms of audio past what plays. The audio a sink still holds there when it closes is not played, and after `sink.clear()` that much of the earlier audio still plays.
 
 ## Going back in a queue
 
