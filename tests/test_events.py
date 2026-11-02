@@ -186,7 +186,7 @@ def test_guild_create_splits_the_guild_from_its_children() -> None:
     assert all(channel.guild_id is None for channel in event.channels)
     assert event.channels[3].obfuscated
     assert [thread.name for thread in event.threads] == ["release-notes-0.1"]
-    assert [role.name for role in event.roles] == [
+    assert [role.name for role in event.guild.roles] == [
         "@everyone",
         "bostie-test",
         "Moderator",

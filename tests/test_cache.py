@@ -9,10 +9,12 @@ from bostie import Permissions
 from bostie.cache import Cache
 from bostie.events import (
     EVENTS,
+    EmojisUpdate,
     Event,
     MessageDelete,
     MessageDeleteBulk,
     MessageUpdate,
+    StickersUpdate,
     ThreadDelete,
     ThreadUpdate,
     VoiceStateUpdate,
@@ -271,6 +273,31 @@ def test_role_create_update_and_delete(cache: Cache) -> None:
     assert updated.colors.secondary_color == 16759788
     assert cache.role(created_id) is None
     assert created_id not in {role.id for role in cache.guild_roles(GUILD)}
+    guild = cache.guild(GUILD)
+    assert guild is not None
+    assert guild.roles == (*cache.guild_roles(GUILD),)
+    assert updated in guild.roles
+
+
+@pytest.mark.parametrize(
+    ("cls", "fixture", "field"),
+    [
+        (EmojisUpdate, "GUILD_EMOJIS_UPDATE", "emojis"),
+        (StickersUpdate, "GUILD_STICKERS_UPDATE", "stickers"),
+    ],
+)
+def test_expression_updates_replace_the_guilds_and_carry_the_old_ones(
+    cache: Cache,
+    cls: type[EmojisUpdate | StickersUpdate],
+    fixture: str,
+    field: str,
+) -> None:
+    before = getattr(cache.guild(GUILD), field)
+
+    received = applied(cache, cls, fixture)
+
+    assert received.old == before
+    assert getattr(cache.guild(GUILD), field) == getattr(received, field) != before
 
 
 def test_user_update_replaces_the_bot_user(cache: Cache) -> None:

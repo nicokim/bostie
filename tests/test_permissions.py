@@ -55,12 +55,10 @@ def channel(type: int = 0, *overwrites: Any, parent_id: int | None = None) -> Ch
     )
 
 
-GUILD_MODEL = model(Guild, **payloads.guild(id=GUILD, owner_id=OWNER))
-ROLES = [
-    role(GUILD, EVERYONE),
-    role(MODS, P.MANAGE_MESSAGES),
-    role(MUTED, P(0)),
-]
+ROLES = (role(GUILD, EVERYONE), role(MODS, P.MANAGE_MESSAGES), role(MUTED, P(0)))
+GUILD_MODEL = msgspec.structs.replace(
+    model(Guild, **payloads.guild(id=GUILD, owner_id=OWNER)), roles=ROLES
+)
 HIDDEN = overwrite(GUILD, 0, P(0), P.VIEW_CHANNEL)
 NO_SENDING = overwrite(GUILD, 0, P(0), P.SEND_MESSAGES)
 NO_CONNECTING = overwrite(GUILD, 0, P(0), P.CONNECT)
@@ -128,11 +126,9 @@ def test_permissions_follow_discords_order_and_implicit_rules(
     parent: Channel | None,
     expected: Permissions,
 ) -> None:
-    assert compute_permissions(GUILD_MODEL, ROLES, target, where, parent=parent) == (
-        expected
-    )
+    assert compute_permissions(GUILD_MODEL, target, where, parent=parent) == (expected)
 
 
 def test_a_thread_without_its_parent_raises() -> None:
     with pytest.raises(ValueError, match="parent"):
-        compute_permissions(GUILD_MODEL, ROLES, member(), channel(11, parent_id=PARENT))
+        compute_permissions(GUILD_MODEL, member(), channel(11, parent_id=PARENT))

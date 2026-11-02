@@ -116,7 +116,6 @@ class _Availability(msgspec.Struct):
 class _GuildCreatePayload(Guild, kw_only=True):
     channels: tuple[Channel, ...]
     threads: tuple[Channel, ...]
-    roles: tuple[Role, ...]
     voice_states: tuple[VoiceState, ...]
     stage_instances: tuple[StageInstance, ...]
     guild_scheduled_events: tuple[ScheduledEvent, ...]
@@ -135,7 +134,6 @@ class GuildCreate(Event, kw_only=True):
     joined: bool = False
     channels: tuple[Channel, ...] = ()
     threads: tuple[Channel, ...] = ()
-    roles: tuple[Role, ...] = ()
     voice_states: tuple[VoiceState, ...] = ()
     stage_instances: tuple[StageInstance, ...] = ()
     guild_scheduled_events: tuple[ScheduledEvent, ...] = ()
@@ -171,7 +169,6 @@ class GuildCreate(Event, kw_only=True):
             guild=_narrow(Guild, payload),
             channels=payload.channels,
             threads=payload.threads,
-            roles=payload.roles,
             voice_states=payload.voice_states,
             stage_instances=payload.stage_instances,
             guild_scheduled_events=payload.guild_scheduled_events,
@@ -713,19 +710,25 @@ class BanRemove(_BanEvent, kw_only=True):
 
 
 class EmojisUpdate(Event, kw_only=True):
+    """A guild's emojis changed; `old` are those of the cached guild."""
+
     NAME = "GUILD_EMOJIS_UPDATE"
     INTENTS = Intents.GUILD_EXPRESSIONS
 
     guild_id: int
     emojis: tuple[Emoji, ...]
+    old: tuple[Emoji, ...] | None = None
 
 
 class StickersUpdate(Event, kw_only=True):
+    """A guild's stickers changed; `old` are those of the cached guild."""
+
     NAME = "GUILD_STICKERS_UPDATE"
     INTENTS = Intents.GUILD_EXPRESSIONS
 
     guild_id: int
     stickers: tuple[Sticker, ...]
+    old: tuple[Sticker, ...] | None = None
 
 
 class _SoundboardSoundEvent(Event, kw_only=True):

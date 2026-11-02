@@ -418,7 +418,8 @@ def test_permissions_beyond_64_bits_decode() -> None:
     received = decode(CommandInteraction, msgspec.json.encode(interaction))
 
     assert created is not None
-    role_permissions = created.roles[3].permissions
+    assert isinstance(created.guild, Guild)
+    role_permissions = created.guild.roles[3].permissions
     assert role_permissions & bit
     assert Permissions.ADMINISTRATOR in role_permissions
     decoded_overwrite = created.channels[3].permission_overwrites[0]

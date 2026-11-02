@@ -8,6 +8,7 @@ from bostie.events import (
     ChannelCreate,
     ChannelDelete,
     ChannelUpdate,
+    EmojisUpdate,
     Event,
     GuildCreate,
     GuildDelete,
@@ -23,6 +24,7 @@ from bostie.events import (
     RoleCreate,
     RoleDelete,
     RoleUpdate,
+    StickersUpdate,
     ThreadCreate,
     ThreadDelete,
     ThreadListSync,
@@ -49,14 +51,11 @@ type Changes = dict[str, Any] | None
 
 
 class Cache:
-    """What the gateway told the bot, kept current by events.
+    """Guilds, channels, active threads, voice states and the bot's member and user.
 
-    The bot user, guilds, channels, active threads, roles, voice states and the
-    bot's own member in each guild, plus the latest messages with `max_messages`.
     Channels are stored as received, obfuscated ones included, except the fields
     CHANNEL_UPDATE does not keep current (last_message_id, message_count,
-    member_count, last_pin_timestamp), which are None. `Guild.member_count` follows
-    joins and leaves only with Intents.GUILD_MEMBERS.
+    member_count, last_pin_timestamp), which are None.
     """
 
     def __init__(self, max_messages: int = 0) -> None:
@@ -68,7 +67,6 @@ class Cache:
         self._channels: dict[int, Channel] = {}
         self._guild_channels: dict[int, dict[int, Channel]] = {}
         self._roles: dict[int, Role] = {}
-        self._guild_roles: dict[int, dict[int, Role]] = {}
         self._voice_states: dict[int, dict[int, VoiceState]] = {}
         self._me: dict[int, Member] = {}
         self._messages: dict[int, CachedMessage] = {}
@@ -88,6 +86,8 @@ class Cache:
             RoleCreate: self._create_role,
             RoleUpdate: self._update_role,
             RoleDelete: self._delete_role,
+            EmojisUpdate: self._update_emojis,
+            StickersUpdate: self._update_stickers,
             UserUpdate: self._update_user,
             VoiceStateUpdate: self._update_voice_state,
             MemberJoin: self._join,
@@ -120,7 +120,8 @@ class Cache:
         return self._roles.get(id)
 
     def guild_roles(self, guild_id: int) -> list[Role]:
-        return list(self._guild_roles.get(guild_id, {}).values())
+        guild = self._guilds.get(guild_id)
+        return [] if guild is None else list(guild.roles)
 
     def voice_state(self, guild_id: int, user_id: int) -> VoiceState | None:
         """The user's voice state, or None when they are in no voice channel."""
@@ -164,17 +165,12 @@ class Cache:
         self._channels.clear()
         self._guild_channels.clear()
         self._roles.clear()
-        self._guild_roles.clear()
         self._voice_states.clear()
         self._me.clear()
         self._messages.clear()
 
     def apply[E: Event](self, event: E) -> E:
-        """Update the cache from an event and return it with what the cache held.
-
-        Update events get `old`, delete events the removed object; events not in
-        `names` change nothing.
-        """
+        """Update the cache; return the event with its `old` or removed object."""
         handler = self._handlers.get(type(event))
         changes = None if handler is None else handler(event)
         return event if not changes else msgspec.structs.replace(event, **changes)
@@ -190,8 +186,7 @@ class Cache:
         member = self._me.get(guild_id) if member is None else member
         if guild is None or member is None:
             return None
-        roles = self._guild_roles.get(guild_id, {}).values()
-        return compute_permissions(guild, roles, member, channel, parent=parent)
+        return compute_permissions(guild, member, channel, parent=parent)
 
     def _is_me(self, user: User) -> bool:
         return self.user is not None and user.id == self.user.id
@@ -217,13 +212,11 @@ class Cache:
         guild_id = event.guild.id
         self._remove_guild(guild_id)
         self._guilds[guild_id] = event.guild
+        self._roles |= {role.id: role for role in event.guild.roles}
         self._guild_channels[guild_id] = {}
-        self._guild_roles[guild_id] = {}
         self._voice_states[guild_id] = {}
         for channel in (*event.channels, *event.threads):
             self._store_channel(_in_guild(channel, guild_id))
-        for role in event.roles:
-            self._store_role(guild_id, role)
         for state in event.voice_states:
             self._store_voice_state(msgspec.structs.replace(state, guild_id=guild_id))
         user = self.user
@@ -240,10 +233,14 @@ class Cache:
             self._guilds[guild.id] = msgspec.structs.replace(
                 guild,
                 raw_json=None,
+                stickers=cached.stickers,
                 joined_at=cached.joined_at,
                 member_count=cached.member_count,
                 large=cached.large,
             )
+            for role in cached.roles:
+                self._roles.pop(role.id, None)
+            self._roles |= {role.id: role for role in guild.roles}
         return {"old": cached}
 
     def _delete_guild(self, event: GuildDelete) -> Changes:
@@ -261,11 +258,11 @@ class Cache:
             self._guilds[guild_id] = msgspec.structs.replace(cached, unavailable=True)
 
     def _remove_guild(self, guild_id: int) -> None:
-        self._guilds.pop(guild_id, None)
+        guild = self._guilds.pop(guild_id, None)
         for channel_id in self._guild_channels.pop(guild_id, {}):
             self._channels.pop(channel_id, None)
-        for role_id in self._guild_roles.pop(guild_id, {}):
-            self._roles.pop(role_id, None)
+        for role in () if guild is None else guild.roles:
+            self._roles.pop(role.id, None)
         self._voice_states.pop(guild_id, None)
         self._me.pop(guild_id, None)
 
@@ -357,13 +354,37 @@ class Cache:
         return {"old": old}
 
     def _delete_role(self, event: RoleDelete) -> Changes:
-        self._guild_roles.get(event.guild_id, {}).pop(event.role_id, None)
+        guild = self._guilds.get(event.guild_id)
+        if guild is not None:
+            roles = tuple(role for role in guild.roles if role.id != event.role_id)
+            self._guilds[guild.id] = msgspec.structs.replace(guild, roles=roles)
         return {"role": self._roles.pop(event.role_id, None)}
 
     def _store_role(self, guild_id: int, role: Role) -> None:
-        if guild_id in self._guild_roles:
-            self._roles[role.id] = role
-            self._guild_roles[guild_id][role.id] = role
+        guild = self._guilds.get(guild_id)
+        if guild is None:
+            return
+        roles = guild.roles
+        if role.id in self._roles:
+            roles = tuple(role if cached.id == role.id else cached for cached in roles)
+        else:
+            roles = (*roles, role)
+        self._guilds[guild_id] = msgspec.structs.replace(guild, roles=roles)
+        self._roles[role.id] = role
+
+    def _update_emojis(self, event: EmojisUpdate) -> Changes:
+        guild = self._guilds.get(event.guild_id)
+        if guild is None:
+            return None
+        self._guilds[guild.id] = msgspec.structs.replace(guild, emojis=event.emojis)
+        return {"old": guild.emojis}
+
+    def _update_stickers(self, event: StickersUpdate) -> Changes:
+        guild = self._guilds.get(event.guild_id)
+        if guild is None:
+            return None
+        self._guilds[guild.id] = msgspec.structs.replace(guild, stickers=event.stickers)
+        return {"old": guild.stickers}
 
     def _update_user(self, event: UserUpdate) -> Changes:
         old = self.user

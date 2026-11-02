@@ -1,8 +1,7 @@
-from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from bostie.enums import ChannelType, Permissions
-from bostie.models import Channel, Guild, Member, Role
+from bostie.models import Channel, Guild, Member
 
 THREAD_TYPES = frozenset(
     {
@@ -41,7 +40,6 @@ NEEDS_CONNECTING = (
 
 def compute_permissions(
     guild: Guild,
-    roles: Iterable[Role],
     member: Member,
     channel: Channel | None = None,
     *,
@@ -50,7 +48,7 @@ def compute_permissions(
     """The member's permissions guild-wide, or in `channel`; a thread needs `parent`."""
     if member.user.id == guild.owner_id:
         return ALL
-    by_id = {role.id: role for role in roles}
+    by_id = {role.id: role for role in guild.roles}
     everyone = by_id.get(guild.id)
     permissions = NONE if everyone is None else everyone.permissions
     for role_id in member.roles:
