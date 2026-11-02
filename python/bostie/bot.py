@@ -98,12 +98,12 @@ from bostie.models import (
     CommandData,
     CommandInteraction,
     ComponentInteraction,
+    CurrentUser,
     Interaction,
     InteractionDataOption,
     ModalSubmitInteraction,
     SoundboardSound,
     UnknownInteraction,
-    User,
     VoiceChannelInfo,
 )
 from bostie.models.base import check_keys
@@ -237,7 +237,7 @@ class Bot(Router):
             max_dm_channels=max_dm_channels,
         )
         self.voice = VoiceManager(self, voice)
-        self.user: User | None = None
+        self.user: CurrentUser | None = None
         self.application_id: int | None = None
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
