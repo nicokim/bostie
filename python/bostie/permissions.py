@@ -13,6 +13,112 @@ THREAD_TYPES = frozenset(
 VOICE_TYPES = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
 ALL = Permissions(sum(Permissions))
 NONE = Permissions(0)
+TEXT = (
+    Permissions.CREATE_INSTANT_INVITE
+    | Permissions.MANAGE_CHANNELS
+    | Permissions.ADD_REACTIONS
+    | Permissions.VIEW_CHANNEL
+    | Permissions.SEND_MESSAGES
+    | Permissions.SEND_TTS_MESSAGES
+    | Permissions.MANAGE_MESSAGES
+    | Permissions.EMBED_LINKS
+    | Permissions.ATTACH_FILES
+    | Permissions.READ_MESSAGE_HISTORY
+    | Permissions.MENTION_EVERYONE
+    | Permissions.USE_EXTERNAL_EMOJIS
+    | Permissions.MANAGE_ROLES
+    | Permissions.MANAGE_WEBHOOKS
+    | Permissions.USE_APPLICATION_COMMANDS
+    | Permissions.MANAGE_THREADS
+    | Permissions.CREATE_PUBLIC_THREADS
+    | Permissions.CREATE_PRIVATE_THREADS
+    | Permissions.USE_EXTERNAL_STICKERS
+    | Permissions.SEND_MESSAGES_IN_THREADS
+    | Permissions.USE_EMBEDDED_ACTIVITIES
+    | Permissions.SEND_VOICE_MESSAGES
+    | Permissions.SEND_POLLS
+    | Permissions.USE_EXTERNAL_APPS
+    | Permissions.PIN_MESSAGES
+    | Permissions.BYPASS_SLOWMODE
+)
+VOICE = (
+    Permissions.CREATE_INSTANT_INVITE
+    | Permissions.MANAGE_CHANNELS
+    | Permissions.ADD_REACTIONS
+    | Permissions.PRIORITY_SPEAKER
+    | Permissions.STREAM
+    | Permissions.VIEW_CHANNEL
+    | Permissions.SEND_MESSAGES
+    | Permissions.SEND_TTS_MESSAGES
+    | Permissions.MANAGE_MESSAGES
+    | Permissions.EMBED_LINKS
+    | Permissions.ATTACH_FILES
+    | Permissions.READ_MESSAGE_HISTORY
+    | Permissions.MENTION_EVERYONE
+    | Permissions.USE_EXTERNAL_EMOJIS
+    | Permissions.CONNECT
+    | Permissions.SPEAK
+    | Permissions.MUTE_MEMBERS
+    | Permissions.DEAFEN_MEMBERS
+    | Permissions.MOVE_MEMBERS
+    | Permissions.USE_VAD
+    | Permissions.MANAGE_ROLES
+    | Permissions.MANAGE_WEBHOOKS
+    | Permissions.USE_APPLICATION_COMMANDS
+    | Permissions.MANAGE_EVENTS
+    | Permissions.USE_EXTERNAL_STICKERS
+    | Permissions.USE_EMBEDDED_ACTIVITIES
+    | Permissions.USE_SOUNDBOARD
+    | Permissions.CREATE_EVENTS
+    | Permissions.USE_EXTERNAL_SOUNDS
+    | Permissions.SEND_VOICE_MESSAGES
+    | Permissions.SET_VOICE_CHANNEL_STATUS
+    | Permissions.SEND_POLLS
+    | Permissions.USE_EXTERNAL_APPS
+    | Permissions.BYPASS_SLOWMODE
+)
+STAGE = (
+    Permissions.CREATE_INSTANT_INVITE
+    | Permissions.MANAGE_CHANNELS
+    | Permissions.ADD_REACTIONS
+    | Permissions.STREAM
+    | Permissions.VIEW_CHANNEL
+    | Permissions.SEND_MESSAGES
+    | Permissions.SEND_TTS_MESSAGES
+    | Permissions.MANAGE_MESSAGES
+    | Permissions.EMBED_LINKS
+    | Permissions.ATTACH_FILES
+    | Permissions.READ_MESSAGE_HISTORY
+    | Permissions.MENTION_EVERYONE
+    | Permissions.USE_EXTERNAL_EMOJIS
+    | Permissions.CONNECT
+    | Permissions.MUTE_MEMBERS
+    | Permissions.MOVE_MEMBERS
+    | Permissions.MANAGE_ROLES
+    | Permissions.MANAGE_WEBHOOKS
+    | Permissions.USE_APPLICATION_COMMANDS
+    | Permissions.REQUEST_TO_SPEAK
+    | Permissions.MANAGE_EVENTS
+    | Permissions.USE_EXTERNAL_STICKERS
+    | Permissions.CREATE_EVENTS
+    | Permissions.SEND_VOICE_MESSAGES
+    | Permissions.SEND_POLLS
+    | Permissions.USE_EXTERNAL_APPS
+    | Permissions.BYPASS_SLOWMODE
+)
+ELEVATED = (
+    Permissions.KICK_MEMBERS
+    | Permissions.BAN_MEMBERS
+    | Permissions.ADMINISTRATOR
+    | Permissions.MANAGE_CHANNELS
+    | Permissions.MANAGE_GUILD
+    | Permissions.MANAGE_MESSAGES
+    | Permissions.MANAGE_ROLES
+    | Permissions.MANAGE_WEBHOOKS
+    | Permissions.MANAGE_GUILD_EXPRESSIONS
+    | Permissions.MANAGE_THREADS
+    | Permissions.VIEW_CREATOR_MONETIZATION_ANALYTICS
+)
 TIMED_OUT = Permissions.VIEW_CHANNEL | Permissions.READ_MESSAGE_HISTORY
 NEEDS_SENDING = (
     Permissions.MENTION_EVERYONE
