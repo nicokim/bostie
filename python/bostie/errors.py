@@ -1,9 +1,10 @@
+import time
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, cast, override
 
 import msgspec
 
-from bostie.enums import DisconnectReason, JSONErrorCode
+from bostie.enums import DisconnectReason, JSONErrorCode, Permissions
 
 if TYPE_CHECKING:
     from bostie.context import (
@@ -231,6 +232,45 @@ class InteractionExpired(CommandError):
     """
 
 
+class CheckFailure(CommandError):
+    """A check refused to run a handler; the message is what the user is told."""
+
+    def __init__(self, message: str = "You cannot use this.") -> None:
+        super().__init__(message)
+
+
+class MissingPermissions(CheckFailure):
+    """The user lacks permissions a check asks for."""
+
+    def __init__(self, missing: Permissions) -> None:
+        super().__init__(f"You need {_permission_names(missing)}.")
+        self.missing = missing
+
+
+class BotMissingPermissions(CheckFailure):
+    """The bot lacks permissions a check asks for."""
+
+    def __init__(self, missing: Permissions) -> None:
+        super().__init__(f"The bot needs {_permission_names(missing)}.")
+        self.missing = missing
+
+
+class CooldownActive(CheckFailure):
+    """A cooldown refused the use; another one may follow after `retry_after` s."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__(f"Try again <t:{int(time.time() + retry_after) + 1}:R>.")
+        self.retry_after = retry_after
+
+
+class MaxConcurrencyReached(CheckFailure):
+    """As many runs as a max_concurrency check allows are already going on."""
+
+    def __init__(self, number: int) -> None:
+        super().__init__("This is already running; try again once it is done.")
+        self.number = number
+
+
 class VoiceError(BostieError):
     """Base class of voice errors."""
 
@@ -298,3 +338,11 @@ class SourceError(VoiceError):
     @override
     def __str__(self) -> str:
         return f"{self.source}: {self.detail}"
+
+
+def _permission_names(permissions: Permissions) -> str:
+    names = [
+        (flag.name or "").replace("_", " ").title() for flag in Permissions(permissions)
+    ]
+    listed = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    return f"the {listed} permission{'s' if len(names) > 1 else ''}"

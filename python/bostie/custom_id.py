@@ -1,8 +1,9 @@
 import re
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from functools import cache
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
+from bostie.commands import Check
 from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
@@ -18,6 +19,7 @@ class RouteSettings(TypedDict, total=False):
 
     ephemeral: bool
     auto_defer: float | None
+    checks: Iterable[Check]
 
 
 ROUTE_SETTINGS = RouteSettings.__optional_keys__
@@ -49,6 +51,7 @@ class ComponentRoute[**P]:
         self.handler = handler
         self.router = router
         self.ephemeral = settings.get("ephemeral", False)
+        self.checks = tuple(settings.get("checks", ()))
         self._settings = settings
         self.names = names
         self._literals = literals

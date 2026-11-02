@@ -18,6 +18,7 @@ from typing import (
 )
 
 from bostie.commands import (
+    Check,
     Command,
     CommandCallback,
     CommandSettings,
@@ -71,6 +72,7 @@ class Router:
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
         self.error_handlers: dict[type[BaseException], ErrorHook[Any]] = {}
         self.tasks: dict[TaskCallback, Task] = {}
+        self.checks: list[Check] = []
 
     @property
     def bot(self) -> "Bot":
@@ -206,6 +208,15 @@ class Router:
             return callback
 
         return register
+
+    def check[C: Check](self, predicate: C) -> C:
+        """Register a check that runs before every handler of this router.
+
+        A check takes the context and returns or awaits a bool; False refuses the
+        run with CheckFailure, and it may raise a CheckFailure of its own.
+        """
+        self.checks.append(predicate)
+        return predicate
 
     @overload
     def on_error[H: ErrorHook[Exception]](self, handler: H, /) -> H: ...

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import inspect
 import logging
 import os
 import signal
@@ -27,8 +28,10 @@ from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
+from bostie.checks import MaxConcurrency
 from bostie.commands import (
     AutocompleteCallback,
+    Check,
     Command,
     CommandDefaults,
     ContextMenuCommand,
@@ -53,6 +56,7 @@ from bostie.enums import (
     Status,
 )
 from bostie.errors import (
+    CheckFailure,
     Forbidden,
     MemberRequestRateLimited,
     MissingIntent,
@@ -1051,7 +1055,7 @@ class Bot(Router):
             auto_defer=route.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
-        return self._run_handler(ctx, route.router, route.handler, params.copy)
+        return self._run_handler(ctx, route, route.handler, params.copy)
 
     def _command_handler(
         self, interaction: CommandInteraction, received: float
@@ -1074,7 +1078,7 @@ class Bot(Router):
             auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
-        return self._run_handler(ctx, command.router, command.callback, arguments)
+        return self._run_handler(ctx, command, command.callback, arguments)
 
     def _command(
         self, data: CommandData
@@ -1104,16 +1108,24 @@ class Bot(Router):
     async def _run_handler(
         self,
         ctx: Context | ComponentContext | ModalContext,
-        owner: Router,
+        node: Command | ContextMenuCommand | ComponentRoute[...],
         handler: Handler,
         arguments: Callable[[], Mapping[str, Any]],
     ) -> None:
+        passed: list[Check] = []
         with ctx.auto_defer():
             try:
+                for check in _checks(node):
+                    await _run_check(check, ctx)
+                    passed.append(check)
                 await handler(ctx, **arguments())
             except Exception as error:
-                await self._handle_error(ctx, owner, handler, error)
+                await self._handle_error(ctx, node.router, handler, error)
                 return
+            finally:
+                for check in passed:
+                    if isinstance(check, MaxConcurrency):
+                        check.release(ctx)
         if ctx.state is ResponseState.PENDING:
             log.warning(
                 "%s returned without answering; Discord shows "
@@ -1169,6 +1181,10 @@ class Bot(Router):
                 )
                 await _answer_failure(ctx)
             return
+        if isinstance(error, CheckFailure):
+            log.debug("a check refused %s: %s", _python_name(handler), error)
+            await _answer_failure(ctx, str(error))
+            return
         log.error("%s raised", _python_name(handler), exc_info=error)
         await _answer_failure(ctx)
 
@@ -1219,17 +1235,40 @@ async def _queued[T](
 
 async def _answer_failure(
     ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
+    answer: str = FAILURE_ANSWER,
 ) -> None:
     try:
         if isinstance(ctx, AutocompleteContext):
             if ctx.state is ResponseState.PENDING:
                 await ctx._respond([])
         elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
-            await ctx.respond(FAILURE_ANSWER, ephemeral=True)
+            await ctx.respond(answer, ephemeral=True)
         elif ctx.state is ResponseState.DEFERRED:
-            await ctx.respond(FAILURE_ANSWER)
+            await ctx.respond(answer)
     except Exception:
         log.exception("answering interaction %d failed", ctx.interaction.id)
+
+
+def _checks(node: Command | ContextMenuCommand | ComponentRoute[...]) -> list[Check]:
+    nodes: list[Command | Group | ContextMenuCommand | ComponentRoute[...]] = [node]
+    while isinstance(parent := nodes[-1], Command | Group) and parent.parent:
+        nodes.append(parent.parent)
+    return [
+        *(
+            check
+            for router in reversed([*node.router._chain()])
+            for check in router.checks
+        ),
+        *(check for scope in reversed(nodes) for check in scope.checks),
+    ]
+
+
+async def _run_check(
+    check: Check, ctx: Context | ComponentContext | ModalContext
+) -> None:
+    result = check(ctx)
+    if not (await result if inspect.isawaitable(result) else result):
+        raise CheckFailure
 
 
 def _shard_ids(

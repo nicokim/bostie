@@ -3,7 +3,14 @@ import typing
 import unicodedata
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from pathlib import Path
@@ -60,6 +67,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AutocompleteCallback",
+    "Check",
     "Choice",
     "ChoiceValue",
     "Command",
@@ -79,6 +87,7 @@ __all__ = [
 ]
 
 type ChoiceValue = str | int | float
+type Check = Callable[[Any], bool | Awaitable[bool]]
 type CommandCallback = Callable[..., Coroutine[Any, Any, None]]
 type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
@@ -164,6 +173,7 @@ class _TopLevelSettings(CommandDefaults, total=False):
     nsfw: bool
     guilds: Iterable[int]
     name_localizations: Mapping[str, str]
+    checks: Iterable[Check]
     extra: Mapping[str, Any]
 
 
@@ -179,10 +189,14 @@ class GroupSettings(_TopLevelSettings, total=False):
 
 
 class SubgroupSettings(TypedDict, total=False):
-    """Settings of a subcommand group inside a command."""
+    """Settings of a subcommand group inside a command.
+
+    `checks` run before the handler, after those of the routers and parents.
+    """
 
     name_localizations: Mapping[str, str]
     description_localizations: Mapping[str, str]
+    checks: Iterable[Check]
     extra: Mapping[str, Any]
 
 
@@ -324,6 +338,7 @@ class _Registered:
         self.type = type
         self.name = name
         self.router = router
+        self.checks = tuple(settings.get("checks", ()))
         self.name_localizations = dict(settings.get("name_localizations", {}))
         for localized in self.name_localizations.values():
             _check_name(localized, spaced=type is not CommandType.CHAT_INPUT)

@@ -46,6 +46,7 @@ from bostie import (
     ui,
 )
 from bostie._bridge import Bridge, StatusDelivery
+from bostie.checks import MaxConcurrency
 from bostie.commands import CommandSettings
 from bostie.events import (
     BotEvent,
@@ -1202,6 +1203,71 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
 
     assert failures(caplog) == [(logging.ERROR, "boom")]
     assert any("left interaction" in record.message for record in caplog.records)
+
+
+def test_checks_run_from_the_bot_inward_and_a_refusal_answers_the_user(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        admin = Router()
+        ran: list[str] = []
+        busy = asyncio.Event()
+        done = asyncio.Event()
+
+        def passing(name: str) -> Callable[[Context], bool]:
+            def check(ctx: Context) -> bool:
+                ran.append(name)
+                return True
+
+            return check
+
+        async def refuse(ctx: Context) -> bool:
+            ran.append("refuse")
+            return False
+
+        bot.check(passing("bot"))
+        admin.check(passing("admin"))
+        role = admin.group("role", "Roles", checks=[passing("group")])
+
+        @role.command(checks=[passing("command"), refuse])
+        async def add(ctx: Context) -> None:
+            """Add a role."""
+            ran.append("handler")
+
+        @admin.command(checks=[MaxConcurrency(1)])
+        async def backup(ctx: Context) -> None:
+            """Back up."""
+            await ctx.defer()
+            await busy.wait()
+            await ctx.respond("backed up")
+            done.set()
+
+        bot.include(admin)
+        add_data = payloads.command("role", payloads.subcommand("add"))
+        async with running(bot, fake):
+            refused = await fake.interaction(2, add_data)
+            first = await fake.interaction(2, payloads.command("backup"))
+            second = await fake.interaction(2, payloads.command("backup"))
+            busy.set()
+            await done.wait()
+            third = await fake.interaction(2, payloads.command("backup"))
+
+        assert ran[:5] == ["bot", "admin", "group", "command", "refuse"]
+        assert refused.json == {
+            "type": 4,
+            "data": {
+                "content": "You cannot use this.",
+                "flags": EPHEMERAL,
+                "allowed_mentions": MENTIONS,
+            },
+        }
+        assert (first.json["type"], third.json["type"]) == (5, 5)
+        assert second.json["data"]["content"].startswith("This is already running")
+
+    run(scenario)
+
+    assert failures(caplog) == []
 
 
 FAILED = {"content": "Something went wrong.", "allowed_mentions": MENTIONS}

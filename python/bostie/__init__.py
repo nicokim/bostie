@@ -1,6 +1,6 @@
 from importlib.metadata import version
 
-from bostie import activity, cdn, color, fmt, oauth2, ui, voice
+from bostie import activity, cdn, checks, color, fmt, oauth2, ui, voice
 from bostie.asgi import ASGIApp
 from bostie.bot import Bot
 from bostie.client import BearerClient, RESTClient, SyncWebhookClient, WebhookClient
@@ -105,9 +105,12 @@ from bostie.enums import (
 from bostie.errors import (
     BadRequest,
     BostieError,
+    BotMissingPermissions,
+    CheckFailure,
     CommandDefinitionError,
     CommandError,
     CommandSyncError,
+    CooldownActive,
     ErrorContext,
     Forbidden,
     GatewayClosed,
@@ -117,8 +120,10 @@ from bostie.errors import (
     InteractionNotAnswered,
     InteractionResponded,
     InvalidToken,
+    MaxConcurrencyReached,
     MemberRequestRateLimited,
     MissingIntent,
+    MissingPermissions,
     NotFound,
     OptionConversionError,
     PrivilegedIntentsRequired,
@@ -407,6 +412,7 @@ __all__ = [
     "BearerClient",
     "BostieError",
     "Bot",
+    "BotMissingPermissions",
     "BulkBan",
     "Button",
     "ButtonStyle",
@@ -415,6 +421,7 @@ __all__ = [
     "ChannelMention",
     "ChannelSelect",
     "ChannelType",
+    "CheckFailure",
     "Choice",
     "ClientStatus",
     "Collectibles",
@@ -439,6 +446,7 @@ __all__ = [
     "ContentScanMetadata",
     "ContentScanMetadataFlags",
     "Context",
+    "CooldownActive",
     "CurrentUser",
     "CurrentUserGuild",
     "DefaultMessageNotificationLevel",
@@ -517,6 +525,7 @@ __all__ = [
     "LobbyMessageMember",
     "Locale",
     "MFALevel",
+    "MaxConcurrencyReached",
     "MediaGallery",
     "MediaGalleryItem",
     "Member",
@@ -536,6 +545,7 @@ __all__ = [
     "MessageSnapshot",
     "MessageType",
     "MissingIntent",
+    "MissingPermissions",
     "ModalContext",
     "ModalInteractionMetadata",
     "ModalSubmitData",
@@ -694,6 +704,7 @@ __all__ = [
     "WelcomeScreenChannel",
     "activity",
     "cdn",
+    "checks",
     "color",
     "decode_webhook_event",
     "fmt",
