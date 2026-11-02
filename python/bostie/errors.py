@@ -58,7 +58,8 @@ class HTTPException(BostieError):
         errors: dict[str, Any],
         body: bytes,
     ) -> None:
-        lines = [f"{status} {message} (error code {code})", *_form_errors(errors)]
+        coded = f" (error code {code})" if code else ""
+        lines = [f"{status} {message}{coded}", *_form_errors(errors)]
         super().__init__("\n".join(lines))
         self.status = status
         self.code = JSONErrorCode(code)

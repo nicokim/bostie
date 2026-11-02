@@ -311,7 +311,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 A bad argument raises `ValueError` or `TypeError`. Every other error bostie raises, the Rust core's included, is a `bostie.BostieError`:
 
 - `HTTPException` and its subclasses such as `NotFound` when Discord answers with an error status, `TransportError` when a request fails before it answers, and `GatewayClosed` when Discord ends the gateway session for good.
-- An `HTTPException` names each field Discord rejected, as in `embeds.0.title: Must be 256 or fewer in length.`, and its `code` is a `JSONErrorCode`, which has every code Discord documents, such as `CANNOT_SEND_MESSAGES_TO_THIS_USER`.
+- An `HTTPException` names each field Discord rejected, as in `embeds.0.title: Must be 256 or fewer in length.`, and its `code` is a `JSONErrorCode`, which has every code Discord documents, such as `CANNOT_SEND_MESSAGES_TO_THIS_USER`. An OAuth2 token error reads as its id and description, such as `invalid_grant: Invalid "code" in request.`
 - `RateLimited` when Discord answers 429 and asks for a longer wait than `HTTPSettings.max_rate_limit_wait`, or when bostie holds a request back for that reason. Each 429 also logs a warning on `bostie.rest`, and each retry a DEBUG line.
 - `NotFound` with the code `UNKNOWN_WEBHOOK` when Discord says a webhook is gone. bostie then sends nothing more to that webhook, as Discord asks, and raises the same error at once.
 - `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` or `bot.rest` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.

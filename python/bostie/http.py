@@ -242,7 +242,9 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
         error = _error_decoder.decode(body)
     except msgspec.DecodeError:
         error = _ErrorBody()
-    error.message = error.message or error.error_description or error.error
+    error.message = error.message or ": ".join(
+        part for part in (error.error, error.error_description) if part
+    )
     if status == HTTPStatus.UNAUTHORIZED and bot_route:
         return InvalidToken(error.message or "401: Unauthorized")
     if status == HTTPStatus.TOO_MANY_REQUESTS:

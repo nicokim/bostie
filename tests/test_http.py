@@ -11,6 +11,7 @@ from fakediscord import FakeDiscord, Part
 from fakediscord.server import ROUTE_LIMIT
 
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie.enums import JSONErrorCode
 from bostie.errors import (
     BadRequest,
     Forbidden,
@@ -316,3 +317,17 @@ def test_http_settings_refuse_values_bostie_cannot_use(
 ) -> None:
     with pytest.raises(ValueError, match="at least"):
         settings()
+
+
+def test_an_oauth2_error_reads_as_its_id_and_description() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        body = {"error": "invalid_grant", "error_description": "Bad code"}
+        fake.fail("GET", "/users/@me", 400, body)
+
+        with pytest.raises(BadRequest) as raised:
+            await http.request("GET", "/users/@me")
+
+        assert str(raised.value) == "400 invalid_grant: Bad code"
+        assert raised.value.code is JSONErrorCode.GENERAL_ERROR
+
+    run(scenario)
