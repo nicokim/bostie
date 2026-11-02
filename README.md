@@ -111,6 +111,7 @@ A few things the example takes for granted:
 - A select on a message gives the same through `ctx.values`, `ctx.ids`, `ctx.users`, `ctx.members`, `ctx.roles` and `ctx.channels` of its `ComponentContext`.
 - Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you. Such a message cannot also carry content, embeds, stickers or a poll, and bostie raises `ValueError` before sending one.
 - `ui.premium_button(sku_id)` offers one of the app's SKUs for sale, and every component builder takes an `id=`. The builders raise `ValueError` for what the docs' limits rule out, such as a sixth button in a row or a modal title over 45 characters.
+- `@bot.on_component(template, ephemeral=True, auto_defer=1.0)` and the same on `@bot.on_modal` set how a route's answers and automatic defer go, as `@bot.command(...)` does for a command. Without them, answers are public and the bot's `auto_defer` applies.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
 

@@ -1047,8 +1047,8 @@ class Bot(Router):
         ctx = context(
             self,
             received=received,
-            ephemeral=False,
-            auto_defer=self.auto_defer,
+            ephemeral=route.ephemeral,
+            auto_defer=route.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
         return self._run_handler(ctx, route.router, route.handler, params.copy)

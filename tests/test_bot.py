@@ -613,6 +613,23 @@ def test_a_bot_with_only_component_or_modal_routes_answers_them(modal: bool) -> 
     run(scenario)
 
 
+def test_a_modal_route_defers_with_its_own_ephemeral_and_auto_defer() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=None)
+
+        @bot.on_modal("slow", ephemeral=True, auto_defer=0.0)
+        async def slow(ctx: ModalContext) -> None:
+            await asyncio.sleep(0.05)
+            await ctx.respond("done")
+
+        async with running(bot, fake):
+            answer = await fake.interaction(5, payloads.modal("slow"))
+
+        assert answer.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+
+    run(scenario)
+
+
 def test_a_handler_that_closes_the_bot_finishes_the_shutdown() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)

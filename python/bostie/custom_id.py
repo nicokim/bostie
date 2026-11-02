@@ -1,7 +1,9 @@
 import re
 from collections.abc import Callable, Coroutine
 from functools import cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack
+
+from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
     from bostie.router import Router
@@ -9,6 +11,16 @@ if TYPE_CHECKING:
 MAX_CUSTOM_ID = 100
 PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 KINDS = frozenset({"", "int"})
+
+
+class RouteSettings(TypedDict, total=False):
+    """How a component or modal route answers; `auto_defer` defaults to the bot's."""
+
+    ephemeral: bool
+    auto_defer: float | None
+
+
+ROUTE_SETTINGS = RouteSettings.__optional_keys__
 
 
 class ComponentRoute[**P]:
@@ -20,7 +32,9 @@ class ComponentRoute[**P]:
         handler: Callable[P, Coroutine[Any, Any, None]],
         *,
         router: "Router",
+        **settings: Unpack[RouteSettings],
     ) -> None:
+        check_keys(settings, ROUTE_SETTINGS, "settings")
         pieces = PLACEHOLDER.split(template)
         literals = pieces[::2]
         placeholders = [_placeholder(template, text) for text in pieces[1::2]]
@@ -34,12 +48,19 @@ class ComponentRoute[**P]:
         self.template = template
         self.handler = handler
         self.router = router
+        self.ephemeral = settings.get("ephemeral", False)
+        self._settings = settings
         self.names = names
         self._literals = literals
         self._kinds = tuple(kind for _, kind in placeholders)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, None]:
         return self.handler(*args, **kwargs)
+
+    @property
+    def auto_defer(self) -> float | None:
+        """Seconds before an unanswered use is deferred; the bot's unless set here."""
+        return self._settings.get("auto_defer", self.router.bot.auto_defer)
 
     def id(self, **params: str | int) -> str:
         """Build a custom_id that fits in 100 characters and parses back to `params`."""

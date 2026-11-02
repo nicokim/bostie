@@ -28,7 +28,7 @@ from bostie.commands import (
     TargetType,
     _python_name,
 )
-from bostie.custom_id import ComponentRoute
+from bostie.custom_id import ComponentRoute, RouteSettings
 from bostie.enums import CommandType
 from bostie.errors import CommandDefinitionError, ErrorHook, StateError
 from bostie.events import BotEvent, Event, RawEvent
@@ -177,16 +177,16 @@ class Router:
         return register
 
     def on_component[**P](
-        self, template: str
+        self, template: str, **settings: Unpack[RouteSettings]
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route buttons and selects whose custom_id fits `template`."""
-        return self._custom_id_route(COMPONENT_ROUTES, template)
+        return self._custom_id_route(COMPONENT_ROUTES, template, settings)
 
     def on_modal[**P](
-        self, template: str
+        self, template: str, **settings: Unpack[RouteSettings]
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route the submits of modals whose custom_id fits `template`."""
-        return self._custom_id_route(MODAL_ROUTES, template)
+        return self._custom_id_route(MODAL_ROUTES, template, settings)
 
     def every[T: TaskCallback](
         self,
@@ -381,12 +381,15 @@ class Router:
         return register
 
     def _custom_id_route[**P](
-        self, registry: _Registry[str, ComponentRoute[...]], template: str
+        self,
+        registry: _Registry[str, ComponentRoute[...]],
+        template: str,
+        settings: RouteSettings,
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         def register(
             handler: Callable[P, Coroutine[Any, Any, None]],
         ) -> ComponentRoute[P]:
-            route = ComponentRoute(template, handler, router=self)
+            route = ComponentRoute(template, handler, router=self, **settings)
             self._add(registry, template, route)
             return route
 
