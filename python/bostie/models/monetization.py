@@ -4,7 +4,7 @@ from typing import Any
 import msgspec
 
 from bostie.enums import EntitlementType, SKUFlags, SKUType, SubscriptionStatus
-from bostie.models.base import Model, decoder
+from bostie.models.base import Model, decode, decoder
 
 
 class PartialEntitlement(Model, kw_only=True):
@@ -35,8 +35,7 @@ def decode_entitlement(data: bytes) -> PartialEntitlement:
     """Decode an entitlement, as a `PartialEntitlement` when it has no period."""
     period = decoder(_Period).decode(data).starts_at
     model = PartialEntitlement if period is msgspec.UNSET else Entitlement
-    entitlement: PartialEntitlement = decoder(model).decode(data)
-    return entitlement
+    return decode(model, data)
 
 
 class SKU(Model, kw_only=True):

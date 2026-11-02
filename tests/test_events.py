@@ -58,6 +58,7 @@ from bostie.models import (
     Member,
     Message,
     Model,
+    PartialEntitlement,
     PartialUser,
     Presence,
     ThreadMember,
@@ -144,6 +145,12 @@ def test_an_event_that_is_one_entity_shares_its_payload_with_it(
     value: Model = getattr(event, entity)
 
     assert value.raw_json is event.raw_json
+
+
+def test_a_test_entitlement_arrives_without_a_period() -> None:
+    event = decode(EntitlementCreate, "ENTITLEMENT_CREATE.test")
+
+    assert type(event.entitlement) is PartialEntitlement
 
 
 def test_guild_create_decodes_its_payload_in_one_pass(

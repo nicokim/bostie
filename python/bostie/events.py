@@ -24,7 +24,6 @@ from bostie.models import (
     Collectibles,
     CurrentUser,
     Emoji,
-    Entitlement,
     Guild,
     GuildCommandPermissions,
     Integration,
@@ -34,6 +33,7 @@ from bostie.models import (
     Model,
     PartialApplication,
     PartialEmoji,
+    PartialEntitlement,
     Presence,
     RequestGuildMembersRateLimit,
     Role,
@@ -52,6 +52,7 @@ from bostie.models import (
 from bostie.models.base import decode, decoder, redacted_repr, shown_fields
 from bostie.models.interaction import decode_interaction
 from bostie.models.message import decode_message
+from bostie.models.monetization import decode_entitlement
 
 logger = logging.getLogger("bostie.events")
 
@@ -828,13 +829,15 @@ class ScheduledEventUserRemove(_ScheduledEventUserEvent, kw_only=True):
 
 
 class _EntitlementEvent(Event, kw_only=True):
-    entitlement: Entitlement
+    """`entitlement` is an `Entitlement`, or a `PartialEntitlement` for a test one."""
+
+    entitlement: PartialEntitlement
 
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
-            shard_id=shard_id, raw_json=data, entitlement=decode(Entitlement, data)
+            shard_id=shard_id, raw_json=data, entitlement=decode_entitlement(data)
         )
 
 

@@ -2,7 +2,8 @@ from collections.abc import AsyncIterator, Sequence
 from functools import partial
 from typing import Literal, Required, TypedDict, Unpack
 
-from bostie.models import SKU, Entitlement, PartialEntitlement, Subscription, decode
+from bostie.models import SKU, PartialEntitlement, Subscription, decode
+from bostie.models.monetization import decode_entitlement
 from bostie.rest.base import Group, each, paginate, wire
 
 
@@ -69,9 +70,9 @@ class Monetization(Group):
 
     async def fetch_entitlement(
         self, application_id: int, entitlement_id: int, /
-    ) -> Entitlement:
+    ) -> PartialEntitlement:
         return await self._http._decoded(
-            partial(decode, Entitlement),
+            decode_entitlement,
             "GET",
             "/applications/{application_id}/entitlements/{entitlement_id}",
             application_id=application_id,
@@ -91,8 +92,11 @@ class Monetization(Group):
 
     def list_entitlements(
         self, application_id: int, /, **options: Unpack[MonetizationListEntitlements]
-    ) -> AsyncIterator[Entitlement]:
-        """Walk the app's entitlements, active and ended, oldest first."""
+    ) -> AsyncIterator[PartialEntitlement]:
+        """Walk the app's entitlements, active and ended, oldest first.
+
+        A test entitlement, which never ends, is a `PartialEntitlement`.
+        """
         query = wire(options, MonetizationListEntitlements)
         if "sku_ids" in options:
             query["sku_ids"] = ",".join(map(str, options["sku_ids"]))
@@ -100,7 +104,7 @@ class Monetization(Group):
             self._http,
             "/applications/{application_id}/entitlements",
             query,
-            decode=each(partial(decode, Entitlement)),
+            decode=each(decode_entitlement),
             items=tuple,
             cursor=lambda entitlement: entitlement.id,
             page_size=100,
