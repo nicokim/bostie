@@ -321,6 +321,41 @@ def test_a_command_with_guilds_syncs_there_and_the_others_as_before(
     run(scenario)
 
 
+def test_an_entry_point_replaces_the_remote_one_and_stays_global() -> None:
+    @Router().entry_point("Launch", description="Start the race")
+    async def launch(ctx: object) -> None:
+        pass
+
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        fake.commands = remote()
+
+        (result,) = await sync_commands(
+            http, fake.application_id, [*COMMANDS, launch], ()
+        )
+        with pytest.warns(UserWarning, match="'Launch' is global"):
+            await sync_commands(
+                http, fake.application_id, [*COMMANDS, launch], [11], always_put=True
+            )
+
+        assert (result.added, result.removed) == (("Launch",), ("launch",))
+        global_put = next(r.json for r in fake.requests if r.method == "PUT")
+        assert global_put[-1] == {
+            "type": 4,
+            "name": "Launch",
+            "description": "Start the race",
+            "handler": 1,
+            "default_member_permissions": None,
+            "nsfw": False,
+        }
+        assert [command["name"] for command in fake.requests[-1].json] == [
+            "kit",
+            "search",
+            "User Info",
+        ]
+
+    run(scenario)
+
+
 def test_guild_scope_without_differences_sends_no_put() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.guild_commands["11"] = remote(kit={"contexts": [0]})

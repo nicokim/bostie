@@ -674,6 +674,27 @@ def test_a_wait_takes_its_users_press_and_others_reach_the_route() -> None:
     run(scenario)
 
 
+def test_the_entry_point_runs_its_handler_which_launches_the_activity() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_sync=False)
+        launched: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+        @bot.entry_point("Launch")
+        async def launch(ctx: Context) -> None:
+            """Start the race."""
+            launched.set_result(await ctx.launch_activity())
+
+        data = {"id": payloads.snowflake(), "name": "Launch", "type": 4}
+        async with running(bot, fake):
+            callback = await fake.interaction(2, data)
+            instance = await launched
+
+        assert callback.json == {"type": 12}
+        assert instance.startswith("i-")
+
+    run(scenario)
+
+
 def test_a_handler_that_closes_the_bot_finishes_the_shutdown() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)

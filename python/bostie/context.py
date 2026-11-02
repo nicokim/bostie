@@ -97,6 +97,18 @@ class _CallbackResponse(msgspec.Struct):
     resource: _CallbackResource
 
 
+class _ActivityInstance(msgspec.Struct):
+    id: str
+
+
+class _LaunchResource(msgspec.Struct):
+    activity_instance: _ActivityInstance
+
+
+class _LaunchResponse(msgspec.Struct):
+    resource: _LaunchResource
+
+
 class _MessageFlagsOnly(msgspec.Struct):
     flags: MessageFlags = MessageFlags(0)
 
@@ -372,6 +384,21 @@ class _ReplyingContext[
                 return
             await self._webhook("DELETE", ORIGINAL_ROUTE)
             self._finish_deferred()
+
+    async def launch_activity(self) -> str:
+        """Open the app's Activity for the user; return the id of its instance."""
+        async with self._lock:
+            self._ensure_alive()
+            if self.state is not ResponseState.PENDING:
+                raise InteractionResponded(
+                    "an Activity launch must be the first answer"
+                )
+            response = await self._callback(InteractionCallbackType.LAUNCH_ACTIVITY)
+            self.state = ResponseState.RESPONDED
+        launched: _LaunchResponse = decode_answer(
+            decoder(_LaunchResponse).decode, response, took_effect=True
+        )
+        return launched.resource.activity_instance.id
 
     async def _open_modal(self, modal: ModalDict) -> None:
         async with self._lock:

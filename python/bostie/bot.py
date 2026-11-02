@@ -35,6 +35,7 @@ from bostie.commands import (
     Command,
     CommandDefaults,
     ContextMenuCommand,
+    EntryPointCommand,
     Group,
     _python_name,
     autocomplete_choices,
@@ -151,6 +152,7 @@ DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
+type Node = Command | ContextMenuCommand | EntryPointCommand | ComponentRoute[...]
 type Arguments = Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
 type LocalEvent = VoiceEvent | BotEvent
 
@@ -1144,7 +1146,7 @@ class Bot(Router):
         self, interaction: CommandInteraction, received: float
     ) -> Coroutine[Any, Any, None] | None:
         data = interaction.data
-        command: Command | ContextMenuCommand
+        command: Command | ContextMenuCommand | EntryPointCommand
         options: tuple[InteractionDataOption, ...] = ()
         found = self._command(data)
         if found is not None:
@@ -1161,11 +1163,11 @@ class Bot(Router):
             auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
-        arguments: Arguments = (
-            partial(command.arguments, ctx, options, data.resolved)
-            if isinstance(command, Command)
-            else partial(command.bind, interaction)
-        )
+        arguments: Arguments = dict
+        if isinstance(command, Command):
+            arguments = partial(command.arguments, ctx, options, data.resolved)
+        elif isinstance(command, ContextMenuCommand):
+            arguments = partial(command.bind, interaction)
         return self._run_handler(ctx, command, command.callback, arguments)
 
     def _command(
@@ -1196,7 +1198,7 @@ class Bot(Router):
     async def _run_handler(
         self,
         ctx: Context | ComponentContext | ModalContext,
-        node: Command | ContextMenuCommand | ComponentRoute[...],
+        node: Node,
         handler: Handler,
         arguments: Arguments,
     ) -> None:
@@ -1254,7 +1256,7 @@ class Bot(Router):
     async def _handle_error(
         self,
         ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
-        node: Command | ContextMenuCommand | ComponentRoute[...],
+        node: Node,
         handler: Callable[..., object],
         error: Exception,
     ) -> None:
@@ -1375,17 +1377,15 @@ def _check_cache_options(
 
 
 def _nodes(
-    node: Command | ContextMenuCommand | ComponentRoute[...],
-) -> list[Command | Group | ContextMenuCommand | ComponentRoute[...]]:
-    nodes: list[Command | Group | ContextMenuCommand | ComponentRoute[...]] = [node]
+    node: Node,
+) -> list[Node | Group]:
+    nodes: list[Node | Group] = [node]
     while isinstance(parent := nodes[-1], Command | Group) and parent.parent:
         nodes.append(parent.parent)
     return nodes
 
 
-def _checks(
-    node: Command | ContextMenuCommand | ComponentRoute[...], routers: list[Router]
-) -> list[Check]:
+def _checks(node: Node, routers: list[Router]) -> list[Check]:
     return [
         *(check for router in routers for check in router.checks),
         *(check for scope in reversed(_nodes(node)) for check in scope.checks),

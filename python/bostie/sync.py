@@ -8,6 +8,7 @@ from bostie.commands import (
     Command,
     CommandDefaults,
     ContextMenuCommand,
+    EntryPointCommand,
     Group,
     Scope,
     _python_name,
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("bostie.sync")
 
+type AnyCommand = Command | Group | ContextMenuCommand | EntryPointCommand
+
 GLOBAL_ROUTE = "/applications/{application_id}/commands"
 GUILD_ROUTE = "/applications/{application_id}/guilds/{guild_id}/commands"
 DROPPED_REMOTE_KEYS = frozenset(
@@ -31,7 +34,9 @@ LIMITS = {
     CommandType.CHAT_INPUT: ("slash", 100),
     CommandType.USER: ("user", 15),
     CommandType.MESSAGE: ("message", 15),
+    CommandType.PRIMARY_ENTRY_POINT: ("entry point", 1),
 }
+MANAGED = frozenset({CommandType.CHAT_INPUT, CommandType.USER, CommandType.MESSAGE})
 COMMAND_DEFAULTS: dict[str, Any] = {
     "name": None,
     "name_localizations": None,
@@ -77,7 +82,7 @@ class SyncResult:
 async def sync_commands(
     http: "HTTPClient",
     application_id: int,
-    commands: Sequence[Command | Group | ContextMenuCommand],
+    commands: Sequence[AnyCommand],
     guild_ids: Iterable[int],
     *,
     defaults: CommandDefaults | None = None,
@@ -91,11 +96,9 @@ async def sync_commands(
     if not commands and not always_put:
         return []
     base: list[int | None] = [*guild_ids] or [None]
-    scopes: dict[int | None, list[Command | Group | ContextMenuCommand]] = {
-        scope: [] for scope in base
-    }
+    scopes: dict[int | None, list[AnyCommand]] = {scope: [] for scope in base}
     for command in commands:
-        for scope in command.guilds or base:
+        for scope in _targets(command, base):
             scopes.setdefault(scope, []).append(command)
     for scoped in scopes.values():
         for type, count in Counter(command.type for command in scoped).items():
@@ -118,7 +121,7 @@ async def sync_commands(
 async def _sync_scope(
     http: "HTTPClient",
     application_id: int,
-    commands: Sequence[Command | Group | ContextMenuCommand],
+    commands: Sequence[AnyCommand],
     guild_id: int | None,
     *,
     defaults: CommandDefaults | None,
@@ -136,9 +139,10 @@ async def _sync_scope(
     remote = await http.request(
         "GET", route, query={"with_localizations": True}, **params
     )
-    ours = {_key(command): command for command in remote if _key(command)[0] in LIMITS}
+    managed = MANAGED | {command.type for command in commands}
+    ours = {_key(command): command for command in remote if _key(command)[0] in managed}
     passthrough = [
-        _passthrough(command) for command in remote if _key(command)[0] not in LIMITS
+        _passthrough(command) for command in remote if _key(command)[0] not in managed
     ]
     result = _diff(guild_id, local, ours)
     if not (result.added or result.removed or result.changed or always_put):
@@ -158,6 +162,17 @@ async def _sync_scope(
         list(result.changed),
     )
     return result
+
+
+def _targets(command: AnyCommand, base: list[int | None]) -> Sequence[int | None]:
+    if command.type is not CommandType.PRIMARY_ENTRY_POINT:
+        return command.guilds or base
+    if None not in base:
+        _warn(
+            f"the entry point {command.name!r} is global, which dev_guilds leaves out"
+        )
+        return ()
+    return (None,)
 
 
 async def fetch_ids(
@@ -276,7 +291,7 @@ def _project(
 def _sync_error(
     error: BadRequest,
     body: Sequence[Mapping[str, Any]],
-    commands: Sequence[Command | Group | ContextMenuCommand],
+    commands: Sequence[AnyCommand],
 ) -> CommandSyncError:
     path, message = _first_error(error.errors) or ((), error.message)
     if not path:
@@ -317,9 +332,7 @@ def _first_error(
     return None
 
 
-def _callback_name(
-    node: Command | Group | ContextMenuCommand, names: Sequence[str]
-) -> str | None:
+def _callback_name(node: AnyCommand, names: Sequence[str]) -> str | None:
     for name in names:
         if not isinstance(node, Group):
             return None

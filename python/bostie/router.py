@@ -24,6 +24,8 @@ from bostie.commands import (
     CommandSettings,
     ContextMenuCommand,
     ContextMenuSettings,
+    EntryPointCommand,
+    EntryPointSettings,
     Group,
     GroupSettings,
     TargetType,
@@ -69,7 +71,9 @@ class Router(ErrorHooks):
         super().__init__()
         self.parent: Router | None = None
         self.commands: dict[str, Command | Group] = {}
-        self.context_menus: dict[tuple[CommandType, str], ContextMenuCommand] = {}
+        self.context_menus: dict[
+            tuple[CommandType, str], ContextMenuCommand | EntryPointCommand
+        ] = {}
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
@@ -127,6 +131,21 @@ class Router(ErrorHooks):
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         """Register `async def f(ctx, message: Message)` in messages' context menu."""
         return self._context_menu(CommandType.MESSAGE, name, settings)
+
+    def entry_point(
+        self, name: str, **settings: Unpack[EntryPointSettings]
+    ) -> Callable[[CommandCallback], EntryPointCommand]:
+        """Register `async def f(ctx)` as the entry point that opens the app's Activity.
+
+        The app answers it, with `ctx.launch_activity()` or otherwise.
+        """
+
+        def register(callback: CommandCallback) -> EntryPointCommand:
+            command = EntryPointCommand(name, callback, router=self, **settings)
+            self._add(CONTEXT_MENUS, (command.type, name), command)
+            return command
+
+        return register
 
     @overload
     def listen[E: AnyEvent](
@@ -392,7 +411,9 @@ COMMANDS: _Registry[str, Command | Group] = _Registry(
         f"a command named {name!r} is already registered"
     ),
 )
-CONTEXT_MENUS: _Registry[tuple[CommandType, str], ContextMenuCommand] = _Registry(
+CONTEXT_MENUS: _Registry[
+    tuple[CommandType, str], ContextMenuCommand | EntryPointCommand
+] = _Registry(
     lambda router: router.context_menus,
     lambda key: CommandDefinitionError(
         f"a {key[0].name.lower()} command named {key[1]!r} is already registered"

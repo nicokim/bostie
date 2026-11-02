@@ -35,6 +35,7 @@ from bostie.enums import (
     ApplicationIntegrationType,
     ChannelType,
     CommandType,
+    EntryPointCommandHandlerType,
     InteractionContextType,
     OptionType,
     Permissions,
@@ -78,6 +79,8 @@ __all__ = [
     "ContextMenuCommand",
     "ContextMenuSettings",
     "Convert",
+    "EntryPointCommand",
+    "EntryPointSettings",
     "Group",
     "GroupSettings",
     "Option",
@@ -223,7 +226,22 @@ class ContextMenuSettings(_TopLevelSettings, total=False):
     auto_defer: float | None
 
 
+class EntryPointSettings(CommandDefaults, total=False):
+    """Settings of the app's entry point command, which is always global."""
+
+    description: str
+    default_permissions: Permissions
+    nsfw: bool
+    name_localizations: Mapping[str, str]
+    description_localizations: Mapping[str, str]
+    ephemeral: bool
+    auto_defer: float | None
+    checks: Iterable[Check]
+    extra: Mapping[str, Any]
+
+
 GROUP_SETTINGS = GroupSettings.__optional_keys__
+ENTRY_POINT_SETTINGS = EntryPointSettings.__optional_keys__
 SUBGROUP_SETTINGS = SubgroupSettings.__optional_keys__
 SUBCOMMAND_SETTINGS = SubcommandSettings.__optional_keys__
 COMMAND_SETTINGS = CommandSettings.__optional_keys__
@@ -347,7 +365,7 @@ class _Registered(ErrorHooks):
         name: str,
         *,
         router: "Router",
-        settings: _TopLevelSettings | SubgroupSettings,
+        settings: _TopLevelSettings | SubgroupSettings | EntryPointSettings,
     ) -> None:
         super().__init__()
         self.type = type
@@ -666,6 +684,50 @@ class ContextMenuCommand(_Registered):
         )
 
 
+class EntryPointCommand(_Registered):
+    """The app's entry point command, which opens its Activity from the App Launcher."""
+
+    def __init__(
+        self,
+        name: str,
+        callback: CommandCallback,
+        *,
+        router: "Router",
+        **settings: Unpack[EntryPointSettings],
+    ) -> None:
+        check_keys(settings, ENTRY_POINT_SETTINGS, "settings")
+        description = _command_description(callback, settings.get("description"))
+        try:
+            _check_name(name, spaced=True)
+            _check_description(description)
+            _check_takes_only_the_context(callback)
+        except CommandDefinitionError as error:
+            raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
+        super().__init__(
+            CommandType.PRIMARY_ENTRY_POINT, name, router=router, settings=settings
+        )
+        self.description = description
+        self.description_localizations = dict(
+            settings.get("description_localizations", {})
+        )
+        self.callback = callback
+        self.ephemeral = settings.get("ephemeral", False)
+        self._settings = settings
+
+    @property
+    def auto_defer(self) -> float | None:
+        """Seconds before an unanswered call is deferred; the bot's unless set here."""
+        return _auto_defer(self._settings, self.router)
+
+    @override
+    def _fields(self) -> dict[str, Any]:
+        return {
+            "description": self.description,
+            **_localized("description_localizations", self.description_localizations),
+            "handler": EntryPointCommandHandlerType.APP_HANDLER,
+        }
+
+
 def autocomplete_choices(
     result: Iterable[ChoiceValue | Choice], function: Callable[..., object]
 ) -> list[dict[str, Any]]:
@@ -736,8 +798,17 @@ def _target(
             )
 
 
+def _check_takes_only_the_context(callback: CommandCallback) -> None:
+    match list(inspect.signature(callback).parameters.values()):
+        case [context] if context.kind in CONTEXT_POSITIONAL:
+            return
+        case _:
+            raise CommandDefinitionError("the function must take only the context")
+
+
 def _auto_defer(
-    settings: SubcommandSettings | ContextMenuSettings, router: "Router"
+    settings: SubcommandSettings | ContextMenuSettings | EntryPointSettings,
+    router: "Router",
 ) -> float | None:
     if "auto_defer" in settings:
         return settings["auto_defer"]

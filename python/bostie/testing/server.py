@@ -28,6 +28,7 @@ MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
 GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
 CLEARED: Json = {"content": "", "embeds": []}
 EPHEMERAL = 1 << 6
+LAUNCH_ACTIVITY = 12
 LOADING = 1 << 7
 LOCALIZATIONS = ("name_localizations", "description_localizations")
 TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
@@ -935,6 +936,9 @@ def _callback_response(interaction: Json, kind: int, original: Json | None) -> J
         }
     if kind in (4, 7):
         resource["message"] = original
+    if kind == LAUNCH_ACTIVITY:
+        summary["activity_instance_id"] = f"i-{interaction['id']}"
+        resource["activity_instance"] = {"id": summary["activity_instance_id"]}
     return {"interaction": summary, "resource": resource}
 
 
