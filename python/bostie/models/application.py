@@ -8,6 +8,8 @@ from bostie.enums import (
     ApplicationRoleConnectionMetadataType,
     MembershipState,
     Permissions,
+    TeamMemberRole,
+    WebhookEventType,
 )
 from bostie.models.base import Builder, Model
 from bostie.models.user import PartialUser, User
@@ -40,7 +42,7 @@ class TeamMember(Model, kw_only=True):
     membership_state: MembershipState
     team_id: int
     user: User
-    role: str
+    role: TeamMemberRole
 
 
 class Team(Model, kw_only=True):
@@ -78,7 +80,7 @@ class Application(PartialApplication, kw_only=True):
     role_connections_verification_url: str | None = None
     event_webhooks_url: str | None = None
     event_webhooks_status: ApplicationEventWebhookStatus | None = None
-    event_webhooks_types: tuple[str, ...] = ()
+    event_webhooks_types: tuple[WebhookEventType, ...] = ()
     tags: tuple[str, ...] = ()
     install_params: InstallParams | None = None
     integration_types_config: dict[

@@ -8,12 +8,14 @@ from bostie.enums import (
     ExplicitContentFilterLevel,
     GuildFeature,
     IntegrationExpireBehavior,
+    IntegrationType,
     MemberFlags,
     MFALevel,
     NSFWLevel,
     Permissions,
     PremiumTier,
     RoleFlags,
+    Status,
     SystemChannelFlags,
     VerificationLevel,
 )
@@ -267,7 +269,7 @@ class GuildWidgetMember(Model, kw_only=True):
     username: str
     discriminator: str
     avatar: str | None
-    status: str
+    status: Status
     avatar_url: str
 
 
@@ -348,7 +350,7 @@ class Integration(Model, kw_only=True):
 
     id: int
     name: str
-    type: str
+    type: IntegrationType
     enabled: bool
     syncing: bool | None = None
     role_id: int | None = None
@@ -369,7 +371,7 @@ class PartialIntegration(Model, kw_only=True):
 
     id: int
     name: str
-    type: str
+    type: IntegrationType
     account: IntegrationAccount
     application_id: int | None = None
 

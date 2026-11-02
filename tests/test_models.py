@@ -20,6 +20,7 @@ from bostie.enums import (
     EmbedType,
     ExplicitContentFilterLevel,
     GuildFeature,
+    IntegrationType,
     MessageActivityType,
     MessageFlags,
     MessageReferenceType,
@@ -28,14 +29,18 @@ from bostie.enums import (
     OptionType,
     Permissions,
     PremiumType,
+    Status,
     SystemChannelFlags,
+    TeamMemberRole,
     UnfurledMediaItemFlags,
     UserFlags,
+    WebhookEventType,
 )
 from bostie.file import File
 from bostie.models import (
     ActionRow,
     AllowedMentions,
+    Application,
     Attachment,
     AutocompleteInteraction,
     Button,
@@ -53,6 +58,8 @@ from bostie.models import (
     Entitlement,
     FileComponent,
     Guild,
+    GuildWidget,
+    Integration,
     InteractionMetadata,
     MediaGallery,
     Member,
@@ -73,6 +80,7 @@ from bostie.models import (
     SubmittedRadioGroup,
     SubmittedTextDisplay,
     SubmittedTextInput,
+    TeamMember,
     TextDisplay,
     Thumbnail,
     UnknownComponent,
@@ -591,6 +599,23 @@ def test_the_current_user_carries_its_account_settings() -> None:
     assert (user.mfa_enabled, user.verified, user.email) == (True, True, None)
     assert (user.locale, user.premium_type) == ("en-US", PremiumType.NONE)
     assert user.flags == UserFlags(0)
+
+
+def test_documented_string_values_decode_into_their_enums() -> None:
+    app = json.loads(payload("rest/application_me.json"))
+    app["event_webhooks_types"] = ["APPLICATION_AUTHORIZED", "SOMETHING_NEW"]
+    member = {"membership_state": 2, "team_id": "1", "user": MESSAGE["author"]}
+
+    integration = decode(Integration, payload("events/INTEGRATION_UPDATE.json"))
+    widget = decode(GuildWidget, payload("rest/guild_widget.json"))
+    developer = decode(TeamMember, msgspec.json.encode(member | {"role": "developer"}))
+    webhooks = decode(Application, msgspec.json.encode(app)).event_webhooks_types
+
+    assert integration.type is IntegrationType.TWITCH
+    assert widget.members[0].status is Status.ONLINE
+    assert developer.role is TeamMemberRole.DEVELOPER
+    assert webhooks[0] is WebhookEventType.APPLICATION_AUTHORIZED
+    assert webhooks[1].name == "UNKNOWN_SOMETHING_NEW"
 
 
 def test_mentions_and_display_names() -> None:

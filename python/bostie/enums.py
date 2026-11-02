@@ -379,6 +379,27 @@ class ApplicationRoleConnectionMetadataType(DiscordIntEnum):
     BOOLEAN_NOT_EQUAL = 8
 
 
+class TeamMemberRole(DiscordStrEnum):
+    ADMIN = "admin"
+    DEVELOPER = "developer"
+    READ_ONLY = "read_only"
+
+
+class WebhookEventType(DiscordStrEnum):
+    APPLICATION_AUTHORIZED = "APPLICATION_AUTHORIZED"
+    APPLICATION_DEAUTHORIZED = "APPLICATION_DEAUTHORIZED"
+    ENTITLEMENT_CREATE = "ENTITLEMENT_CREATE"
+    ENTITLEMENT_UPDATE = "ENTITLEMENT_UPDATE"
+    ENTITLEMENT_DELETE = "ENTITLEMENT_DELETE"
+    QUEST_USER_ENROLLMENT = "QUEST_USER_ENROLLMENT"
+    LOBBY_MESSAGE_CREATE = "LOBBY_MESSAGE_CREATE"
+    LOBBY_MESSAGE_UPDATE = "LOBBY_MESSAGE_UPDATE"
+    LOBBY_MESSAGE_DELETE = "LOBBY_MESSAGE_DELETE"
+    GAME_DIRECT_MESSAGE_CREATE = "GAME_DIRECT_MESSAGE_CREATE"
+    GAME_DIRECT_MESSAGE_UPDATE = "GAME_DIRECT_MESSAGE_UPDATE"
+    GAME_DIRECT_MESSAGE_DELETE = "GAME_DIRECT_MESSAGE_DELETE"
+
+
 class MembershipState(DiscordIntEnum):
     INVITED = 1
     ACCEPTED = 2
@@ -601,6 +622,13 @@ class CommandPermissionType(DiscordIntEnum):
     ROLE = 1
     USER = 2
     CHANNEL = 3
+
+
+class IntegrationType(DiscordStrEnum):
+    TWITCH = "twitch"
+    YOUTUBE = "youtube"
+    DISCORD = "discord"
+    GUILD_SUBSCRIPTION = "guild_subscription"
 
 
 class IntegrationExpireBehavior(DiscordIntEnum):
