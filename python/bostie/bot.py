@@ -53,6 +53,7 @@ from bostie.enums import (
     Status,
 )
 from bostie.errors import (
+    Forbidden,
     MemberRequestRateLimited,
     MissingIntent,
     StateError,
@@ -255,6 +256,7 @@ class Bot(Router):
         self.application_id: int | None = None
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
+        self._command_ids: dict[int | None, Mapping[str, int]] = {}
         self._command_defaults = _command_defaults(contexts, integration_types)
         self._auto_sync = auto_sync
         self.auto_defer = auto_defer
@@ -367,6 +369,7 @@ class Bot(Router):
             self._closing = None
         self._bridge = bridge
         self._replaying.clear()
+        self._command_ids.clear()
         async with bridge:
             self._http = http = HTTPClient(bridge)
             self._rest = REST(http, self._allowed_mentions, self.cache)
@@ -407,12 +410,14 @@ class Bot(Router):
                 self.application_id = int(application["id"])
                 await self._setup()
                 if self._auto_sync:
-                    await sync.sync_commands(
-                        http,
-                        self.application_id,
-                        [*self.commands.values(), *self.context_menus.values()],
-                        self._dev_guilds,
-                        defaults=self._command_defaults,
+                    self._remember_ids(
+                        await sync.sync_commands(
+                            http,
+                            self.application_id,
+                            [*self.commands.values(), *self.context_menus.values()],
+                            self._dev_guilds,
+                            defaults=self._command_defaults,
+                        )
                     )
                 if resumed := gateway._load_sessions():
                     self._replaying |= resumed
@@ -590,7 +595,7 @@ class Bot(Router):
         """Overwrite the commands on Discord now and return what differed."""
         if self.application_id is None:
             raise StateError("sync_commands() needs a running bot")
-        return await sync.sync_commands(
+        results = await sync.sync_commands(
             self.http,
             self.application_id,
             [*self.commands.values(), *self.context_menus.values()],
@@ -598,6 +603,35 @@ class Bot(Router):
             defaults=self._command_defaults,
             always_put=True,
         )
+        self._remember_ids(results)
+        return results
+
+    async def command_mention(self, name: str, *, guild_id: int | None = None) -> str:
+        """`</name:id>`, shown as a clickable `/name`; `name` may end in subcommands.
+
+        In `guild_id`, a command registered there wins over a global one. Without
+        a sync since the start, it asks Discord for the ids once per scope.
+        """
+        if self.application_id is None:
+            raise StateError("command_mention() needs a running bot")
+        top = name.split(" ", 1)[0]
+        for scope in (None,) if guild_id is None else (guild_id, None):
+            ids = self._command_ids.get(scope)
+            if ids is None:
+                try:
+                    ids = await sync.fetch_ids(self.http, self.application_id, scope)
+                except Forbidden:
+                    if scope is None:
+                        raise
+                    ids = {}
+                self._command_ids[scope] = ids
+            if top in ids:
+                return f"</{name}:{ids[top]}>"
+        raise LookupError(f"no slash command named {top!r} is registered there")
+
+    def _remember_ids(self, results: Iterable[sync.SyncResult]) -> None:
+        for result in results:
+            self._command_ids[result.guild_id] = result.ids
 
     async def _run(self, token: str | None) -> None:
         started = asyncio.ensure_future(self.start(token))

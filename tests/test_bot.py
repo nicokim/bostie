@@ -246,6 +246,30 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
     run(scenario)
 
 
+def test_command_mentions_use_the_synced_ids_or_fetch_them_once() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        guild = 1335172792320131073
+        route = f"/applications/{fake.application_id}/guilds/{guild}/commands"
+        fake.fail("GET", route, 403, {"code": 50001, "message": "Missing Access"})
+        synced = example_bot(fake)
+        async with running(synced, fake):
+            role = next(c["id"] for c in fake.commands if c["name"] == "role")
+            sent = len(fake.requests)
+            assert await synced.command_mention("role") == f"</role:{role}>"
+            assert len(fake.requests) == sent
+        bot = example_bot(fake, auto_sync=False)
+        async with running(bot, fake):
+            fake.requests.clear()
+            mention = await bot.command_mention("role color set", guild_id=guild)
+            assert mention == f"</role color set:{role}>"
+            assert await bot.command_mention("role") == f"</role:{role}>"
+            with pytest.raises(LookupError, match="'nothing'"):
+                await bot.command_mention("nothing")
+        assert [request.method for request in fake.requests] == ["GET", "GET"]
+
+    run(scenario)
+
+
 @pytest.mark.parametrize(
     ("options", "error", "match"),
     [

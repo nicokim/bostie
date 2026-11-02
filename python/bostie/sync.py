@@ -1,7 +1,7 @@
 import logging
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from bostie.commands import (
@@ -62,12 +62,16 @@ OPTION_DEFAULTS: dict[str, Any] = {
 
 @dataclass(frozen=True, slots=True)
 class SyncResult:
-    """Commands that differed in one scope; `guild_id` is None for global."""
+    """Commands that differed in one scope; `guild_id` is None for global.
+
+    `ids` holds the id Discord gave each slash command of the scope, by name.
+    """
 
     guild_id: int | None
     added: tuple[str, ...]
     removed: tuple[str, ...]
     changed: tuple[str, ...]
+    ids: Mapping[str, int] = field(default_factory=dict[str, int], compare=False)
 
 
 async def sync_commands(
@@ -139,12 +143,13 @@ async def _sync_scope(
     result = _diff(guild_id, local, ours)
     if not (result.added or result.removed or result.changed or always_put):
         log.info("commands up to date (%s)", label)
-        return result
+        return replace(result, ids=slash_ids(remote))
     body = local + passthrough
     try:
-        await http.request("PUT", route, json=body, **params)
+        stored = await http.request("PUT", route, json=body, **params)
     except BadRequest as error:
         raise _sync_error(error, body, commands) from error
+    result = replace(result, ids=slash_ids(stored))
     log.info(
         "commands synced (%s): added %s, removed %s, changed %s",
         label,
@@ -153,6 +158,29 @@ async def _sync_scope(
         list(result.changed),
     )
     return result
+
+
+async def fetch_ids(
+    http: "HTTPClient", application_id: int, guild_id: int | None
+) -> dict[str, int]:
+    """The id of each slash command registered in one scope, by name."""
+    if guild_id is None:
+        commands = await http.request(
+            "GET", GLOBAL_ROUTE, application_id=application_id
+        )
+    else:
+        commands = await http.request(
+            "GET", GUILD_ROUTE, application_id=application_id, guild_id=guild_id
+        )
+    return slash_ids(commands)
+
+
+def slash_ids(commands: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    return {
+        command["name"]: int(command["id"])
+        for command in commands
+        if _key(command)[0] == CommandType.CHAT_INPUT
+    }
 
 
 def _passthrough(command: Mapping[str, Any]) -> dict[str, Any]:
