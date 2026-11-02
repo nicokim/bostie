@@ -1059,7 +1059,15 @@ class Bot(Router):
             return
         handler = self._handler(interaction, anchor)
         if handler is None:
-            log.debug("no command or component route handles %d", interaction.id)
+            log.log(
+                logging.DEBUG
+                if InteractionCreate.NAME in self.listeners
+                else logging.WARNING,
+                "nothing handles interaction %d (%s); Discord shows "
+                "'The application did not respond'",
+                interaction.id,
+                _described(interaction),
+            )
             return
         delay = asyncio.get_running_loop().time() - received
         if delay > SLOW_HANDLER_START:
@@ -1337,6 +1345,16 @@ async def _answer_failure(
             await ctx.respond(answer)
     except Exception:
         log.exception("answering interaction %d failed", ctx.interaction.id)
+
+
+def _described(interaction: Interaction) -> str:
+    match interaction:
+        case CommandInteraction() | AutocompleteInteraction():
+            return f"command {interaction.data.name!r}"
+        case ComponentInteraction() | ModalSubmitInteraction():
+            return f"custom_id {interaction.data.custom_id!r}"
+        case UnknownInteraction():
+            return f"type {interaction.type}"
 
 
 def _command_defaults(

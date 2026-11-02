@@ -497,6 +497,23 @@ def test_only_slash_interactions_run_commands_and_unanswered_are_logged(
     assert ".thinking " in warnings[1].getMessage()
 
 
+def test_an_unhandled_interaction_warns_when_no_listener_takes_it(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = example_bot(fake, auto_sync=False)
+        async with running(bot, fake), bot.stream(InteractionCreate) as created:
+            gone = payloads.interaction(2, payloads.command("gone"))
+            await fake.dispatch("INTERACTION_CREATE", gone)
+            await anext(created)
+
+    run(scenario)
+
+    (warning,) = [r for r in caplog.records if "nothing handles" in r.message]
+    assert warning.levelno == logging.WARNING
+    assert "command 'gone'" in warning.message
+
+
 def test_buttons_are_routed_by_custom_id_template() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = example_bot(fake)
