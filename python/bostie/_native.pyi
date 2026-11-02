@@ -160,6 +160,7 @@ type FrameItem = tuple[
     float,
     bytes,
     bool,
+    float | None,
     float,
 ]
 type PacketItem = tuple[

@@ -14,7 +14,7 @@ use crate::runtime::Owner;
 use crate::voice::peak::Peak;
 use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Frame {
         user: Option<UserId>,
@@ -25,6 +25,7 @@ pub enum Item {
         at: Instant,
         data: Bytes,
         lost: bool,
+        level: Option<f32>,
     },
     Packet {
         user: UserId,
@@ -63,7 +64,7 @@ impl Ended {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReceiveRead {
     Pending,
     Items(Vec<(Instant, Item)>),
@@ -382,6 +383,7 @@ mod tests {
             at,
             data: Bytes::from_static(&SILENCE_FRAME),
             lost: false,
+            level: None,
         }
     }
 
@@ -452,6 +454,7 @@ mod tests {
             at: now,
             data: Bytes::new(),
             lost: true,
+            level: None,
         };
 
         receiver.push([frame(ALICE, 0, now)], early);

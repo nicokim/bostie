@@ -29,7 +29,19 @@ DEAFENED = (
 
 
 def frame(offset: int, age: float = 0.0, queued: float = 0.0) -> "FrameItem":
-    return ("frame", USER_ID, 77, offset, offset, 960, age, b"\x01\x00", False, queued)
+    return (
+        "frame",
+        USER_ID,
+        77,
+        offset,
+        offset,
+        960,
+        age,
+        b"\x01\x00",
+        False,
+        None,
+        queued,
+    )
 
 
 async def open_receiver(
@@ -122,8 +134,8 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
         bot.core.receivers[-1].items.extend(
             [
                 ("speech", USER_ID, 77, True, 0, 0.5, 0.0, 0.0),
-                ("frame", USER_ID, 77, 1000, 0, 960, 0.25, b"pcm", False, 0.0),
-                ("frame", None, None, None, 960, 960, 0.125, b"", True, 0.0),
+                ("frame", USER_ID, 77, 1000, 0, 960, 0.25, b"pcm", False, -12.5, 0.0),
+                ("frame", None, None, None, 960, 960, 0.125, b"", True, None, 0.0),
                 ("packet", USER_ID, 77, 9, 1960, 0.0625, b"opus", [(1, b"\x85")], 0.0),
                 ("speech", USER_ID, 77, False, 1920, 0.03125, 0.25, 0.0),
             ]
@@ -139,7 +151,7 @@ def test_items_become_frames_packets_and_speech_aged_against_one_reading() -> No
             voice.SpeechStart(
                 guild_id=GUILD_ID, user_id=USER_ID, ssrc=77, at=now - 0.5, offset=0
             ),
-            voice.Frame(USER_ID, 77, 1000, 0, 960, now - 0.25, b"pcm", False),
+            voice.Frame(USER_ID, 77, 1000, 0, 960, now - 0.25, b"pcm", False, -12.5),
             voice.Frame(None, None, None, 960, 960, now - 0.125, b"", True),
             voice.Packet(USER_ID, 77, 9, 1960, now - 0.0625, b"opus", ((1, b"\x85"),)),
             voice.SpeechStop(

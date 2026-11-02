@@ -205,9 +205,21 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop]:
 
 def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, Item]:
     match item:
-        case ("frame", user, ssrc, timestamp, offset, samples, age, data, lost, queued):
+        case (
+            "frame",
+            user,
+            ssrc,
+            timestamp,
+            offset,
+            samples,
+            age,
+            data,
+            lost,
+            level,
+            queued,
+        ):
             return now - queued, Frame(
-                user, ssrc, timestamp, offset, samples, now - age, data, lost
+                user, ssrc, timestamp, offset, samples, now - age, data, lost, level
             )
         case ("packet", user, ssrc, sequence, timestamp, age, opus, extensions, queued):
             return now - queued, Packet(

@@ -73,6 +73,7 @@ A `voice.Frame` has these fields:
 - `received_at`: the `time.monotonic()` at which that packet arrived.
 - `data`: the PCM bytes, or one Opus packet.
 - `lost`: the packet never arrived. A lost PCM frame holds the decoder's best guess at the missing audio. A lost Opus frame has empty `data`: it only marks the gap.
+- `level`: how loud a PCM frame is, its RMS in dBFS, measured in Rust: 0 for a full-scale square wave and `-inf` for digital silence. An Opus frame has `None`, since it is not decoded.
 
 A `voice.Packet` has `user_id`, `ssrc`, `sequence`, `timestamp`, `received_at`, `opus` and `extensions`, a tuple of `(id, bytes)` pairs. `dict(packet.extensions)` turns them into a lookup.
 
@@ -172,6 +173,8 @@ async def captions(vc: voice.VoiceConnection, channel_id: int) -> None:
 ```
 
 Here `speech_to_text` stands for your engine: it gets 16 kHz mono 16-bit audio. An utterance has `user_id`, `data`, `offset`, `duration` and `lost`, the seconds of it that are the decoder's guesses at lost packets. Skipping utterances that are mostly guesses keeps speech-to-text engines from inventing words.
+
+Speech markers come from packet activity: someone whose client sends audio all the time, such as a microphone left open on a noisy fan, never stops speaking. `voice.utterances(rx, level=-45.0)` cuts by loudness instead: a frame quieter than `level` dBFS counts as silence, and the receiver needs no markers. Pick the level by printing `frame.level` while people talk and while they do not.
 
 ### Recording
 

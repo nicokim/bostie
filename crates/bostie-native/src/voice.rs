@@ -472,6 +472,7 @@ fn received_item(
             at,
             data,
             lost,
+            level,
         } => (
             intern!(py, "frame"),
             user.map(u64::from),
@@ -482,6 +483,7 @@ fn received_item(
             age(now, at),
             PyBytes::new(py, &data),
             lost,
+            level,
             queued,
         )
             .into_bound_py_any(py),

@@ -841,29 +841,32 @@ def utterances(
     *,
     min_silence: float = 0.8,
     max_length: float = 30.0,
+    level: float | None = None,
 ) -> AsyncIterator[Utterance]:
-    """Group a receiver's frames into utterances per user."""
+    """Group a receiver's frames into utterances per user.
+
+    With `level`, speech is audio louder than `level` dBFS, not the speech markers.
+    """
     format = rx.format
-    if not isinstance(format, PCM) or not rx.markers or rx.mix:
+    if not isinstance(format, PCM) or rx.mix or not (rx.markers or level is not None):
         raise ValueError(
-            "utterances needs a PCM receiver opened with markers=True and no mix"
+            "utterances needs a PCM receiver with no mix, opened with markers=True "
+            "or given a level"
         )
-    return _utterances(rx, format, min_silence, max_length)
-
-
-async def _utterances(
-    rx: "Receiver[Frame | SpeechStart | SpeechStop]",
-    format: PCM,
-    min_silence: float,
-    max_length: float,
-) -> AsyncIterator[Utterance]:
     grouping = _Grouping(
         silence=round(min_silence * SAMPLE_RATE),
         longest=round(max_length * SAMPLE_RATE),
         pause=rx.jitter + min_silence,
         width=format.channels * SAMPLE_BYTES[format.sample],
         rate=format.rate,
+        level=level,
     )
+    return _utterances(rx, grouping)
+
+
+async def _utterances(
+    rx: "Receiver[Frame | SpeechStart | SpeechStop]", grouping: "_Grouping"
+) -> AsyncIterator[Utterance]:
     while True:
         deadline = grouping.deadline()
         try:
@@ -895,6 +898,7 @@ class _Grouping:
     pause: float
     width: int
     rate: int
+    level: float | None
     speaking: dict[int, _Speech] = field(default_factory=dict[int, _Speech])
 
     def deadline(self) -> float:
@@ -908,15 +912,30 @@ class _Grouping:
         match item:
             case None:
                 return self._expire(deadline)
+            case Frame(user_id=int(user)) if self._quiet(item):
+                return self._pause(user, item)
+            case Frame(user_id=int(user)):
+                return self._add(user, item)
+            case _ if self.level is not None:
+                pass
             case SpeechStart(user_id=user, offset=int(offset)):
                 return self._start(user, offset)
             case SpeechStop(user_id=user, offset=int(offset), at=at):
                 self._stop(user, offset, at)
-            case Frame(user_id=int(user)):
-                return self._add(user, item)
             case _:
                 pass
         return []
+
+    def _quiet(self, frame: Frame) -> bool:
+        return self.level is not None and (
+            frame.level is None or frame.level < self.level
+        )
+
+    def _pause(self, user: int, frame: Frame) -> list[Utterance]:
+        speech = self.speaking.get(user)
+        if speech is None or frame.offset + frame.samples - speech.end < self.silence:
+            return []
+        return [self.speaking.pop(user).utterance(user)]
 
     def _expire(self, deadline: float) -> list[Utterance]:
         expired = [
@@ -958,6 +977,8 @@ class _Grouping:
         gap = max(frame.offset - speech.end, 0) * self.rate // SAMPLE_RATE
         speech.data += bytes(gap * self.width)
         speech.data += frame.data
+        if self.level is not None:
+            speech.deadline = frame.received_at + self.pause
         speech.end = frame.offset + frame.samples
         if frame.lost:
             speech.lost += frame.samples

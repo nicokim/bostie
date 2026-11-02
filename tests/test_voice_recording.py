@@ -134,9 +134,11 @@ def run(scenario: Callable[[], Coroutine[Any, Any, None]]) -> None:
     asyncio.run(main())
 
 
-def frame(user: int, index: int, *, lost: bool = False) -> Frame:
+def frame(
+    user: int, index: int, *, lost: bool = False, level: float | None = None
+) -> Frame:
     data = bytes([user * 16 + index]) * SPEECH_BYTES
-    return Frame(user, user, index * STEP, index * STEP, STEP, 0.0, data, lost)
+    return Frame(user, user, index * STEP, index * STEP, STEP, 0.0, data, lost, level)
 
 
 def start(user: int, index: int) -> SpeechStart:
@@ -281,6 +283,22 @@ def test_utterances_split_speech_at_stops_gaps_starts_and_max_length(
         rx.end(ClosedReason.DISCONNECTED)
         grouped = utterances(cast("Any", rx), min_silence=0.1, max_length=max_length)
         assert [utterance async for utterance in grouped] == expected
+
+    run(scenario)
+
+
+def test_utterances_with_a_level_follow_loudness_instead_of_markers() -> None:
+    async def scenario() -> None:
+        rx = FakeReceiver(markers=False)
+        loud = [frame(1, index, level=-20.0) for index in (1, 2, 8)]
+        quiet = [frame(1, index, level=-60.0) for index in (0, 3, 4, 5, 6, 7)]
+        rx.feed(quiet[0], *loud[:2], start(1, 3), *quiet[1:], loud[2], stop(1, 9))
+        rx.end(ClosedReason.DISCONNECTED)
+        grouped = utterances(cast("Any", rx), min_silence=0.1, level=-40.0)
+        assert [utterance async for utterance in grouped] == [
+            heard(1, 1, 2),
+            heard(1, 8),
+        ]
 
     run(scenario)
 

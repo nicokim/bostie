@@ -12,6 +12,7 @@ class Frame(msgspec.Struct, frozen=True, gc=False):
     received_at: float
     data: bytes
     lost: bool
+    level: float | None = None
 
 
 class Packet(msgspec.Struct, frozen=True, gc=False):

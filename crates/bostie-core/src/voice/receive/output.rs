@@ -556,6 +556,7 @@ impl Output {
                     at: header.at,
                     data: payload.clone(),
                     lost: false,
+                    level: None,
                 });
                 context.heard = true;
                 Some(offset.saturating_add(u64::from(samples)))
@@ -611,6 +612,7 @@ impl Output {
                     at: header.at,
                     data: Bytes::new(),
                     lost: header.lost,
+                    level: None,
                 });
             }
             Form::Packets => {}
@@ -665,6 +667,7 @@ impl Output {
                 at: header.at,
                 data: data.freeze(),
                 lost: header.lost,
+                level: Some(level(pcm)),
             });
             context.heard |= !header.lost;
             end = Some(offset.saturating_add(u64::from(samples)));
@@ -710,6 +713,7 @@ impl Output {
                 at: context.now,
                 data: data.freeze(),
                 lost,
+                level: Some(level(&mix.sum)),
             });
             mix.next = Some(offset.saturating_add(u64::from(FRAME_48K)));
             mix.owed = mix.owed.saturating_sub(1);
@@ -881,6 +885,12 @@ fn offset_of(due: i64, opened: i64) -> u64 {
     due.saturating_sub(opened).max(0).unsigned_abs()
 }
 
+#[expect(clippy::cast_precision_loss)]
+fn level(samples: &[f32]) -> f32 {
+    let energy: f32 = samples.iter().map(|sample| sample * sample).sum();
+    10.0 * (energy / samples.len().max(1) as f32).log10()
+}
+
 fn speech_item(epoch: Instant, user: UserId, edge: Edge, offset: Option<u64>) -> Item {
     let (ssrc, at, speaking) = speaking(epoch, edge);
     Item::Speech {
@@ -930,6 +940,14 @@ mod tests {
         mix.fifos.insert((2, UserId::from(BOB)), partial);
 
         assert_eq!((complete, mix.oldest()), (Some(earlier), Some(earliest)));
+    }
+
+    #[test]
+    fn a_level_is_the_rms_in_dbfs_and_minus_infinity_for_silence() {
+        let square = [0.5, -0.5, 0.5, -0.5];
+
+        assert!((level(&square) - 20.0 * 0.5_f32.log10()).abs() < 1e-5);
+        assert_eq!(level(&[0.0; 4]), f32::NEG_INFINITY);
     }
 
     #[test]
