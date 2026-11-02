@@ -82,7 +82,7 @@ class Attachment(Model, kw_only=True):
 
 
 class Resolved(Model, kw_only=True):
-    """The users, members, roles, channels, messages and files an interaction names."""
+    """The users, members, roles, channels, messages and files mentioned by id."""
 
     users: dict[int, User] = {}
     members: dict[int, PartialMember] = {}
