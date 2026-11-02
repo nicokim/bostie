@@ -20,7 +20,7 @@ use super::close::{CloseAction, classify};
 use super::envelope::tests::fixture;
 use super::inflate::tests::{compress, discord_compressor};
 use super::limits::Limits;
-use super::{Gateway, IdentifyLimit};
+use super::{Gateway, IdentifyLimit, SavedSession};
 use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
@@ -353,7 +353,7 @@ impl Harness {
 
     fn start(&self) {
         self.gateway
-            .start(shard(), &self.fake.url(), IDENTIFY)
+            .start(shard(), &self.fake.url(), IDENTIFY, None)
             .unwrap();
     }
 
@@ -420,9 +420,14 @@ impl Harness {
         }
     }
 
-    async fn stopped(&mut self) -> (Option<u16>, String) {
+    async fn stopped(&mut self) -> (Option<u16>, String, Option<SavedSession>) {
         match self.delivery().await {
-            Delivery::Stopped { code, reason, .. } => (code, reason),
+            Delivery::Stopped {
+                code,
+                reason,
+                session,
+                ..
+            } => (code, reason, session),
             other => panic!("expected a stop, got {other:?}"),
         }
     }
@@ -607,7 +612,10 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
 
-    harness.gateway.start(shard(), &refusing, IDENTIFY).unwrap();
+    harness
+        .gateway
+        .start(shard(), &refusing, IDENTIFY, None)
+        .unwrap();
 
     for _ in 0..4 {
         let (code, _, resuming) = harness.disconnected().await;
@@ -670,7 +678,10 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
     let mut harness = Harness::with(FakeGateway::start(false), &api.url, limits, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
-    harness.gateway.start(shard(), &refusing, IDENTIFY).unwrap();
+    harness
+        .gateway
+        .start(shard(), &refusing, IDENTIFY, None)
+        .unwrap();
     for _ in 0..2 {
         harness.disconnected().await;
     }
@@ -678,7 +689,7 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
 
     harness.gateway.close(shard()).unwrap();
 
-    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned(), None));
 }
 
 #[tokio::test]
@@ -758,7 +769,7 @@ async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
         peer.close(code).await;
 
         if action == CloseAction::Fatal {
-            assert_eq!(harness.stopped().await, (Some(code), text.to_owned()));
+            assert_eq!(harness.stopped().await, (Some(code), text.to_owned(), None));
             continue;
         }
         let resuming = action == CloseAction::Resume;
@@ -849,7 +860,7 @@ async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
     for id in 0..2 {
         harness
             .gateway
-            .start(ShardId::from(id), &harness.fake.url(), IDENTIFY)
+            .start(ShardId::from(id), &harness.fake.url(), IDENTIFY, None)
             .unwrap();
     }
     let mut peers = [harness.fake.accept().await, harness.fake.accept().await];
@@ -943,7 +954,7 @@ async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
         .unwrap()
         .unwrap();
     harness.gateway.close(shard()).unwrap();
-    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned(), None));
 }
 
 #[tokio::test]
@@ -1121,16 +1132,25 @@ async fn the_api_rejects_bad_input_and_full_queues() {
         Err(CoreError::UnknownShard(_))
     ));
     assert!(matches!(
-        gateway.start(shard(), "https://gateway.discord.gg", IDENTIFY),
+        gateway.start(shard(), "https://gateway.discord.gg", IDENTIFY, None),
         Err(CoreError::InvalidRequest(_))
     ));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), b"[]"),
+        gateway.start(shard(), &harness.fake.url(), b"[]", None),
+        Err(CoreError::InvalidRequest(_))
+    ));
+    let saved = SavedSession {
+        id: SESSION_ID.to_owned(),
+        seq: 1,
+        resume_url: "https://gateway.discord.gg".to_owned(),
+    };
+    assert!(matches!(
+        gateway.start(shard(), &harness.fake.url(), IDENTIFY, Some(saved)),
         Err(CoreError::InvalidRequest(_))
     ));
     let oversized = format!(r#"{{"token":"{}"}}"#, "x".repeat(4096));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), oversized.as_bytes()),
+        gateway.start(shard(), &harness.fake.url(), oversized.as_bytes(), None),
         Err(CoreError::InvalidRequest(_))
     ));
     harness.start();
@@ -1150,7 +1170,7 @@ async fn the_api_rejects_bad_input_and_full_queues() {
         Err(CoreError::SendQueueFull(_))
     ));
     assert!(matches!(
-        gateway.start(shard(), &harness.fake.url(), IDENTIFY),
+        gateway.start(shard(), &harness.fake.url(), IDENTIFY, None),
         Err(CoreError::ShardRunning(_))
     ));
 }
@@ -1185,11 +1205,11 @@ async fn a_shard_that_reported_its_stop_is_stopped_while_its_task_still_unwinds(
     harness.gateway.send(shard(), queued).unwrap();
 
     harness.gateway.close(shard()).unwrap();
-    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned(), None));
     let latency = harness.gateway.latency(shard());
     let restarted = harness
         .gateway
-        .start(shard(), &harness.fake.url(), IDENTIFY);
+        .start(shard(), &harness.fake.url(), IDENTIFY, None);
     drop(release);
 
     assert!(
@@ -1214,8 +1234,40 @@ async fn reconnect_resumes_and_close_stops() {
 
     harness.gateway.close(shard()).unwrap();
     assert_eq!(peer.close_code().await, Some(1000));
-    assert_eq!(harness.stopped().await, (None, "closed".to_owned()));
+    assert_eq!(harness.stopped().await, (None, "closed".to_owned(), None));
     harness.start();
+}
+
+#[tokio::test]
+async fn a_saved_session_resumes_and_a_suspend_saves_where_it_stopped() {
+    let mut harness = Harness::new(false);
+    let saved = SavedSession {
+        id: SESSION_ID.to_owned(),
+        seq: 3,
+        resume_url: format!("ws://{}/gateway-resume", harness.fake.address),
+    };
+    harness
+        .gateway
+        .start(shard(), &harness.fake.url(), IDENTIFY, Some(saved.clone()))
+        .unwrap();
+
+    let mut peer = harness.resume(SLOW_HEARTBEAT, 3).await;
+    peer.send(fixture(RESUMED)).await;
+    let resumed = harness.until_dispatch("RESUMED").await;
+    harness.gateway.suspend(shard()).unwrap();
+
+    assert_eq!(peer.close_code().await, Some(4000));
+    assert_eq!(
+        harness.stopped().await,
+        (
+            None,
+            "closed".to_owned(),
+            Some(SavedSession {
+                seq: resumed,
+                ..saved
+            })
+        )
+    );
 }
 
 #[tokio::test]

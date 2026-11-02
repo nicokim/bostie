@@ -14,11 +14,11 @@ use tokio_websockets::{
 };
 use tracing::debug;
 
-use super::Shared;
 use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
+use super::{SavedSession, Shared};
 use crate::error::describe;
 use crate::ids::ShardId;
 use crate::inbox::Delivery;
@@ -49,6 +49,7 @@ pub(super) struct Signals {
     pub(super) approved_request: AtomicU64,
     pub(super) latency: AtomicU64,
     pub(super) stopped: AtomicBool,
+    pub(super) keep_session: AtomicBool,
 }
 
 impl Signals {
@@ -61,14 +62,35 @@ impl Signals {
             approved_request: AtomicU64::new(0),
             latency: AtomicU64::new(UNKNOWN_LATENCY),
             stopped: AtomicBool::new(false),
+            keep_session: AtomicBool::new(false),
         }
     }
 }
 
-struct Session {
+pub(super) struct Session {
     id: String,
     resume_url: Option<Url>,
     seq: u64,
+}
+
+impl Session {
+    pub(super) fn restored(saved: &SavedSession) -> Option<Self> {
+        Some(Self {
+            id: saved.id.clone(),
+            resume_url: Some(gateway_url(&saved.resume_url)?),
+            seq: saved.seq,
+        })
+    }
+
+    fn saved(&self, base_url: &Url) -> SavedSession {
+        let mut resume_url = self.resume_url.as_ref().unwrap_or(base_url).clone();
+        resume_url.set_query(None);
+        SavedSession {
+            id: self.id.clone(),
+            seq: self.seq,
+            resume_url: resume_url.into(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -206,6 +228,7 @@ impl Shard {
         shared: Arc<Shared>,
         commands: mpsc::Receiver<Bytes>,
         signals: Arc<Signals>,
+        session: Option<Session>,
     ) -> Self {
         Self {
             id,
@@ -213,8 +236,8 @@ impl Shard {
             shared,
             commands,
             signals,
-            session: None,
-            had_session: false,
+            had_session: session.is_some(),
+            session,
             identify_requests: 0,
             failures: 0,
             base_url_failures: 0,
@@ -228,7 +251,7 @@ impl Shard {
                 || !self.await_identify_budget().await
                 || !self.refresh_stale_url().await
             {
-                self.stopped(None, "closed");
+                self.closed();
                 return;
             }
             self.failures = self.failures.saturating_add(1);
@@ -344,6 +367,9 @@ impl Shard {
         };
         let ending = self.serve(&mut connection).await;
         match ending {
+            Ending::Stop if self.signals.keep_session.load(Ordering::Acquire) => {
+                connection.close(SESSION_KEEPING_CLOSE).await;
+            }
             Ending::Stop => connection.close(NORMAL_CLOSE).await,
             Ending::Closed(_) | Ending::Lost(_) => {}
             _ => connection.close(SESSION_KEEPING_CLOSE).await,
@@ -633,14 +659,14 @@ impl Shard {
     fn conclude(&mut self, ending: Ending) -> Option<Duration> {
         match ending {
             Ending::Stop => {
-                self.stopped(None, "closed");
+                self.closed();
                 return None;
             }
             Ending::Closed(code) => {
                 let (action, text) = close::classify(code);
                 match action {
                     CloseAction::Fatal => {
-                        self.stopped(Some(code), text);
+                        self.stopped(Some(code), text, None);
                         return None;
                     }
                     CloseAction::Reidentify => self.session = None,
@@ -701,12 +727,22 @@ impl Shard {
         });
     }
 
-    fn stopped(&self, code: Option<u16>, reason: &str) {
+    fn closed(&self) {
+        let session = self
+            .session
+            .as_ref()
+            .filter(|_| self.signals.keep_session.load(Ordering::Acquire))
+            .map(|session| session.saved(&self.url));
+        self.stopped(None, "closed", session);
+    }
+
+    fn stopped(&self, code: Option<u16>, reason: &str, session: Option<SavedSession>) {
         self.signals.stopped.store(true, Ordering::Release);
         self.push(Delivery::Stopped {
             shard: self.id,
             code,
             reason: reason.to_owned(),
+            session,
         });
     }
 

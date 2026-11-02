@@ -17,6 +17,7 @@ from collections.abc import (
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
+from pathlib import Path
 from typing import Any, Literal, Unpack, cast, override
 
 import msgspec
@@ -208,6 +209,7 @@ class Bot(Router):
         shard_count: int | Literal["auto"] = "auto",
         shard_ids: Iterable[int] | Literal["all"] = "all",
         before_identify: Callable[[int], Awaitable[object]] | None = None,
+        session_file: str | os.PathLike[str] | None = None,
     ) -> None:
         super().__init__()
         for name, value in (
@@ -247,6 +249,7 @@ class Bot(Router):
         self._presences_cached = presences
         self._large_threshold = large_threshold
         self._before_identify = before_identify
+        self._session_file = None if session_file is None else Path(session_file)
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
             {
@@ -365,6 +368,7 @@ class Bot(Router):
                     if isinstance(self._shard_ids, str)
                     else self._shard_ids,
                     large_threshold=self._large_threshold,
+                    session_file=self._session_file,
                 )
                 self._unready = set(gateway.shard_ids)
                 self._readiness = Readiness(
@@ -389,6 +393,10 @@ class Bot(Router):
                         [*self.commands.values(), *self.context_menus.values()],
                         self._dev_guilds,
                     )
+                if resumed := gateway._load_sessions():
+                    self._replaying |= resumed
+                    user = await self.rest.users.fetch_current()
+                    self.user = self.cache._current = user
                 gateway._filter(self._dispatch_names())
                 gateway._identify_limit(info["session_start_limit"])
                 if self._before_identify is not None:
@@ -401,7 +409,10 @@ class Bot(Router):
                 await self.close()
 
     async def close(self) -> None:
-        """Disconnect with code 1000, cancel running handlers and close the bridge."""
+        """Disconnect, cancel running handlers and close the bridge.
+
+        The shards end their sessions with code 1000, or save them to the session file.
+        """
         if self._closing is None or self._closing.done():
             self._closing = asyncio.ensure_future(self._shut_down())
         await asyncio.shield(self._closing)
@@ -675,7 +686,7 @@ class Bot(Router):
                 )
             case ("identify", shard_id, request):
                 spawn(self._tasks, self._approve_identify(shard_id, request))
-            case ("stopped", shard_id, code, reason):
+            case ("stopped", shard_id, code, reason, _):
                 self.gateway._handle(delivery)
                 self._emit(ShardStop(shard_id=shard_id, code=code, reason=reason))
             case ("backpressure", shard_id, queued_bytes):
@@ -816,6 +827,8 @@ class Bot(Router):
                     return readiness.ready(dispatch.shard_id, dispatch.data)
             case Resumed.NAME:
                 self._replaying.discard(dispatch.shard_id)
+                if readiness is not None:
+                    return readiness.resumed(dispatch.shard_id)
             case UserUpdate.NAME:
                 update = dispatch.event(UserUpdate)
                 if update is not None:

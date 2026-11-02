@@ -15,7 +15,7 @@ use bostie_core::voice::types::{
 };
 use bostie_core::{
     ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
-    RestRequest, ShardId, Ticket, UserId, describe,
+    RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
@@ -96,10 +96,22 @@ impl NativeCore {
             .gateway_approve_identify(ShardId::from(shard_id), request)?)
     }
 
-    fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> Result<()> {
+    #[pyo3(signature = (shard_id, url, identify, session=None))]
+    fn gateway_start(
+        &self,
+        shard_id: u32,
+        url: &str,
+        identify: Vec<u8>,
+        session: Option<(String, u64, String)>,
+    ) -> Result<()> {
+        let saved = session.map(|(id, seq, resume_url)| SavedSession {
+            id,
+            seq,
+            resume_url,
+        });
         Ok(self
             .0
-            .gateway_start(ShardId::from(shard_id), url, &identify)?)
+            .gateway_start(ShardId::from(shard_id), url, &identify, saved)?)
     }
 
     fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> Result<()> {
@@ -124,6 +136,10 @@ impl NativeCore {
 
     fn gateway_close(&self, shard_id: u32) -> Result<()> {
         Ok(self.0.gateway_close(ShardId::from(shard_id))?)
+    }
+
+    fn gateway_suspend(&self, shard_id: u32) -> Result<()> {
+        Ok(self.0.gateway_suspend(ShardId::from(shard_id))?)
     }
 
     fn gateway_latency(&self, shard_id: u32) -> Result<Option<f64>> {
@@ -451,7 +467,15 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
             shard,
             code,
             reason,
-        } => (intern!(py, "stopped"), u32::from(shard), code, reason).into_bound_py_any(py),
+            session,
+        } => (
+            intern!(py, "stopped"),
+            u32::from(shard),
+            code,
+            reason,
+            session.map(|session| (session.id, session.seq, session.resume_url)),
+        )
+            .into_bound_py_any(py),
         Delivery::Backpressure {
             shard,
             queued_bytes,

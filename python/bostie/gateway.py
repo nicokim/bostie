@@ -6,6 +6,7 @@ import sys
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TypedDict
 
 import msgspec
@@ -82,6 +83,16 @@ class MemberRequest(TypedDict, total=False):
 
 
 MEMBER_REQUEST = MemberRequest.__optional_keys__
+
+
+class GatewaySession(msgspec.Struct, frozen=True, kw_only=True):
+    """What a later process needs to resume a shard's session."""
+
+    shard_id: int
+    shard_count: int
+    session_id: str
+    seq: int
+    resume_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,11 +172,15 @@ class GatewayClient:
         shard_count: int,
         shard_ids: Iterable[int],
         large_threshold: int = LARGE_THRESHOLD.start,
+        session_file: Path | None = None,
     ) -> None:
         self._bridge = bridge
         self._token = token
         self._intents = intents
         self._large_threshold = large_threshold
+        self._session_file = session_file
+        self._resuming: dict[int, GatewaySession] = {}
+        self._saved: dict[int, GatewaySession] = {}
         self.shard_count = shard_count
         self._shards = {shard_id: Shard(bridge, shard_id) for shard_id in shard_ids}
         self._running: set[int] = set()
@@ -202,11 +217,36 @@ class GatewayClient:
         with contextlib.suppress(StateError):
             self._bridge.core.gateway_approve_identify(shard_id, request)
 
+    def _load_sessions(self) -> frozenset[int]:
+        path = self._session_file
+        if path is None or not path.exists():
+            return frozenset()
+        data = path.read_bytes()
+        path.unlink()
+        try:
+            sessions = decoder(tuple[GatewaySession, ...]).decode(data)
+        except msgspec.DecodeError:
+            log.warning("%s holds no gateway sessions, so every shard identifies", path)
+            return frozenset()
+        self._resuming = {
+            session.shard_id: session
+            for session in sessions
+            if session.shard_count == self.shard_count
+            and session.shard_id in self._shards
+        }
+        return frozenset(self._resuming)
+
     async def _start(self, url: str, presence: Mapping[str, Any]) -> None:
         stopped = self._bridge.create_future()
         for shard_id in self._shards:
             identify = self._identify(shard_id, presence)
-            self._bridge.core.gateway_start(shard_id, url, identify)
+            saved = self._resuming.pop(shard_id, None)
+            resume = (
+                None
+                if saved is None
+                else (saved.session_id, saved.seq, saved.resume_url)
+            )
+            self._bridge.core.gateway_start(shard_id, url, identify, resume)
             self._running.add(shard_id)
         self._stopped = stopped
         await asyncio.shield(stopped)
@@ -268,16 +308,25 @@ class GatewayClient:
             self._shards[shard_id].reconnect()
 
     async def close(self) -> None:
-        """Close every shard with code 1000 and wait up to 2 s for them to end."""
+        """Close every shard and wait up to 2 s for them to end.
+
+        Without a session file they close with code 1000, which ends their
+        sessions; with one, they keep them and the file saves them.
+        """
+        core = self._bridge.core
+        close = (
+            core.gateway_close if self._session_file is None else core.gateway_suspend
+        )
         for shard_id in self._running:
             with contextlib.suppress(StateError):
-                self._bridge.core.gateway_close(shard_id)
+                close(shard_id)
         stopped = self._stopped
-        if stopped is None or stopped.done():
-            return
-        await asyncio.wait([stopped], timeout=CLOSE_TIMEOUT)
-        if not stopped.done():
-            stopped.set_result(None)
+        if stopped is not None and not stopped.done():
+            await asyncio.wait([stopped], timeout=CLOSE_TIMEOUT)
+            if not stopped.done():
+                stopped.set_result(None)
+        if self._session_file is not None and self._saved:
+            self._session_file.write_bytes(encoder.encode(list(self._saved.values())))
 
     @property
     def latency(self) -> float | None:
@@ -307,8 +356,17 @@ class GatewayClient:
                         code,
                         reason,
                     )
-            case ("stopped", shard_id, code, reason):
+            case ("stopped", shard_id, code, reason, session):
                 self._running.discard(shard_id)
+                if session is not None:
+                    session_id, seq, resume_url = session
+                    self._saved[shard_id] = GatewaySession(
+                        shard_id=shard_id,
+                        shard_count=self.shard_count,
+                        session_id=session_id,
+                        seq=seq,
+                        resume_url=resume_url,
+                    )
                 stopped = self._stopped
                 if stopped is None or stopped.done():
                     return
@@ -451,6 +509,14 @@ class Readiness:
         if not guild.unavailable:
             shard.known.discard(guild.id)
         return self._arrived(shard, guild.id)
+
+    def resumed(self, shard_id: int) -> bool:
+        """Note a RESUMED; True when it resumed a session from before `start()`."""
+        shard = self._shards[shard_id]
+        if shard.session:
+            return False
+        shard.session = True
+        return True
 
     def ended(self, shard_id: int) -> bool:
         """Note a session that ended; True when the shard had one to lose."""

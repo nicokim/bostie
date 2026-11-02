@@ -20,7 +20,7 @@ use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
-pub use crate::gateway::IdentifyLimit;
+pub use crate::gateway::{IdentifyLimit, SavedSession};
 pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind, LogSink};
 pub use crate::rest::RestRequest;
@@ -150,13 +150,14 @@ impl Core {
         shard: ShardId,
         url: &str,
         identify: &[u8],
+        saved: Option<SavedSession>,
     ) -> Result<(), CoreError> {
         self.owner.check()?;
         let table = self.tasks.lock();
         if table.rest.is_none() {
             return Err(CoreError::Closed);
         }
-        self.gateway.start(shard, url, identify)
+        self.gateway.start(shard, url, identify, saved)
     }
 
     pub fn gateway_send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
@@ -183,6 +184,11 @@ impl Core {
     pub fn gateway_close(&self, shard: ShardId) -> Result<(), CoreError> {
         self.owner.check()?;
         self.gateway.close(shard)
+    }
+
+    pub fn gateway_suspend(&self, shard: ShardId) -> Result<(), CoreError> {
+        self.owner.check()?;
+        self.gateway.suspend(shard)
     }
 
     pub fn gateway_latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
@@ -411,7 +417,7 @@ mod tests {
         server.disconnected.recv_timeout(WAIT).unwrap();
         assert!(matches!(core.request(me()), Err(CoreError::Closed)));
         assert!(matches!(
-            core.gateway_start(ShardId::from(0), "ws://127.0.0.1:1", b"{}"),
+            core.gateway_start(ShardId::from(0), "ws://127.0.0.1:1", b"{}", None),
             Err(CoreError::Closed)
         ));
     }

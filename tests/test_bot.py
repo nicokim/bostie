@@ -9,8 +9,10 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import msgspec
 import pytest
 from fakediscord import FakeDiscord, Recorded, payloads, run, running, settle
 
@@ -823,6 +825,34 @@ def test_a_member_cache_asks_for_missing_members_before_the_shard_is_ready(
     run(scenario)
 
 
+def test_a_session_file_resumes_the_sessions_of_the_last_run(
+    tmp_path: Path,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        path = tmp_path / "sessions.json"
+        first = Bot(api_url=fake.api_url, session_file=path)
+        async with running(first, fake):
+            await fake.next_identify()
+        saved = path.read_bytes()
+        await fake.dispatch("MESSAGE_DELETE", {"id": "5", "channel_id": "1"})
+        second = Bot(api_url=fake.api_url, session_file=path)
+        missed = asyncio.ensure_future(second.wait_for(MessageDelete))
+        async with running(second, fake):
+            resume = await fake.next_resume()
+            assert (await missed).id == 5
+            user = second.user
+        later = [payload["op"] for payload in fake.connections[1].received]
+
+        assert fake.connections[0].close_code == 4000
+        assert msgspec.json.decode(saved)[0]["seq"] == resume["seq"] == 1
+        assert path.read_bytes() != saved
+        assert user is not None
+        assert user.id == int(fake.bot_user["id"])
+        assert 2 not in later
+
+    run(scenario)
+
+
 def test_user_update_replaces_the_bot_user() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
@@ -1240,7 +1270,7 @@ def test_gateway_rate_limits_and_latency_reach_the_bot(
     ("delivery", "event"),
     [
         (
-            ("stopped", 1, 4014, "disallowed intents"),
+            ("stopped", 1, 4014, "disallowed intents", None),
             ShardStop(shard_id=1, code=4014, reason="disallowed intents"),
         ),
         (

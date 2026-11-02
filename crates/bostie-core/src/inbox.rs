@@ -9,6 +9,7 @@ use tokio::sync::Notify;
 use tracing::Level;
 
 use crate::bell::Bell;
+use crate::gateway::SavedSession;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
 use crate::voice::types::{Direction, DisconnectReason, Speaking, VoiceStatus};
 
@@ -43,6 +44,7 @@ pub enum Delivery {
         shard: ShardId,
         code: Option<u16>,
         reason: String,
+        session: Option<SavedSession>,
     },
     Backpressure {
         shard: ShardId,

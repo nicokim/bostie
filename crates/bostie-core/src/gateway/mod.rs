@@ -25,7 +25,7 @@ pub(crate) use self::envelope::tree;
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
 use self::limits::Limits;
-use self::shard::{Shard, Signals, UNKNOWN_LATENCY};
+use self::shard::{Session, Shard, Signals, UNKNOWN_LATENCY};
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
@@ -35,6 +35,13 @@ use crate::voice::tap::GatewayTap;
 const COMMAND_QUEUE: usize = 128;
 
 type Filter = Option<HashSet<Box<str>>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedSession {
+    pub id: String,
+    pub seq: u64,
+    pub resume_url: String,
+}
 
 pub(crate) struct Gateway {
     runtime: Handle,
@@ -126,10 +133,21 @@ impl Gateway {
         shard: ShardId,
         url: &str,
         identify: &[u8],
+        saved: Option<SavedSession>,
     ) -> Result<(), CoreError> {
         let url = shard::gateway_url(url).ok_or_else(|| {
             CoreError::InvalidRequest(format!("{url:?} is not a ws:// or wss:// gateway URL"))
         })?;
+        let session = saved
+            .map(|saved| {
+                Session::restored(&saved).ok_or_else(|| {
+                    CoreError::InvalidRequest(format!(
+                        "{:?} is not a ws:// or wss:// resume URL",
+                        saved.resume_url
+                    ))
+                })
+            })
+            .transpose()?;
         let identify = envelope::identify_frame(identify)?;
         let mut shards = self.shards.lock();
         if shards.get(&shard).is_some_and(ShardHandle::is_running) {
@@ -143,6 +161,7 @@ impl Gateway {
             Arc::clone(&self.shared),
             queued,
             Arc::clone(&signals),
+            session,
         );
         let task = self.runtime.spawn(task.run()).abort_handle();
         shards.insert(
@@ -191,6 +210,14 @@ impl Gateway {
 
     pub(crate) fn close(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
+            handle.signals.close.notify_one();
+            Ok(())
+        })
+    }
+
+    pub(crate) fn suspend(&self, shard: ShardId) -> Result<(), CoreError> {
+        self.with_running(shard, |handle| {
+            handle.signals.keep_session.store(true, Ordering::Release);
             handle.signals.close.notify_one();
             Ok(())
         })

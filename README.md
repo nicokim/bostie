@@ -279,6 +279,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
 - `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `Started` waits for every shard here, and each event carries its `shard_id`.
 - `before_identify`: an async function that gets a shard id before each identify of that shard and returns once it may identify. Processes of one bot can share Discord's `max_concurrency` through it; an exception is logged and the shard identifies anyway.
+- `session_file`: a file where `close()` saves each shard's gateway session instead of ending it, and from which the next `start()` resumes them. A restart within a few minutes then gets the events it missed without identifying again, and each shard is ready at its `Resumed`. Discord sends no guilds on a resume, so `bot.cache` starts empty and learns guilds only as they join or a shard starts a new session. The bot shows online until unused sessions time out, and each process of a split bot needs its own file.
 
 ## Errors
 
