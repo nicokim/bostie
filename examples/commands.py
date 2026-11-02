@@ -61,7 +61,7 @@ class Unit(Enum):
 async def convert(
     ctx: Context,
     kilometres: Annotated[Range[float, 0, 40_000], "How far"],
-    unit: Unit = Unit.MILES,
+    unit: Annotated[Unit, "The unit of the answer"] = Unit.MILES,
 ) -> None:
     """Convert a distance."""
     value = kilometres if unit is Unit.KILOMETRES else kilometres / 1.609344
