@@ -79,6 +79,10 @@ class Source(ABC):
         """Continue from `position` seconds."""
         raise SourceError(repr(self), f"not seekable, so it cannot go to {position} s")
 
+    def again(self) -> "Source":
+        """A new source that plays the same audio from the start."""
+        raise SourceError(repr(self), "cannot play again")
+
     async def aclose(self) -> None:
         self._done = True
 
@@ -180,6 +184,10 @@ class File(_DecodedSource):
         return core.voice_file(self._path)
 
     @override
+    def again(self) -> "File":
+        return File(self._path)
+
+    @override
     def __repr__(self) -> str:
         return f"File({self._path!r})"
 
@@ -197,6 +205,10 @@ class Bytes(_DecodedSource):
         return core.voice_bytes(self._data, self._hint)
 
     @override
+    def again(self) -> "Bytes":
+        return Bytes(self._data, hint=self._hint)
+
+    @override
     def __repr__(self) -> str:
         return f"Bytes(<{len(self._data)} bytes>)"
 
@@ -212,6 +224,10 @@ class Url(_DecodedSource):
     @override
     def _create(self, core: "VoiceCore") -> NativeSource:
         return core.voice_url(self._url, list(self._headers.items()))
+
+    @override
+    def again(self) -> "Url":
+        return Url(self._url, headers=self._headers)
 
     @override
     def __repr__(self) -> str:
@@ -266,6 +282,10 @@ class FFmpeg(Source):
         self._executable = executable
         self._process: asyncio.subprocess.Process | None = None
         self._errors: asyncio.Task[str] | None = None
+
+    @override
+    def again(self) -> "FFmpeg":
+        return FFmpeg(self._args, executable=self._executable)
 
     @override
     async def open(self, manager: "VoiceManager") -> None:

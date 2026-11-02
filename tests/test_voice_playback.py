@@ -296,8 +296,10 @@ class FakeSource:
         open_error: Exception | None = None,
         error_at: int | None = None,
         seekable: bool = True,
+        repeats: bool = True,
     ) -> None:
         self.clock = clock
+        self.repeats = repeats
         self.name = name
         self.length = length
         self.probe = probe
@@ -314,6 +316,11 @@ class FakeSource:
     @override
     def __repr__(self) -> str:
         return f"FakeSource({self.name!r})"
+
+    def again(self) -> "FakeSource":
+        if not self.repeats:
+            raise SourceError(repr(self), "cannot play again")
+        return FakeSource(self.clock, self.name, self.length, format=self._format)
 
     @property
     def format(self) -> Format:
@@ -713,6 +720,41 @@ def test_skip_and_stop_reach_a_track_still_playing_on_the_last_sink() -> None:
         assert names(vc.sinks[0].sent) == "aaa"
         assert names(vc.sinks[1].sent) == "b"
         assert [sink.closed for sink in vc.sinks] == [True, True]
+
+    run(scenario)
+
+
+def test_loop_track_repeats_until_turned_off_and_skip_moves_on() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        q.loop = "track"
+        add(q, FakeSource(clock, "a", 5))
+        add(q, FakeSource(clock, "b", 5))
+        await clock.until(lambda: clock.ticks == 12)
+        q.skip()
+        await clock.until(lambda: clock.ticks == 30)
+        q.loop = None
+        await q.join()
+        assert names(vc.sinks[0].sent) == "a" * 12 + "b" * 20
+
+    run(scenario)
+
+
+def test_loop_queue_repeats_every_track_and_once_only_sources_drop_out() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        add(q, FakeSource(clock, "a", 3))
+        add(q, FakeSource(clock, "b", 3, repeats=False))
+        add(q, FakeSource(clock, "c", 3))
+        q.loop = "queue"
+        assert q.loop == "queue"
+        await clock.until(lambda: clock.ticks == 21)
+        q.stop()
+        assert names(vc.sinks[0].sent) == "aaabbbcccaaacccaaaccc"
+        with pytest.raises(ValueError, match="loop"):
+            q.loop = cast("Any", "forever")
 
     run(scenario)
 

@@ -62,6 +62,7 @@ from bostie.voice.formats import (
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.layers import (
     EndReason,
+    Loop,
     Queue,
     Recorder,
     Track,
@@ -100,6 +101,7 @@ __all__ = [
     "Format",
     "Frame",
     "Latency",
+    "Loop",
     "Marker",
     "MediaResumed",
     "MediaStalled",

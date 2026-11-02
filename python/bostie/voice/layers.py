@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, BinaryIO, Self, Unpack
+from typing import TYPE_CHECKING, Any, BinaryIO, Literal, Self, Unpack
 
 from bostie._aio import spawn
 from bostie.enums import State
@@ -61,6 +61,8 @@ OPUS_TAGS = struct.pack("<8sI6sI", b"OpusTags", 6, b"bostie", 0)
 REVERSED_BITS = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
 TEMPLATE_FIELDS = frozenset({"guild_id", "user_id"})
 
+type Loop = Literal["track", "queue"] | None
+
 
 class EndReason(StrEnum):
     FINISHED = "finished"
@@ -95,6 +97,8 @@ class _Entry:
     exhausted: bool = False
     kept: list[bytes] = field(default_factory=list[bytes])
     final: float | None = None
+    origin: "_Entry | None" = None
+    repeated: bool = False
 
     def position(self) -> float:
         if self.final is not None:
@@ -189,6 +193,7 @@ class _Player:
         self._volume = volume
         self._options = options
         self._crossfade = crossfade
+        self._loop: Loop = None
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
         self._retiring: set[Sink] = set()
@@ -268,9 +273,28 @@ class _Player:
         random.shuffle(upcoming)
         self._arrange(upcoming)
 
+    @property
+    def loop(self) -> Loop:
+        return self._loop
+
+    @loop.setter
+    def loop(self, mode: Loop) -> None:
+        if mode not in (None, "track", "queue"):
+            raise ValueError(f"loop must be 'track', 'queue' or None, got {mode!r}")
+        if mode == self._loop:
+            return
+        self._loop = mode
+        for entry in self._entries:
+            entry.repeated = False
+        self._drop([entry for entry in self._upcoming() if entry.origin is not None])
+        if mode is not None and self.now is not None:
+            self._repeat(self._entries[0])
+
     def skip(self) -> None:
         if not self._entries:
             return
+        if self._loop == "track":
+            self._drop(self._repeats_of(self._entries[0]))
         head = self._entries[0]
         moved_on = head.end is not None
         sink = head.sink
@@ -358,6 +382,31 @@ class _Player:
         self._entries.append(entry)
         self._idle.clear()
         return entry
+
+    def _repeats_of(self, entry: _Entry) -> list[_Entry]:
+        family = {id(entry)}
+        repeats: list[_Entry] = []
+        for candidate in self._entries:
+            if candidate.origin is not None and id(candidate.origin) in family:
+                family.add(id(candidate))
+                repeats.append(candidate)
+        return repeats
+
+    def _repeat(self, entry: _Entry) -> None:
+        if self._loop is None or entry.repeated or entry.done.done():
+            return
+        try:
+            source = entry.source.again()
+        except SourceError:
+            return
+        entry.repeated = True
+        copy = self._enlist(source, entry.meta)
+        copy.origin = entry
+        upcoming = self._upcoming()
+        if self._loop == "track":
+            upcoming.remove(copy)
+            upcoming.insert(upcoming.index(entry) + 1 if entry in upcoming else 0, copy)
+        self._arrange(upcoming)
 
     def _upcoming(self) -> list[_Entry]:
         return self._entries[0 if self.now is None else 1 :]
@@ -486,6 +535,7 @@ class _Player:
         entry.sink = sink
         entry.start = sink.mark()
         spawn(self._tasks, self._begin(entry, sink, entry.start))
+        self._repeat(entry)
         self._open_ahead()
         for chunk in tuple(entry.kept):
             await self._gate.wait()
@@ -635,6 +685,15 @@ class Queue:
     def shuffle(self) -> None:
         """Put the upcoming tracks in a random order."""
         self._player.shuffle()
+
+    @property
+    def loop(self) -> Loop:
+        """What plays again: the current "track", the whole "queue", or None."""
+        return self._player.loop
+
+    @loop.setter
+    def loop(self, mode: Loop) -> None:
+        self._player.loop = mode
 
     @property
     def now(self) -> Track | None:
