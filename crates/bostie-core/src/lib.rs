@@ -24,7 +24,7 @@ pub use crate::error::{CoreError, describe};
 pub use crate::gateway::{IdentifyLimit, SavedSession};
 pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind, LogSink};
-pub use crate::rest::{Auth, RestRequest};
+pub use crate::rest::{Auth, HttpSettings, RestRequest};
 pub use crate::signature::verify_signature;
 
 use crate::gateway::Gateway;
@@ -67,13 +67,20 @@ impl Core {
         auth: Auth<'_>,
         api_url: &str,
         global_limit: NonZeroU16,
+        http: HttpSettings,
     ) -> Result<(Self, BellReceiver), CoreError> {
         let runtime = runtime::shared()?;
         let (bell, receiver) = bell::pair().map_err(CoreError::Bell)?;
         let inbox = Arc::new(Inbox::new(bell));
         let (rest, gateway, voice) = {
             let _context = runtime.enter();
-            let rest = Arc::new(Rest::new(auth, api_url, global_limit, Arc::clone(&inbox))?);
+            let rest = Arc::new(Rest::new(
+                auth,
+                api_url,
+                global_limit,
+                Arc::clone(&inbox),
+                http,
+            )?);
             let tap = Arc::new(GatewayTap::new());
             let gateway = Arc::new(Gateway::new(
                 runtime.clone(),
@@ -287,7 +294,12 @@ mod tests {
     const WAIT: Duration = Duration::from_secs(10);
 
     fn core(api_url: &str) -> Result<(Core, BellReceiver), CoreError> {
-        Core::new(Auth::Bot(TOKEN), api_url, GLOBAL_LIMIT)
+        Core::new(
+            Auth::Bot(TOKEN),
+            api_url,
+            GLOBAL_LIMIT,
+            HttpSettings::default(),
+        )
     }
 
     fn read_request_head(stream: &mut TcpStream) {

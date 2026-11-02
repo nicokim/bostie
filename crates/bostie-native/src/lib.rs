@@ -14,8 +14,8 @@ use bostie_core::voice::types::{
     ReceiveStall, SampleFormat, SignalType, SourceSpec, StallPolicy,
 };
 use bostie_core::{
-    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
-    RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
+    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, HttpSettings, IdentifyLimit,
+    RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
@@ -41,11 +41,26 @@ struct NativeCore(Core);
 #[pymethods]
 impl NativeCore {
     #[staticmethod]
-    #[pyo3(signature = (token, api_url, global_limit, bearer=false))]
+    #[pyo3(signature = (
+        token,
+        api_url,
+        *,
+        global_limit,
+        max_rate_limit_wait,
+        retries,
+        connect_timeout,
+        read_timeout,
+        bearer=false,
+    ))]
+    #[expect(clippy::too_many_arguments)]
     fn create(
         token: Option<&str>,
         api_url: &str,
         global_limit: NonZeroU16,
+        max_rate_limit_wait: f64,
+        retries: u32,
+        connect_timeout: f64,
+        read_timeout: f64,
         bearer: bool,
     ) -> Result<(Self, RawBellHandle)> {
         let auth = match (token, bearer) {
@@ -53,7 +68,14 @@ impl NativeCore {
             (Some(token), false) => Auth::Bot(token),
             (Some(token), true) => Auth::Bearer(token),
         };
-        let (core, bell) = Core::new(auth, api_url, global_limit)?;
+        let http = HttpSettings {
+            max_retry_wait: seconds("max_rate_limit_wait", max_rate_limit_wait)?,
+            retries,
+            connect_timeout: seconds("connect_timeout", connect_timeout)?,
+            read_timeout: seconds("read_timeout", read_timeout)?,
+            ..HttpSettings::default()
+        };
+        let (core, bell) = Core::new(auth, api_url, global_limit, http)?;
         log::register(core.log_sink());
         Ok((Self(core), bell.into_raw()))
     }

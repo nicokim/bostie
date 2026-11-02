@@ -197,7 +197,15 @@ type ReceivedItem = FrameItem | PacketItem | SpeechItem | LeaveItem
 class Core:
     @staticmethod
     def create(
-        token: str | None, api_url: str, global_limit: int, bearer: bool = False
+        token: str | None,
+        api_url: str,
+        *,
+        global_limit: int,
+        max_rate_limit_wait: float,
+        retries: int,
+        connect_timeout: float,
+        read_timeout: float,
+        bearer: bool = False,
     ) -> tuple[Core, int]: ...
     def request(
         self,

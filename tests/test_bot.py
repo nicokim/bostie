@@ -1231,17 +1231,6 @@ def test_a_raising_autocomplete_answers_with_no_choices() -> None:
     run(scenario)
 
 
-def test_the_global_rate_limit_reaches_the_rust_limiter() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, global_rate_limit=0)
-
-        with pytest.raises(ValueError, match="zero"):
-            await bot.start(fake.token)
-        assert fake.requests == []
-
-    run(scenario)
-
-
 def test_gateway_rate_limits_and_latency_reach_the_bot(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1284,9 +1273,7 @@ def test_shard_stops_and_backpressure_reach_listeners(
 ) -> None:
     async def main() -> None:
         bot = Bot()
-        bridge = Bridge(
-            "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
-        )
+        bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
         bot._gateway = GatewayClient(
             bridge, "token", intents=0, shard_count=2, shard_ids=[1]
         )

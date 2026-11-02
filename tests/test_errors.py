@@ -25,7 +25,15 @@ type Call = Callable[[_native.Core], object]
 
 @pytest.fixture
 def core() -> Iterator[_native.Core]:
-    core, bell = _native.Core.create("token", API_URL, 50)
+    core, bell = _native.Core.create(
+        "token",
+        API_URL,
+        global_limit=50,
+        max_rate_limit_wait=30.0,
+        retries=2,
+        connect_timeout=10.0,
+        read_timeout=60.0,
+    )
     with socket.socket(fileno=bell):
         core.gateway_start(0, GATEWAY_URL, b"{}")
         connect(core)

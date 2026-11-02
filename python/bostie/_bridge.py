@@ -14,6 +14,7 @@ from bostie.errors import (
     StateError,
     TransportError,
 )
+from bostie.http import DEFAULT_HTTP, HTTPSettings
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceDelivery
@@ -48,11 +49,18 @@ class Bridge:
         api_url: str,
         on_gateway: OnGateway,
         *,
-        global_limit: int,
+        http: HTTPSettings = DEFAULT_HTTP,
         bearer: bool = False,
     ) -> None:
         self.core, bell_handle = _native.Core.create(
-            token, api_url, global_limit, bearer
+            token,
+            api_url,
+            global_limit=http.global_rate_limit,
+            max_rate_limit_wait=http.max_rate_limit_wait,
+            retries=http.retries,
+            connect_timeout=http.connect_timeout,
+            read_timeout=http.read_timeout,
+            bearer=bearer,
         )
         self._on_gateway = on_gateway
         self._bell = socket.socket(fileno=bell_handle)

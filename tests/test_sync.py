@@ -92,7 +92,7 @@ def ignore(delivery: GatewayDelivery, received: float) -> None:
 def run(scenario: Scenario) -> None:
     async def main() -> None:
         async with FakeDiscord() as fake:
-            bridge = Bridge(fake.token, fake.api_url, ignore, global_limit=50)
+            bridge = Bridge(fake.token, fake.api_url, ignore)
             async with bridge, asyncio.timeout(10):
                 await scenario(fake, HTTPClient(bridge))
 

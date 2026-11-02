@@ -53,7 +53,7 @@ def ignore(delivery: GatewayDelivery, received: float) -> None:
 
 
 def bridge(api_url: str = API_URL) -> Bridge:
-    return Bridge(TOKEN, api_url, ignore, global_limit=50)
+    return Bridge(TOKEN, api_url, ignore)
 
 
 async def me(bridge: Bridge) -> tuple[int, bytes]:
@@ -191,11 +191,6 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
     run(main())
 
 
-def test_a_zero_global_limit_is_rejected() -> None:
-    with pytest.raises(ValueError, match="zero"):
-        Bridge(TOKEN, API_URL, ignore, global_limit=0)
-
-
 def test_requires_a_running_bridge(run: Runner) -> None:
     async def main() -> None:
         idle = bridge()
@@ -273,9 +268,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
             raise ValueError("handler exploded")
 
         async with FakeDiscord() as fake:
-            async with Bridge(
-                fake.token, fake.api_url, explode, global_limit=50
-            ) as running:
+            async with Bridge(fake.token, fake.api_url, explode) as running:
                 gateway = GatewayClient(
                     running, fake.token, intents=513, shard_count=1, shard_ids=[0]
                 )
@@ -301,7 +294,7 @@ def test_rust_logs_reach_the_python_logger_at_their_level(
     async def main() -> None:
         async with (
             FakeDiscord() as fake,
-            Bridge(fake.token, fake.api_url, ignore, global_limit=50) as running,
+            Bridge(fake.token, fake.api_url, ignore) as running,
         ):
             fake.rate_limit("GET", "/users/@me", scope="user", retry_after=0)
             assert (await me(running))[0] == 200
@@ -412,7 +405,7 @@ def test_process_exits_cleanly_with_requests_in_flight() -> None:
             listener = socket.create_server(("127.0.0.1", 0))
             url = f"http://127.0.0.1:{listener.getsockname()[1]}/api/v10"
             bridge = Bridge(
-                "dummy-token", url, lambda delivery, received: None, global_limit=50
+                "dummy-token", url, lambda delivery, received: None
             )
             await bridge.__aenter__()
             for index in range(10):

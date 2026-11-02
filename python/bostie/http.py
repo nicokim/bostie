@@ -1,14 +1,15 @@
+import math
 import mimetypes
 import secrets
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 import msgspec
 
-from bostie._bridge import Bridge
 from bostie.errors import (
     BadRequest,
     BostieError,
@@ -23,6 +24,9 @@ from bostie.errors import (
 from bostie.file import File
 from bostie.models.base import encoder
 
+if TYPE_CHECKING:
+    from bostie._bridge import Bridge
+
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
 OAUTH2_TOKEN_ROUTES = ("/oauth2/token", "/oauth2/token/revoke")
 MAX_REASON = 512
@@ -35,6 +39,34 @@ STATUS_ERRORS: dict[int, type[HTTPException]] = {
     403: Forbidden,
     404: NotFound,
 }
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HTTPSettings:
+    """How bostie paces, retries and times out its REST requests."""
+
+    global_rate_limit: int = 50
+    max_rate_limit_wait: float = 30.0
+    retries: int = 2
+    connect_timeout: float = 10.0
+    read_timeout: float = 60.0
+
+    def __post_init__(self) -> None:
+        if self.global_rate_limit < 1:
+            raise ValueError(
+                f"global_rate_limit must be at least 1, got {self.global_rate_limit}"
+            )
+        if self.retries < 0:
+            raise ValueError(f"retries must be at least 0, got {self.retries}")
+        for name in ("max_rate_limit_wait", "connect_timeout", "read_timeout"):
+            seconds: float = getattr(self, name)
+            if not (math.isfinite(seconds) and seconds >= 0):
+                raise ValueError(
+                    f"{name} must be a number of seconds of at least 0, got {seconds}"
+                )
+
+
+DEFAULT_HTTP = HTTPSettings()
 
 
 class _ErrorBody(msgspec.Struct):
@@ -53,7 +85,7 @@ _error_decoder = msgspec.json.Decoder(_ErrorBody, strict=False)
 class HTTPClient:
     """Sends requests to Discord's REST API through bostie's rate limiter."""
 
-    def __init__(self, bridge: Bridge) -> None:
+    def __init__(self, bridge: "Bridge") -> None:
         self._bridge = bridge
 
     async def request(

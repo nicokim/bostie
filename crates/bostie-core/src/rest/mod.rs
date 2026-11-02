@@ -19,10 +19,10 @@ use reqwest::{Method, StatusCode, Url};
 use sonic_rs::JsonValueTrait;
 use twilight_http_ratelimiting::{Bucket, Permit, RateLimitHeaders, RateLimiter};
 
+pub use self::limits::HttpSettings;
 pub use self::request::RestRequest;
 
 use self::invalid::InvalidRequests;
-use self::limits::Limits;
 use self::ratelimit::{GlobalGate, InteractionBuckets, Limited, ResponseLimits, Scope};
 use self::request::RouteClass;
 use crate::error::{CoreError, describe};
@@ -34,11 +34,8 @@ const USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     ")"
 );
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const RATE_LIMIT_RETRIES: u32 = 3;
-const FAILURE_RETRIES: u32 = 2;
 const CLOUDFLARE_TIMEOUT: u16 = 524;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +79,7 @@ pub(crate) struct Rest {
     base: Url,
     token_invalid: AtomicBool,
     inbox: Arc<Inbox>,
-    limits: Limits,
+    limits: HttpSettings,
 }
 
 impl Rest {
@@ -91,16 +88,7 @@ impl Rest {
         api_url: &str,
         global_limit: NonZeroU16,
         inbox: Arc<Inbox>,
-    ) -> Result<Self, CoreError> {
-        Self::with_limits(auth, api_url, global_limit, inbox, Limits::default())
-    }
-
-    pub(crate) fn with_limits(
-        auth: Auth<'_>,
-        api_url: &str,
-        global_limit: NonZeroU16,
-        inbox: Arc<Inbox>,
-        limits: Limits,
+        limits: HttpSettings,
     ) -> Result<Self, CoreError> {
         let base = Url::parse(api_url)
             .ok()
@@ -109,8 +97,8 @@ impl Rest {
         let authorization = auth.header()?;
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .read_timeout(READ_TIMEOUT)
+            .connect_timeout(limits.connect_timeout)
+            .read_timeout(limits.read_timeout)
             .http2_keep_alive_interval(HTTP2_PING_INTERVAL)
             .http2_keep_alive_while_idle(true)
             .build()
@@ -397,13 +385,13 @@ fn held_back(retry_after: Duration) -> Bytes {
 }
 
 struct Retries {
-    limits: Limits,
+    limits: HttpSettings,
     rate_limited: u32,
     failed: u32,
 }
 
 impl Retries {
-    fn new(limits: Limits) -> Self {
+    fn new(limits: HttpSettings) -> Self {
         Self {
             limits,
             rate_limited: 0,
@@ -441,7 +429,7 @@ impl Retries {
     }
 
     fn backoff(&mut self) -> Option<Duration> {
-        if self.failed == FAILURE_RETRIES {
+        if self.failed == self.limits.retries {
             return None;
         }
         let wait = self
@@ -469,9 +457,12 @@ pub(crate) mod tests {
     use crate::bell::{self, BellReceiver};
 
     const PATIENCE: Duration = Duration::from_secs(5);
-    pub(crate) const LIMITS: Limits = Limits {
+    pub(crate) const LIMITS: HttpSettings = HttpSettings {
         max_retry_wait: Duration::from_secs(1),
+        retries: 2,
         backoff_base: Duration::from_millis(10),
+        connect_timeout: Duration::from_secs(10),
+        read_timeout: Duration::from_secs(60),
     };
     pub(crate) const NO_REPLY: String = String::new();
 
@@ -592,7 +583,7 @@ pub(crate) mod tests {
         limited_rest(url, 50, LIMITS)
     }
 
-    fn limited_rest(url: &str, global_limit: u16, limits: Limits) -> (Rest, BellReceiver) {
+    fn limited_rest(url: &str, global_limit: u16, limits: HttpSettings) -> (Rest, BellReceiver) {
         rest_with(Auth::Bot("token"), url, global_limit, limits)
     }
 
@@ -600,12 +591,12 @@ pub(crate) mod tests {
         auth: Auth<'_>,
         url: &str,
         global_limit: u16,
-        limits: Limits,
+        limits: HttpSettings,
     ) -> (Rest, BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
         let global_limit = NonZeroU16::new(global_limit).unwrap();
         let inbox = Arc::new(Inbox::new(bell));
-        let rest = Rest::with_limits(auth, url, global_limit, inbox, limits).unwrap();
+        let rest = Rest::new(auth, url, global_limit, inbox, limits).unwrap();
         (rest, receiver)
     }
 
@@ -1008,7 +999,7 @@ pub(crate) mod tests {
             ("X-RateLimit-Scope", "global"),
         ]);
         let mut server = Server::start(vec![global]).await;
-        let limits = Limits {
+        let limits = HttpSettings {
             max_retry_wait: Duration::from_millis(100),
             ..LIMITS
         };

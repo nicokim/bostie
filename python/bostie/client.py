@@ -12,7 +12,7 @@ from bostie._bridge import Bridge, GatewayDelivery
 from bostie.bot import DEFAULT_ALLOWED_MENTIONS, _resolve_token
 from bostie.cache import Cache
 from bostie.errors import StateError
-from bostie.http import HTTPClient
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
 from bostie.rest import REST, BearerREST
 from bostie.rest.webhooks import (
@@ -37,12 +37,12 @@ class _Client[G](ABC):
         *,
         bearer: bool,
         api_url: str,
-        global_rate_limit: int,
+        http_settings: HTTPSettings,
     ) -> None:
         self._token = token
         self._bearer = bearer
         self._api_url = api_url
-        self._global_rate_limit = global_rate_limit
+        self._http_settings = http_settings
         self._bridge: Bridge | None = None
         self._http: HTTPClient | None = None
         self._groups: G | None = None
@@ -61,7 +61,7 @@ class _Client[G](ABC):
             self._token,
             self._api_url,
             _on_delivery,
-            global_limit=self._global_rate_limit,
+            http=self._http_settings,
             bearer=self._bearer,
         )
         await bridge.__aenter__()
@@ -103,14 +103,14 @@ class RESTClient(_Client[REST]):
         token: str | None = None,
         *,
         api_url: str = API_URL,
-        global_rate_limit: int = 50,
+        http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
         super().__init__(
             _resolve_token(token),
             bearer=False,
             api_url=api_url,
-            global_rate_limit=global_rate_limit,
+            http_settings=http_settings,
         )
         self._allowed_mentions = allowed_mentions
 
@@ -136,13 +136,13 @@ class BearerClient(_Client[BearerREST]):
         access_token: str | None = None,
         *,
         api_url: str = API_URL,
-        global_rate_limit: int = 50,
+        http_settings: HTTPSettings = DEFAULT_HTTP,
     ) -> None:
         super().__init__(
             access_token,
             bearer=True,
             api_url=api_url,
-            global_rate_limit=global_rate_limit,
+            http_settings=http_settings,
         )
 
     @property
@@ -165,14 +165,14 @@ class WebhookClient(_Client[Webhooks]):
         url: str,
         *,
         api_url: str = API_URL,
-        global_rate_limit: int = 50,
+        http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
         found = WEBHOOK_PATH.search(urlsplit(url).path)
         if found is None:
             raise ValueError(f"{url!r} is not a webhook URL")
         super().__init__(
-            None, bearer=False, api_url=api_url, global_rate_limit=global_rate_limit
+            None, bearer=False, api_url=api_url, http_settings=http_settings
         )
         self.id = int(found["id"])
         self.token: str = found["token"]
@@ -236,10 +236,15 @@ class SyncWebhookClient:
         url: str,
         *,
         api_url: str = API_URL,
+        http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
         self._client = partial(
-            WebhookClient, url, api_url=api_url, allowed_mentions=allowed_mentions
+            WebhookClient,
+            url,
+            api_url=api_url,
+            http_settings=http_settings,
+            allowed_mentions=allowed_mentions,
         )
         checked = self._client()
         self.id = checked.id

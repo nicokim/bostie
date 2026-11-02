@@ -1,16 +1,22 @@
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Limits {
-    pub(super) max_retry_wait: Duration,
-    pub(super) backoff_base: Duration,
+pub struct HttpSettings {
+    pub max_retry_wait: Duration,
+    pub retries: u32,
+    pub backoff_base: Duration,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
 }
 
-impl Default for Limits {
+impl Default for HttpSettings {
     fn default() -> Self {
         Self {
             max_retry_wait: Duration::from_secs(30),
+            retries: 2,
             backoff_base: Duration::from_millis(500),
+            connect_timeout: Duration::from_secs(10),
+            read_timeout: Duration::from_secs(60),
         }
     }
 }

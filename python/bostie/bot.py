@@ -91,7 +91,7 @@ from bostie.gateway import (
     member_request,
     presence_fields,
 )
-from bostie.http import HTTPClient
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import (
     AllowedMentions,
     AutocompleteInteraction,
@@ -203,7 +203,7 @@ class Bot(Router):
         activities: Iterable[ActivityDict] = (),
         afk: bool = False,
         idle_since: datetime | None = None,
-        global_rate_limit: int = 50,
+        http_settings: HTTPSettings = DEFAULT_HTTP,
         api_url: str = "https://discord.com/api/v10",
         voice: Defaults = DEFAULT_VOICE,
         shard_count: int | Literal["auto"] = "auto",
@@ -259,7 +259,7 @@ class Bot(Router):
                 "idle_since": idle_since,
             }
         )
-        self._global_rate_limit = global_rate_limit
+        self._http_settings = http_settings
         self._api_url = api_url
         self._bridge: Bridge | None = None
         self._http: HTTPClient | None = None
@@ -339,7 +339,7 @@ class Bot(Router):
                 token,
                 self._api_url,
                 self._on_gateway,
-                global_limit=self._global_rate_limit,
+                http=self._http_settings,
             )
         except Exception:
             self._stop_ready_waiters()

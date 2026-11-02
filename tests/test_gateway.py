@@ -33,7 +33,7 @@ class Harness:
     def __init__(self, fake: FakeDiscord, token: str) -> None:
         self.fake = fake
         self.deliveries: asyncio.Queue[GatewayDelivery] = asyncio.Queue()
-        self.bridge = Bridge(token, fake.api_url, self._on_gateway, global_limit=50)
+        self.bridge = Bridge(token, fake.api_url, self._on_gateway)
         self.gateway = GatewayClient(
             self.bridge, token, intents=513, shard_count=1, shard_ids=[0]
         )
@@ -314,9 +314,7 @@ def test_status_deliveries_are_logged_at_their_level(
     caplog: pytest.LogCaptureFixture, delivery: StatusDelivery, level: int
 ) -> None:
     caplog.set_level(logging.INFO, logger="bostie.gateway")
-    bridge = Bridge(
-        "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
-    )
+    bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
 
     gateway = GatewayClient(bridge, "token", intents=0, shard_count=1, shard_ids=[0])
     gateway._handle(delivery)

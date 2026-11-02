@@ -64,7 +64,7 @@ class ASGIApp:
                 _resolve_token(self._token),
                 bot._api_url,
                 _on_delivery,
-                global_limit=bot._global_rate_limit,
+                http=bot._http_settings,
             )
             await bridge.__aenter__()
             bot._bridge = bridge

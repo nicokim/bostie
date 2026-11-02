@@ -321,7 +321,7 @@ impl Harness {
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::with_dispatch_limit(bell, INBOX_LIMIT));
         let global_limit = NonZeroU16::new(50).unwrap();
-        let rest = Rest::with_limits(
+        let rest = Rest::new(
             crate::rest::Auth::Bot(TOKEN),
             api_url,
             global_limit,

@@ -21,7 +21,7 @@ from bostie.errors import (
     ServerError,
 )
 from bostie.file import File
-from bostie.http import HTTPClient
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 
 MESSAGES = "/channels/{channel_id}/messages"
 
@@ -32,10 +32,12 @@ def ignore(delivery: GatewayDelivery, received: float) -> None:
     pass
 
 
-def run(scenario: Scenario, token: str | None = None) -> None:
+def run(
+    scenario: Scenario, token: str | None = None, http: HTTPSettings = DEFAULT_HTTP
+) -> None:
     async def main() -> None:
         async with FakeDiscord() as fake:
-            bridge = Bridge(token or fake.token, fake.api_url, ignore, global_limit=50)
+            bridge = Bridge(token or fake.token, fake.api_url, ignore, http=http)
             async with bridge, asyncio.timeout(10):
                 await scenario(fake, HTTPClient(bridge))
 
@@ -235,7 +237,7 @@ def test_params_and_query_values_are_sent_as_text(
         return 204, b""
 
     async def main() -> None:
-        bridge = Bridge("token", "http://127.0.0.1:1/api/v10", ignore, global_limit=50)
+        bridge = Bridge("token", "http://127.0.0.1:1/api/v10", ignore)
         monkeypatch.setattr(bridge, "request", record)
         result = await HTTPClient(bridge).request(
             "GET",
@@ -283,3 +285,34 @@ def test_an_audit_log_reason_outside_1_to_512_characters_is_not_sent() -> None:
         assert len(fake.requests) == 1
 
     run(scenario)
+
+
+def test_http_settings_bound_the_retries_and_the_rate_limit_wait() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        fake.fail("GET", "/users/@me", 502, {"message": "Bad Gateway", "code": 0})
+        with pytest.raises(ServerError):
+            await http.request("GET", "/users/@me")
+        fake.rate_limit("GET", "/users/@me", retry_after=0.2)
+        with pytest.raises(RateLimited):
+            await http.request("GET", "/users/@me")
+
+        assert len(fake.requests) == 2
+
+    run(scenario, http=HTTPSettings(retries=0, max_rate_limit_wait=0.1))
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        lambda: HTTPSettings(global_rate_limit=0),
+        lambda: HTTPSettings(retries=-1),
+        lambda: HTTPSettings(max_rate_limit_wait=-1.0),
+        lambda: HTTPSettings(read_timeout=float("inf")),
+    ],
+    ids=["global rate limit", "retries", "rate limit wait", "read timeout"],
+)
+def test_http_settings_refuse_values_bostie_cannot_use(
+    settings: Callable[[], HTTPSettings],
+) -> None:
+    with pytest.raises(ValueError, match="at least"):
+        settings()

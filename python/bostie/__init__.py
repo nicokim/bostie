@@ -131,6 +131,7 @@ from bostie.errors import (
 )
 from bostie.file import File
 from bostie.gateway import RequestedMembers
+from bostie.http import HTTPSettings
 from bostie.models import (
     SKU,
     AccessToken,
@@ -471,6 +472,7 @@ __all__ = [
     "GuildWidgetMember",
     "GuildWidgetSettings",
     "HTTPException",
+    "HTTPSettings",
     "IncidentsData",
     "InstallParams",
     "Integration",

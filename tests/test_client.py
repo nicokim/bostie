@@ -3,7 +3,14 @@ import asyncio
 import pytest
 from fakediscord import FakeDiscord, payloads, run
 
-from bostie import RESTClient, StateError, SyncWebhookClient, WebhookClient
+from bostie import (
+    HTTPSettings,
+    RESTClient,
+    ServerError,
+    StateError,
+    SyncWebhookClient,
+    WebhookClient,
+)
 
 
 def test_a_rest_client_reaches_the_api_without_a_gateway() -> None:
@@ -18,6 +25,20 @@ def test_a_rest_client_reaches_the_api_without_a_gateway() -> None:
         assert fake.connections == []
         with pytest.raises(StateError):
             _ = client.http
+
+    run(scenario)
+
+
+def test_a_client_sends_with_its_own_http_settings() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        settings = HTTPSettings(retries=0)
+        fake.fail("GET", "/users/@me", 502, {"message": "Bad Gateway", "code": 0})
+        async with RESTClient(
+            fake.token, api_url=fake.api_url, http_settings=settings
+        ) as client:
+            with pytest.raises(ServerError):
+                await client.rest.users.fetch_current()
+        assert len(fake.requests) == 1
 
     run(scenario)
 

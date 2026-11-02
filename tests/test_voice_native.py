@@ -25,7 +25,15 @@ SECOND_OF_F32_STEREO = 48_000 * 2 * 4
 
 @pytest.fixture
 def core() -> Iterator[_native.Core]:
-    core, bell = _native.Core.create("token", API_URL, 50)
+    core, bell = _native.Core.create(
+        "token",
+        API_URL,
+        global_limit=50,
+        max_rate_limit_wait=30.0,
+        retries=2,
+        connect_timeout=10.0,
+        read_timeout=60.0,
+    )
     with socket.socket(fileno=bell):
         yield core
         core.close()
