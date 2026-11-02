@@ -279,6 +279,7 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 - `bostie.snowflake_time(id)` says when anything with that id was created, and `bostie.time_snowflake(when)` gives the id of a moment. The `before`, `after` and `around` of a listing that pages by id take a `datetime` as well, so `bot.rest.messages.list(channel_id, after=yesterday)` walks the messages since then.
 - `bostie.Locale` lists the languages Discord documents. `ctx.locale` and `Guild.preferred_locale` are `Locale` members, and a language Discord adds later decodes as one too.
 - `bostie.permissions.TEXT`, `VOICE` and `STAGE` hold the permissions Discord documents for each kind of channel, and `ELEVATED` those that need two-factor authentication in a guild that requires it, to combine with `|` and `&`.
+- `bostie.color` builds the integer colors Discord takes, such as `Embed.color` and a role's colors: `color.rgb(88, 101, 242)`, `color.hsv(0.6, 0.6, 0.9)`, `color.parse("#5865F2")`, and Discord's brand colors such as `color.BLURPLE`.
 
 ## Bot parameters
 
