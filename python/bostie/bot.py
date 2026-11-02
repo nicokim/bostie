@@ -213,6 +213,18 @@ class _Dispatch:
 class Bot(Router):
     """A Discord bot: commands, components, listeners, REST and its gateway shards."""
 
+    user: CurrentUser | None = None
+    application_id: int | None = None
+    _bridge: Bridge | None = None
+    _http: HTTPClient | None = None
+    _rest: REST | None = None
+    _gateway: GatewayClient | None = None
+    _closing: asyncio.Task[None] | None = None
+    _readiness: Readiness | None = None
+    _set_up = False
+    _ready = False
+    _tasks_on = False
+
     def __init__(
         self,
         *,
@@ -267,8 +279,6 @@ class Bot(Router):
             max_dm_channels=max_dm_channels,
         )
         self.voice = VoiceManager(self, voice)
-        self.user: CurrentUser | None = None
-        self.application_id: int | None = None
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
         self._command_ids: dict[int | None, Mapping[str, int]] = {}
@@ -295,21 +305,12 @@ class Bot(Router):
         )
         self._http_settings = http_settings
         self._api_url = api_url
-        self._bridge: Bridge | None = None
-        self._http: HTTPClient | None = None
-        self._rest: REST | None = None
-        self._gateway: GatewayClient | None = None
-        self._closing: asyncio.Task[None] | None = None
-        self._set_up = False
-        self._ready = False
         self._unready: set[int] = set()
-        self._readiness: Readiness | None = None
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._claims: list[_Claim] = []
         self._tasks: set[asyncio.Task[None]] = set()
         self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
-        self._tasks_on = False
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
         self._requests: dict[tuple[str, object], list[_Request]] = {}
