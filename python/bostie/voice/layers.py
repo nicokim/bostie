@@ -1148,6 +1148,8 @@ class Recorder:
     """Record each user, or with `mix=True` the whole call, to Ogg Opus or WAV.
 
     The path's extension picks the container; `format` is the WAV sample format.
+    It ends on its own after `max_duration` seconds or once its files hold
+    `max_size` bytes.
     """
 
     def __init__(
@@ -1163,7 +1165,17 @@ class Recorder:
         format: PCM = DEFAULT_PCM,
         buffer: float = 30.0,
         jitter: float = 0.3,
+        max_duration: float | None = None,
+        max_size: int | None = None,
     ) -> None:
+        if max_duration is not None and not (
+            math.isfinite(max_duration) and max_duration > 0
+        ):
+            raise ValueError(
+                f"max_duration must be a positive number of seconds, got {max_duration}"
+            )
+        if max_size is not None and max_size <= 0:
+            raise ValueError(f"max_size must be a positive byte count, got {max_size}")
         self._template = _template(path, mix=mix)
         self._wav = self._template.endswith(".wav")
         if self._wav and format.sample != "s16le":
@@ -1172,6 +1184,10 @@ class Recorder:
         self._guild_id = vc.guild_id
         self._align = align
         self._mix = mix
+        self._max_duration = max_duration
+        self._end = math.inf if max_duration is None else max_duration * SAMPLE_RATE
+        self._room = math.inf if max_size is None else max_size
+        self._halting: asyncio.Task[None] | None = None
         self._files: dict[int | None, Path] = {}
         self._writers: dict[int | None, _OggFile | _WavFile] = {}
         self._error: Exception | None = None
@@ -1204,9 +1220,11 @@ class Recorder:
 
     async def stop(self) -> dict[int | None, Path]:
         """Stop once heard audio is queued or the wait gives up; return the files."""
-        await self._rx.mark()
-        if not self._stopping.done():
-            self._stopping.set_result(None)
+        await self._halt()
+        return await self.wait()
+
+    async def wait(self) -> dict[int | None, Path]:
+        """Wait until the recording ends on its own, then return the files."""
         await asyncio.wait({self._task})
         if self._error is not None:
             raise self._error
@@ -1219,16 +1237,32 @@ class Recorder:
         await self.stop()
 
     async def _record(self) -> None:
+        loop = asyncio.get_running_loop()
+        limit = (
+            None
+            if self._max_duration is None
+            else loop.call_later(self._max_duration, self._expire)
+        )
         try:
             await self._consume()
         except Exception as error:
             self._fail(error)
         finally:
+            if limit is not None:
+                limit.cancel()
             self._rx.close()
             await self._finish()
 
+    def _expire(self) -> None:
+        self._halting = asyncio.create_task(self._halt())
+
+    async def _halt(self) -> None:
+        await self._rx.mark()
+        if not self._stopping.done():
+            self._stopping.set_result(None)
+
     async def _consume(self) -> None:
-        while True:
+        while self._room > 0:
             try:
                 frame = self._rx.get_nowait()
             except ReceiverClosed:
@@ -1256,7 +1290,7 @@ class Recorder:
 
     async def _write(self, frame: Frame) -> None:
         user = frame.user_id
-        if user is None and not self._mix:
+        if (user is None and not self._mix) or frame.offset + frame.samples > self._end:
             return
         writer = self._writers.get(user)
         if writer is None:
@@ -1272,6 +1306,7 @@ class Recorder:
         data = writer.add(frame, align=self._align)
         if data:
             await asyncio.to_thread(writer.write, data)
+            self._room -= len(data)
 
     async def _finish(self) -> None:
         for writer in self._writers.values():

@@ -518,3 +518,38 @@ def test_a_recorder_finishes_its_files_when_its_receiver_moved_away(
         assert read_ogg(files[42]) == ([b"\x00" * 3, b"\x01" * 3], [0, 0, 1_920])
 
     run(scenario)
+
+
+def test_a_recorder_ends_on_its_own_at_max_duration(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        vc = RecordingConnection()
+        path = tmp_path / "{user_id}.ogg"
+        recorder = Recorder(cast("Any", vc), path, align=False, max_duration=0.06)
+        vc.rx.feed(*(opus(index) for index in range(5)))
+        files = await recorder.wait()
+        assert read_ogg(files[42])[0] == [bytes([index]) * 3 for index in range(3)]
+        assert vc.rx.closed_reason is ClosedReason.CLOSED
+        with pytest.raises(ValueError, match="max_duration"):
+            Recorder(cast("Any", vc), path, max_duration=0.0)
+
+    run(scenario)
+
+
+def test_a_recorder_ends_on_its_own_once_its_files_reach_max_size(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        vc = RecordingConnection()
+        path = tmp_path / "{user_id}.wav"
+        format = PCM(8_000, 1)
+        recorder = Recorder(cast("Any", vc), path, format=format, max_size=700)
+        vc.rx.feed(*(pcm(42, index, bytes([index]) * 320) for index in range(5)))
+        files = await recorder.wait()
+        with wave.open(str(files[42])) as wav:
+            assert wav.readframes(wav.getnframes()) == b"".join(
+                bytes([i]) * 320 for i in range(3)
+            )
+        with pytest.raises(ValueError, match="max_size"):
+            Recorder(cast("Any", vc), path, max_size=0)
+
+    run(scenario)
