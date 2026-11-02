@@ -5,11 +5,12 @@ from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, TypedDict, Unpack, override
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, overload, override
 
 import msgspec
 
 from bostie.enums import (
+    ApplicationIntegrationType,
     CommandType,
     InteractionCallbackType,
     JSONErrorCode,
@@ -72,6 +73,8 @@ TOKEN_LIFETIME = 15 * 60
 CALLBACK_ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
 ORIGINAL_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/@original"
 FOLLOWUP_ROUTE = "/webhooks/{application_id}/{interaction_token}"
+MESSAGE_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/{message_id}"
+USER_INSTALL_FOLLOWUPS = 5
 
 
 SUBCOMMAND_TYPES = (OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP)
@@ -204,6 +207,7 @@ class _InteractionContext[
         route: str,
         body: Mapping[str, Any] | None = None,
         files: Sequence[File] = (),
+        **ids: int,
     ) -> bytes:
         return await self._send(
             method,
@@ -212,6 +216,7 @@ class _InteractionContext[
             files=files,
             application_id=self.interaction.application_id,
             interaction_token=self.interaction.token,
+            **ids,
         )
 
     async def _send(self, method: str, route: str, **request: Any) -> bytes:
@@ -234,6 +239,7 @@ class _ReplyingContext[
 ](_InteractionContext[I], ABC):
     _original_ephemeral = False
     _warned_ephemeral = False
+    _followups = 0
     _auto_defer_task: "asyncio.Task[None] | None" = None
 
     def __init__(
@@ -293,17 +299,52 @@ class _ReplyingContext[
             if self.state is ResponseState.PENDING:
                 await self._defer(ephemeral=options.get("ephemeral", self._ephemeral))
 
-    async def edit(self, **parts: Unpack[ReplyEditParts]) -> M:
-        """Edit the original answer: a part not given stays and None clears it.
+    @overload
+    async def edit(self, /, **parts: Unpack[ReplyEditParts]) -> M: ...
 
-        With `files` or `attachments`, only the listed `attachments` stay.
+    @overload
+    async def edit(
+        self, message_id: int, /, **parts: Unpack[ReplyEditParts]
+    ) -> WebhookMessage: ...
+
+    async def edit(
+        self, message_id: int | None = None, /, **parts: Unpack[ReplyEditParts]
+    ) -> M | WebhookMessage:
+        """Edit the original answer, or the follow-up `message_id`.
+
+        A part not given stays and None clears it. With `files` or `attachments`,
+        only the listed `attachments` stay.
         """
         body, files = self._message_body(None, REPLY_EDIT_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
+            if message_id is not None:
+                response = await self._webhook(
+                    "PATCH", MESSAGE_ROUTE, body, files, message_id=message_id
+                )
+                return self._answer(_webhook_message, response)
             response = await self._edit_original(body, files, parts)
             self._finish_deferred()
+            return self._answer(self._decode_original, response)
+
+    @overload
+    async def fetch(self, /) -> M: ...
+
+    @overload
+    async def fetch(self, message_id: int, /) -> WebhookMessage: ...
+
+    async def fetch(self, message_id: int | None = None, /) -> M | WebhookMessage:
+        """The original answer as Discord has it now, or the follow-up `message_id`."""
+        async with self._lock:
+            self._ensure_alive()
+            self._ensure_answered("fetch the answer of")
+            if message_id is not None:
+                response = await self._webhook(
+                    "GET", MESSAGE_ROUTE, message_id=message_id
+                )
+                return self._answer(_webhook_message, response)
+            response = await self._webhook("GET", ORIGINAL_ROUTE)
             return self._answer(self._decode_original, response)
 
     async def followup(
@@ -321,11 +362,14 @@ class _ReplyingContext[
             self._finish_deferred()
             return self._answer(_webhook_message, response)
 
-    async def delete(self) -> None:
-        """Delete the original answer."""
+    async def delete(self, message_id: int | None = None, /) -> None:
+        """Delete the original answer, or the follow-up `message_id`."""
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("delete the answer of")
+            if message_id is not None:
+                await self._webhook("DELETE", MESSAGE_ROUTE, message_id=message_id)
+                return
             await self._webhook("DELETE", ORIGINAL_ROUTE)
             self._finish_deferred()
 
@@ -392,6 +436,16 @@ class _ReplyingContext[
     async def _send_followup(
         self, body: dict[str, Any], files: Sequence[File], parts: ReplyParts
     ) -> bytes:
+        self._followups += 1
+        owners = self.interaction.authorizing_integration_owners
+        if self._followups == USER_INSTALL_FOLLOWUPS + 1 and owners.keys() == {
+            ApplicationIntegrationType.USER_INSTALL
+        }:
+            logger.warning(
+                "%s: Discord allows 5 follow-ups to an interaction of an app "
+                "installed only to the user",
+                self._label,
+            )
         flagged = parts.get("ephemeral", self._ephemeral)
         return await self._webhook(
             "POST", FOLLOWUP_ROUTE, _with_ephemeral(body, ephemeral=flagged), files

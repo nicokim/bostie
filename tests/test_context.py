@@ -320,6 +320,49 @@ def test_a_modal_submit_updates_and_auto_defers_only_the_message_it_came_from(
     run_bot(scenario, auto_defer=0.0)
 
 
+def test_follow_ups_are_edited_fetched_and_deleted_by_their_id() -> None:
+    async def scenario(on: Interactions) -> None:
+        sent: list[str] = []
+
+        async def handler(ctx: Context) -> None:
+            await ctx.respond("first")
+            followup = await ctx.followup("second")
+            sent.append(str(followup.id))
+            edited = await ctx.edit(followup.id, content="changed")
+            fetched = await ctx.fetch(followup.id)
+            original = await ctx.fetch()
+            await ctx.delete(followup.id)
+            assert edited.content == fetched.content == "changed"
+            assert original.content == "first"
+
+        requests = await on.answer(Context, handler)
+        assert [(r.method, r.path.rsplit("/", 1)[-1]) for r in requests[2:]] == [
+            ("PATCH", sent[0]),
+            ("GET", sent[0]),
+            ("GET", "@original"),
+            ("DELETE", sent[0]),
+        ]
+
+    run_bot(scenario)
+
+
+def test_a_sixth_follow_up_of_a_user_installed_app_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(on: Interactions) -> None:
+        async def handler(ctx: Context) -> None:
+            await ctx.respond("first")
+            for _ in range(7):
+                await ctx.followup("more")
+
+        await on.answer(Context, handler, authorizing_integration_owners={"1": "1"})
+
+    run_bot(scenario)
+
+    warned = [r for r in caplog.records if "Discord allows 5 follow-ups" in r.message]
+    assert len(warned) == 1
+
+
 def test_callbacks_target_the_interaction_and_webhooks_the_application() -> None:
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: Context) -> None:
