@@ -1,6 +1,6 @@
 from bostie import activity, ui, voice
 from bostie.bot import Bot
-from bostie.client import RESTClient
+from bostie.client import RESTClient, WebhookClient
 from bostie.commands import Choice, Option, Range
 from bostie.context import (
     AutocompleteContext,
@@ -621,6 +621,7 @@ __all__ = [
     "VoiceRegion",
     "VoiceState",
     "Webhook",
+    "WebhookClient",
     "WebhookEventType",
     "WebhookMessage",
     "WebhookSourceChannel",

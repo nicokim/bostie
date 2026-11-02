@@ -116,6 +116,7 @@ A few things the example takes for granted:
 - When an edit lists `attachments`, only those stay. A listed `Attachment` sends its `description` and spoiler flag too, so `msgspec.structs.replace(attachment, description="...")` changes its alt text.
 - Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
 - `async with bostie.RESTClient(token) as client:` opens the same operations on `client.rest` without a gateway, for scripts and web backends. The token defaults to `BOSTIE_TOKEN`.
+- `async with bostie.WebhookClient(url) as webhook:` posts through one webhook from its URL alone, with no bot token: `await webhook.execute("deploy done")`, and `edit_message`, `fetch_message` and `delete_message` for what it sent. `execute_slack` and `execute_github` take a payload in Slack's or GitHub's format.
 
 Everything bostie does not model yet stays reachable:
 

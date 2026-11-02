@@ -1,19 +1,31 @@
 import logging
+import re
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Self, override
+from typing import Any, Self, Unpack, override
+from urllib.parse import urlsplit
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.bot import DEFAULT_ALLOWED_MENTIONS, _resolve_token
 from bostie.cache import Cache
 from bostie.errors import StateError
 from bostie.http import HTTPClient
-from bostie.models import AllowedMentions
+from bostie.models import AllowedMentions, Webhook, WebhookMessage
 from bostie.rest import REST
+from bostie.rest.webhooks import (
+    WebhookEditMessage,
+    WebhookEditWithToken,
+    WebhookExecute,
+    WebhookExecuteCompatible,
+    WebhookMessageIn,
+    Webhooks,
+)
 
 log = logging.getLogger("bostie.rest")
 
 API_URL = "https://discord.com/api/v10"
+WEBHOOK_PATH = re.compile(r"/webhooks/(?P<id>\d+)/(?P<token>[^/]+)/?")
 
 
 class _Client[G](ABC):
@@ -108,6 +120,80 @@ class RESTClient(_Client[REST]):
     @override
     def _open(self, http: HTTPClient) -> REST:
         return REST(http, self._allowed_mentions, Cache())
+
+
+class WebhookClient(_Client[Webhooks]):
+    """One webhook, from its URL alone, with no bot token.
+
+    Open it with `async with WebhookClient(url) as webhook:`.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        api_url: str = API_URL,
+        global_rate_limit: int = 50,
+        allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
+    ) -> None:
+        found = WEBHOOK_PATH.search(urlsplit(url).path)
+        if found is None:
+            raise ValueError(f"{url!r} is not a webhook URL")
+        super().__init__(
+            None, bearer=False, api_url=api_url, global_rate_limit=global_rate_limit
+        )
+        self.id = int(found["id"])
+        self.token: str = found["token"]
+        self._allowed_mentions = allowed_mentions
+
+    async def delete(self) -> None:
+        await self._opened.delete_with_token(self.id, self.token)
+
+    async def delete_message(
+        self, message_id: int, /, **options: Unpack[WebhookMessageIn]
+    ) -> None:
+        await self._opened.delete_message(self.id, self.token, message_id, **options)
+
+    async def edit(self, **options: Unpack[WebhookEditWithToken]) -> Webhook:
+        return await self._opened.edit_with_token(self.id, self.token, **options)
+
+    async def edit_message(
+        self, message_id: int, /, **parts: Unpack[WebhookEditMessage]
+    ) -> WebhookMessage:
+        """Edit what the webhook sent: a part not given stays and None clears it."""
+        return await self._opened.edit_message(self.id, self.token, message_id, **parts)
+
+    async def execute(
+        self, content: str | None = None, **parts: Unpack[WebhookExecute]
+    ) -> WebhookMessage:
+        """Send a message and return it once Discord saved it."""
+        return await self._opened.execute(self.id, self.token, content, **parts)
+
+    async def execute_github(
+        self, payload: Mapping[str, Any], **options: Unpack[WebhookExecuteCompatible]
+    ) -> None:
+        """Post a GitHub webhook event payload, as GitHub would."""
+        await self._opened.execute_github(self.id, self.token, payload, **options)
+
+    async def execute_slack(
+        self, payload: Mapping[str, Any], **options: Unpack[WebhookExecuteCompatible]
+    ) -> None:
+        """Post a message in Slack's incoming webhook format."""
+        await self._opened.execute_slack(self.id, self.token, payload, **options)
+
+    async def fetch(self) -> Webhook:
+        return await self._opened.fetch_with_token(self.id, self.token)
+
+    async def fetch_message(
+        self, message_id: int, /, **options: Unpack[WebhookMessageIn]
+    ) -> WebhookMessage:
+        return await self._opened.fetch_message(
+            self.id, self.token, message_id, **options
+        )
+
+    @override
+    def _open(self, http: HTTPClient) -> Webhooks:
+        return Webhooks(http, self._allowed_mentions, Cache())
 
 
 def _on_delivery(delivery: GatewayDelivery, _received: float) -> None:

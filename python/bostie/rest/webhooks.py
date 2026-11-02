@@ -1,6 +1,6 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from functools import partial
-from typing import Required, TypedDict, Unpack
+from typing import Any, Required, TypedDict, Unpack
 
 from bostie.file import File
 from bostie.models import (
@@ -55,7 +55,13 @@ class WebhookMessageIn(TypedDict, total=False):
     thread_id: int
 
 
+class WebhookExecuteCompatible(TypedDict, total=False):
+    thread_id: int
+    wait: bool
+
+
 WEBHOOK_MESSAGE_IN = WebhookMessageIn.__optional_keys__
+WEBHOOK_EXECUTE_COMPATIBLE = WebhookExecuteCompatible.__optional_keys__
 WEBHOOK_EXECUTE = WebhookExecute.__optional_keys__
 WEBHOOK_EDIT_MESSAGE = WebhookEditMessage.__optional_keys__
 
@@ -202,6 +208,44 @@ class Webhooks(Group):
             webhook_token=webhook_token,
         )
         return self._in_guild(message)
+
+    async def execute_github(
+        self,
+        webhook_id: int,
+        webhook_token: str,
+        /,
+        payload: Mapping[str, Any],
+        **options: Unpack[WebhookExecuteCompatible],
+    ) -> None:
+        """Post a GitHub webhook event payload, as GitHub would."""
+        check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
+        await self._http._request(
+            "POST",
+            "/webhooks/{webhook_id}/{webhook_token}/github",
+            json=payload,
+            query={"thread_id": options.get("thread_id"), "wait": options.get("wait")},
+            webhook_id=webhook_id,
+            webhook_token=webhook_token,
+        )
+
+    async def execute_slack(
+        self,
+        webhook_id: int,
+        webhook_token: str,
+        /,
+        payload: Mapping[str, Any],
+        **options: Unpack[WebhookExecuteCompatible],
+    ) -> None:
+        """Post a message in Slack's incoming webhook format."""
+        check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
+        await self._http._request(
+            "POST",
+            "/webhooks/{webhook_id}/{webhook_token}/slack",
+            json=payload,
+            query={"thread_id": options.get("thread_id"), "wait": options.get("wait")},
+            webhook_id=webhook_id,
+            webhook_token=webhook_token,
+        )
 
     async def fetch(self, webhook_id: int, /) -> Webhook:
         return await self._http._decoded(

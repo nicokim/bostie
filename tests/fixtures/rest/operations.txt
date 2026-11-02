@@ -194,6 +194,8 @@ PATCH /webhooks/{webhook_id} webhooks.edit reason
 PATCH /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.edit_message
 PATCH /webhooks/{webhook_id}/{webhook_token} webhooks.edit_with_token
 POST /webhooks/{webhook_id}/{webhook_token} webhooks.execute
+POST /webhooks/{webhook_id}/{webhook_token}/github webhooks.execute_github
+POST /webhooks/{webhook_id}/{webhook_token}/slack webhooks.execute_slack
 GET /webhooks/{webhook_id} webhooks.fetch
 GET /webhooks/{webhook_id}/{webhook_token}/messages/{message_id} webhooks.fetch_message
 GET /webhooks/{webhook_id}/{webhook_token} webhooks.fetch_with_token

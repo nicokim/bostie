@@ -52,8 +52,6 @@ GET /users/@me/connections OAuth2 only: needs the connections scope
 GET /users/@me/guilds/{guild_id}/member OAuth2 only: needs the guilds.members.read scope
 GET /users/{user_id}/application-identities/{application_id} Social SDK game data, like lobbies
 POST /users/{user_id}/application-identities/{application_id}/{provider_type}/{provider_issued_user_id}/delete Social SDK game data, like lobbies
-POST /webhooks/{webhook_id}/{webhook_token}/github takes GitHub's payload format, for GitHub to call
 DELETE /webhooks/{webhook_id}/{webhook_token}/messages/@original interaction contexts cover it: ctx.delete
 GET /webhooks/{webhook_id}/{webhook_token}/messages/@original interaction contexts own the token, and ctx.respond returns the message
 PATCH /webhooks/{webhook_id}/{webhook_token}/messages/@original interaction contexts cover it: ctx.edit
-POST /webhooks/{webhook_id}/{webhook_token}/slack takes Slack's payload format, for Slack to call
