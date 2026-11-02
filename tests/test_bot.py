@@ -1620,6 +1620,37 @@ def test_a_router_included_while_running_runs_its_tasks_until_excluded() -> None
     run(scenario)
 
 
+def test_two_bots_run_in_one_process_and_close_on_their_own() -> None:
+    def named_bot(fake: FakeDiscord, name: str) -> Bot:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.command
+        async def who(ctx: Context) -> None:
+            """Say which bot answers."""
+            await ctx.respond(name)
+
+        return bot
+
+    async def scenario(fake: FakeDiscord) -> None:
+        async with FakeDiscord() as other:
+            first, second = named_bot(fake, "first"), named_bot(other, "second")
+            async with running(second, other):
+                async with running(first, fake):
+                    replies = await asyncio.gather(
+                        fake.interaction(2, payloads.command("who")),
+                        other.interaction(2, payloads.command("who")),
+                    )
+                after_close = await other.interaction(2, payloads.command("who"))
+
+        assert [reply.json["data"]["content"] for reply in replies] == [
+            "first",
+            "second",
+        ]
+        assert after_close.json["data"]["content"] == "second"
+
+    run(scenario)
+
+
 def test_close_sends_1000_and_cancels_running_listeners(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
