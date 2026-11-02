@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Unpack, cast, override
+from typing import Any, Literal, Self, Unpack, cast, override
 
 import msgspec
 
@@ -451,6 +451,12 @@ class Bot(Router):
         if self._closing is None or self._closing.done():
             self._closing = asyncio.ensure_future(self._shut_down())
         await asyncio.shield(self._closing)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.close()
 
     async def wait_until_ready(self) -> None:
         """Wait until every shard is ready, as Started says; StateError if it stops."""

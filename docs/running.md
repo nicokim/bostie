@@ -20,6 +20,13 @@ await started
 
 `wait_until_ready()` raises `StateError` when the bot stops before it is ready; awaiting the task then raises the reason, such as `InvalidToken`. `bot.rest` works from the `Starting` event on, before the gateway connects.
 
+`async with bot:` returns the bot and awaits `close()` when the block ends, whether `start()` ran, raised or never started:
+
+```python
+async with bot:
+    await bot.start()
+```
+
 ## In a web app
 
 A web framework's lifespan hook is the place for it. With FastAPI:

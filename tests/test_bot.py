@@ -1986,6 +1986,23 @@ def test_close_sends_1000_and_cancels_running_listeners(
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
+def test_async_with_gives_the_bot_and_closes_it_at_the_end() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with Bot(api_url=fake.api_url) as bot:
+            started = asyncio.create_task(bot.start(fake.token))
+            await bot.wait_until_ready()
+        assert fake.connections[-1].close_code == 1000
+        await started
+
+        async with Bot(api_url=fake.api_url) as unstarted:
+            assert not unstarted.is_ready
+        with pytest.raises(InvalidToken):
+            async with Bot(api_url=fake.api_url) as failing:
+                await failing.start("wrong-token")
+
+    run(scenario)
+
+
 @pytest.mark.skipif(sys.version_info < (3, 14), reason="zstd needs Python 3.14")
 def test_a_zstd_compressed_gateway_delivers_events() -> None:
     async def scenario(fake: FakeDiscord) -> None:
