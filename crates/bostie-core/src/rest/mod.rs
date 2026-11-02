@@ -222,6 +222,7 @@ impl Rest {
     async fn permit(&self, request: &RestRequest) -> Result<PermitGuard, Duration> {
         let max_wait = self.limits.max_retry_wait;
         match request.class {
+            _ if !self.limits.rate_limiter => return Ok(PermitGuard(None)),
             RouteClass::Callback => return Ok(PermitGuard(None)),
             RouteClass::Interaction => {
                 let wait = self
@@ -469,6 +470,7 @@ pub(crate) mod tests {
         backoff_base: Duration::from_millis(10),
         connect_timeout: Duration::from_secs(10),
         read_timeout: Duration::from_secs(60),
+        rate_limiter: true,
     };
     pub(crate) const NO_REPLY: String = String::new();
 
@@ -893,6 +895,35 @@ pub(crate) mod tests {
             "multipart/form-data; boundary=x"
         );
         assert_eq!(captured.body, b"--x\r\npart\r\n--x--");
+    }
+
+    #[tokio::test]
+    async fn without_the_rate_limiter_an_exhausted_bucket_is_not_waited() {
+        let exhausted = reply(
+            "200 OK",
+            &[
+                ("X-RateLimit-Bucket", "abc"),
+                ("X-RateLimit-Limit", "5"),
+                ("X-RateLimit-Remaining", "0"),
+                ("X-RateLimit-Reset-After", "60"),
+            ],
+            "{}",
+        );
+        let mut server = Server::start(vec![exhausted]).await;
+        let limits = HttpSettings {
+            rate_limiter: false,
+            ..LIMITS
+        };
+        let (rest, _receiver) = limited_rest(&server.url, 50, limits);
+
+        for _ in 0..2 {
+            assert_eq!(
+                status(rest.execute(Ticket::from(1), message("1", "10")).await).0,
+                200
+            );
+        }
+
+        assert_eq!(server.received(), 2);
     }
 
     #[tokio::test]

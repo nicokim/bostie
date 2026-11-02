@@ -7,6 +7,7 @@ pub struct HttpSettings {
     pub backoff_base: Duration,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
+    pub rate_limiter: bool,
 }
 
 impl Default for HttpSettings {
@@ -17,6 +18,7 @@ impl Default for HttpSettings {
             backoff_base: Duration::from_millis(500),
             connect_timeout: Duration::from_secs(10),
             read_timeout: Duration::from_secs(60),
+            rate_limiter: true,
         }
     }
 }

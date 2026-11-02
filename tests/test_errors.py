@@ -33,6 +33,7 @@ def core() -> Iterator[_native.Core]:
         retries=2,
         connect_timeout=10.0,
         read_timeout=60.0,
+        rate_limiter=True,
         proxy=None,
     )
     with socket.socket(fileno=bell):

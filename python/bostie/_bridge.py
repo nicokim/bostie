@@ -60,6 +60,7 @@ class Bridge:
             retries=http.retries,
             connect_timeout=http.connect_timeout,
             read_timeout=http.read_timeout,
+            rate_limiter=http.rate_limiter,
             proxy=http.proxy,
             bearer=bearer,
         )

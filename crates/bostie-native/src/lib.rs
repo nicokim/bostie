@@ -50,6 +50,7 @@ impl NativeCore {
         retries,
         connect_timeout,
         read_timeout,
+        rate_limiter,
         proxy,
         bearer=false,
     ))]
@@ -62,6 +63,7 @@ impl NativeCore {
         retries: u32,
         connect_timeout: f64,
         read_timeout: f64,
+        rate_limiter: bool,
         proxy: Option<String>,
         bearer: bool,
     ) -> Result<(Self, RawBellHandle)> {
@@ -75,6 +77,7 @@ impl NativeCore {
             retries,
             connect_timeout: seconds("connect_timeout", connect_timeout)?,
             read_timeout: seconds("read_timeout", read_timeout)?,
+            rate_limiter,
             ..HttpSettings::default()
         };
         let (core, bell) = Core::new(auth, api_url, global_limit, http, proxy.as_deref())?;

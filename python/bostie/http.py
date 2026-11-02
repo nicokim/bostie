@@ -50,6 +50,7 @@ class HTTPSettings:
     retries: int = 2
     connect_timeout: float = 10.0
     read_timeout: float = 60.0
+    rate_limiter: bool = True
     proxy: str | None = None
 
     def __post_init__(self) -> None:

@@ -205,6 +205,7 @@ class Core:
         retries: int,
         connect_timeout: float,
         read_timeout: float,
+        rate_limiter: bool,
         proxy: str | None,
         bearer: bool = False,
     ) -> tuple[Core, int]: ...
