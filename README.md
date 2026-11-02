@@ -275,6 +275,7 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 ## Helpers
 
 - `bostie.cdn` builds image URLs on Discord's CDN, such as `cdn.display_avatar(user)` for a thumbnail, `cdn.member_avatar(guild_id, user_id, member.avatar)` or `cdn.guild_icon(guild.id, guild.icon, size=256)`. They default to WebP, animated when the hash starts with `a_`, and raise `ValueError` for a size or format the CDN does not serve.
+- `bostie.fmt` writes Discord's message formats: `fmt.timestamp(when, "R")` shows "in 5 minutes" in each reader's language and time zone, and `fmt.emoji`, `fmt.command` (a clickable slash command), `fmt.guild_navigation`, `fmt.user`, `fmt.role` and `fmt.channel` build the rest. `fmt.escape_markdown`, `fmt.remove_markdown` and `fmt.escape_mentions` make user text safe to echo, and `fmt.mentioned_users`, `mentioned_roles` and `mentioned_channels` read the ids mentioned in a text.
 
 ## Bot parameters
 
