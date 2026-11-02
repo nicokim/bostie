@@ -166,6 +166,10 @@ def option(type: int, **fields: object) -> dict[str, object]:
             option(7, channel_types=[0, 2]),
         ),
         (
+            Annotated[Attachment, Option(file_types=["image", ".pdf"])],
+            option(11, file_types=["image", ".pdf"]),
+        ),
+        (
             Annotated[int, Option(choices=[Choice("Five", 5), 10])],
             option(
                 4,
@@ -331,6 +335,8 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
             Annotated[int, Option(channel_types=[ChannelType.GUILD_TEXT])],
             "channel_types does not apply",
         ),
+        (Annotated[str, Option(file_types=["image"])], "file_types does not apply"),
+        (Annotated[Attachment, Option(file_types=["a"] * 11)], "at most 10 types"),
     ],
 )
 def test_definition_errors_name_the_function_and_parameter(

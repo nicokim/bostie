@@ -97,6 +97,7 @@ MAX_LENGTH_BOUND = 6000
 MAX_INTEGER = 2**53 - 1
 MAX_NUMBER = 2**53
 TEXT_BUDGET = 8000
+MAX_FILE_TYPES = 10
 DEFAULT_DESCRIPTION = "\N{HORIZONTAL ELLIPSIS}"
 NAME_SYMBOLS = frozenset({"-", "_", "\N{MODIFIER LETTER APOSTROPHE}"})
 NAME_SCRIPTS = (range(0x0900, 0x0980), range(0x0E00, 0x0E80))
@@ -130,6 +131,7 @@ FIELD_TYPES = {
     "min_length": frozenset({OptionType.STRING}),
     "max_length": frozenset({OptionType.STRING}),
     "channel_types": frozenset({OptionType.CHANNEL}),
+    "file_types": frozenset({OptionType.ATTACHMENT}),
 }
 MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
 OPTION_MODELS: dict[OptionModel, OptionType] = {
@@ -235,6 +237,7 @@ class Option:
     min_length: int | None = None
     max_length: int | None = None
     channel_types: Iterable[ChannelType] | None = None
+    file_types: Iterable[str] | None = None
     choices: Iterable[Choice | ChoiceValue] | None = None
     extra: Mapping[str, Any] | None = None
 
@@ -757,6 +760,9 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
         "channel_types": None
         if settings.channel_types is None
         else list(settings.channel_types),
+        "file_types": None
+        if settings.file_types is None
+        else list(settings.file_types),
     }
     payload |= {
         key: value for key, value in optional_fields.items() if value is not None
@@ -874,6 +880,8 @@ def _check_option(payload: Mapping[str, Any]) -> None:
             )
     if "choices" in payload and "autocomplete" in payload:
         raise CommandDefinitionError("autocomplete cannot be combined with choices")
+    if len(payload.get("file_types", ())) > MAX_FILE_TYPES:
+        raise CommandDefinitionError("file_types takes at most 10 types")
     _check_choices(option_type, payload.get("choices", []))
     _check_bounds(option_type, payload)
 

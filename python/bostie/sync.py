@@ -51,6 +51,7 @@ OPTION_DEFAULTS: dict[str, Any] = {
     "choices": [],
     "options": [],
     "channel_types": [],
+    "file_types": [],
     "min_value": None,
     "max_value": None,
     "min_length": None,
