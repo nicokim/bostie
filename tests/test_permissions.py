@@ -5,7 +5,7 @@ import msgspec
 import pytest
 
 from bostie import Permissions
-from bostie.models import Channel, Guild, Member, Role
+from bostie.models import Channel, Guild, ResolvedMember, Role
 from bostie.models.base import Model, decode
 from bostie.permissions import ALL, compute_permissions
 from bostie.testing import payloads
@@ -66,10 +66,10 @@ NO_CONNECTING = overwrite(GUILD, 0, P(0), P.CONNECT)
 
 def member(
     user: int = USER, roles: tuple[int, ...] = (), timed_out: bool = False
-) -> Member:
+) -> ResolvedMember:
     until = datetime.now(UTC) + timedelta(hours=1 if timed_out else -1)
     return model(
-        Member,
+        ResolvedMember,
         user=payloads.user(id=str(user)),
         roles=list(roles),
         joined_at=None,
@@ -121,7 +121,7 @@ def member(
     ],
 )
 def test_permissions_follow_discords_order_and_implicit_rules(
-    target: Member,
+    target: ResolvedMember,
     where: Channel | None,
     parent: Channel | None,
     expected: Permissions,

@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 
 from bostie.enums import ChannelType, Permissions
-from bostie.models import Channel, Guild, Member
+from bostie.models import Channel, Guild, Member, ResolvedMember
+
+type AnyMember = Member | ResolvedMember
 
 THREAD_TYPES = frozenset(
     {
@@ -146,7 +148,7 @@ NEEDS_CONNECTING = (
 
 def compute_permissions(
     guild: Guild,
-    member: Member,
+    member: AnyMember,
     channel: Channel | None = None,
     *,
     parent: Channel | None = None,
@@ -186,7 +188,7 @@ def compute_permissions(
 
 
 def _overwrite(
-    permissions: Permissions, channel: Channel, everyone_id: int, member: Member
+    permissions: Permissions, channel: Channel, everyone_id: int, member: AnyMember
 ) -> Permissions:
     overwrites = {
         overwrite.id: overwrite for overwrite in channel.permission_overwrites

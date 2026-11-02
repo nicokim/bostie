@@ -42,6 +42,7 @@ from bostie.models import (
     PartialMessage,
     PartialUser,
     Resolved,
+    ResolvedMember,
     Role,
     User,
     WebhookMessage,
@@ -78,8 +79,8 @@ type CommandCallback = Callable[..., Coroutine[Any, Any, None]]
 type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
-type OptionModel = type[User | Member | Role | PartialChannel | Attachment]
-type TargetModel = type[User | Member | Message | WebhookMessage]
+type OptionModel = type[User | ResolvedMember | Role | PartialChannel | Attachment]
+type TargetModel = type[User | ResolvedMember | Message | WebhookMessage]
 type TargetType = Literal[CommandType.USER, CommandType.MESSAGE]
 type Scope = Literal["global", "guild"]
 
@@ -129,17 +130,18 @@ FIELD_TYPES = {
 MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
 OPTION_MODELS: dict[OptionModel, OptionType] = {
     User: OptionType.USER,
-    Member: OptionType.USER,
+    ResolvedMember: OptionType.USER,
     Role: OptionType.ROLE,
     PartialChannel: OptionType.CHANNEL,
     Attachment: OptionType.ATTACHMENT,
 }
 MODEL_ADVICE: dict[type, str] = {
     Channel: "a channel option is a PartialChannel",
-    PartialUser: "a user option is a User or a Member",
+    Member: "a member option is a ResolvedMember",
+    PartialUser: "a user option is a User or a ResolvedMember",
 }
 TARGET_MODELS: dict[CommandType, tuple[TargetModel, ...]] = {
-    CommandType.USER: (User, Member),
+    CommandType.USER: (User, ResolvedMember),
     CommandType.MESSAGE: (Message, WebhookMessage),
 }
 

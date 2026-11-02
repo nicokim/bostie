@@ -94,9 +94,7 @@ class Role(Model, kw_only=True):
         return resolved.roles.get(id)
 
 
-class PartialMember(Model, kw_only=True):
-    """A member without its user, as resolved options and message events carry it."""
-
+class _MemberFields(Model, kw_only=True):
     roles: tuple[int, ...]
     joined_at: datetime | None
     flags: MemberFlags
@@ -104,8 +102,6 @@ class PartialMember(Model, kw_only=True):
     avatar: str | None = None
     banner: str | None = None
     premium_since: datetime | None = None
-    deaf: bool | None = None
-    mute: bool | None = None
     pending: bool = False
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
@@ -118,9 +114,14 @@ class PartialMember(Model, kw_only=True):
         return permissions_from(self._permissions)
 
 
-class Member(PartialMember, kw_only=True):
-    """A user's membership in a guild."""
+class PartialMember(_MemberFields, kw_only=True):
+    """A member without its user, as messages and resolved data carry it."""
 
+    deaf: bool | None = None
+    mute: bool | None = None
+
+
+class _UserMember(_MemberFields, kw_only=True):
     user: User
 
     @property
@@ -135,13 +136,26 @@ class Member(PartialMember, kw_only=True):
     def display_name(self) -> str:
         return self.nick or self.user.display_name
 
+
+class ResolvedMember(_UserMember, kw_only=True):
+    """A member as an option, a select or a command target resolves it."""
+
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "Member | None":
+    def from_resolved(cls, resolved: "Resolved", id: int) -> "ResolvedMember | None":
         return resolved.member(id)
 
 
-def with_user(member: PartialMember, user: User) -> Member:
-    return Member(user=user, **msgspec.structs.asdict(member))
+class Member(_UserMember, kw_only=True):
+    """A user's membership in a guild."""
+
+    deaf: bool
+    mute: bool
+
+
+def with_user(member: PartialMember, user: User) -> ResolvedMember:
+    fields = msgspec.structs.asdict(member)
+    del fields["deaf"], fields["mute"]
+    return ResolvedMember(user=user, **fields)
 
 
 class WelcomeScreenChannel(Builder, kw_only=True):

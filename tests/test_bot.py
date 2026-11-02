@@ -26,7 +26,6 @@ from bostie import (
     HTTPException,
     Intents,
     InvalidToken,
-    Member,
     MemberRequestRateLimited,
     Message,
     MissingIntent,
@@ -37,6 +36,7 @@ from bostie import (
     Permissions,
     PrivilegedIntentsRequired,
     Range,
+    ResolvedMember,
     Router,
     StateError,
     Status,
@@ -176,7 +176,9 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
     color = role.group("color", "Color roles")
 
     @color.command(name="set")
-    async def color_set(ctx: Context, member: Member, code: Range[str, 7, 7]) -> None:
+    async def color_set(
+        ctx: Context, member: ResolvedMember, code: Range[str, 7, 7]
+    ) -> None:
         """Give a member a color role."""
         await ctx.respond(f"{member.mention} is now {code}")
 
@@ -488,7 +490,7 @@ def test_context_menu_commands_sync_and_route_by_type_and_name() -> None:
         bot = Bot(api_url=fake.api_url)
 
         @bot.user_command("Inspect")
-        async def inspect_member(ctx: Context, member: Member) -> None:
+        async def inspect_member(ctx: Context, member: ResolvedMember) -> None:
             await ctx.respond(f"member {member.mention}")
 
         @bot.message_command("Inspect", ephemeral=True)

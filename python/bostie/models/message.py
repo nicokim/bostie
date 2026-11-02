@@ -32,7 +32,7 @@ from bostie.models.components import (
     UnknownComponent,
     decode_components,
 )
-from bostie.models.guild import Member, PartialMember, Role, with_user
+from bostie.models.guild import PartialMember, ResolvedMember, Role, with_user
 from bostie.models.user import PartialUser, User
 
 type MentionType = Literal["roles", "users", "everyone"]
@@ -108,7 +108,7 @@ class Resolved(Model, kw_only=True):
             for id, raw in self._messages.items()
         }
 
-    def member(self, id: int) -> Member | None:
+    def member(self, id: int) -> ResolvedMember | None:
         """The member with this id, with its user."""
         member = self.members.get(id)
         user = self.users.get(id)
@@ -484,7 +484,7 @@ class Message(_Message, kw_only=True):
     author: User
 
     @property
-    def author_member(self) -> Member | None:
+    def author_member(self) -> ResolvedMember | None:
         """The author as a guild member, when the message carries its member."""
         return None if self.member is None else with_user(self.member, self.author)
 

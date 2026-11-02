@@ -47,7 +47,7 @@ from bostie.models import (
     VoiceState,
     WebhookMessage,
 )
-from bostie.permissions import THREAD_TYPES, compute_permissions
+from bostie.permissions import THREAD_TYPES, AnyMember, compute_permissions
 
 type CachedMessage = Message | WebhookMessage
 type Changes = dict[str, Any] | None
@@ -198,7 +198,7 @@ class Cache:
         return self._messages.get(id)
 
     def permissions(
-        self, channel_id: int, member: Member | None = None
+        self, channel_id: int, member: AnyMember | None = None
     ) -> Permissions | None:
         """A member's permissions in a channel, else the bot's; None if unknown."""
         channel = self._channels.get(channel_id)
@@ -212,7 +212,7 @@ class Cache:
         return self._compute(channel.guild_id, member, channel, parent)
 
     def guild_permissions(
-        self, guild_id: int, member: Member | None = None
+        self, guild_id: int, member: AnyMember | None = None
     ) -> Permissions | None:
         """A member's guild-wide permissions, else the bot's; None if unknown."""
         return self._compute(guild_id, member, None, None)
@@ -238,7 +238,7 @@ class Cache:
     def _compute(
         self,
         guild_id: int,
-        member: Member | None,
+        member: AnyMember | None,
         channel: Channel | None,
         parent: Channel | None,
     ) -> Permissions | None:

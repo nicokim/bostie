@@ -10,11 +10,11 @@ from bostie import (
     Context,
     ErrorContext,
     Forbidden,
-    Member,
     Message,
     Option,
     Permissions,
     Range,
+    ResolvedMember,
     Role,
     User,
     cdn,
@@ -69,7 +69,7 @@ roles = bot.group(
 
 @roles.command(name="give")
 async def roles_give(
-    ctx: Context, member: Member, role: Role, reason: str | None = None
+    ctx: Context, member: ResolvedMember, role: Role, reason: str | None = None
 ) -> None:
     """Give a member a role."""
     if ctx.guild_id is not None:

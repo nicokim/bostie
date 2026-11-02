@@ -26,6 +26,7 @@ from bostie.models import (
     PartialChannel,
     PartialUser,
     Resolved,
+    ResolvedMember,
     Role,
     User,
     WebhookMessage,
@@ -92,12 +93,12 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (float, option(10)),
         (bool, option(5)),
         (User, option(6)),
-        (Member, option(6)),
+        (ResolvedMember, option(6)),
         (Role, option(8)),
         (PartialChannel, option(7)),
         (Attachment, option(11)),
         (User | Role, option(9)),
-        (Member | Role, option(9)),
+        (ResolvedMember | Role, option(9)),
         (
             Literal["a", "b"],
             option(
@@ -271,9 +272,13 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
     [
         (list[int], "unsupported type hint list\\[int\\]"),
         (int | str, "unsupported type hint"),
-        (User | Member, "unsupported type hint"),
+        (User | ResolvedMember, "unsupported type hint"),
+        (Member, "Member; a member option is a ResolvedMember"),
         (Channel, "Channel; a channel option is a PartialChannel"),
-        (PartialUser | None, "PartialUser; a user option is a User or a Member"),
+        (
+            PartialUser | None,
+            "PartialUser; a user option is a User or a ResolvedMember",
+        ),
         (Literal["a", 1], "must be all str, all int or all float"),
         pytest.param(
             Literal[True], "must be all str, all int or all float", id="Literal-bool"
@@ -462,7 +467,9 @@ def test_group_tree_payload_and_names() -> None:
     color = role.group("color", "Color roles")
 
     @color.command(name="set")
-    async def color_set(ctx: object, member: Member, code: Range[str, 7, 7]) -> None:
+    async def color_set(
+        ctx: object, member: ResolvedMember, code: Range[str, 7, 7]
+    ) -> None:
         """Give a member a color role."""
 
     @role.command
@@ -547,7 +554,7 @@ def kitchen_sink() -> Command:
         ratio: float,
         flag: bool,
         user: User,
-        member: Member,
+        member: ResolvedMember,
         role: Role,
         channel: PartialChannel,
         file: Attachment,
@@ -605,7 +612,7 @@ def test_bind_converts_every_option_type() -> None:
     }
     assert type(arguments["ratio"]) is float
     assert type(arguments["half"]) is float
-    assert type(arguments["member"]) is Member
+    assert type(arguments["member"]) is ResolvedMember
 
 
 def test_mentionable_prefers_the_first_class_that_resolves() -> None:
@@ -638,8 +645,16 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
         ([filled("name", 3, "x"), filled("count", 4, True)], Resolved(), "is INTEGER"),
         ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], Resolved(), "choices"),
         ([filled("name", 3, "x"), filled("mode", 3, "avg")], Resolved(), "choices"),
-        ([filled("name", 3, "x"), filled("member", 6, "9")], Resolved(), "no Member"),
-        ([filled("name", 3, "x"), filled("member", 6, "abc")], Resolved(), "no Member"),
+        (
+            [filled("name", 3, "x"), filled("member", 6, "9")],
+            Resolved(),
+            "no ResolvedMember",
+        ),
+        (
+            [filled("name", 3, "x"), filled("member", 6, "abc")],
+            Resolved(),
+            "no ResolvedMember",
+        ),
     ],
 )
 def test_bind_rejects_unexpected_input(
@@ -654,7 +669,7 @@ def test_bind_rejects_unexpected_input(
         count: int | None,
         unit: Unit | None,
         mode: Literal["sum", "list"] | None,
-        member: Member | None,
+        member: ResolvedMember | None,
     ) -> None:
         pass
 
@@ -717,7 +732,7 @@ async def on_user(ctx: object, user: User) -> None:
     pass
 
 
-async def on_member(ctx: object, member: Member) -> None:
+async def on_member(ctx: object, member: ResolvedMember) -> None:
     pass
 
 
@@ -772,7 +787,7 @@ def test_context_menu_payloads_carry_no_description_or_options() -> None:
 
 
 TAKES_TARGET = "the function must take the context positionally, then the target"
-USER_TARGET = "parameter 'user' must be a User or a Member"
+USER_TARGET = "parameter 'user' must be a User or a ResolvedMember"
 
 
 @pytest.mark.parametrize(
@@ -815,7 +830,7 @@ WEBHOOK_MESSAGE = resolved_message(webhook_id="1")
     ("callback", "kind", "resolved", "expected"),
     [
         (on_user, CommandType.USER, payloads.resolved(), User),
-        (on_member, CommandType.USER, payloads.resolved(), Member),
+        (on_member, CommandType.USER, payloads.resolved(), ResolvedMember),
         (on_message, CommandType.MESSAGE, resolved_message(), Message),
         (on_any_message, CommandType.MESSAGE, WEBHOOK_MESSAGE, WebhookMessage),
         (on_member, CommandType.USER, {"users": payloads.resolved()["users"]}, None),
@@ -842,8 +857,8 @@ def test_bind_resolves_the_target_to_its_hint(
         return
     (target,) = command.bind(interaction).values()
     assert type(target) is expected
-    assert isinstance(target, User | Member | Message | WebhookMessage)
-    if isinstance(target, Member):
+    assert isinstance(target, User | ResolvedMember | Message | WebhookMessage)
+    if isinstance(target, ResolvedMember):
         target = target.user
     assert target.id == int(target_id)
     if isinstance(target, Message | WebhookMessage):
