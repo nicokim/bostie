@@ -159,12 +159,15 @@ class Channels(Group):
         )
 
     async def create_dm(self, **options: Unpack[ChannelCreateDm]) -> Channel:
-        return await self._http._decoded(
+        """Open the bot's DM channel with a user; `bot.cache` keeps it if it may."""
+        channel = await self._http._decoded(
             partial(decode, Channel),
             "POST",
             "/users/@me/channels",
             json=wire(options, ChannelCreateDm),
         )
+        self._cache._store_dm(channel)
+        return channel
 
     async def create_group_dm(self, **options: Unpack[ChannelCreateGroupDm]) -> Channel:
         return await self._http._decoded(

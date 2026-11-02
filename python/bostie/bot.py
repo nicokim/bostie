@@ -194,6 +194,7 @@ class Bot(Router):
         members: bool = False,
         chunk_members: bool = True,
         presences: bool = False,
+        max_dm_channels: int = 0,
         guild_ready_timeout: float = 2.0,
         large_threshold: int = LARGE_THRESHOLD.start,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
@@ -213,6 +214,7 @@ class Bot(Router):
             ("max_messages", max_messages),
             ("members", members),
             ("presences", presences),
+            ("max_dm_channels", max_dm_channels),
         ):
             if value and not cache:
                 raise ValueError(f"{name} needs cache=True")
@@ -226,7 +228,12 @@ class Bot(Router):
             )
         self._shard_count = shard_count
         self._shard_ids = _shard_ids(shard_count, shard_ids)
-        self.cache = Cache(max_messages, members=members, presences=presences)
+        self.cache = Cache(
+            max_messages,
+            members=members,
+            presences=presences,
+            max_dm_channels=max_dm_channels,
+        )
         self.voice = VoiceManager(self, voice)
         self.user: User | None = None
         self.application_id: int | None = None

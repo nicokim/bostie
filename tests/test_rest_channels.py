@@ -65,3 +65,21 @@ def test_channel_permissions_come_back_as_permission_flags() -> None:
             assert fake.requests[-1].query == {"implicit": "false"}
 
     run(scenario)
+
+
+def test_a_created_dm_channel_is_kept_for_its_recipient() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, max_dm_channels=1)
+        user = payloads.user()
+        dm = {"id": "9", "type": 1, "recipients": [user]}
+        async with running(bot, fake):
+            fake.fail("POST", "/users/@me/channels", 200, dm)
+            created = await bot.rest.channels.create_dm(recipient_id=int(user["id"]))
+
+            cached = bot.cache.dm_channel(int(user["id"]))
+
+            assert cached is not None
+            assert (cached.id, cached.recipients) == (9, created.recipients)
+            assert bot.cache.channel(9) == cached
+
+    run(scenario)

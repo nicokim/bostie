@@ -56,7 +56,8 @@ type Changes = dict[str, Any] | None
 class Cache:
     """Guilds, channels, active threads, voice states and the bot's member and user.
 
-    Members, presences and the latest messages are kept only when asked for.
+    Members, presences, the latest messages and DM channels are kept only when
+    asked for.
     Channels are stored as received, obfuscated ones included, except the fields
     CHANNEL_UPDATE does not keep current (last_message_id, message_count,
     member_count, last_pin_timestamp), which are None.
@@ -68,11 +69,17 @@ class Cache:
         *,
         members: bool = False,
         presences: bool = False,
+        max_dm_channels: int = 0,
     ) -> None:
-        if max_messages < 0:
-            raise ValueError(f"max_messages must be 0 or more, got {max_messages}")
+        for name, limit in (
+            ("max_messages", max_messages),
+            ("max_dm_channels", max_dm_channels),
+        ):
+            if limit < 0:
+                raise ValueError(f"{name} must be 0 or more, got {limit}")
         self._current: CurrentUser | None = None
         self._max_messages = max_messages
+        self._max_dm_channels = max_dm_channels
         self._all_members = members
         self._keeps_presences = presences
         self._guilds: dict[int, Guild] = {}
@@ -83,6 +90,7 @@ class Cache:
         self._members: dict[int, dict[int, Member]] = {}
         self._presences: dict[int, dict[int, Presence]] = {}
         self._messages: dict[int, CachedMessage] = {}
+        self._dm_channels: dict[int, Channel] = {}
         self._handlers: dict[type[Event], Callable[[Any], Changes]] = {
             Ready: self._start_session,
             GuildCreate: self._create_guild,
@@ -111,9 +119,10 @@ class Cache:
             self._handlers[MembersChunk] = self._store_chunk
         if presences:
             self._handlers[PresenceUpdate] = self._update_presence
+        if max_messages or max_dm_channels:
+            self._handlers[MessageCreate] = self._create_message
         if max_messages:
             self._handlers |= {
-                MessageCreate: self._create_message,
                 MessageUpdate: self._update_message,
                 MessageDelete: self._delete_message,
                 MessageDeleteBulk: self._delete_messages,
@@ -169,7 +178,7 @@ class Cache:
         return list(self._presences.get(guild_id, {}).values())
 
     def user(self, id: int) -> User | None:
-        """The bot's user, or the user of a cached member."""
+        """The bot's user, or the user of a cached member or DM channel."""
         current = self._current
         if current is not None and current.id == id:
             return current
@@ -177,7 +186,12 @@ class Cache:
             member = members.get(id)
             if member is not None:
                 return member.user
-        return None
+        dm = self._dm_channels.get(id)
+        return None if dm is None else dm.recipients[0]
+
+    def dm_channel(self, user_id: int) -> Channel | None:
+        """The bot's DM channel with a user, if it is one of the latest kept."""
+        return self._dm_channels.get(user_id)
 
     def message(self, id: int) -> CachedMessage | None:
         """One of the latest `max_messages` messages."""
@@ -213,6 +227,7 @@ class Cache:
         self._members.clear()
         self._presences.clear()
         self._messages.clear()
+        self._dm_channels.clear()
 
     def apply[E: Event](self, event: E) -> E:
         """Update the cache; return the event with its `old` or removed object."""
@@ -234,8 +249,10 @@ class Cache:
         return compute_permissions(guild, member, channel, parent=parent)
 
     def _keeps(self, user_id: int) -> bool:
-        current = self._current
-        return self._all_members or (current is not None and user_id == current.id)
+        return self._all_members or self._is_current(user_id)
+
+    def _is_current(self, user_id: int) -> bool:
+        return self._current is not None and user_id == self._current.id
 
     def _start_session(self, event: Ready) -> Changes:
         self._current = event.user
@@ -524,10 +541,35 @@ class Cache:
         return old
 
     def _create_message(self, event: MessageCreate) -> Changes:
-        self._messages[event.message.id] = _stored(event.message)
-        if len(self._messages) > self._max_messages:
-            del self._messages[next(iter(self._messages))]
+        message = event.message
+        if self._max_messages:
+            self._messages[message.id] = _stored(message)
+            if len(self._messages) > self._max_messages:
+                del self._messages[next(iter(self._messages))]
+        if (
+            message.guild_id is None
+            and isinstance(message, Message)
+            and not self._is_current(message.author.id)
+        ):
+            dm = Channel(
+                id=message.channel_id, type=ChannelType.DM, recipients=(message.author,)
+            )
+            self._store_dm(dm)
         return None
+
+    def _store_dm(self, channel: Channel) -> None:
+        if not self._max_dm_channels or channel.type is not ChannelType.DM:
+            return
+        user_id = channel.recipients[0].id
+        old = self._dm_channels.pop(user_id, None)
+        if old is not None:
+            self._channels.pop(old.id, None)
+        channel = _stored(channel)
+        self._dm_channels[user_id] = channel
+        self._channels[channel.id] = channel
+        if len(self._dm_channels) > self._max_dm_channels:
+            evicted = self._dm_channels.pop(next(iter(self._dm_channels)))
+            self._channels.pop(evicted.id, None)
 
     def _update_message(self, event: MessageUpdate) -> Changes:
         old = self._messages.get(event.message.id)

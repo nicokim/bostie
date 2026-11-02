@@ -5,7 +5,7 @@ from typing import Any
 import msgspec
 import pytest
 
-from bostie import Permissions, Status
+from bostie import ChannelType, Permissions, Status
 from bostie.cache import Cache
 from bostie.events import (
     EVENTS,
@@ -518,6 +518,32 @@ def test_the_message_cache_keeps_the_latest_and_hands_them_to_events() -> None:
     assert cache.message(int(ids[1])) is None
     assert "MESSAGE_CREATE" in cache.names
     assert "MESSAGE_CREATE" not in Cache().names
+
+
+def test_dm_messages_keep_the_latest_dm_channels_without_the_messages() -> None:
+    cache = Cache(max_dm_channels=2)
+    cache.apply(event("READY"))
+    for number in (1, 2, 3):
+        author = BOT_USER | {"id": str(number)}
+        cache.apply(
+            event(
+                "MESSAGE_CREATE",
+                guild_id=None,
+                author=author,
+                channel_id=str(GUILD + number),
+            )
+        )
+    cache.apply(event("MESSAGE_CREATE", guild_id=None, author=BOT_USER, channel_id="4"))
+    cache.apply(event("MESSAGE_CREATE", author=BOT_USER | {"id": "5"}))
+    third = cache.dm_channel(3)
+
+    assert (cache.dm_channel(1), cache.channel(GUILD + 1)) == (None, None)
+    assert third is not None
+    assert (third.id, third.type) == (GUILD + 3, ChannelType.DM)
+    assert cache.channel(GUILD + 3) == third
+    assert cache.user(3) == third.recipients[0]
+    assert [cache.dm_channel(id) for id in (BOT, 5)] == [None, None]
+    assert cache.message(int(event("MESSAGE_CREATE").raw["id"])) is None
 
 
 def test_events_the_cache_does_not_consume_change_nothing(cache: Cache) -> None:
