@@ -9,6 +9,7 @@ import struct
 import time
 import wave
 import zlib
+from collections import deque
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -189,9 +190,11 @@ class _Player:
         volume: float,
         options: SinkOptions,
         crossfade: float = 0.0,
+        history: int = 0,
     ) -> None:
         self.vc = vc
         self.closed = False
+        self.history: deque[Track] = deque(maxlen=history)
         self._volume = volume
         self._options = options
         self._crossfade = crossfade
@@ -246,6 +249,9 @@ class _Player:
         return entry.track
 
     def add(self, source: "Source", meta: Any, index: int | None) -> Track:
+        return self._add(source, meta, index).track
+
+    def _add(self, source: "Source", meta: Any, index: int | None) -> _Entry:
         if self.closed or self.vc.state is State.DISCONNECTED:
             self._lost()
             raise VoiceNotConnected("the voice connection has ended")
@@ -259,7 +265,7 @@ class _Player:
             self._open_ahead()
         if self._feeder is None:
             self._feeder = asyncio.create_task(self._feed(None))
-        return entry.track
+        return entry
 
     def move(self, track: Track, index: int) -> None:
         upcoming = self._upcoming()
@@ -316,6 +322,26 @@ class _Player:
             else:
                 sink.clear()
         self._settle()
+
+    def back(self) -> Track | None:
+        if not self.history:
+            return None
+        previous = self.history[-1]
+        current = self._entries[0] if self.now is not None else None
+        replay = self._insert(previous.source.again(), previous.meta, 0)
+        self.history.pop()
+        if current is not None:
+            with contextlib.suppress(SourceError):
+                self._insert(current.source.again(), current.meta, 1)
+            self.skip()
+            if self.history and self.history[-1] is current.track:
+                self.history.pop()
+        return replay
+
+    def _insert(self, source: "Source", meta: Any, index: int) -> Track:
+        entry = self._add(source, meta, index)
+        entry.repeated = self._loop == "queue"
+        return entry.track
 
     def remove(self, track: Track) -> None:
         entry = next((entry for entry in self._entries if entry.track is track), None)
@@ -614,6 +640,8 @@ class _Player:
         may_start_next = reason in (EndReason.FINISHED, EndReason.ERROR)
         if not entry.began.done():
             entry.began.set_result(reason is EndReason.FINISHED)
+        if entry.began.result():
+            self.history.append(entry.track)
         entry.done.set_result(TrackEnd(entry.track, reason, error, may_start_next))
         spawn(self._tasks, self._release(entry, blocker), eager=True)
 
@@ -658,15 +686,21 @@ class Queue:
         *,
         volume: float = 1.0,
         crossfade: float | None = None,
+        history: int | None = None,
         **options: Unpack[SinkOptions],
     ) -> None:
         check_keys(options, SINK_OPTIONS, "options")
+        defaults = vc.manager.defaults
         self.vc = vc
-        self.crossfade = (
-            vc.manager.defaults.crossfade if crossfade is None else crossfade
-        )
+        self.crossfade = defaults.crossfade if crossfade is None else crossfade
+        if history is not None and history < 0:
+            raise ValueError(f"history must be at least 0, got {history}")
         self._player = _Player(
-            vc, volume=volume, options=options, crossfade=self.crossfade
+            vc,
+            volume=volume,
+            options=options,
+            crossfade=self.crossfade,
+            history=defaults.history if history is None else history,
         )
 
     @property
@@ -713,9 +747,21 @@ class Queue:
     def volume(self, volume: float) -> None:
         self._player.volume = volume
 
+    @property
+    def history(self) -> tuple[Track, ...]:
+        """The tracks that played, oldest first, as many as `history` keeps."""
+        return tuple(self._player.history)
+
     def skip(self) -> None:
         """End the current track and go on with the next one."""
         self._player.skip()
+
+    def back(self) -> Track | None:
+        """Play the last track of the history again, then the current one anew.
+
+        None when the history is empty; SourceError when that track cannot play again.
+        """
+        return self._player.back()
 
     def remove(self, track: Track) -> None:
         self._player.remove(track)

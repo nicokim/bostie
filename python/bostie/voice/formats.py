@@ -142,6 +142,7 @@ class Defaults:
     overflow: Overflow = "drop_oldest"
     receive_stall: ReceiveStall = "wait"
     crossfade: float = 0.0
+    history: int = 0
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.timeout) and self.timeout > 0):
@@ -195,6 +196,8 @@ class Defaults:
                 f"crossfade must be from 0 to {MAX_BUFFER} seconds, "
                 f"got {self.crossfade}"
             )
+        if self.history < 0:
+            raise ValueError(f"history must be at least 0, got {self.history}")
         if self.receive_stall not in ("wait", "end"):
             raise ValueError(
                 f"receive_stall must be 'wait' or 'end', got {self.receive_stall!r}"

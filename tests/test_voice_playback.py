@@ -759,6 +759,50 @@ def test_loop_queue_repeats_every_track_and_once_only_sources_drop_out() -> None
     run(scenario)
 
 
+def test_back_replays_the_last_played_track_then_the_current_one() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc, history=2)
+        first = add(q, FakeSource(clock, "a", 3))
+        second = add(q, FakeSource(clock, "b", 4))
+        add(q, FakeSource(clock, "c", 2))
+        await clock.until(lambda: second.position > 0)
+        played = q.history
+        replay = q.back()
+        assert (played, q.history, reason(second)) == ((first,), (), EndReason.STOPPED)
+        assert replay is not None
+        await q.join()
+        assert names(vc.sinks[0].sent) == "aaab" + "aaa" + "bbbb" + "cc"
+        assert reason(replay) is EndReason.FINISHED
+        assert [cast("FakeSource", t.source).name for t in q.history] == ["b", "c"]
+
+    run(scenario)
+
+
+def test_back_needs_a_history_and_a_source_that_plays_again() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        kept = queue(vc, history=1)
+        add(kept, FakeSource(clock, "a", 2, repeats=False))
+        await kept.join()
+        with pytest.raises(SourceError, match="again"):
+            kept.back()
+        assert len(kept.history) == 1
+        forgetful = queue(vc)
+        add(forgetful, FakeSource(clock, "b", 2))
+        await forgetful.join()
+        assert (forgetful.history, forgetful.back()) == ((), None)
+        vc.manager.defaults = Defaults(history=3)
+        remembering = queue(vc)
+        add(remembering, FakeSource(clock, "c", 1))
+        await remembering.join()
+        assert len(remembering.history) == 1
+        with pytest.raises(ValueError, match="history"):
+            queue(vc, history=-1)
+
+    run(scenario)
+
+
 def test_a_crossfading_queue_chains_one_sink_per_track() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)

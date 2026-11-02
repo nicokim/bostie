@@ -87,6 +87,7 @@ def test_encoder_checks_its_bounds(
                 "overflow": "drop_newest",
                 "receive_stall": "end",
                 "crossfade": 60.0,
+                "history": 100,
             },
             VALID,
         ),
@@ -116,6 +117,7 @@ def test_encoder_checks_its_bounds(
         ({"crossfade": -0.1}, invalid("crossfade")),
         ({"crossfade": 60.1}, invalid("crossfade")),
         ({"crossfade": math.nan}, invalid("crossfade")),
+        ({"history": -1}, invalid("history")),
     ],
 )
 def test_defaults_check_their_bounds(

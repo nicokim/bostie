@@ -32,6 +32,12 @@ A URL ending in `.m3u8`, or served as an HLS playlist, plays as HLS. A master pl
 
 bostie does not extract media from web pages. A tool such as yt-dlp can: pass the direct URL it finds, with the HTTP headers it says that URL needs, to `voice.Url`.
 
+## Going back in a queue
+
+`voice.Queue(vc, history=20)` keeps the last 20 tracks that played in `queue.history`, oldest first; `voice.Defaults(history=20)` does it for every queue. A queue keeps none by default, because a kept track holds on to its source, and a `voice.Bytes` source to its audio. A track counts once its audio started, whether it finished or was skipped.
+
+`queue.back()` plays the last track of the history again from its start, then the current track from its start, and returns the new track; it returns `None` when the history is empty. The current track ends `STOPPED` and does not go into the history, so calling `back()` again goes further back. Tracks play again through `source.again()`, so a `voice.Stream` cannot: `back()` then raises `voice.SourceError` and leaves the history as it was.
+
 ## Soundboard
 
 `await bot.rest.soundboard.send(vc.channel_id, sound_id=...)` plays a soundboard sound in the bot's channel, mixed by Discord with whatever the bot sends; pass `source_guild_id` for a sound from another server. The bot needs the Speak and Use Soundboard permissions, plus Use External Sounds for a sound from another server, and Discord refuses while `vc.deaf`, `vc.self_deaf`, `vc.mute` or `vc.suppress` is true.
