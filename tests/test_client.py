@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-from fakediscord import FakeDiscord, payloads, run
 
 from bostie import (
     HTTPSettings,
@@ -11,6 +10,7 @@ from bostie import (
     SyncWebhookClient,
     WebhookClient,
 )
+from bostie.testing import FakeDiscord, payloads, run
 
 
 def test_a_rest_client_reaches_the_api_without_a_gateway() -> None:

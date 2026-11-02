@@ -1,15 +1,19 @@
+import ast
 import asyncio
 import logging
 import sys
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 import msgspec
 import pytest
-from fakediscord import FakeDiscord, payloads
-from fakediscord.payloads import Json
-from fakediscord.server import ROUTE_LIMIT
+
+import bostie.testing
+from bostie.testing import FakeDiscord, payloads
+from bostie.testing.payloads import Json
+from bostie.testing.server import ROUTE_LIMIT
 
 type Scenario = Callable[
     [FakeDiscord, aiohttp.ClientSession], Coroutine[Any, Any, None]
@@ -78,7 +82,7 @@ def test_handshake_sends_wire_ordered_frames_and_acks_until_held() -> None:
             ready = await receive(ws)
             await ws.send_json({"op": 1, "d": 1})
             ack = await ws.receive_str()
-            fake.hold_acks(True)
+            fake.hold_acks()
             await ws.send_json({"op": 1, "d": 1})
             assert await received_ops(fake, 3) == [2, 1, 1]
             seq = await fake.dispatch("MESSAGE_CREATE", payloads.message())
@@ -196,7 +200,7 @@ def test_closing_around_a_heartbeat_in_flight_logs_no_error(
 def test_route_windows_are_counted_per_major_parameter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("fakediscord.server.ROUTE_WINDOW", 60.0)
+    monkeypatch.setattr("bostie.testing.server.ROUTE_WINDOW", 60.0)
 
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         responses = []
@@ -263,3 +267,25 @@ def test_zstd_frames_form_one_stream_per_connection() -> None:
 def test_compress_without_zstd_fails_at_construction() -> None:
     with pytest.raises(RuntimeError, match=r"Python 3\.14"):
         FakeDiscord(compress=True)
+
+
+def test_the_fake_imports_nothing_from_the_library_it_checks() -> None:
+    package = Path(bostie.testing.__file__).parent
+    nodes = [
+        node
+        for path in package.glob("*.py")
+        for node in ast.parse(path.read_text()).body
+    ]
+    imported = {node.module for node in nodes if isinstance(node, ast.ImportFrom)} | {
+        alias.name
+        for node in nodes
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+
+    assert {name for name in imported if name and name.startswith("bostie")} == {
+        "bostie.testing",
+        "bostie.testing.payloads",
+        "bostie.testing.server",
+        "bostie.testing.voice",
+    }

@@ -2,10 +2,10 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
-from fakediscord import FakeDiscord, payloads, run, running
 
 from bostie import Bot, ReactionType, User
 from bostie.rest import REST
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, PollLayoutType
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_ending_a_poll_returns_its_message_with_the_final_votes() -> None:

@@ -1,11 +1,11 @@
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
-from fakediscord import payloads
-from fakediscord.server import Connection, FakeDiscord, Order, Part, Recorded
-from fakediscord.voice import Packet, VoiceSession, VoiceSocket
+from bostie.testing import payloads
+from bostie.testing.server import Connection, FakeDiscord, Order, Part, Recorded
+from bostie.testing.voice import Packet, VoiceSession, VoiceSocket
 
 if TYPE_CHECKING:
     from bostie import Bot
@@ -29,7 +29,7 @@ type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
 
 
 def run(scenario: Scenario, **options: Any) -> None:
-    """Run ``async def scenario(fake)`` against a new FakeDiscord, within 10 s."""
+    """Run `async def scenario(fake)` against a new FakeDiscord, within 10 s."""
 
     async def main() -> None:
         async with FakeDiscord(**options) as fake, asyncio.timeout(10):
@@ -39,14 +39,14 @@ def run(scenario: Scenario, **options: Any) -> None:
 
 
 async def settle(rounds: int = 5) -> None:
-    """Yield to the event loop ``rounds`` times so ready callbacks and tasks run."""
+    """Yield to the event loop `rounds` times so ready callbacks and tasks run."""
     for _ in range(rounds):
         await asyncio.sleep(0)
 
 
 @contextlib.asynccontextmanager
-async def running(bot: "Bot", fake: FakeDiscord) -> AsyncIterator[None]:
-    """Start ``bot`` on ``fake``, wait for READY, and close the bot on exit."""
+async def running(bot: "Bot", fake: FakeDiscord) -> AsyncGenerator[None]:
+    """Start `bot` on `fake`, wait for READY, and close the bot on exit."""
     started = asyncio.create_task(bot.start(fake.token))
     ready = asyncio.create_task(bot.wait_until_ready())
     await asyncio.wait([started, ready], return_when=asyncio.FIRST_COMPLETED)

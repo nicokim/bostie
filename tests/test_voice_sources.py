@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from fakediscord import settle
 from voice_fakes import FakeBot, run
 
 from bostie import voice
 from bostie.errors import SourceError
+from bostie.testing import settle
 
 PCM_BYTES = bytes(range(256)) * 200
 

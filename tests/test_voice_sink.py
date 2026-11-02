@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fakediscord import settle
 from voice_fakes import (
     ELSEWHERE,
     OTHER_GUILD_ID,
@@ -17,6 +16,7 @@ from voice_fakes import (
 
 from bostie import voice
 from bostie.errors import BufferFull, SinkClosed
+from bostie.testing import settle
 from bostie.voice import encoder as encoder_module
 from bostie.voice.sink import Sink
 

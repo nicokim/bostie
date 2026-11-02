@@ -1,9 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, File
+from bostie.testing import FakeDiscord, payloads, run, running
 
 MENTIONS = {"parse": ["users", "roles"]}
 

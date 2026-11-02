@@ -7,8 +7,6 @@ from typing import Any, Literal
 
 import msgspec
 import pytest
-from fakediscord import FakeDiscord, Part
-from fakediscord.server import ROUTE_LIMIT
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.enums import JSONErrorCode
@@ -23,6 +21,8 @@ from bostie.errors import (
 )
 from bostie.file import File
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
+from bostie.testing import FakeDiscord, Part
+from bostie.testing.server import ROUTE_LIMIT
 
 MESSAGES = "/channels/{channel_id}/messages"
 

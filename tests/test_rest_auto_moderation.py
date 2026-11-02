@@ -1,5 +1,3 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import (
     AutoModerationAction,
     AutoModerationActionMetadata,
@@ -9,6 +7,7 @@ from bostie import (
     AutoModerationTriggerType,
     Bot,
 )
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_a_rule_goes_out_with_only_the_metadata_its_types_use() -> None:

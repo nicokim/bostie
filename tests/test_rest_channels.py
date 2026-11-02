@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING
 
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, ChannelType, ForumTag, OverwriteType, Permissions
+from bostie.testing import FakeDiscord, payloads, run, running
 
 if TYPE_CHECKING:
     from bostie.rest.channels import PermissionOverwrite

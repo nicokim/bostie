@@ -9,7 +9,6 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, override
 
 import pytest
-from fakediscord import FakeDiscord
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
@@ -22,6 +21,7 @@ from bostie.errors import (
 )
 from bostie.gateway import GatewayClient
 from bostie.http import HTTPSettings
+from bostie.testing import FakeDiscord
 
 TOKEN = "dummy-token"
 API_URL = "https://discord.test/api/v10"

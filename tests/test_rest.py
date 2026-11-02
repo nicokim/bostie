@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from fakediscord import FakeDiscord, payloads, run, running
 
 from bostie import Bot, File, NotFound, UnexpectedResponse
 from bostie.cache import Cache
@@ -17,6 +16,7 @@ from bostie.events import GuildCreate
 from bostie.models import AllowedMentions
 from bostie.rest import REST, BearerREST
 from bostie.rest.messages import MessageList
+from bostie.testing import FakeDiscord, payloads, run, running
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient

@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import msgspec
@@ -22,8 +21,9 @@ from bostie.events import (
     ThreadUpdate,
     VoiceStateUpdate,
 )
+from bostie.testing import payloads
 
-EVENT_FIXTURES = Path(__file__).parent / "fixtures" / "models" / "events"
+EVENT_FIXTURES = payloads.FIXTURES / "events"
 GUILD = 1335172792320131073
 GENERAL = 1335173295636611073
 STAFF_ONLY = 1335175308902531073

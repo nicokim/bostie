@@ -3,11 +3,9 @@ import copy
 import json
 from collections.abc import Callable, Coroutine
 from enum import Enum
-from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from fakediscord import FakeDiscord
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.commands import Choice, Command, ContextMenuCommand, Group, Option, Range
@@ -17,8 +15,9 @@ from bostie.http import HTTPClient
 from bostie.models import Attachment, Message, PartialChannel, Role, User
 from bostie.router import Router
 from bostie.sync import SyncResult, sync_commands
+from bostie.testing import FakeDiscord, payloads
 
-FIXTURES = Path(__file__).parent / "fixtures" / "models" / "rest"
+FIXTURES = payloads.FIXTURES / "rest"
 REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_text())
 
 type Scenario = Callable[[FakeDiscord, HTTPClient], Coroutine[Any, Any, None]]

@@ -4,10 +4,10 @@ from collections.abc import AsyncIterator, Iterable
 from typing import Literal
 
 import pytest
-from fakediscord import Connection, FakeDiscord, payloads, run
 
 from bostie import Bot, Status, activity
 from bostie.events import GuildCreate, Ready
+from bostie.testing import Connection, FakeDiscord, payloads, run
 
 GUILD_ON_SHARD_1 = 1 << 22
 

@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import math
+import socket
 import sys
 import time
 import uuid
@@ -15,9 +16,9 @@ import msgspec
 from aiohttp import BodyPartReader, WSCloseCode, WSMsgType, hdrs, web
 from aiohttp.typedefs import Handler
 
-from fakediscord import payloads
-from fakediscord.payloads import Json
-from fakediscord.voice import VoiceGateway
+from bostie.testing import payloads
+from bostie.testing.payloads import Json, is_object
+from bostie.testing.voice import VoiceGateway
 
 API = "/api/v10"
 ROUTE_LIMIT = 5
@@ -30,6 +31,8 @@ EPHEMERAL = 1 << 6
 LOADING = 1 << 7
 LOCALIZATIONS = ("name_localizations", "description_localizations")
 TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
+FAKE_TOKEN = "fake-token"
+DEFERRED_WITH_SOURCE = 5
 
 type Respond = Callable[[dict[str, str]], web.Response]
 type Order = Literal["state_first", "server_first"]
@@ -47,9 +50,9 @@ class Part:
 
 @dataclass(frozen=True)
 class Recorded:
-    """A REST request, with ``path`` relative to ``api_url``.
+    """A REST request, with `path` relative to `api_url`.
 
-    ``json`` holds the JSON body, the ``payload_json`` part of a multipart body, or
+    `json` holds the JSON body, the `payload_json` part of a multipart body, or
     the fields of a form-urlencoded body.
     """
 
@@ -64,7 +67,7 @@ class Recorded:
 @dataclass
 class _Session:
     id: str
-    buffer: list[bytes] = field(default_factory=list)
+    buffer: list[bytes] = field(default_factory=list[bytes])
 
 
 @dataclass
@@ -77,15 +80,15 @@ class Connection:
     live: bool = False
     close_code: int | None = None
     shard: int = 0
-    received: list[Any] = field(default_factory=list)
+    received: list[Any] = field(default_factory=list[Any])
 
     @property
     def path(self) -> str:
-        """``/gateway`` or ``/gateway-resume``."""
+        """`/gateway` or `/gateway-resume`."""
         return self.request.path
 
     async def send(self, frame: bytes) -> None:
-        """Send one gateway payload, compressed in ``compress=True`` mode.
+        """Send one gateway payload, compressed in `compress=True` mode.
 
         A payload sent to a closing connection is dropped.
         """
@@ -114,30 +117,31 @@ RECORD = web.RequestKey("record", Recorded)
 
 
 class FakeDiscord(VoiceGateway):
-    """A local Discord gateway and REST API for tests, served inside ``async with``.
+    """A local Discord gateway and REST API for tests, served inside `async with`.
 
-    ``voice=True`` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
-    ``full=True`` leaves op 4 joins unanswered, as Discord does for a full channel.
-    ``mute``, ``deaf`` and ``suppress`` go into every voice state the fake sends for
-    the bot. ``ready_guilds`` are the guild ids READY lists, each on its own shard.
+    `voice=True` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
+    `full=True` leaves op 4 joins unanswered, as Discord does for a full channel.
+    `mute`, `deaf` and `suppress` go into every voice state the fake sends for
+    the bot. `ready_guilds` are the guild ids READY lists, each on its own shard.
     """
-
-    api_url: str
-    gateway_url: str
-    _resume_url: str
-    _runner: web.AppRunner
 
     def __init__(
         self,
         *,
-        token: str = "fake-token",
+        token: str = FAKE_TOKEN,
         heartbeat_interval: int = 500,
         compress: bool = False,
         voice: bool = False,
         voice_heartbeat_interval: float = 500.0,
         voice_order: Order = "state_first",
     ) -> None:
-        super().__init__(voice_heartbeat_interval)
+        self._zstd_stream = _zstd_streams() if compress else None
+        self._listener = socket.create_server(("127.0.0.1", 0))
+        port = self._listener.getsockname()[1]
+        super().__init__(voice_heartbeat_interval, port)
+        self.api_url = f"http://127.0.0.1:{port}{API}"
+        self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
+        self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
         self.token = token
         self.application_id = int(payloads.fixture("rest/application_me")["id"])
         self.bot_user: Json = payloads.fixture("events/READY")["user"]
@@ -161,7 +165,6 @@ class FakeDiscord(VoiceGateway):
         self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
         self.connections: list[Connection] = []
         self._heartbeat_interval = heartbeat_interval
-        self._zstd_stream = _zstd_streams() if compress else None
         self._hold_acks = False
         self._faults: list[_Fault] = []
         self._holds: list[_Hold] = []
@@ -174,7 +177,7 @@ class FakeDiscord(VoiceGateway):
         self._interactions: dict[str, Json] = {}
         self._responses: dict[str, dict[str, Json]] = {}
         self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
-        self.voice_order = voice_order
+        self.voice_order: Order = voice_order
         self.mute = False
         self.deaf = False
         self.suppress = False
@@ -184,8 +187,9 @@ class FakeDiscord(VoiceGateway):
         if voice:
             for voice_channel in (payloads.voice_channel(), payloads.stage_channel()):
                 self.channels[voice_channel["id"]] = voice_channel
+        self._runner = web.AppRunner(self._app(), access_log=None)
 
-    async def __aenter__(self) -> Self:
+    def _app(self) -> web.Application:
         rest_routes: list[tuple[str, str, Handler]] = [
             ("GET", "/gateway/bot", self._gateway_bot),
             ("GET", "/applications/@me", self._application),
@@ -251,15 +255,13 @@ class FakeDiscord(VoiceGateway):
                 ),
             ]
         )
-        self._runner = web.AppRunner(app, access_log=None)
+        return app
+
+    async def __aenter__(self) -> Self:
         await self._runner.setup()
-        await web.TCPSite(self._runner, "127.0.0.1", 0).start()
-        port = self._runner.addresses[0][1]
-        self.api_url = f"http://127.0.0.1:{port}{API}"
-        self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
-        self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
+        await web.SockSite(self._runner, self._listener).start()
         if self._voice:
-            await self._start_voice(port)
+            await self._start_voice()
         return self
 
     async def __aexit__(
@@ -293,7 +295,7 @@ class FakeDiscord(VoiceGateway):
         await self._latest().send(_frame(None, None, op, d))
 
     async def close_gateway(self, code: int) -> None:
-        """Close the latest gateway connection with ``code``."""
+        """Close the latest gateway connection with `code`."""
         await self._latest().ws.close(code=code)
 
     def drop_gateway(self) -> None:
@@ -302,16 +304,16 @@ class FakeDiscord(VoiceGateway):
         if transport is not None:
             transport.abort()
 
-    def hold_acks(self, flag: bool) -> None:
-        """While ``flag`` is true, leave heartbeats unanswered like a zombie link."""
-        self._hold_acks = flag
+    def hold_acks(self) -> None:
+        """Leave heartbeats unanswered from now on, like a zombie link."""
+        self._hold_acks = True
 
     async def next_voice_state_update(self) -> Any:
-        """Wait for the next op 4 the bot sent and return its ``d``."""
+        """Wait for the next op 4 the bot sent and return its `d`."""
         return await self._voice_state_updates.get()
 
     async def move_bot(self, channel_id: int) -> None:
-        """Move the bot to ``channel_id`` as a moderator would.
+        """Move the bot to `channel_id` as a moderator would.
 
         The voice socket of the old channel then closes with 4014.
         """
@@ -319,24 +321,26 @@ class FakeDiscord(VoiceGateway):
         await self._join_voice(
             state["guild_id"],
             str(channel_id),
-            state["self_mute"],
-            state["self_deaf"],
-            "state_first",
+            self_mute=state["self_mute"],
+            self_deaf=state["self_deaf"],
+            order="state_first",
         )
 
     async def kick_bot(self) -> None:
         """Disconnect the bot from voice: a voice state without channel, then 4014."""
         state = self._bot_voice_state()
         await self._leave_voice(
-            state["guild_id"], state["self_mute"], state["self_deaf"]
+            state["guild_id"],
+            self_mute=state["self_mute"],
+            self_deaf=state["self_deaf"],
         )
 
     async def next_identify(self) -> Json:
-        """Wait for the next IDENTIFY and return its ``d``."""
+        """Wait for the next IDENTIFY and return its `d`."""
         return await self._identifies.get()
 
     def hold_identify(self, shard: int) -> asyncio.Event:
-        """Leave ``shard``'s IDENTIFY unanswered until the returned event is set."""
+        """Leave `shard`'s IDENTIFY unanswered until the returned event is set."""
         release = self._identify_holds[shard] = asyncio.Event()
         return release
 
@@ -347,18 +351,18 @@ class FakeDiscord(VoiceGateway):
         return release
 
     async def next_resume(self) -> Json:
-        """Wait for the next RESUME and return its ``d``."""
+        """Wait for the next RESUME and return its `d`."""
         return await self._resumes.get()
 
     async def interaction(self, type: int, data: Json, **fields: Any) -> Recorded:
-        """Dispatch ``payloads.interaction(...)`` and return its first callback."""
+        """Dispatch `payloads.interaction(...)` and return its first callback."""
         payload = payloads.interaction(type, data, **fields)
         callback = self.expect_callback(payload)
         await self.dispatch("INTERACTION_CREATE", payload)
         return await callback
 
     def expect_callback(self, interaction: Json) -> asyncio.Future[Recorded]:
-        """Accept callbacks for ``interaction``; the future gets the first one."""
+        """Accept callbacks for `interaction`; the future gets the first one."""
         self._interactions[interaction["token"]] = interaction
         callback: asyncio.Future[Recorded] = asyncio.get_running_loop().create_future()
         self._callback_waiters[interaction["id"]] = callback
@@ -372,7 +376,7 @@ class FakeDiscord(VoiceGateway):
         scope: Literal["user", "shared", "global"] = "user",
         retry_after: float = 0.1,
     ) -> None:
-        """Answer the next matching request with a 429 of ``scope``."""
+        """Answer the next matching request with a 429 of `scope`."""
         self._faults.append(
             _Fault(
                 method,
@@ -382,7 +386,7 @@ class FakeDiscord(VoiceGateway):
         )
 
     def fail(self, method: str, route_prefix: str, status: int, json: Any) -> None:
-        """Answer the next matching request with ``status`` and ``json``.
+        """Answer the next matching request with `status` and `json`.
 
         This also stubs routes the fake does not model, which otherwise get a 404.
         """
@@ -458,14 +462,16 @@ class FakeDiscord(VoiceGateway):
         match payload:
             case {"op": 1} if not self._hold_acks:
                 await connection.send(_frame(None, None, 11, None))
-            case {"op": 2, "d": dict() as identify}:
+            case {"op": 2, "d": identify} if is_object(identify):
                 await self._identify(connection, identify)
                 self._identifies.put_nowait(identify)
-            case {"op": 6, "d": dict() as resume}:
+            case {"op": 6, "d": resume} if is_object(resume):
                 await self._resume(connection, resume)
                 self._resumes.put_nowait(resume)
             case {"op": 4, "d": update} if self._voice:
                 await self._update_voice_state(connection, update)
+            case _:
+                pass
 
     async def _identify(self, connection: Connection, identify: Json) -> None:
         if connection.live:
@@ -525,10 +531,16 @@ class FakeDiscord(VoiceGateway):
                 "self_deaf": bool() as self_deaf,
             }:
                 if channel_id is None:
-                    await self._leave_voice(guild_id, self_mute, self_deaf)
+                    await self._leave_voice(
+                        guild_id, self_mute=self_mute, self_deaf=self_deaf
+                    )
                 else:
                     await self._join_voice(
-                        guild_id, channel_id, self_mute, self_deaf, self.voice_order
+                        guild_id,
+                        channel_id,
+                        self_mute=self_mute,
+                        self_deaf=self_deaf,
+                        order=self.voice_order,
                     )
             case _:
                 await connection.ws.close(code=4002, message=b"Decode error")
@@ -537,6 +549,7 @@ class FakeDiscord(VoiceGateway):
         self,
         guild_id: str,
         channel_id: str,
+        *,
         self_mute: bool,
         self_deaf: bool,
         order: Order,
@@ -544,7 +557,9 @@ class FakeDiscord(VoiceGateway):
         key = (guild_id, self.bot_user["id"])
         previous = self.voice_states.get(key)
         session = self._voice_session(guild_id)
-        state = self._bot_voice(guild_id, channel_id, self_mute, self_deaf)
+        state = self._bot_voice(
+            guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
+        )
         self.voice_states[key] = state
         token = self._grant_voice(guild_id, state["user_id"], state["session_id"])
         server = {"token": token, "guild_id": guild_id, "endpoint": self.voice_endpoint}
@@ -555,17 +570,24 @@ class FakeDiscord(VoiceGateway):
             await self._end_voice_session(session, 4014)
 
     async def _leave_voice(
-        self, guild_id: str, self_mute: bool, self_deaf: bool
+        self, guild_id: str, *, self_mute: bool, self_deaf: bool
     ) -> None:
         if self.voice_states.pop((guild_id, self.bot_user["id"]), None) is None:
             return
         session = self._voice_session(guild_id)
-        state = self._bot_voice(guild_id, None, self_mute, self_deaf)
+        state = self._bot_voice(
+            guild_id, None, self_mute=self_mute, self_deaf=self_deaf
+        )
         await self.dispatch("VOICE_STATE_UPDATE", state)
         await self._end_voice_session(session, 4014)
 
     def _bot_voice(
-        self, guild_id: str, channel_id: str | None, self_mute: bool, self_deaf: bool
+        self,
+        guild_id: str,
+        channel_id: str | None,
+        *,
+        self_mute: bool,
+        self_deaf: bool,
     ) -> Json:
         return payloads.voice_state(
             guild_id=guild_id,
@@ -652,10 +674,10 @@ class FakeDiscord(VoiceGateway):
                 return fault.respond
         return None
 
-    async def _gateway_bot(self, request: web.Request) -> web.Response:
+    async def _gateway_bot(self, _request: web.Request) -> web.Response:
         return _json(payloads.fixture("rest/gateway_bot") | {"url": self.gateway_url})
 
-    async def _application(self, request: web.Request) -> web.Response:
+    async def _application(self, _request: web.Request) -> web.Response:
         application = payloads.fixture("rest/application_me")
         return _json(
             application | {"id": str(self.application_id), "bot": self.bot_user}
@@ -807,7 +829,7 @@ class FakeDiscord(VoiceGateway):
         )
         if state is None:
             return _error(404, 10065, "Unknown Voice State")
-        edit = request[RECORD].json or {}
+        edit: Json = request[RECORD].json or {}
         state |= {
             key: edit[key]
             for key in ("suppress", "request_to_speak_timestamp")
@@ -867,12 +889,12 @@ def _localizable(entity: Json) -> Json:
 
 def _without_localizations(value: Any) -> Any:
     match value:
-        case list():
-            return [_without_localizations(item) for item in value]
-        case dict():
+        case [*items]:
+            return [_without_localizations(item) for item in items]
+        case {**fields}:
             return {
                 key: _without_localizations(item)
-                for key, item in value.items()
+                for key, item in fields.items()
                 if key not in LOCALIZATIONS
             }
         case _:
@@ -908,7 +930,7 @@ def _callback_response(interaction: Json, kind: int, original: Json | None) -> J
     if original is not None:
         summary |= {
             "response_message_id": original["id"],
-            "response_message_loading": kind == 5,
+            "response_message_loading": kind == DEFERRED_WITH_SOURCE,
             "response_message_ephemeral": bool(original["flags"] & EPHEMERAL),
         }
     if kind in (4, 7):

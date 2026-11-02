@@ -1,7 +1,7 @@
 import pytest
-from fakediscord import FakeDiscord, Part, payloads, run, running
 
 from bostie import Bot, File, UnexpectedResponse
+from bostie.testing import FakeDiscord, Part, payloads, run, running
 
 
 def test_a_sticker_is_created_from_form_fields_and_its_file() -> None:

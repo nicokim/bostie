@@ -1,6 +1,5 @@
 import json
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import msgspec
@@ -96,8 +95,9 @@ from bostie.models import (
 )
 from bostie.models.base import decoder
 from bostie.models.message import decode_interaction_metadata, message_body
+from bostie.testing import payloads
 
-FIXTURES = Path(__file__).parent / "fixtures" / "models"
+FIXTURES = payloads.FIXTURES
 MESSAGE = json.loads((FIXTURES / "events" / "MESSAGE_CREATE.json").read_bytes())
 ROLE = json.loads((FIXTURES / "events" / "GUILD_ROLE_CREATE.json").read_bytes())["role"]
 

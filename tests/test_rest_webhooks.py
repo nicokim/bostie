@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, File, WebhookMessage, WebhookType
+from bostie.testing import FakeDiscord, payloads, run, running
 
 MENTIONS = {"parse": ["users", "roles"]}
 ROUTE = "/webhooks/1/secret-token"

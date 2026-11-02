@@ -1,7 +1,6 @@
 from functools import partial
 
 import pytest
-from fakediscord import FakeDiscord, run
 
 from bostie import (
     ApplicationIntegrationType,
@@ -10,6 +9,7 @@ from bostie import (
     Permissions,
     oauth2,
 )
+from bostie.testing import FakeDiscord, run
 
 TOKEN = {
     "access_token": "user-token",

@@ -1,5 +1,3 @@
-from fakediscord import FakeDiscord, payloads, run
-
 from bostie import (
     BearerClient,
     LobbyMemberFlags,
@@ -10,6 +8,7 @@ from bostie import (
     ProfileMedia,
     RESTClient,
 )
+from bostie.testing import FakeDiscord, payloads, run
 
 LOBBY = {
     "id": "5",

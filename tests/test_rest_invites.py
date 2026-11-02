@@ -1,9 +1,9 @@
 from typing import Any
 
 import pytest
-from fakediscord import FakeDiscord, Part, payloads, run, running
 
 from bostie import Bot, File, Invite, InviteWithMetadata, UnexpectedResponse
+from bostie.testing import FakeDiscord, Part, payloads, run, running
 
 METADATA = {
     "uses": 0,

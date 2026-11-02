@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import msgspec
-from fakediscord import settle
 
 from bostie.cache import Cache
 from bostie.enums import Intents
@@ -24,6 +23,7 @@ from bostie.gateway import GatewayClient
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions, User
 from bostie.rest import REST
+from bostie.testing import settle
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults, OpusApplication, Sample, SinkStall

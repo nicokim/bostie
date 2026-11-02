@@ -1,7 +1,5 @@
 from datetime import UTC, datetime
 
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import (
     Bot,
     RecurrenceFrequency,
@@ -11,6 +9,7 @@ from bostie import (
     ScheduledEventPrivacyLevel,
     Weekday,
 )
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_an_event_goes_out_with_only_the_recurrence_fields_set() -> None:

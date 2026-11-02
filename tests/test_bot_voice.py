@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fakediscord import FakeDiscord, Packet, payloads, running
-from fakediscord.payloads import Json
 
 from bostie import Bot, Context, voice
 from bostie.enums import SpeakingFlags
 from bostie.gateway import GatewayClient
+from bostie.testing import FakeDiscord, Packet, payloads, running
+from bostie.testing.payloads import Json
 from bostie.voice import DisconnectReason, EndReason, NotInVoice, SinkClosed, State
 
 type Scenario = Callable[[FakeDiscord], Coroutine[Any, Any, None]]
@@ -218,9 +218,8 @@ def test_receive_a_spoken_second_from_the_fake() -> None:
                 heard: list[Heard] = []
                 async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
                     await fake.speaking(FRIEND_ID, 4321, 1)
-                    await fake.send_audio(FRIEND_ID, 4321, spoken[:LOST_FROM])
+                    await fake.send_audio(4321, spoken[:LOST_FROM])
                     await fake.send_audio(
-                        FRIEND_ID,
                         4321,
                         spoken[LOST_UNTIL:],
                         sequence=LOST_UNTIL,

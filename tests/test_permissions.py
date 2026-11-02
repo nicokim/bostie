@@ -3,12 +3,12 @@ from typing import Any
 
 import msgspec
 import pytest
-from fakediscord import payloads
 
 from bostie import Permissions
 from bostie.models import Channel, Guild, Member, Role
 from bostie.models.base import Model, decode
 from bostie.permissions import ALL, compute_permissions
+from bostie.testing import payloads
 
 GUILD = 1
 OWNER = 2

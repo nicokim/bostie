@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, Self, Unpack, cast, override
 
 import pytest
-from fakediscord import settle
 
 from bostie.enums import State
 from bostie.errors import (
@@ -14,6 +13,7 @@ from bostie.errors import (
     SourceError,
     VoiceNotConnected,
 )
+from bostie.testing import settle
 from bostie.voice import layers
 from bostie.voice.formats import (
     DEFAULT_PCM,

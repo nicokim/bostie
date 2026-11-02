@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 import msgspec
 import pytest
-from fakediscord import payloads, settle
 from voice_fakes import (
     BOT_ID,
     GUILD_ID,
@@ -30,6 +29,7 @@ from bostie.enums import Intents, SpeakingFlags
 from bostie.errors import Forbidden, MissingIntent, NotFound
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
 from bostie.models import VoiceState, decode
+from bostie.testing import payloads, settle
 from bostie.voice.formats import StageRole
 
 if TYPE_CHECKING:

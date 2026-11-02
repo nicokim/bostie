@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, run, running
-
 from bostie import Bot
+from bostie.testing import FakeDiscord, run, running
 
 
 def test_the_gateway_url_and_the_bots_session_start_limit_decode() -> None:

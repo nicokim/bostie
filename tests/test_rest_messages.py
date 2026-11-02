@@ -2,11 +2,11 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fakediscord import FakeDiscord, payloads, run, running
 
 from bostie import Bot, MessageReference, MessageReferenceType
 from bostie.events import GuildCreate
 from bostie.models import PollAnswer, PollCreateRequest, PollMedia
+from bostie.testing import FakeDiscord, payloads, run, running
 
 MENTIONS = {"parse": ["users", "roles"]}
 

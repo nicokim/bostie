@@ -256,11 +256,16 @@ dependencies = [
     { name = "msgspec" },
 ]
 
+[package.optional-dependencies]
+testing = [
+    { name = "aiohttp" },
+    { name = "cryptography" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "actionlint-py" },
-    { name = "aiohttp" },
-    { name = "cryptography" },
+    { name = "bostie", extra = ["testing"] },
     { name = "deptry" },
     { name = "mypy" },
     { name = "pyright" },
@@ -271,13 +276,17 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "msgspec", specifier = ">=0.22.0" }]
+requires-dist = [
+    { name = "aiohttp", marker = "extra == 'testing'", specifier = ">=3.14.5" },
+    { name = "cryptography", marker = "extra == 'testing'", specifier = ">=50.0.2" },
+    { name = "msgspec", specifier = ">=0.22.0" },
+]
+provides-extras = ["testing"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "actionlint-py", specifier = ">=1.7.12.25" },
-    { name = "aiohttp", specifier = ">=3.14.5" },
-    { name = "cryptography", specifier = ">=50.0.2" },
+    { name = "bostie", extras = ["testing"] },
     { name = "deptry", specifier = ">=0.25.1" },
     { name = "mypy", specifier = ">=2.4.0" },
     { name = "pyright", specifier = ">=1.1.414" },

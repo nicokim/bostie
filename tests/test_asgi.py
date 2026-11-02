@@ -7,10 +7,10 @@ from typing import Any
 import msgspec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from fakediscord import FakeDiscord, payloads, run
 
 from bostie import ASGIApp, Bot, Context
 from bostie.events import ApplicationAuthorized
+from bostie.testing import FakeDiscord, payloads, run
 
 KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 PUBLIC_KEY = KEY.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()

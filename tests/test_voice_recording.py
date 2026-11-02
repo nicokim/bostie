@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, Self, cast
 
 import pytest
-from fakediscord import settle
 
 from bostie.enums import ClosedReason
 from bostie.errors import Empty, ReceiverClosed
+from bostie.testing import settle
 from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import PCM, Opus, ReceiveFormat
 from bostie.voice.frames import Frame

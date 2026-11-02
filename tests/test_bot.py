@@ -14,7 +14,6 @@ from typing import Annotated, Any, Literal
 
 import msgspec
 import pytest
-from fakediscord import FakeDiscord, Recorded, payloads, run, running, settle
 
 from bostie import (
     AutocompleteContext,
@@ -75,6 +74,7 @@ from bostie.events import (
 )
 from bostie.gateway import GatewayClient
 from bostie.sync import SyncResult
+from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 STRING = OptionType.STRING
 INTEGER = OptionType.INTEGER

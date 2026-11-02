@@ -1,21 +1,18 @@
 import asyncio
 import contextlib
-import os
 import socket
 import struct
-import subprocess
-import sys
 from collections.abc import AsyncIterator, Callable, Coroutine
-from pathlib import Path
 from typing import Any
 
 import aiohttp
 import msgspec
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from fakediscord import FakeDiscord, Order, payloads
-from fakediscord.payloads import Json
-from fakediscord.voice import AES_GCM, DISCOVERY, MODES
+
+from bostie.testing import FakeDiscord, Order, payloads
+from bostie.testing.payloads import Json
+from bostie.testing.voice import AES_GCM, DISCOVERY, MODES
 
 type Scenario = Callable[
     [FakeDiscord, aiohttp.ClientSession], Coroutine[Any, Any, None]
@@ -343,14 +340,13 @@ def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> No
                 udp.send(DISCOVERY.pack(1, 70, ssrc, b"", 0))
                 await loop.sock_recv(udp, DISCOVERY.size)
                 await fake.send_audio(
-                    4,
                     4321,
                     [b"first", b"second"],
                     sequence=65535,
                     timestamp=2**32 - 960,
                     extension=b"\x10\x7f",
                 )
-                await fake.send_audio(4, 4321, [b"plain"])
+                await fake.send_audio(4321, [b"plain"])
                 datagrams = [await loop.sock_recv(udp, 2048) for _ in range(3)]
 
         opened = [
@@ -379,17 +375,3 @@ def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> No
         ]
 
     run(scenario)
-
-
-def test_the_fake_never_imports_bostie() -> None:
-    code = "import sys; sys.modules['bostie'] = None; import fakediscord"
-    tests = str(Path(__file__).parent)
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        env=os.environ | {"PYTHONPATH": tests},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr

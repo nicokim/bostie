@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_adding_a_member_returns_none_when_they_already_were_one() -> None:

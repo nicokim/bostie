@@ -7,7 +7,6 @@ from typing import Any
 
 import msgspec
 import pytest
-from fakediscord import FakeDiscord, run, running
 
 from bostie import Bot, events
 from bostie.enums import ApplicationFlags, ChannelType, MemberFlags, Status
@@ -68,8 +67,9 @@ from bostie.models import (
 )
 from bostie.models.base import decode as decode_model
 from bostie.models.base import decoder
+from bostie.testing import FakeDiscord, payloads, run, running
 
-EVENT_FIXTURES = Path(__file__).parent / "fixtures" / "models" / "events"
+EVENT_FIXTURES = payloads.FIXTURES / "events"
 MODELLED = sorted(
     path for path in EVENT_FIXTURES.glob("*.json") if path.name.split(".")[0] in EVENTS
 )

@@ -20,11 +20,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.optional-dependencies]
+testing = ["aiohttp>=3.14.5", "cryptography>=50.0.2"]
+
 [dependency-groups]
 dev = [
     "actionlint-py>=1.7.12.25",
-    "aiohttp>=3.14.5",
-    "cryptography>=50.0.2",
+    "bostie[testing]",
     "deptry>=0.25.1",
     "mypy>=2.4.0",
     "pyright>=1.1.414",
@@ -120,6 +122,9 @@ enable_error_code = [
     "unimported-reveal",
     "unused-awaitable",
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP001 = ["compression"]  # the standard library's zstd module from Python 3.14
 
 [[tool.mypy.overrides]]
 module = ["compression.*"]

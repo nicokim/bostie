@@ -54,7 +54,7 @@ Rust needs no change: the core forwards any dispatch name Python asks for.
 1. Add a class to `python/bostie/events.py` that subclasses `Event` with `kw_only=True`, and set `NAME` to the dispatch name. `MessageDelete` and `TypingStart` are short ones to copy. msgspec doesn't inherit `kw_only`, so every subclass repeats it.
 2. Set `INTENTS` to the intents that make Discord send the event, any one of them enough. The bot warns when a listener registers for an event none of its intents delivers.
 3. Add the class to the `EVENTS` registry in the same file.
-4. Save the `d` payload as `tests/fixtures/models/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
+4. Save the `d` payload as `python/bostie/testing/fixtures/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.
 6. If the event changes cached state, give it a handler in `Cache.__init__` in `python/bostie/cache.py`. An update handler returns the cached object as `old`, a delete handler the removed one.
 
@@ -81,31 +81,7 @@ If a payload still doesn't fit, for example because it lacks a required field, `
 
 ## Tests
 
-`tests/fakediscord` is a local fake of the Discord gateway and REST API. It serves the payloads in `tests/fixtures/models` and records every REST request in `fake.requests`. pytest puts `tests/` on the import path, so you import it as `fakediscord`:
-
-```python
-from fakediscord import FakeDiscord, payloads, run, running
-
-from bostie import Bot, Context
-
-
-def test_ping_answers_pong() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-
-        @bot.command
-        async def ping(ctx: Context) -> None:
-            """Answer pong."""
-            await ctx.respond("pong")
-
-        async with running(bot, fake):
-            reply = await fake.interaction(2, payloads.command("ping"))
-            assert reply.json["data"]["content"] == "pong"
-
-    run(scenario)
-```
-
-`running(bot, fake)` starts the bot, waits for READY and closes it at the end. `fake.dispatch(name, d)` sends a dispatch, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that status, which also covers routes the fake doesn't model. `fake.hold(method, route_prefix)` keeps the next matching request waiting until you set the event it returns. `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `move_bot` and `kick_bot` move the bot around. It doesn't speak DAVE; the Rust tests cover that. Use these fakes rather than `unittest.mock`.
+bostie's own tests run on `bostie.testing`, the fake Discord the README offers bot authors. Its payloads come from `python/bostie/testing/fixtures`, Discord's documented examples, which the model tests decode too. It imports nothing from the rest of bostie, so it checks the library rather than agreeing with it; `test_the_fake_imports_nothing_from_the_library_it_checks` holds it to that. It doesn't speak DAVE; the Rust tests cover that. Use it rather than `unittest.mock`.
 
 Test what a user could notice: a return value, an event, a packet sent, an error raised. Log text and call order count only when they are the feature. Anything mypy, stubtest or clippy already catches needs no test.
 

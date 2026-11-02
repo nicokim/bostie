@@ -286,6 +286,36 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 - `bostie.permissions.TEXT`, `VOICE` and `STAGE` hold the permissions Discord documents for each kind of channel, and `ELEVATED` those that need two-factor authentication in a guild that requires it, to combine with `|` and `&`.
 - `bostie.color` builds the integer colors Discord takes, such as `Embed.color` and a role's colors: `color.rgb(88, 101, 242)`, `color.hsv(0.6, 0.6, 0.9)`, `color.parse("#5865F2")`, and Discord's brand colors such as `color.BLURPLE`.
 
+## Testing
+
+`pip install "bostie[testing]"` adds `bostie.testing`: a fake Discord gateway, REST API and voice server that runs in your test process. bostie's own tests run on it.
+
+```python
+from bostie import Bot, Context
+from bostie.testing import FakeDiscord, payloads, run, running
+
+
+def test_ping_answers_pong() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.command
+        async def ping(ctx: Context) -> None:
+            """Answer pong."""
+            await ctx.respond("pong")
+
+        async with running(bot, fake):
+            reply = await fake.interaction(2, payloads.command("ping"))
+            assert reply.json["data"]["content"] == "pong"
+
+    run(scenario)
+```
+
+- `run(scenario)` runs `async def scenario(fake)` against a new `FakeDiscord` within 10 s. `running(bot, fake)` starts the bot, waits until it is ready, and closes it at the end.
+- `fake.dispatch(name, d)` sends a gateway event, and `fake.interaction(type, data)` sends an interaction and returns the bot's answer. `payloads` builds both from Discord's documented examples, and `payloads.fixture("events/MESSAGE_CREATE")` returns any of them.
+- `fake.requests` records every REST request. `fake.fail(method, route_prefix, status, json)` answers the next matching request with that error, and `fake.hold(method, route_prefix)` keeps it waiting until you set the event it returns.
+- `FakeDiscord(voice=True)` adds a voice gateway and a UDP server that decrypts every RTP packet into `fake.packets`, and `fake.move_bot()` and `fake.kick_bot()` move the bot around. It does not speak DAVE.
+
 ## Bot parameters
 
 Every parameter of `bostie.Bot` is keyword-only and optional.

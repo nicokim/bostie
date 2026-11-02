@@ -4,7 +4,6 @@ import time
 from typing import TYPE_CHECKING, Any, Literal, assert_type
 
 import pytest
-from fakediscord import settle
 from voice_fakes import (
     GUILD_ID,
     OTHER_VOICE,
@@ -18,6 +17,7 @@ from voice_fakes import (
 )
 
 from bostie import voice
+from bostie.testing import settle
 from bostie.voice.connection import VoiceDelivery
 
 if TYPE_CHECKING:

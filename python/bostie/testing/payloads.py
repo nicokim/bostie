@@ -2,35 +2,41 @@ import itertools
 import secrets
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import msgspec
 
 type Json = dict[str, Any]
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "models"
+FIXTURES = Path(__file__).parent / "fixtures"
 DISCORD_EPOCH_MS = 1_420_070_400_000
 INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete", 5: "modal"}
+GUILD_VOICE = 2
 STAGE_CHANNEL_ID = "1335174052137131073"
 
 _increments = itertools.count()
 
 
+def is_object(value: object) -> TypeGuard[Json]:
+    """Whether a decoded JSON value is an object."""
+    return isinstance(value, dict)
+
+
 def fixture(name: str) -> Json:
-    """A fresh copy of tests/fixtures/models/{name}.json."""
+    """A fresh copy of the documented payload `fixtures/{name}.json`."""
     return msgspec.json.decode(
         (FIXTURES / f"{name}.json").read_bytes(), type=dict[str, Any]
     )
 
 
 def snowflake(at: float | None = None) -> str:
-    """A unique snowflake created at ``at`` (Unix seconds, now by default)."""
+    """A unique snowflake created at `at` (Unix seconds, now by default)."""
     millis = int((time.time() if at is None else at) * 1000) - DISCORD_EPOCH_MS
     return str(millis << 22 | next(_increments) % 4096)
 
 
 def user(**fields: Any) -> Json:
-    """A user, as ``GET /users/{id}`` returns it."""
+    """A user, as `GET /users/{id}` returns it."""
     return fixture("rest/user") | fields
 
 
@@ -61,7 +67,7 @@ def message(**fields: Any) -> Json:
 
 
 def interaction(type: int, data: Json, **fields: Any) -> Json:
-    """An INTERACTION_CREATE payload of ``type`` with a fresh id and token."""
+    """An INTERACTION_CREATE payload of `type` with a fresh id and token."""
     base = fixture(
         f"events/INTERACTION_CREATE.{INTERACTION_FIXTURES.get(type, 'command')}"
     )
@@ -70,7 +76,7 @@ def interaction(type: int, data: Json, **fields: Any) -> Json:
 
 
 def command(name: str, *options: Json, resolved: Json | None = None) -> Json:
-    """The ``data`` of a slash command or autocomplete interaction."""
+    """The `data` of a slash command or autocomplete interaction."""
     data: Json = {"id": snowflake(), "name": name, "type": 1}
     if options:
         data["options"] = list(options)
@@ -80,7 +86,7 @@ def command(name: str, *options: Json, resolved: Json | None = None) -> Json:
 
 
 def context_menu(type: int, name: str, target_id: str, resolved: Json) -> Json:
-    """The ``data`` of a user (2) or message (3) command run on ``target_id``."""
+    """The `data` of a user (2) or message (3) command run on `target_id`."""
     return {
         "id": snowflake(),
         "name": name,
@@ -101,7 +107,7 @@ def subcommand(name: str, *options: Json) -> Json:
 
 
 def option(name: str, type: int, value: Any, *, focused: bool = False) -> Json:
-    """A command option value; ``focused`` marks the one being autocompleted."""
+    """A command option value; `focused` marks the one being autocompleted."""
     data: Json = {"name": name, "type": type, "value": value}
     if focused:
         data["focused"] = True
@@ -115,27 +121,27 @@ def resolved() -> Json:
 
 
 def button(custom_id: str) -> Json:
-    """The ``data`` of a button interaction."""
+    """The `data` of a button interaction."""
     data: Json = fixture("events/INTERACTION_CREATE.button")["data"]
     return data | {"custom_id": custom_id}
 
 
 def select(custom_id: str, *values: str) -> Json:
-    """The ``data`` of a string select interaction."""
+    """The `data` of a string select interaction."""
     data: Json = fixture("events/INTERACTION_CREATE.select")["data"]
     return data | {"custom_id": custom_id, "values": list(values)}
 
 
 def modal(custom_id: str) -> Json:
-    """The ``data`` of a modal submit."""
+    """The `data` of a modal submit."""
     data: Json = fixture("events/INTERACTION_CREATE.modal")["data"]
     return data | {"custom_id": custom_id}
 
 
 def voice_channel(**fields: Any) -> Json:
-    """The guild's voice channel, as ``GET /channels/{id}`` returns it."""
+    """The guild's voice channel, as `GET /channels/{id}` returns it."""
     guild = fixture("events/GUILD_CREATE")
-    channel: Json = next(c for c in guild["channels"] if c["type"] == 2)
+    channel: Json = next(c for c in guild["channels"] if c["type"] == GUILD_VOICE)
     return channel | {"guild_id": guild["id"]} | fields
 
 

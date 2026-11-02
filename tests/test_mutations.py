@@ -46,8 +46,9 @@ from bostie.models import (
     WelcomeScreen,
     decode,
 )
+from bostie.testing import payloads
 
-FIXTURES = Path(__file__).parent / "fixtures" / "models"
+FIXTURES = payloads.FIXTURES
 REST_MODELS: dict[str, type[Model]] = {
     "user": User,
     "member": Member,

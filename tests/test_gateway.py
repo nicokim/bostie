@@ -7,7 +7,6 @@ from typing import Any
 
 import msgspec
 import pytest
-from fakediscord import FakeDiscord, payloads
 
 from bostie._bridge import Bridge, GatewayDelivery, StatusDelivery
 from bostie.errors import (
@@ -18,6 +17,7 @@ from bostie.errors import (
     TransportError,
 )
 from bostie.gateway import GatewayClient
+from bostie.testing import FakeDiscord, payloads
 
 type Scenario = Callable[["Harness"], Coroutine[Any, Any, None]]
 

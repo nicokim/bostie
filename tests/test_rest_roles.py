@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, Permissions, RoleColors
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_role_permissions_go_out_as_a_string_of_bits_with_the_colors() -> None:

@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from fakediscord import settle
 from voice_fakes import (
     ELSEWHERE,
     GUILD_ID,
@@ -26,6 +25,7 @@ from voice_fakes import (
 
 from bostie import voice
 from bostie.enums import SpeakingFlags
+from bostie.testing import settle
 from bostie.voice import connection as connection_module
 
 if TYPE_CHECKING:

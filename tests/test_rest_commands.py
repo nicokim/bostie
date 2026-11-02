@@ -1,7 +1,5 @@
 import json
 
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import (
     ApplicationCommandOption,
     ApplicationCommandOptionChoice,
@@ -10,6 +8,7 @@ from bostie import (
     OptionType,
     Permissions,
 )
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_commands_go_out_with_option_builders_and_come_back_decoded() -> None:

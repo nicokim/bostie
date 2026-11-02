@@ -1,11 +1,10 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import (
     ActivityLocationKind,
     ApplicationRoleConnectionMetadata,
     ApplicationRoleConnectionMetadataType,
     Bot,
 )
+from bostie.testing import FakeDiscord, payloads, run, running
 
 
 def test_install_settings_and_role_connection_metadata_go_back_as_read() -> None:

@@ -1,6 +1,5 @@
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot
+from bostie.testing import FakeDiscord, payloads, run, running
 
 PNG = b"\x89PNG\r\n\x1a\n"
 

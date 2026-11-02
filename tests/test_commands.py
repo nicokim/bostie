@@ -5,7 +5,6 @@ from typing import Annotated, Any, Literal
 
 import msgspec
 import pytest
-from fakediscord import payloads
 
 from bostie.commands import (
     Choice,
@@ -34,6 +33,7 @@ from bostie.models import (
     decode_interaction,
 )
 from bostie.router import Router
+from bostie.testing import payloads
 
 RESOLVED = decode(Resolved, msgspec.json.encode(payloads.resolved()))
 USER_ID = 820774541721731073

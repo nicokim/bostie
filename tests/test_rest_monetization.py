@@ -1,8 +1,7 @@
 from typing import Any
 
-from fakediscord import FakeDiscord, payloads, run, running
-
 from bostie import Bot, Entitlement, PartialEntitlement, SKUFlags, SKUType
+from bostie.testing import FakeDiscord, payloads, run, running
 
 ROUTE = "/applications/1/entitlements"
 

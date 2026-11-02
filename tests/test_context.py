@@ -6,7 +6,6 @@ from functools import partial
 from typing import Annotated, Any
 
 import pytest
-from fakediscord import FakeDiscord, Recorded, payloads, run, running, settle
 
 from bostie import (
     AllowedMentions,
@@ -28,6 +27,7 @@ from bostie import (
     ui,
 )
 from bostie.context import ResponseState
+from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 EPHEMERAL = 64
 MENTIONS = {"parse": ["users", "roles"]}
