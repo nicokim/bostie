@@ -9,6 +9,7 @@ from bostie.enums import (
     GuildFeature,
     IntegrationExpireBehavior,
     IntegrationType,
+    Locale,
     MemberFlags,
     MFALevel,
     NSFWLevel,
@@ -193,7 +194,7 @@ class Guild(Model, kw_only=True):
     banner: str | None
     premium_tier: PremiumTier
     premium_subscription_count: int | None = None
-    preferred_locale: str
+    preferred_locale: Locale
     public_updates_channel_id: int | None
     max_video_channel_users: int | None = None
     max_stage_video_channel_users: int | None = None
@@ -215,7 +216,7 @@ class InteractionGuild(Model, kw_only=True):
     """The part of a guild an interaction from it carries."""
 
     id: int
-    locale: str | None = None
+    locale: Locale | None = None
     features: tuple[GuildFeature, ...] = ()
 
 

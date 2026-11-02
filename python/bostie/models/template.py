@@ -3,6 +3,7 @@ from datetime import datetime
 from bostie.enums import (
     DefaultMessageNotificationLevel,
     ExplicitContentFilterLevel,
+    Locale,
     Permissions,
     SystemChannelFlags,
     VerificationLevel,
@@ -34,7 +35,7 @@ class TemplateGuild(Model, kw_only=True):
     verification_level: VerificationLevel
     default_message_notifications: DefaultMessageNotificationLevel
     explicit_content_filter: ExplicitContentFilterLevel
-    preferred_locale: str
+    preferred_locale: Locale
     afk_timeout: int
     roles: tuple[TemplateRole, ...]
     channels: tuple[Channel, ...]

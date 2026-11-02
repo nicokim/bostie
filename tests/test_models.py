@@ -21,6 +21,7 @@ from bostie.enums import (
     ExplicitContentFilterLevel,
     GuildFeature,
     IntegrationType,
+    Locale,
     MessageActivityType,
     MessageFlags,
     MessageReferenceType,
@@ -614,7 +615,8 @@ def test_the_current_user_carries_its_account_settings() -> None:
     user = decode(CurrentUser, payload("events/USER_UPDATE.json"))
 
     assert (user.mfa_enabled, user.verified, user.email) == (True, True, None)
-    assert (user.locale, user.premium_type) == ("en-US", PremiumType.NONE)
+    assert (user.locale, user.premium_type) == (Locale.ENGLISH_US, PremiumType.NONE)
+    assert type(user.locale) is Locale
     assert user.flags == UserFlags(0)
 
 

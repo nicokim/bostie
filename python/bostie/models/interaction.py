@@ -11,6 +11,7 @@ from bostie.enums import (
     EntryPointCommandHandlerType,
     InteractionContextType,
     InteractionType,
+    Locale,
     OptionType,
     Permissions,
 )
@@ -130,7 +131,7 @@ class _Interaction(Model, kw_only=True):
     token: str
     version: int
     _app_permissions: str = msgspec.field(name="app_permissions")
-    locale: str
+    locale: Locale
     authorizing_integration_owners: dict[ApplicationIntegrationType, int]
     attachment_size_limit: int
     _entitlements: tuple[msgspec.Raw, ...] = msgspec.field(name="entitlements")
@@ -140,7 +141,7 @@ class _Interaction(Model, kw_only=True):
     channel_id: int | None = None
     member: Member | None = None
     _user: User | None = msgspec.field(default=None, name="user")
-    guild_locale: str | None = None
+    guild_locale: Locale | None = None
     context: InteractionContextType | None = None
 
     def __post_init__(self) -> None:

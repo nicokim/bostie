@@ -6,6 +6,7 @@ from typing import Literal, TypedDict, Unpack
 from bostie.enums import (
     DefaultMessageNotificationLevel,
     ExplicitContentFilterLevel,
+    Locale,
     SystemChannelFlags,
     VerificationLevel,
 )
@@ -47,7 +48,7 @@ class GuildEdit(TypedDict, total=False):
     system_channel_flags: SystemChannelFlags
     rules_channel_id: int | None
     public_updates_channel_id: int | None
-    preferred_locale: str | None
+    preferred_locale: Locale | None
     features: Sequence[str]
     description: str | None
     premium_progress_bar_enabled: bool

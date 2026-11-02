@@ -13,6 +13,7 @@ from bostie.enums import (
     CommandType,
     InteractionCallbackType,
     JSONErrorCode,
+    Locale,
     MessageFlags,
     OptionType,
 )
@@ -153,7 +154,7 @@ class _InteractionContext[
         return self.interaction.channel
 
     @property
-    def locale(self) -> str:
+    def locale(self) -> Locale:
         return self.interaction.locale
 
     @property
