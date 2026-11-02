@@ -9,3 +9,4 @@ class File:
     data: bytes
     description: str | None = None
     spoiler: bool = False
+    title: str | None = None

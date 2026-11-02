@@ -715,15 +715,18 @@ def test_build_message_never_writes_raw_payloads() -> None:
 
 def test_an_edit_body_keeps_listed_attachments_and_sends_none_as_null() -> None:
     kept = decode(Message, payload("events/MESSAGE_CREATE.rich.json")).attachments[0]
-    new = File("new.png", b"", spoiler=True)
+    hidden = msgspec.structs.replace(
+        kept, description="Alt text", flags=AttachmentFlags.IS_SPOILER
+    )
+    new = File("new.png", b"", spoiler=True, title="New chart")
 
-    body, _ = message_body(None, {"files": [new], "attachments": [kept, 42]})
+    body, _ = message_body(None, {"files": [new], "attachments": [hidden, 42]})
 
     assert body == {
         "attachments": [
-            {"id": kept.id},
+            {"id": kept.id, "description": "Alt text", "is_spoiler": True},
             {"id": 42},
-            {"id": 0, "filename": "new.png", "is_spoiler": True},
+            {"id": 0, "filename": "new.png", "title": "New chart", "is_spoiler": True},
         ]
     }
     cleared = {"content": None, "embeds": None, "attachments": None}

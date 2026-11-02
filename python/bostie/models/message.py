@@ -603,10 +603,7 @@ def message_body(
         body["attachments"] = (
             None
             if kept is None and not files
-            else [
-                {"id": attachment if isinstance(attachment, int) else attachment.id}
-                for attachment in kept or ()
-            ]
+            else [_kept(attachment) for attachment in kept or ()]
             + [_attachment(index, file) for index, file in enumerate(files)]
         )
     if components_v2:
@@ -621,8 +618,22 @@ def _type_of(component: Component | Mapping[str, Any]) -> int | None:
     return component.type
 
 
+def _kept(attachment: Attachment | int) -> dict[str, Any]:
+    if isinstance(attachment, int):
+        return {"id": attachment}
+    kept: dict[str, Any] = {
+        "id": attachment.id,
+        "is_spoiler": AttachmentFlags.IS_SPOILER in attachment.flags,
+    }
+    if attachment.description is not None:
+        kept["description"] = attachment.description
+    return kept
+
+
 def _attachment(index: int, file: File) -> dict[str, Any]:
     attachment: dict[str, Any] = {"id": index, "filename": file.name}
+    if file.title is not None:
+        attachment["title"] = file.title
     if file.description is not None:
         attachment["description"] = file.description
     if file.spoiler:
