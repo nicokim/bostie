@@ -3,7 +3,7 @@ mod limits;
 mod ratelimit;
 mod request;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU16;
 use std::ops::ControlFlow;
 use std::pin::pin;
@@ -38,6 +38,8 @@ const USER_AGENT: &str = concat!(
 const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const CLOUDFLARE_TIMEOUT: u16 = 524;
+const UNKNOWN_WEBHOOK: u64 = 10015;
+const DEAD_WEBHOOK: &str = r#"{"message":"Unknown Webhook: Discord answered 404 for it before, so bostie no longer sends to it","code":10015}"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Auth<'a> {
@@ -79,6 +81,7 @@ pub(crate) struct Rest {
     authorization: Option<HeaderValue>,
     base: Url,
     token_invalid: AtomicBool,
+    dead_webhooks: Mutex<HashSet<String>>,
     inbox: Arc<Inbox>,
     limits: HttpSettings,
 }
@@ -118,6 +121,7 @@ impl Rest {
             authorization,
             base,
             token_invalid: AtomicBool::new(false),
+            dead_webhooks: Mutex::new(HashSet::new()),
             inbox,
             limits,
         })
@@ -191,6 +195,15 @@ impl Rest {
     }
 
     fn refusal(&self, ticket: Ticket, request: &RestRequest) -> Option<Delivery> {
+        if request.class == RouteClass::Webhook
+            && self.dead_webhooks.lock().contains(webhook_of(request))
+        {
+            return Some(Delivery::Response {
+                ticket,
+                status: StatusCode::NOT_FOUND.as_u16(),
+                body: Bytes::from_static(DEAD_WEBHOOK.as_bytes()),
+            });
+        }
         if request.class == RouteClass::Bot && self.authorization.is_none() {
             return Some(Delivery::Failure {
                 ticket,
@@ -305,11 +318,24 @@ impl Rest {
             return ControlFlow::Continue(wait);
         }
         match response.bytes().await {
-            Ok(body) => ControlFlow::Break(Delivery::Response {
-                ticket,
-                status: status.as_u16(),
-                body,
-            }),
+            Ok(body) => {
+                if status == StatusCode::NOT_FOUND
+                    && request.class == RouteClass::Webhook
+                    && sonic_rs::get(&body, ["code"])
+                        .ok()
+                        .and_then(|code| code.as_u64())
+                        == Some(UNKNOWN_WEBHOOK)
+                {
+                    self.dead_webhooks
+                        .lock()
+                        .insert(webhook_of(request).to_owned());
+                }
+                ControlFlow::Break(Delivery::Response {
+                    ticket,
+                    status: status.as_u16(),
+                    body,
+                })
+            }
             Err(error) => after_transport_error(ticket, request, error, retries),
         }
     }
@@ -382,6 +408,14 @@ fn after_transport_error(
             detail: describe(&error),
         }),
     }
+}
+
+fn webhook_of(request: &RestRequest) -> &str {
+    let path = request.endpoint.path.as_str();
+    path.match_indices('/')
+        .nth(1)
+        .and_then(|(end, _)| path.get(..end))
+        .unwrap_or(path)
 }
 
 fn held_back(retry_after: Duration) -> Bytes {
@@ -924,6 +958,34 @@ pub(crate) mod tests {
         }
 
         assert_eq!(server.received(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_webhook_discord_no_longer_knows_gets_no_more_requests() {
+        let not_found = |code: u32| {
+            reply(
+                "404 Not Found",
+                &[],
+                &format!(r#"{{"message":"x","code":{code}}}"#),
+            )
+        };
+        let mut server = Server::start(vec![not_found(10008), not_found(10015)]).await;
+        let (rest, _receiver) = rest(&server.url);
+
+        let mut answers = Vec::new();
+        for _ in 0..3 {
+            answers.push(status(rest.execute(Ticket::from(1), webhook()).await));
+        }
+
+        assert_eq!(server.received(), 2);
+        let codes: Vec<_> = answers
+            .iter()
+            .map(|(got, body)| (*got, sonic_rs::get(body, ["code"]).unwrap().as_u64()))
+            .collect();
+        assert_eq!(
+            codes,
+            [(404, Some(10008)), (404, Some(10015)), (404, Some(10015))]
+        );
     }
 
     #[tokio::test]
