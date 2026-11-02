@@ -195,6 +195,36 @@ impl Sink {
         Ok(())
     }
 
+    pub fn clear_since(&self, since: u64) -> Result<(), CoreError> {
+        self.owner.check()?;
+        let mut producer = self.producer.lock();
+        let mut queue = self.open_queue()?;
+        let start = queue
+            .markers
+            .iter()
+            .find(|marker| marker.id == since)
+            .map_or(queue.stats.consumed, |marker| marker.position);
+        let excess = queue
+            .queued
+            .saturating_sub(start.saturating_sub(queue.stats.consumed));
+        let dropped = queue.drop_back(excess);
+        queue.queued -= dropped;
+        queue.written -= dropped;
+        while let Some(marker) = queue.markers.back().copied()
+            && marker.position > start
+        {
+            queue.markers.pop_back();
+            self.resolve(marker.id, false);
+        }
+        if let Producer::Pcm { converter, .. } = &mut *producer {
+            converter.reset();
+        }
+        if queue.queued <= self.low_water {
+            self.wake(&mut queue);
+        }
+        Ok(())
+    }
+
     pub fn set_volume(&self, volume: f32) -> Result<(), CoreError> {
         self.owner.check()?;
         SinkOptions {
@@ -380,6 +410,22 @@ impl Queue {
             self.opus.pop_front();
         }
         taken
+    }
+
+    fn drop_back(&mut self, frames: u64) -> u64 {
+        let samples = usize::try_from(frames)
+            .unwrap_or(usize::MAX)
+            .saturating_mul(CHANNELS)
+            .min(self.pcm.len());
+        self.pcm.truncate(self.pcm.len() - samples);
+        let mut dropped = (samples / CHANNELS) as u64;
+        while let Some(&(_, samples)) = self.opus.back()
+            && dropped + u64::from(samples) <= frames
+        {
+            dropped += u64::from(samples);
+            self.opus.pop_back();
+        }
+        dropped
     }
 
     fn starve(&mut self) {
@@ -601,6 +647,25 @@ pub(crate) mod tests {
         sink.clear(Some(passed)).unwrap();
 
         assert_eq!(sink.queued().unwrap(), Duration::from_millis(20));
+    }
+
+    #[test]
+    fn clear_since_a_marker_drops_only_the_audio_after_it() {
+        let mut fixture = Fixture::new();
+        let sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
+        sink.write(&frames_of(0.1, 1_920)).unwrap();
+        let (first, _) = sink.mark().unwrap();
+        sink.write(&frames_of(0.2, 960)).unwrap();
+        let (second, _) = sink.mark().unwrap();
+
+        sink.clear_since(first).unwrap();
+        let cleared = fixture.markers();
+        sink.write(&frames_of(0.3, 960)).unwrap();
+        let played: Vec<_> = (0..3).map(|_| pull(&sink)).collect();
+
+        assert_eq!(cleared, [(second, false)]);
+        assert_eq!(played, [Some(0.1), Some(0.1), Some(0.3)]);
+        assert_eq!(fixture.markers(), [(first, true)]);
     }
 
     #[test]

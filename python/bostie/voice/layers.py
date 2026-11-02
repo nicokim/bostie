@@ -2,6 +2,7 @@ import asyncio
 import logging
 import math
 import os
+import random
 import string
 import struct
 import time
@@ -200,8 +201,7 @@ class _Player:
 
     @property
     def upcoming(self) -> tuple[Track, ...]:
-        first = 0 if self.now is None else 1
-        return tuple(entry.track for entry in self._entries[first:])
+        return tuple(entry.track for entry in self._upcoming())
 
     @property
     def paused(self) -> bool:
@@ -229,16 +229,35 @@ class _Player:
         self._feeder = asyncio.create_task(self._feed(None))
         return entry.track
 
-    def add(self, source: "Source", meta: Any) -> Track:
+    def add(self, source: "Source", meta: Any, index: int | None) -> Track:
         if self.closed or self.vc.state is State.DISCONNECTED:
             self._lost()
             raise VoiceNotConnected("the voice connection has ended")
         entry = self._enlist(source, meta)
+        if index is not None:
+            upcoming = self._upcoming()
+            upcoming.remove(entry)
+            upcoming.insert(index, entry)
+            self._arrange(upcoming)
+        elif self._feeder is not None:
+            self._open_ahead()
         if self._feeder is None:
             self._feeder = asyncio.create_task(self._feed(None))
-        else:
-            self._open_ahead()
         return entry.track
+
+    def move(self, track: Track, index: int) -> None:
+        upcoming = self._upcoming()
+        entry = next((entry for entry in upcoming if entry.track is track), None)
+        if entry is None:
+            raise ValueError("only an upcoming track of this queue can move")
+        upcoming.remove(entry)
+        upcoming.insert(index, entry)
+        self._arrange(upcoming)
+
+    def shuffle(self) -> None:
+        upcoming = self._upcoming()
+        random.shuffle(upcoming)
+        self._arrange(upcoming)
 
     def skip(self) -> None:
         if not self._entries:
@@ -328,6 +347,35 @@ class _Player:
         self._idle.clear()
         return entry
 
+    def _upcoming(self) -> list[_Entry]:
+        return self._entries[0 if self.now is None else 1 :]
+
+    def _arrange(self, upcoming: list[_Entry]) -> None:
+        first = len(self._entries) - len(upcoming)
+        pending = self._pending()
+        written = [entry for entry in self._entries[first:] if entry.start is not None]
+        self._entries[first:] = upcoming
+        if self._feeder is None:
+            return
+        if upcoming[: len(written)] != written or self._pending() is not pending:
+            if written:
+                self._unwrite()
+            self._restart()
+        else:
+            self._open_ahead()
+
+    def _unwrite(self) -> None:
+        head = self._entries[0] if self._entries else None
+        for entry in self._entries[1:]:
+            entry.start = entry.end = None
+        sink = self._sink
+        if sink is None:
+            return
+        if head is not None and head.end is not None and head.sink is sink:
+            sink.clear(since=head.end)
+        else:
+            sink.clear()
+
     def _pending(self) -> _Entry | None:
         return next((entry for entry in self._entries if entry.end is None), None)
 
@@ -339,10 +387,7 @@ class _Player:
         for entry in entries:
             self._end(entry, EndReason.STOPPED)
         if written:
-            for entry in self._entries[1:]:
-                entry.start = entry.end = None
-            if self._sink is not None:
-                self._sink.clear()
+            self._unwrite()
         if written or pending in entries:
             self._restart()
         else:
@@ -546,8 +591,19 @@ class Queue:
         """Whether the connection ended; a closed queue takes no more tracks."""
         return self._player.closed
 
-    def add(self, source: "Source", *, meta: Any = None) -> Track:
-        return self._player.add(source, meta)
+    def add(
+        self, source: "Source", *, meta: Any = None, index: int | None = None
+    ) -> Track:
+        """Queue a source at the end, or at `index` among the upcoming tracks."""
+        return self._player.add(source, meta, index)
+
+    def move(self, track: Track, index: int) -> None:
+        """Move an upcoming track to `index` among the upcoming tracks."""
+        self._player.move(track, index)
+
+    def shuffle(self) -> None:
+        """Put the upcoming tracks in a random order."""
+        self._player.shuffle()
 
     @property
     def now(self) -> Track | None:

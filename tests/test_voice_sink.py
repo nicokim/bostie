@@ -260,14 +260,18 @@ def test_markers_report_seconds_and_survive_a_cancelled_wait() -> None:
     run(scenario)
 
 
-def test_clear_until_a_marker_passes_its_id() -> None:
+def test_clear_until_or_since_a_marker_passes_its_id() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, native = await open_sink(bot)
         await sink.write(bytes(SECOND // 10))
         marker = sink.mark()
         sink.clear(until=marker)
+        sink.clear(since=marker)
         sink.clear()
-        assert native.clears == [marker.id, None]
+        assert native.clears == [marker.id, None, None]
+        assert native.since == [None, marker.id, None]
+        with pytest.raises(ValueError, match="not both"):
+            sink.clear(until=marker, since=marker)
 
     run(scenario)
 

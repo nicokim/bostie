@@ -100,6 +100,7 @@ class FakeSink:
         self.next_marker = 1
         self.flushes = 0
         self.clears: list[int | None] = []
+        self.since: list[int | None] = []
         self.closed = False
         self.failure: Exception | None = None
         self.counters = (0, 0, 0, 0, 0)
@@ -132,9 +133,10 @@ class FakeSink:
         self.flushes += 1
         return self.mark()
 
-    def clear(self, until: int | None = None) -> None:
+    def clear(self, until: int | None = None, since: int | None = None) -> None:
         self._check()
         self.clears.append(until)
+        self.since.append(since)
         end = next(
             (position for marker, position in self.markers if marker == until),
             self.written,

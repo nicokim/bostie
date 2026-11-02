@@ -118,6 +118,7 @@ class FakeSink:
         self.sent: list[bytes] = []
         self.ticks: list[bytes | None] = []
         self.clears: list[int | None] = []
+        self.cuts: list[int] = []
         self.drains = 0
 
     @property
@@ -152,8 +153,20 @@ class FakeSink:
             return False
         return await self.mark()
 
-    def clear(self, *, until: FakeMarker | None = None) -> None:
+    def clear(
+        self, *, until: FakeMarker | None = None, since: FakeMarker | None = None
+    ) -> None:
         if self.closed:
+            return
+        if since is not None:
+            self.cuts.append(since.id)
+            start = max(since.index, self.playhead)
+            self.queue = deque(item for item in self.queue if item[0] < start)
+            self.written = start
+            for marker in [m for m in self.markers if m.index > start]:
+                self.markers.remove(marker)
+                marker.future.set_result(False)
+            self.wake()
             return
         self.clears.append(None if until is None else until.id)
         limit = self.written if until is None else until.index
@@ -349,8 +362,12 @@ def queue(vc: FakeConnection, **options: Any) -> Queue:
     return Queue(cast("Any", vc), **options)
 
 
-def add(q: Queue, source: FakeSource) -> Track:
-    return q.add(cast("Any", source))
+def add(q: Queue, source: FakeSource, index: int | None = None) -> Track:
+    return q.add(cast("Any", source), index=index)
+
+
+def names(chunks: list[bytes]) -> str:
+    return "".join(chunk[:1].decode() for chunk in chunks)
 
 
 def reason(track: Track) -> EndReason | None:
@@ -723,6 +740,58 @@ def test_closing_the_sink_from_outside_stops_the_queue_but_keeps_it_open() -> No
         await q.join()
         assert reason(later) is EndReason.FINISHED
         assert vc.sinks[1].sent == frames("c", 5)
+
+    run(scenario)
+
+
+def test_tracks_go_in_at_an_index_and_move_among_the_upcoming_ones() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        first = add(q, FakeSource(clock, "a", 30))
+        later = add(q, FakeSource(clock, "c", 5))
+        await clock.until(lambda: q.now is first)
+        nearer = add(q, FakeSource(clock, "b", 5), index=0)
+        last = add(q, FakeSource(clock, "d", 5))
+        q.move(last, 1)
+        assert q.upcoming == (nearer, last, later)
+        with pytest.raises(ValueError, match="upcoming"):
+            q.move(first, 0)
+        await q.join()
+        assert names(vc.sinks[0].sent) == "a" * 30 + "b" * 5 + "d" * 5 + "c" * 5
+
+    run(scenario)
+
+
+def test_moving_a_track_written_ahead_rewrites_it_after_the_head() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        add(q, FakeSource(clock, "a", 15))
+        ahead = add(q, FakeSource(clock, "b", 20))
+        add(q, FakeSource(clock, "c", 5))
+        await clock.until(lambda: clock.ticks == 10)
+        q.move(ahead, 1)
+        await q.join()
+        sink = vc.sinks[0]
+        assert sink.sent == frames("a", 15) + frames("c", 5) + frames("b", 20)
+        assert (len(sink.cuts), sink.clears, sink.gaps()) == (1, [], 0)
+
+    run(scenario)
+
+
+def test_shuffle_reorders_the_upcoming_tracks_and_plays_each_once() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        first = add(q, FakeSource(clock, "a", 5))
+        rest = [add(q, FakeSource(clock, name, 2)) for name in "bcdefghijk"]
+        await clock.until(lambda: q.now is first)
+        q.shuffle()
+        assert sorted(q.upcoming, key=rest.index) == rest
+        order = "".join(cast("FakeSource", track.source).name for track in q.upcoming)
+        await q.join()
+        assert names(vc.sinks[0].sent) == "a" * 5 + "".join(name * 2 for name in order)
 
     run(scenario)
 

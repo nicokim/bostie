@@ -42,9 +42,13 @@ impl NativeSink {
         Ok(self.0.flush()?)
     }
 
-    #[pyo3(signature = (until=None))]
-    fn clear(&self, until: Option<u64>) -> Result<()> {
-        Ok(self.0.clear(until)?)
+    #[pyo3(signature = (until=None, since=None))]
+    fn clear(&self, until: Option<u64>, since: Option<u64>) -> Result<()> {
+        let cleared = match since {
+            Some(since) => self.0.clear_since(since),
+            None => self.0.clear(until),
+        };
+        Ok(cleared?)
     }
 
     fn set_volume(&self, volume: f32) -> Result<()> {

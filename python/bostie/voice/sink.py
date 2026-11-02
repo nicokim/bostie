@@ -20,7 +20,7 @@ class NativeSink(Protocol):
     def write(self, data: Buffer) -> bool: ...
     def mark(self) -> tuple[int, int]: ...
     def flush(self) -> tuple[int, int]: ...
-    def clear(self, until: int | None = None) -> None: ...
+    def clear(self, until: int | None = None, since: int | None = None) -> None: ...
     def set_volume(self, volume: float) -> None: ...
     def queued(self) -> float: ...
     def passthrough(self) -> bool: ...
@@ -139,10 +139,17 @@ class Sink:
             return False
         return await self._marker(*self._native.flush())
 
-    def clear(self, *, until: Marker | None = None) -> None:
-        """Drop the queued audio, or only the part before `until`."""
+    def clear(
+        self, *, until: Marker | None = None, since: Marker | None = None
+    ) -> None:
+        """Drop the queued audio, only the part before `until`, or after `since`."""
+        if until is not None and since is not None:
+            raise ValueError("clear takes until or since, not both")
         if not self._closed:
-            self._native.clear(None if until is None else until.id)
+            self._native.clear(
+                None if until is None else until.id,
+                None if since is None else since.id,
+            )
 
     def close(self) -> None:
         """Discard the queued audio and close; `async with` drains first."""
