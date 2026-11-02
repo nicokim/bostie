@@ -3,7 +3,7 @@ from typing import Any
 
 import msgspec
 
-from bostie.enums import ChannelType, Permissions
+from bostie.enums import ChannelType, Permissions, Status
 from bostie.events import (
     ChannelCreate,
     ChannelDelete,
@@ -15,11 +15,13 @@ from bostie.events import (
     GuildUpdate,
     MemberJoin,
     MemberRemove,
+    MembersChunk,
     MemberUpdate,
     MessageCreate,
     MessageDelete,
     MessageDeleteBulk,
     MessageUpdate,
+    PresenceUpdate,
     Ready,
     RoleCreate,
     RoleDelete,
@@ -39,6 +41,7 @@ from bostie.models import (
     Guild,
     Member,
     Message,
+    Presence,
     Role,
     User,
     VoiceState,
@@ -53,22 +56,32 @@ type Changes = dict[str, Any] | None
 class Cache:
     """Guilds, channels, active threads, voice states and the bot's member and user.
 
+    Members, presences and the latest messages are kept only when asked for.
     Channels are stored as received, obfuscated ones included, except the fields
     CHANNEL_UPDATE does not keep current (last_message_id, message_count,
     member_count, last_pin_timestamp), which are None.
     """
 
-    def __init__(self, max_messages: int = 0) -> None:
+    def __init__(
+        self,
+        max_messages: int = 0,
+        *,
+        members: bool = False,
+        presences: bool = False,
+    ) -> None:
         if max_messages < 0:
             raise ValueError(f"max_messages must be 0 or more, got {max_messages}")
-        self.user: CurrentUser | None = None
+        self._current: CurrentUser | None = None
         self._max_messages = max_messages
+        self._all_members = members
+        self._keeps_presences = presences
         self._guilds: dict[int, Guild] = {}
         self._channels: dict[int, Channel] = {}
         self._guild_channels: dict[int, dict[int, Channel]] = {}
         self._roles: dict[int, Role] = {}
         self._voice_states: dict[int, dict[int, VoiceState]] = {}
-        self._me: dict[int, Member] = {}
+        self._members: dict[int, dict[int, Member]] = {}
+        self._presences: dict[int, dict[int, Presence]] = {}
         self._messages: dict[int, CachedMessage] = {}
         self._handlers: dict[type[Event], Callable[[Any], Changes]] = {
             Ready: self._start_session,
@@ -92,8 +105,12 @@ class Cache:
             VoiceStateUpdate: self._update_voice_state,
             MemberJoin: self._join,
             MemberRemove: self._leave,
-            MemberUpdate: self._update_me,
+            MemberUpdate: self._update_member,
         }
+        if members or presences:
+            self._handlers[MembersChunk] = self._store_chunk
+        if presences:
+            self._handlers[PresenceUpdate] = self._update_presence
         if max_messages:
             self._handlers |= {
                 MessageCreate: self._create_message,
@@ -133,7 +150,34 @@ class Cache:
 
     def me(self, guild_id: int) -> Member | None:
         """The bot's own member in a guild."""
-        return self._me.get(guild_id)
+        current = self._current
+        return None if current is None else self.member(guild_id, current.id)
+
+    def member(self, guild_id: int, user_id: int) -> Member | None:
+        """A member; only the bot's own unless the cache keeps members."""
+        return self._members.get(guild_id, {}).get(user_id)
+
+    def guild_members(self, guild_id: int) -> list[Member]:
+        return list(self._members.get(guild_id, {}).values())
+
+    def presence(self, guild_id: int, user_id: int) -> Presence | None:
+        """A member's presence when the cache keeps presences; None when offline."""
+        return self._presences.get(guild_id, {}).get(user_id)
+
+    def guild_presences(self, guild_id: int) -> list[Presence]:
+        """The presences of the guild's members who are not offline."""
+        return list(self._presences.get(guild_id, {}).values())
+
+    def user(self, id: int) -> User | None:
+        """The bot's user, or the user of a cached member."""
+        current = self._current
+        if current is not None and current.id == id:
+            return current
+        for members in self._members.values():
+            member = members.get(id)
+            if member is not None:
+                return member.user
+        return None
 
     def message(self, id: int) -> CachedMessage | None:
         """One of the latest `max_messages` messages."""
@@ -160,13 +204,14 @@ class Cache:
         return self._compute(guild_id, member, None, None)
 
     def clear(self) -> None:
-        self.user = None
+        self._current = None
         self._guilds.clear()
         self._channels.clear()
         self._guild_channels.clear()
         self._roles.clear()
         self._voice_states.clear()
-        self._me.clear()
+        self._members.clear()
+        self._presences.clear()
         self._messages.clear()
 
     def apply[E: Event](self, event: E) -> E:
@@ -183,16 +228,17 @@ class Cache:
         parent: Channel | None,
     ) -> Permissions | None:
         guild = self._guilds.get(guild_id)
-        member = self._me.get(guild_id) if member is None else member
+        member = self.me(guild_id) if member is None else member
         if guild is None or member is None:
             return None
         return compute_permissions(guild, member, channel, parent=parent)
 
-    def _is_me(self, user: User) -> bool:
-        return self.user is not None and user.id == self.user.id
+    def _keeps(self, user_id: int) -> bool:
+        current = self._current
+        return self._all_members or (current is not None and user_id == current.id)
 
     def _start_session(self, event: Ready) -> Changes:
-        self.user = event.user
+        self._current = event.user
         shard_id, count = (0, 1) if event.shard is None else event.shard
         ended = {id for id in self._guilds if (id >> 22) % count == shard_id}
         for guild_id in ended:
@@ -219,11 +265,15 @@ class Cache:
             self._store_channel(_in_guild(channel, guild_id))
         for state in event.voice_states:
             self._store_voice_state(msgspec.structs.replace(state, guild_id=guild_id))
-        user = self.user
-        if user is not None:
-            me = next((m for m in event.members if m.user.id == user.id), None)
-            if me is not None:
-                self._me[guild_id] = _stored(me)
+        self._members[guild_id] = {
+            member.user.id: _stored(member)
+            for member in event.members
+            if self._keeps(member.user.id)
+        }
+        self._presences[guild_id] = {}
+        if self._keeps_presences:
+            for presence in event.presences:
+                self._store_presence(guild_id, presence)
         return None
 
     def _update_guild(self, event: GuildUpdate) -> Changes:
@@ -264,7 +314,8 @@ class Cache:
         for role in () if guild is None else guild.roles:
             self._roles.pop(role.id, None)
         self._voice_states.pop(guild_id, None)
-        self._me.pop(guild_id, None)
+        self._members.pop(guild_id, None)
+        self._presences.pop(guild_id, None)
 
     def _create_channel(self, event: ChannelCreate | ThreadCreate) -> Changes:
         self._store_channel(event.channel)
@@ -332,7 +383,7 @@ class Cache:
 
     def _leave_thread(self, event: ThreadMembersUpdate) -> Changes:
         thread = self._channels.get(event.id)
-        user = self.user
+        user = self._current
         if (
             thread is not None
             and thread.type is ChannelType.PRIVATE_THREAD
@@ -387,8 +438,8 @@ class Cache:
         return {"old": guild.stickers}
 
     def _update_user(self, event: UserUpdate) -> Changes:
-        old = self.user
-        self.user = _stored(event.user)
+        old = self._current
+        self._current = _stored(event.user)
         return {"old": old}
 
     def _update_voice_state(self, event: VoiceStateUpdate) -> Changes:
@@ -408,13 +459,17 @@ class Cache:
 
     def _join(self, event: MemberJoin) -> Changes:
         self._count_member(event.guild_id, 1)
-        if self._is_me(event.member.user):
-            self._me[event.guild_id] = _stored(event.member)
+        members = self._members.get(event.guild_id)
+        if members is not None and self._keeps(event.member.user.id):
+            members[event.member.user.id] = _stored(event.member)
         return None
 
     def _leave(self, event: MemberRemove) -> Changes:
         self._count_member(event.guild_id, -1)
-        return None
+        self._presences.get(event.guild_id, {}).pop(event.user.id, None)
+        return {
+            "member": self._members.get(event.guild_id, {}).pop(event.user.id, None)
+        }
 
     def _count_member(self, guild_id: int, change: int) -> None:
         cached = self._guilds.get(guild_id)
@@ -423,11 +478,12 @@ class Cache:
                 cached, member_count=cached.member_count + change
             )
 
-    def _update_me(self, event: MemberUpdate) -> Changes:
-        me = self._me.get(event.guild_id)
-        if me is not None and self._is_me(event.user):
-            self._me[event.guild_id] = msgspec.structs.replace(
-                me,
+    def _update_member(self, event: MemberUpdate) -> Changes:
+        members = self._members.get(event.guild_id, {})
+        old = members.get(event.user.id)
+        if old is not None:
+            members[old.user.id] = msgspec.structs.replace(
+                old,
                 user=event.user,
                 roles=event.roles,
                 nick=event.nick,
@@ -435,15 +491,37 @@ class Cache:
                 banner=event.banner,
                 joined_at=event.joined_at,
                 premium_since=event.premium_since,
-                deaf=me.deaf if event.deaf is None else event.deaf,
-                mute=me.mute if event.mute is None else event.mute,
+                deaf=old.deaf if event.deaf is None else event.deaf,
+                mute=old.mute if event.mute is None else event.mute,
                 pending=event.pending,
                 communication_disabled_until=event.communication_disabled_until,
                 flags=event.flags,
                 avatar_decoration_data=event.avatar_decoration_data,
                 collectibles=event.collectibles,
             )
+        return {"old": old}
+
+    def _store_chunk(self, event: MembersChunk) -> Changes:
+        members = self._members.get(event.guild_id)
+        if members is not None and self._all_members:
+            members |= {member.user.id: _stored(member) for member in event.members}
+        if self._keeps_presences:
+            for presence in event.presences:
+                self._store_presence(event.guild_id, presence)
         return None
+
+    def _update_presence(self, event: PresenceUpdate) -> Changes:
+        return {"old": self._store_presence(event.guild_id, event.presence)}
+
+    def _store_presence(self, guild_id: int, presence: Presence) -> Presence | None:
+        presences = self._presences.get(guild_id)
+        if presences is None:
+            return None
+        if presence.status is Status.OFFLINE:
+            return presences.pop(presence.user.id, None)
+        old = presences.get(presence.user.id)
+        presences[presence.user.id] = _stored(presence)
+        return old
 
     def _create_message(self, event: MessageCreate) -> Changes:
         self._messages[event.message.id] = _stored(event.message)

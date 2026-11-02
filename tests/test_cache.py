@@ -5,15 +5,18 @@ from typing import Any
 import msgspec
 import pytest
 
-from bostie import Permissions
+from bostie import Permissions, Status
 from bostie.cache import Cache
 from bostie.events import (
     EVENTS,
     EmojisUpdate,
     Event,
+    MemberRemove,
+    MemberUpdate,
     MessageDelete,
     MessageDeleteBulk,
     MessageUpdate,
+    PresenceUpdate,
     StickersUpdate,
     ThreadDelete,
     ThreadUpdate,
@@ -32,6 +35,10 @@ ADMIN_ROLE = 1335174050611331073
 BOT_ROLE = 1335180342067331073
 OWNER = 308882807193731073
 BOT_USER = msgspec.json.decode((EVENT_FIXTURES / "READY.json").read_bytes())["user"]
+BOT = int(BOT_USER["id"])
+MODERATOR = 820774541721731073
+SUPPORT = 613374681415811073
+NEWCOMER = 1562134550937731073
 
 
 def event(fixture: str, **changes: Any) -> Event:
@@ -61,9 +68,10 @@ def channel_ids(cache: Cache) -> set[int]:
 
 def test_guild_create_fills_guild_channels_threads_and_roles(cache: Cache) -> None:
     guild = cache.guild(GUILD)
+    bot = cache.user(BOT)
 
-    assert cache.user is not None
-    assert cache.user.username == "bostie-test"
+    assert bot is not None
+    assert bot.username == "bostie-test"
     assert guild is not None
     assert guild.name == "bostie test"
     assert cache.guilds() == [guild]
@@ -302,10 +310,11 @@ def test_expression_updates_replace_the_guilds_and_carry_the_old_ones(
 
 def test_user_update_replaces_the_bot_user(cache: Cache) -> None:
     cache.apply(event("USER_UPDATE"))
+    bot = cache.user(BOT)
 
-    assert cache.user is not None
-    assert cache.user.username == "bostie-renamed"
-    assert cache.user.raw_json is None
+    assert bot is not None
+    assert bot.username == "bostie-renamed"
+    assert bot.raw_json is None
 
 
 def test_a_ready_drops_only_the_guilds_of_its_shard(cache: Cache) -> None:
@@ -322,7 +331,7 @@ def test_a_ready_drops_only_the_guilds_of_its_shard(cache: Cache) -> None:
     assert cache.channel(GENERAL) is None
     assert cache.role(ADMIN_ROLE) is None
     assert cache.me(GUILD) is None
-    assert cache.user is not None
+    assert cache.user(BOT) is not None
 
 
 @pytest.mark.parametrize(
@@ -338,7 +347,7 @@ def test_a_ready_drops_only_the_guilds_of_its_shard(cache: Cache) -> None:
             "role",
             lambda cache: cache.role(ADMIN_ROLE),
         ),
-        ("USER_UPDATE", {}, "old", lambda cache: cache.user),
+        ("USER_UPDATE", {}, "old", lambda cache: cache.user(BOT)),
     ],
 )
 def test_update_and_delete_events_carry_what_the_cache_held(
@@ -393,14 +402,65 @@ def test_the_bots_member_follows_only_its_own_updates(cache: Cache) -> None:
     renamed = cache.me(GUILD)
 
     assert joined is not None
-    assert (joined.user.id, joined.roles) == (int(BOT_USER["id"]), (BOT_ROLE,))
+    assert (joined.user.id, joined.roles) == (BOT, (BOT_ROLE,))
     assert other == joined
+    assert (cache.guild_members(GUILD), cache.user(MODERATOR)) == ([renamed], None)
     assert renamed is not None
     assert (renamed.nick, renamed.roles, renamed.deaf) == (
         "linus (timed out)",
         (),
         False,
     )
+
+
+def test_the_member_cache_follows_creates_joins_updates_chunks_and_leaves() -> None:
+    cache = Cache(members=True)
+    cache.apply(event("READY"))
+    cache.apply(event("GUILD_CREATE"))
+    created = {member.id for member in cache.guild_members(GUILD)}
+    moderator = cache.member(GUILD, MODERATOR)
+
+    cache.apply(event("GUILD_MEMBER_ADD"))
+    joined = cache.member(GUILD, NEWCOMER)
+    updated = applied(cache, MemberUpdate, "GUILD_MEMBER_UPDATE")
+    removed = applied(cache, MemberRemove, "GUILD_MEMBER_REMOVE")
+    cache.apply(event("GUILD_MEMBERS_CHUNK", members=[updated.raw | {"nick": None}]))
+    chunked = cache.member(GUILD, MODERATOR)
+
+    assert created == {OWNER, SUPPORT, MODERATOR, BOT}
+    assert joined is not None
+    assert joined.raw_json is None
+    assert (updated.old, removed.member) == (moderator, joined)
+    assert cache.member(GUILD, NEWCOMER) is None
+    assert chunked is not None
+    assert chunked.nick is None
+    assert cache.user(MODERATOR) == chunked.user
+    assert cache.me(GUILD) == cache.member(GUILD, BOT)
+
+
+def test_the_presence_cache_drops_offline_members() -> None:
+    cache = Cache(presences=True)
+    cache.apply(event("READY"))
+    cache.apply(event("GUILD_CREATE"))
+    created = {presence.user.id for presence in cache.guild_presences(GUILD)}
+    support = cache.presence(GUILD, SUPPORT)
+
+    updated = applied(cache, PresenceUpdate, "PRESENCE_UPDATE")
+    offline = applied(cache, PresenceUpdate, "PRESENCE_UPDATE", status="offline")
+    cache.apply(event("GUILD_MEMBERS_CHUNK"))
+    moderator = cache.presence(GUILD, MODERATOR)
+
+    assert created == {OWNER, SUPPORT, BOT}
+    assert support is not None
+    assert updated.old == support
+    assert offline.old is not None
+    assert offline.old.status is Status.DND
+    assert cache.presence(GUILD, SUPPORT) is None
+    assert moderator is not None
+    assert moderator.status is Status.IDLE
+    assert cache.member(GUILD, MODERATOR) is None
+    assert {"PRESENCE_UPDATE", "GUILD_MEMBERS_CHUNK"} <= cache.names
+    assert {"PRESENCE_UPDATE", "GUILD_MEMBERS_CHUNK"}.isdisjoint(Cache().names)
 
 
 def test_permissions_come_from_the_cached_guild_roles_and_overwrites(

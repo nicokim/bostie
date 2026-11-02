@@ -516,7 +516,10 @@ class MemberJoin(Event, kw_only=True):
 
 
 class MemberUpdate(Event, kw_only=True):
-    """A member changed; without GUILD_MEMBERS only the bot's own updates arrive."""
+    """A member changed; `old` is the cached member before the change.
+
+    Without GUILD_MEMBERS only the bot's own updates arrive.
+    """
 
     NAME = "GUILD_MEMBER_UPDATE"
     INTENTS = Intents.GUILD_MEMBERS
@@ -536,14 +539,18 @@ class MemberUpdate(Event, kw_only=True):
     flags: MemberFlags = MemberFlags(0)
     avatar_decoration_data: AvatarDecorationData | None = None
     collectibles: Collectibles | None = None
+    old: Member | None = None
 
 
 class MemberRemove(Event, kw_only=True):
+    """A member left or was removed; `member` is the cached one."""
+
     NAME = "GUILD_MEMBER_REMOVE"
     INTENTS = Intents.GUILD_MEMBERS
 
     guild_id: int
     user: User
+    member: Member | None = None
 
 
 class InteractionCreate(Event, kw_only=True):
@@ -925,13 +932,14 @@ class _PresencePayload(Presence, kw_only=True):
 
 
 class PresenceUpdate(Event, kw_only=True):
-    """A member's status, activities or user changed."""
+    """A member's status, activities or user changed; `old` is the cached presence."""
 
     NAME = "PRESENCE_UPDATE"
     INTENTS = Intents.GUILD_PRESENCES
 
     guild_id: int
     presence: Presence
+    old: Presence | None = None
 
     @classmethod
     @override

@@ -44,7 +44,12 @@ from bostie.context import (
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents, Status
-from bostie.errors import MemberRequestRateLimited, StateError, TransportError
+from bostie.errors import (
+    MemberRequestRateLimited,
+    MissingIntent,
+    StateError,
+    TransportError,
+)
 from bostie.events import (
     EVENTS,
     BotEvent,
@@ -186,6 +191,9 @@ class Bot(Router):
         auto_defer: float | None = 2.5,
         cache: bool = True,
         max_messages: int = 0,
+        members: bool = False,
+        chunk_members: bool = True,
+        presences: bool = False,
         guild_ready_timeout: float = 2.0,
         large_threshold: int = LARGE_THRESHOLD.start,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
@@ -201,15 +209,24 @@ class Bot(Router):
         before_identify: Callable[[int], Awaitable[object]] | None = None,
     ) -> None:
         super().__init__()
-        if max_messages and not cache:
-            raise ValueError("max_messages needs cache=True")
+        for name, value in (
+            ("max_messages", max_messages),
+            ("members", members),
+            ("presences", presences),
+        ):
+            if value and not cache:
+                raise ValueError(f"{name} needs cache=True")
+        if members and not intents & Intents.GUILD_MEMBERS:
+            raise MissingIntent("members=True needs Intents.GUILD_MEMBERS")
+        if presences and not intents & Intents.GUILD_PRESENCES:
+            raise MissingIntent("presences=True needs Intents.GUILD_PRESENCES")
         if large_threshold not in LARGE_THRESHOLD:
             raise ValueError(
                 f"large_threshold must be 50 to 250, got {large_threshold}"
             )
         self._shard_count = shard_count
         self._shard_ids = _shard_ids(shard_count, shard_ids)
-        self.cache = Cache(max_messages)
+        self.cache = Cache(max_messages, members=members, presences=presences)
         self.voice = VoiceManager(self, voice)
         self.user: User | None = None
         self.application_id: int | None = None
@@ -219,6 +236,8 @@ class Bot(Router):
         self.auto_defer = auto_defer
         self._caching = cache
         self._guild_ready_timeout = guild_ready_timeout
+        self._chunk_members = members and chunk_members
+        self._presences_cached = presences
         self._large_threshold = large_threshold
         self._before_identify = before_identify
         self._allowed_mentions = allowed_mentions
@@ -346,6 +365,13 @@ class Bot(Router):
                     self._shard_ready,
                     guilds=bool(self._intents & Intents.GUILDS),
                     timeout=self._guild_ready_timeout,
+                    tasks=self._tasks,
+                    chunk=partial(
+                        self.request_members, presences=self._presences_cached
+                    )
+                    if self._chunk_members
+                    else None,
+                    small_guilds_complete=bool(self._intents & Intents.GUILD_PRESENCES),
                 )
                 application = await http.request("GET", "/applications/@me")
                 self.application_id = int(application["id"])

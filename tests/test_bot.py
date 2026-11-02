@@ -235,6 +235,9 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
     ("options", "error", "match"),
     [
         ({"cache": False, "max_messages": 10}, ValueError, "needs cache=True"),
+        ({"cache": False, "presences": True}, ValueError, "needs cache=True"),
+        ({"members": True}, MissingIntent, "GUILD_MEMBERS"),
+        ({"presences": True}, MissingIntent, "GUILD_PRESENCES"),
         ({"large_threshold": 49}, ValueError, "50 to 250"),
         ({"large_threshold": 251}, ValueError, "50 to 250"),
     ],
@@ -770,6 +773,52 @@ def test_startup_waits_for_the_ready_guilds_and_sends_started_once() -> None:
             (int(joined), True),
         ]
         assert not bot.is_ready
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("intents", "large", "chunked"),
+    [
+        (Intents.GUILD_MEMBERS, False, True),
+        (Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES, True, True),
+        (Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES, False, False),
+    ],
+)
+def test_a_member_cache_asks_for_missing_members_before_the_shard_is_ready(
+    intents: Intents, large: bool, chunked: bool
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.ready_guilds = [GUILD]
+        presences = Intents.GUILD_PRESENCES in intents
+        bot = Bot(
+            api_url=fake.api_url,
+            intents=Intents.DEFAULT | intents,
+            members=True,
+            presences=presences,
+        )
+        started = asyncio.create_task(bot.start(fake.token))
+        await fake.next_identify()
+        await fake.dispatch("GUILD_CREATE", payloads.guild(large=large))
+        if chunked:
+            request = await sent_op(fake, 8)
+            waiting = bot.is_ready
+            chunk = payloads.fixture("events/GUILD_MEMBERS_CHUNK")
+            members = [payloads.member(user=payloads.user(id=str(GUILD + 1)))]
+            await fake.dispatch(
+                "GUILD_MEMBERS_CHUNK",
+                chunk | {"members": members, "nonce": request["nonce"]},
+            )
+            assert not waiting
+            assert (request["query"], request["limit"]) == ("", 0)
+            assert request["presences"] is presences
+        await bot.wait_until_ready()
+        cached = bot.cache.member(GUILD, GUILD + 1)
+        await bot.close()
+        await started
+
+        assert (cached is not None) is chunked
+        assert len(bot.cache.guild_members(GUILD)) == 4 + chunked
 
     run(scenario)
 

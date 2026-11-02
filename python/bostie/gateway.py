@@ -3,13 +3,14 @@ import contextlib
 import logging
 import secrets
 import sys
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypedDict
 
 import msgspec
 
+from bostie._aio import spawn
 from bostie._bridge import Bridge, StatusDelivery
 from bostie.activity import ActivityDict
 from bostie.enums import Intents, Status
@@ -17,6 +18,7 @@ from bostie.errors import (
     BostieError,
     GatewayClosed,
     InvalidToken,
+    MemberRequestRateLimited,
     MissingIntent,
     PrivilegedIntentsRequired,
     ShardingRequired,
@@ -340,6 +342,7 @@ def _close_error(code: int, reason: str) -> BostieError:
 class _GuildPresence(msgspec.Struct):
     id: int
     unavailable: bool = False
+    large: bool = False
 
 
 class _ReadyGuilds(msgspec.Struct):
@@ -358,6 +361,10 @@ def _decoded[S: msgspec.Struct](cls: type[S], data: bytes) -> S | None:
 class _ShardGuilds:
     known: set[int] = field(default_factory=set[int])
     pending: set[int] = field(default_factory=set[int])
+    chunking: set[int] = field(default_factory=set[int])
+    queued: set[int] = field(default_factory=set[int])
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    generation: int = 0
     last: float = 0.0
     timer: asyncio.TimerHandle | None = None
     session: bool = False
@@ -365,7 +372,11 @@ class _ShardGuilds:
 
 
 class Readiness:
-    """A shard is ready once its READY's guilds arrive, or none for `timeout` s."""
+    """A shard is ready once its READY's guilds arrive, or none for `timeout` s.
+
+    With `chunk`, a guild whose GUILD_CREATE leaves members out arrives once
+    `chunk(guild_id)` has asked for all of them, one guild at a time per shard.
+    """
 
     def __init__(
         self,
@@ -374,11 +385,17 @@ class Readiness:
         *,
         guilds: bool,
         timeout: float,
+        tasks: set[asyncio.Task[None]],
+        chunk: Callable[[int], Awaitable[object]] | None = None,
+        small_guilds_complete: bool = False,
     ) -> None:
         self._shards = {shard_id: _ShardGuilds() for shard_id in shard_ids}
         self._on_ready = on_ready
         self._guilds = guilds
         self._timeout = timeout
+        self._tasks = tasks
+        self._chunk = chunk
+        self._small_guilds_complete = small_guilds_complete
 
     def renewing(self, shard_id: int) -> bool:
         """Whether the shard lost its session and has no READY for a new one yet."""
@@ -391,6 +408,9 @@ class Readiness:
         ids = set[int]() if ready is None else {guild.id for guild in ready.guilds}
         shard.known = ids
         shard.pending = set(ids) if self._guilds else set()
+        shard.chunking.clear()
+        shard.queued.clear()
+        shard.generation += 1
         shard.session = True
         shard.renewing = False
         self._cancel(shard)
@@ -408,7 +428,19 @@ class Readiness:
             return False, False
         joined = not guild.unavailable and guild.id not in shard.known
         shard.known.add(guild.id)
-        return joined, self._arrived(shard, guild.id)
+        chunk = self._chunk
+        if chunk is None or guild.unavailable or not self._lacks_members(guild):
+            return joined, self._arrived(shard, guild.id)
+        if guild.id in shard.pending:
+            shard.pending.discard(guild.id)
+            shard.chunking.add(guild.id)
+            shard.last = asyncio.get_running_loop().time()
+        shard.queued.add(guild.id)
+        spawn(
+            self._tasks,
+            self._chunk_guild(shard_id, guild.id, shard.generation, chunk),
+        )
+        return joined, False
 
     def deleted(self, shard_id: int, data: bytes) -> bool:
         """Note a GUILD_DELETE; True when the shard is now ready."""
@@ -431,12 +463,37 @@ class Readiness:
         for shard in self._shards.values():
             self._cancel(shard)
 
+    def _lacks_members(self, guild: _GuildPresence) -> bool:
+        return guild.large or not self._small_guilds_complete
+
+    async def _chunk_guild(
+        self,
+        shard_id: int,
+        guild_id: int,
+        generation: int,
+        chunk: Callable[[int], Awaitable[object]],
+    ) -> None:
+        shard = self._shards[shard_id]
+        async with shard.lock:
+            if shard.generation != generation or guild_id not in shard.queued:
+                return
+            shard.queued.discard(guild_id)
+            if not await _request_all(chunk, guild_id):
+                return
+        if shard.generation == generation and guild_id in shard.chunking:
+            shard.chunking.discard(guild_id)
+            if self._settled(shard):
+                self._on_ready(shard_id)
+
     def _arrived(self, shard: _ShardGuilds, guild_id: int) -> bool:
         if guild_id not in shard.pending:
             return False
         shard.pending.discard(guild_id)
         shard.last = asyncio.get_running_loop().time()
-        if shard.pending:
+        return self._settled(shard)
+
+    def _settled(self, shard: _ShardGuilds) -> bool:
+        if shard.pending or shard.chunking:
             return False
         self._cancel(shard)
         return True
@@ -453,10 +510,31 @@ class Readiness:
             self._wait(shard_id, left)
         elif shard.pending:
             shard.pending.clear()
-            self._on_ready(shard_id)
+            if not shard.chunking:
+                self._on_ready(shard_id)
 
     @staticmethod
     def _cancel(shard: _ShardGuilds) -> None:
         if shard.timer is not None:
             shard.timer.cancel()
             shard.timer = None
+
+
+async def _request_all(
+    chunk: Callable[[int], Awaitable[object]], guild_id: int
+) -> bool:
+    while True:
+        try:
+            await chunk(guild_id)
+        except MemberRequestRateLimited as limited:
+            await asyncio.sleep(limited.retry_after)
+        except StateError:
+            return False
+        except TimeoutError:
+            log.warning(
+                "the members of guild %d stopped arriving; the cache lacks some",
+                guild_id,
+            )
+            return True
+        else:
+            return True
