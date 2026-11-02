@@ -8,6 +8,7 @@ import time
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
+    Awaitable,
     Callable,
     Coroutine,
     Iterable,
@@ -194,6 +195,7 @@ class Bot(Router):
         voice: Defaults = DEFAULT_VOICE,
         shard_count: int | Literal["auto"] = "auto",
         shard_ids: Iterable[int] | Literal["all"] = "all",
+        before_identify: Callable[[int], Awaitable[object]] | None = None,
     ) -> None:
         super().__init__()
         if max_messages and not cache:
@@ -210,6 +212,7 @@ class Bot(Router):
         self.auto_defer = auto_defer
         self._caching = cache
         self._guild_ready_timeout = guild_ready_timeout
+        self._before_identify = before_identify
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
             {
@@ -346,6 +349,8 @@ class Bot(Router):
                     )
                 gateway._filter(self._dispatch_names())
                 gateway._identify_limit(info["session_start_limit"])
+                if self._before_identify is not None:
+                    gateway._gate_identifies()
                 await gateway._start(info["url"], self._presence)
             except (TransportError, StateError):
                 if self._closing is None:
@@ -619,6 +624,8 @@ class Bot(Router):
                         shard_id=shard_id, code=code, reason=reason, resuming=resuming
                     )
                 )
+            case ("identify", shard_id, request):
+                spawn(self._tasks, self._approve_identify(shard_id, request))
             case ("stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway._handle(delivery)
             case (
@@ -637,6 +644,17 @@ class Bot(Router):
                 *_,
             ):
                 self.voice._handle(delivery)
+
+    async def _approve_identify(self, shard_id: int, request: int) -> None:
+        if self._before_identify is not None:
+            try:
+                await self._before_identify(shard_id)
+            except Exception:
+                log.exception(
+                    "before_identify raised for shard %d; it identifies anyway",
+                    shard_id,
+                )
+        self.gateway._approve_identify(shard_id, request)
 
     def _end_session(self, shard_id: int) -> None:
         if self._readiness is None or not self._readiness.ended(shard_id):

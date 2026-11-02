@@ -265,6 +265,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
 - `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
 - `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `Started` waits for every shard here, and each event carries its `shard_id`.
+- `before_identify`: an async function that gets a shard id before each identify of that shard and returns once it may identify. Processes of one bot can share Discord's `max_concurrency` through it; an exception is logged and the shard identifies anyway.
 
 ## Errors
 

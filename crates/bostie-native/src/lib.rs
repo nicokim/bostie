@@ -84,6 +84,16 @@ impl NativeCore {
         })?)
     }
 
+    fn gateway_gate_identifies(&self) -> Result<()> {
+        Ok(self.0.gateway_gate_identifies()?)
+    }
+
+    fn gateway_approve_identify(&self, shard_id: u32, request: u64) -> Result<()> {
+        Ok(self
+            .0
+            .gateway_approve_identify(ShardId::from(shard_id), request)?)
+    }
+
     fn gateway_start(&self, shard_id: u32, url: &str, identify: Vec<u8>) -> Result<()> {
         Ok(self
             .0
@@ -412,6 +422,9 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
             shard,
             queued_bytes,
         } => (intern!(py, "backpressure"), u32::from(shard), queued_bytes).into_bound_py_any(py),
+        Delivery::IdentifyRequest { shard, request } => {
+            (intern!(py, "identify"), u32::from(shard), request).into_bound_py_any(py)
+        }
         Delivery::InvalidRequests { count } => {
             (intern!(py, "invalid_requests"), count).into_bound_py_any(py)
         }

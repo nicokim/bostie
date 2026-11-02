@@ -9,7 +9,7 @@ mod shard;
 mod tests;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -48,6 +48,7 @@ struct Shared {
     connector: Connector,
     filter: RwLock<Filter>,
     identify: IdentifyGate,
+    identify_gated: AtomicBool,
     rest: Weak<Rest>,
     tap: Arc<GatewayTap>,
     limits: Limits,
@@ -92,6 +93,7 @@ impl Gateway {
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 filter: RwLock::new(None),
                 identify: IdentifyGate::new(limits.identify_spacing),
+                identify_gated: AtomicBool::new(false),
                 rest,
                 tap,
                 limits,
@@ -102,6 +104,21 @@ impl Gateway {
 
     pub(crate) fn set_identify_limit(&self, limit: IdentifyLimit) {
         self.shared.identify.seed(limit, Instant::now());
+    }
+
+    pub(crate) fn gate_identifies(&self) {
+        self.shared.identify_gated.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn approve_identify(&self, shard: ShardId, request: u64) -> Result<(), CoreError> {
+        self.with_running(shard, |handle| {
+            handle
+                .signals
+                .approved_request
+                .fetch_max(request, Ordering::Release);
+            handle.signals.approved.notify_one();
+            Ok(())
+        })
     }
 
     pub(crate) fn start(

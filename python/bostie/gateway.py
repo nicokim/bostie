@@ -190,6 +190,13 @@ class GatewayClient:
             session_start_limit["max_concurrency"],
         )
 
+    def _gate_identifies(self) -> None:
+        self._bridge.core.gateway_gate_identifies()
+
+    def _approve_identify(self, shard_id: int, request: int) -> None:
+        with contextlib.suppress(StateError):
+            self._bridge.core.gateway_approve_identify(shard_id, request)
+
     async def _start(self, url: str, presence: Mapping[str, Any]) -> None:
         stopped = self._bridge.create_future()
         for shard_id in self._shards:

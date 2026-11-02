@@ -134,6 +134,17 @@ impl Core {
         Ok(())
     }
 
+    pub fn gateway_gate_identifies(&self) -> Result<(), CoreError> {
+        self.owner.check()?;
+        self.gateway.gate_identifies();
+        Ok(())
+    }
+
+    pub fn gateway_approve_identify(&self, shard: ShardId, request: u64) -> Result<(), CoreError> {
+        self.owner.check()?;
+        self.gateway.approve_identify(shard, request)
+    }
+
     pub fn gateway_start(
         &self,
         shard: ShardId,

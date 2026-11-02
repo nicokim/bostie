@@ -32,7 +32,9 @@ type StatusDelivery = (
     | _native.BackpressureDelivery
     | _native.InvalidRequestsDelivery
 )
-type GatewayDelivery = _native.DispatchDelivery | StatusDelivery | VoiceDelivery
+type GatewayDelivery = (
+    _native.DispatchDelivery | StatusDelivery | _native.IdentifyDelivery | VoiceDelivery
+)
 type OnGateway = Callable[[GatewayDelivery, float], object]
 
 log = logging.getLogger("bostie.bridge")

@@ -46,6 +46,10 @@ pub enum Delivery {
         shard: ShardId,
         queued_bytes: usize,
     },
+    IdentifyRequest {
+        shard: ShardId,
+        request: u64,
+    },
     InvalidRequests {
         count: u32,
     },

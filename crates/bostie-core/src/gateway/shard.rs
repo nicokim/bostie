@@ -45,6 +45,8 @@ pub(super) struct Signals {
     pub(super) identify: Mutex<Bytes>,
     pub(super) close: Notify,
     pub(super) reconnect: Notify,
+    pub(super) approved: Notify,
+    pub(super) approved_request: AtomicU64,
     pub(super) latency: AtomicU64,
     pub(super) stopped: AtomicBool,
 }
@@ -55,6 +57,8 @@ impl Signals {
             identify: Mutex::new(identify),
             close: Notify::new(),
             reconnect: Notify::new(),
+            approved: Notify::new(),
+            approved_request: AtomicU64::new(0),
             latency: AtomicU64::new(UNKNOWN_LATENCY),
             stopped: AtomicBool::new(false),
         }
@@ -122,6 +126,7 @@ struct Connection {
     heartbeat: Option<Heartbeat>,
     limiter: Option<SendLimiter>,
     identify_at: Option<Instant>,
+    awaiting_approval: Option<u64>,
     running: bool,
     held: Option<Held>,
 }
@@ -189,6 +194,7 @@ pub(super) struct Shard {
     signals: Arc<Signals>,
     session: Option<Session>,
     had_session: bool,
+    identify_requests: u64,
     failures: u32,
     base_url_failures: u32,
 }
@@ -209,6 +215,7 @@ impl Shard {
             signals,
             session: None,
             had_session: false,
+            identify_requests: 0,
             failures: 0,
             base_url_failures: 0,
         }
@@ -331,6 +338,7 @@ impl Shard {
             heartbeat: None,
             limiter: None,
             identify_at: None,
+            awaiting_approval: None,
             running: false,
             held: None,
         };
@@ -356,7 +364,10 @@ impl Shard {
                 () = self.signals.reconnect.notified() => Err(Ending::Requested),
                 () = sleep_until(next_tick) => self.on_tick(connection).await,
                 () = sleep_until(connection.identify_at.unwrap_or(now)), if connection.identify_at.is_some() => {
-                    self.send_identify(connection).await
+                    self.identify_due(connection).await
+                }
+                () = self.signals.approved.notified(), if connection.awaiting_approval.is_some() => {
+                    self.on_approval(connection).await
                 }
                 message = connection.socket.next(), if connection.can_read() => {
                     self.on_message(connection, message).await
@@ -403,8 +414,33 @@ impl Shard {
         Ok(())
     }
 
-    async fn send_identify(&mut self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn identify_due(&mut self, connection: &mut Connection) -> Result<(), Ending> {
         connection.identify_at = None;
+        if !self.shared.identify_gated.load(Ordering::Relaxed) {
+            return self.send_identify(connection).await;
+        }
+        self.identify_requests = self.identify_requests.saturating_add(1);
+        connection.awaiting_approval = Some(self.identify_requests);
+        self.push(Delivery::IdentifyRequest {
+            shard: self.id,
+            request: self.identify_requests,
+        });
+        Ok(())
+    }
+
+    async fn on_approval(&mut self, connection: &mut Connection) -> Result<(), Ending> {
+        let approved = self.signals.approved_request.load(Ordering::Acquire);
+        if connection
+            .awaiting_approval
+            .is_none_or(|request| approved < request)
+        {
+            return Ok(());
+        }
+        connection.awaiting_approval = None;
+        self.send_identify(connection).await
+    }
+
+    async fn send_identify(&mut self, connection: &mut Connection) -> Result<(), Ending> {
         if self.had_session {
             while self.commands.try_recv().is_ok() {}
         }

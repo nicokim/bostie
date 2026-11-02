@@ -91,6 +91,7 @@ type DisconnectedDelivery = tuple[Literal["disconnected"], int, int | None, str,
 type StoppedDelivery = tuple[Literal["stopped"], int, int | None, str]
 type BackpressureDelivery = tuple[Literal["backpressure"], int, int]
 type InvalidRequestsDelivery = tuple[Literal["invalid_requests"], int]
+type IdentifyDelivery = tuple[Literal["identify"], int, int]
 type VoiceStateDelivery = tuple[
     Literal["voice_state"],
     int,
@@ -122,6 +123,7 @@ type Delivery = (
     | StoppedDelivery
     | BackpressureDelivery
     | InvalidRequestsDelivery
+    | IdentifyDelivery
     | VoiceStateDelivery
     | VoiceMovedDelivery
     | VoiceDaveDelivery
@@ -173,6 +175,8 @@ class Core:
     def gateway_identify_limit(
         self, remaining: int, total: int, reset_after: float, max_concurrency: int
     ) -> None: ...
+    def gateway_gate_identifies(self) -> None: ...
+    def gateway_approve_identify(self, shard_id: int, request: int) -> None: ...
     def gateway_start(self, shard_id: int, url: str, identify: bytes) -> None: ...
     def gateway_identify(self, shard_id: int, identify: bytes) -> None: ...
     def gateway_send(self, shard_id: int, payload: bytes) -> None: ...

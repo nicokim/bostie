@@ -874,6 +874,28 @@ async fn shards_sharing_the_last_identify_send_one_and_wait_for_the_reset() {
 }
 
 #[tokio::test]
+async fn a_gated_identify_waits_for_the_approval_of_its_own_request() {
+    let mut harness = Harness::new(false);
+    harness.gateway.gate_identifies();
+    harness.start();
+    let mut peer = harness.fake.accept().await;
+    peer.send(&hello(SLOW_HEARTBEAT)).await;
+
+    let delivery = harness.delivery().await;
+    let Delivery::IdentifyRequest { request, .. } = delivery else {
+        panic!("expected an identify request, got {delivery:?}");
+    };
+    harness
+        .gateway
+        .approve_identify(shard(), request - 1)
+        .unwrap();
+    peer.assert_quiet(Duration::from_millis(100)).await;
+    harness.gateway.approve_identify(shard(), request).unwrap();
+
+    assert_identify(&peer.receive().await);
+}
+
+#[tokio::test]
 async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
     let mut harness = Harness::new(false);
     harness.inbox.push(Delivery::Dispatch {
