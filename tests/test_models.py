@@ -58,6 +58,7 @@ from bostie.models import (
     Entitlement,
     FileComponent,
     Guild,
+    GuildTemplate,
     GuildWidget,
     Integration,
     InteractionMetadata,
@@ -170,6 +171,20 @@ def test_a_role_tag_sent_as_null_is_true_and_a_missing_one_false() -> None:
     assert not booster.available_for_purchase
     assert not booster.guild_connections
     assert decode(Role, msgspec.json.encode(ROLE)).tags is None
+
+
+def test_a_template_types_the_guild_it_creates() -> None:
+    template = decode(GuildTemplate, payload("rest/guild_template.json"))
+
+    guild = template.serialized_source_guild
+    (everyone,) = guild.roles
+    category, general = guild.channels
+
+    assert (everyone.id, everyone.name) == (0, "@everyone")
+    assert Permissions.SEND_MESSAGES in everyone.permissions
+    assert category.type is ChannelType.GUILD_CATEGORY
+    assert (general.id, general.parent_id) == (2, category.id)
+    assert guild.system_channel_id == general.id
 
 
 def test_rich_message() -> None:

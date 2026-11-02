@@ -203,7 +203,7 @@ from bostie.models.scheduled_event import (
     ScheduledEventEntityMetadata,
     ScheduledEventUser,
 )
-from bostie.models.template import GuildTemplate
+from bostie.models.template import GuildTemplate, TemplateGuild, TemplateRole
 from bostie.models.user import (
     AvatarDecorationData,
     Collectibles,
@@ -387,6 +387,8 @@ __all__ = [
     "TargetUsersJob",
     "Team",
     "TeamMember",
+    "TemplateGuild",
+    "TemplateRole",
     "TextDisplay",
     "ThreadMember",
     "ThreadMetadata",
