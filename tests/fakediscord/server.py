@@ -118,7 +118,7 @@ class FakeDiscord(VoiceGateway):
     ``voice=True`` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
     ``full=True`` leaves op 4 joins unanswered, as Discord does for a full channel.
     ``mute``, ``deaf`` and ``suppress`` go into every voice state the fake sends for
-    the bot.
+    the bot. ``ready_guilds`` are the guild ids READY lists, each on its own shard.
     """
 
     api_url: str
@@ -145,6 +145,7 @@ class FakeDiscord(VoiceGateway):
         member = payloads.member()
         self.guilds: dict[str, Json] = {guild["id"]: guild}
         self.channels: dict[str, Json] = {channel["id"]: channel}
+        self.ready_guilds: list[int] = []
         self.users: dict[str, Json] = {
             user["id"]: user for user in (payloads.user(), member["user"])
         }
@@ -477,6 +478,11 @@ class FakeDiscord(VoiceGateway):
                 "session_id": session.id,
                 "resume_gateway_url": self._resume_url,
                 "shard": shard,
+                "guilds": [
+                    {"id": str(guild_id), "unavailable": True}
+                    for guild_id in self.ready_guilds
+                    if (guild_id >> 22) % shard[1] == shard[0]
+                ],
             }
             self._append(session, "READY", ready)
             await self._catch_up(connection, session, 0)

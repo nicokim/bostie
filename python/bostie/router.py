@@ -27,7 +27,7 @@ from bostie.commands import (
 from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType
 from bostie.errors import CommandDefinitionError, StateError
-from bostie.events import Event, RawEvent
+from bostie.events import BotEvent, Event, RawEvent
 from bostie.voice.events import VoiceEvent
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 RAW_EVENT_NAME = RawEvent.NAME
 
-type AnyEvent = Event | VoiceEvent
+type AnyEvent = Event | VoiceEvent | BotEvent
 type ListenerCallback = Callable[[Any], Coroutine[Any, Any, None]]
 type EventHandler[E: AnyEvent] = Callable[[E], Coroutine[Any, Any, None]]
 type ErrorHandler = Callable[[Any, Any], Coroutine[Any, Any, None]]
@@ -150,6 +150,17 @@ class Router:
 
         return register
 
+    def remove_listener(self, listener: ListenerCallback) -> None:
+        """Stop calling `listener` for every event it listens to here."""
+        for router in self._chain():
+            for name, listeners in list(router.listeners.items()):
+                kept = [kept for kept in listeners if kept.callback != listener]
+                if kept:
+                    router.listeners[name] = kept
+                else:
+                    del router.listeners[name]
+            router._registered()
+
     def listen_raw[L: ListenerCallback](self, *names: str) -> Callable[[L], L]:
         """Register a listener that gets a RawEvent for each of these dispatch names."""
 
@@ -243,7 +254,10 @@ class Router:
 
     def _listen[L: ListenerCallback](self, listener: L, events: tuple[Any, ...]) -> L:
         for event in events or _annotated_events(listener):
-            if not (isinstance(event, type) and issubclass(event, (Event, VoiceEvent))):
+            if not (
+                isinstance(event, type)
+                and issubclass(event, (Event, VoiceEvent, BotEvent))
+            ):
                 raise TypeError(f"{event!r} is not an event class")
             self._add_listener(
                 event.NAME,
@@ -304,9 +318,9 @@ class Router:
     def _add_listener(self, name: str, listener: Listener) -> None:
         for router in self._chain():
             router.listeners.setdefault(name, []).append(listener)
-            router._registered()
+            router._registered(listener)
 
-    def _registered(self) -> None:
+    def _registered(self, listener: Listener | None = None) -> None:
         pass
 
 

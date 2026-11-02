@@ -3,10 +3,12 @@ import contextlib
 import logging
 import secrets
 import sys
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TypedDict
+
+import msgspec
 
 from bostie._bridge import Bridge, StatusDelivery
 from bostie.activity import ActivityDict
@@ -21,7 +23,7 @@ from bostie.errors import (
     StateError,
 )
 from bostie.models import Member, Presence
-from bostie.models.base import encoder
+from bostie.models.base import decoder, encoder
 
 CLOSE_TIMEOUT = 2.0
 PRESENCE_UPDATE = 3
@@ -306,3 +308,116 @@ def _close_error(code: int, reason: str) -> BostieError:
             f"the gateway closed the connection with code 4004: {reason}"
         )
     return CLOSE_ERRORS.get(code, GatewayClosed)(code, reason)
+
+
+class _GuildPresence(msgspec.Struct):
+    id: int
+    unavailable: bool = False
+
+
+class _ReadyGuilds(msgspec.Struct):
+    guilds: tuple[_GuildPresence, ...] = ()
+
+
+def _decoded[S: msgspec.Struct](cls: type[S], data: bytes) -> S | None:
+    try:
+        decoded: S = decoder(cls).decode(data)
+    except msgspec.ValidationError:
+        return None
+    return decoded
+
+
+@dataclass(slots=True)
+class _ShardGuilds:
+    known: set[int] = field(default_factory=set[int])
+    pending: set[int] = field(default_factory=set[int])
+    last: float = 0.0
+    timer: asyncio.TimerHandle | None = None
+
+
+class Readiness:
+    """A shard is ready once its READY's guilds arrive, or none for `timeout` s."""
+
+    def __init__(
+        self,
+        shard_ids: Iterable[int],
+        on_ready: Callable[[int], object],
+        *,
+        guilds: bool,
+        timeout: float,
+    ) -> None:
+        self._shards = {shard_id: _ShardGuilds() for shard_id in shard_ids}
+        self._on_ready = on_ready
+        self._guilds = guilds
+        self._timeout = timeout
+
+    def ready(self, shard_id: int, data: bytes) -> bool:
+        """Start following a READY; True when it leaves no guild to wait for."""
+        shard = self._shards[shard_id]
+        ready = _decoded(_ReadyGuilds, data)
+        ids = set[int]() if ready is None else {guild.id for guild in ready.guilds}
+        shard.known = ids
+        shard.pending = set(ids) if self._guilds else set()
+        self._cancel(shard)
+        if not shard.pending:
+            return True
+        shard.last = asyncio.get_running_loop().time()
+        self._wait(shard_id, self._timeout)
+        return False
+
+    def created(self, shard_id: int, data: bytes) -> tuple[bool, bool]:
+        """Note a GUILD_CREATE: whether the bot joined, and the shard is now ready."""
+        guild = _decoded(_GuildPresence, data)
+        shard = self._shards[shard_id]
+        if guild is None:
+            return False, False
+        joined = not guild.unavailable and guild.id not in shard.known
+        shard.known.add(guild.id)
+        return joined, self._arrived(shard, guild.id)
+
+    def deleted(self, shard_id: int, data: bytes) -> bool:
+        """Note a GUILD_DELETE; True when the shard is now ready."""
+        guild = _decoded(_GuildPresence, data)
+        shard = self._shards[shard_id]
+        if guild is None:
+            return False
+        if not guild.unavailable:
+            shard.known.discard(guild.id)
+        return self._arrived(shard, guild.id)
+
+    def ended(self, shard_id: int) -> None:
+        self._cancel(self._shards[shard_id])
+
+    def close(self) -> None:
+        for shard in self._shards.values():
+            self._cancel(shard)
+
+    def _arrived(self, shard: _ShardGuilds, guild_id: int) -> bool:
+        if guild_id not in shard.pending:
+            return False
+        shard.pending.discard(guild_id)
+        shard.last = asyncio.get_running_loop().time()
+        if shard.pending:
+            return False
+        self._cancel(shard)
+        return True
+
+    def _wait(self, shard_id: int, delay: float) -> None:
+        loop = asyncio.get_running_loop()
+        self._shards[shard_id].timer = loop.call_later(delay, self._check, shard_id)
+
+    def _check(self, shard_id: int) -> None:
+        shard = self._shards[shard_id]
+        shard.timer = None
+        left = shard.last + self._timeout - asyncio.get_running_loop().time()
+        if left > 0:
+            self._wait(shard_id, left)
+        elif shard.pending:
+            shard.pending.clear()
+            self._on_ready(shard_id)
+
+    @staticmethod
+    def _cancel(shard: _ShardGuilds) -> None:
+        if shard.timer is not None:
+            shard.timer.cancel()
+            shard.timer = None

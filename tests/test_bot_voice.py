@@ -450,7 +450,9 @@ def test_voice_listeners_and_waiters_stay_out_of_the_gateway_filter(
             moved.cancel()
 
         assert {name for names in filters if names for name in names} == {
-            "RATE_LIMITED"
+            "GUILD_CREATE",
+            "GUILD_DELETE",
+            "RATE_LIMITED",
         }
         assert [(change.old, change.new) for change in changes] == [
             (State.CONNECTING, State.READY),

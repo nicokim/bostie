@@ -5,11 +5,20 @@ import os
 import signal
 import threading
 import time
-from collections.abc import Callable, Coroutine, Iterable, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+)
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
 from typing import Any, Literal, Unpack, cast, override
+
+import msgspec
 
 from bostie import sync
 from bostie._aio import spawn
@@ -36,14 +45,23 @@ from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents, Status
 from bostie.errors import MemberRequestRateLimited, StateError, TransportError
 from bostie.events import (
+    BOT_EVENT_NAMES,
     EVENTS,
+    BotEvent,
     Event,
     GatewayRateLimited,
+    GuildCreate,
+    GuildDelete,
     InteractionCreate,
+    ListenerError,
     MembersChunk,
     RawEvent,
     Ready,
     Resumed,
+    ShardDisconnect,
+    ShardReady,
+    Started,
+    Stopping,
     UserUpdate,
     decode_event,
 )
@@ -55,6 +73,7 @@ from bostie.gateway import (
     GatewayClient,
     MemberRequest,
     PresenceOptions,
+    Readiness,
     RequestedMembers,
     member_request,
     presence_fields,
@@ -94,14 +113,17 @@ DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
+type LocalEvent = VoiceEvent | BotEvent
 type MemberAnswer = MembersChunk | GatewayRateLimited
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _Waiter[E: AnyEvent]:
     event: type[E]
     check: Callable[[E], bool] | None
-    future: asyncio.Future[E]
+    queue: asyncio.Queue[E | Exception]
+    once: bool
+    closed: bool = False
 
 
 @dataclass(slots=True)
@@ -110,22 +132,25 @@ class _Dispatch:
     seq: int
     name: str
     data: bytes
+    fields: dict[str, Any] = field(default_factory=dict[str, Any])
     decoded: dict[type[Event], Event | None] = field(
         default_factory=dict[type[Event], Event | None]
     )
 
     def event[E: Event](self, cls: type[E]) -> E | None:
         if cls not in self.decoded:
-            self.decoded[cls] = (
-                RawEvent(
+            if cls is RawEvent:
+                self.decoded[cls] = RawEvent(
                     shard_id=self.shard_id,
                     raw_json=self.data,
                     name=self.name,
                     seq=self.seq,
                 )
-                if cls is RawEvent
-                else decode_event(cls, self.shard_id, self.data)
-            )
+            else:
+                event = decode_event(cls, self.shard_id, self.data)
+                if event is not None and self.fields:
+                    event = msgspec.structs.replace(event, **self.fields)
+                self.decoded[cls] = event
         return cast("E | None", self.decoded[cls])
 
 
@@ -141,6 +166,7 @@ class Bot(Router):
         auto_defer: float | None = 2.5,
         cache: bool = True,
         max_messages: int = 0,
+        guild_ready_timeout: float = 2.0,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
         status: Status = Status.ONLINE,
         activities: Iterable[ActivityDict] = (),
@@ -166,6 +192,7 @@ class Bot(Router):
         self._auto_sync = auto_sync
         self.auto_defer = auto_defer
         self._caching = cache
+        self._guild_ready_timeout = guild_ready_timeout
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
             {
@@ -184,6 +211,7 @@ class Bot(Router):
         self._closing: asyncio.Task[None] | None = None
         self._ready = False
         self._unready: set[int] = set()
+        self._readiness: Readiness | None = None
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -222,6 +250,11 @@ class Bot(Router):
     def latency(self) -> float | None:
         """Mean seconds from a heartbeat to its ACK over the shards, or None."""
         return None if self._gateway is None else self._gateway.latency
+
+    @property
+    def is_ready(self) -> bool:
+        """Whether Started was sent since the last start(): every shard was ready."""
+        return self._ready
 
     def run(
         self,
@@ -279,6 +312,12 @@ class Bot(Router):
                     else self._shard_ids,
                 )
                 self._unready = set(gateway.shard_ids)
+                self._readiness = Readiness(
+                    gateway.shard_ids,
+                    self._shard_ready,
+                    guilds=bool(self._intents & Intents.GUILDS),
+                    timeout=self._guild_ready_timeout,
+                )
                 application = await http.request("GET", "/applications/@me")
                 self.application_id = int(application["id"])
                 if self._auto_sync:
@@ -288,7 +327,6 @@ class Bot(Router):
                         [*self.commands.values(), *self.context_menus.values()],
                         self._dev_guilds,
                     )
-                self._warn_about_privileged_intents()
                 gateway._filter(self._dispatch_names())
                 gateway._identify_limit(info["session_start_limit"])
                 await gateway._start(info["url"], self._presence)
@@ -305,7 +343,7 @@ class Bot(Router):
         await asyncio.shield(self._closing)
 
     async def wait_until_ready(self) -> None:
-        """Wait until every shard got READY since `start()`; StateError if it ends."""
+        """Wait until every shard is ready, as Started says; StateError if it stops."""
         if self._ready:
             return
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -325,14 +363,31 @@ class Bot(Router):
 
         An exception from `check` is raised here; bound the wait with asyncio.timeout().
         """
-        future: asyncio.Future[E] = asyncio.get_running_loop().create_future()
-        waiter = _Waiter(event, check, future)
+        async with self._waiting(event, check, once=True) as events:
+            return await anext(events)
+
+    @contextlib.asynccontextmanager
+    async def stream[E: AnyEvent](
+        self,
+        event: type[E],
+        *,
+        check: Callable[[E], bool] | None = None,
+    ) -> AsyncGenerator[AsyncIterator[E]]:
+        """Queue each `event` passing `check` for `async for` while the block runs."""
+        async with self._waiting(event, check, once=False) as events:
+            yield events
+
+    @contextlib.asynccontextmanager
+    async def _waiting[E: AnyEvent](
+        self, event: type[E], check: Callable[[E], bool] | None, *, once: bool
+    ) -> AsyncGenerator[AsyncIterator[E]]:
+        waiter = _Waiter(event, check, asyncio.Queue[E | Exception](), once)
         waiters = self._waiters.setdefault(event.NAME, [])
         waiters.append(waiter)
         if len(waiters) == 1:
             self._refresh_filter()
         try:
-            return await waiter.future
+            yield _queued(waiter.queue)
         finally:
             waiters.remove(waiter)
             if not waiters:
@@ -405,9 +460,16 @@ class Bot(Router):
             await started
 
     async def _shut_down(self) -> None:
+        if self._ready:
+            running = set(self._tasks)
+            self._emit(Stopping())
+            if stopping := self._tasks - running:
+                await asyncio.wait(stopping, timeout=TASK_CANCEL_TIMEOUT)
         await self.voice.close()
         if self._gateway is not None:
             await self._gateway.close()
+        if self._readiness is not None:
+            self._readiness.close()
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
@@ -422,14 +484,17 @@ class Bot(Router):
     def _stop_ready_waiters(self) -> None:
         for future in self._ready_waiters:
             if not future.done():
-                future.set_exception(StateError("the bot stopped before READY"))
+                future.set_exception(StateError("the bot stopped before it was ready"))
 
     def _dispatch_names(self) -> list[str] | None:
-        names = {*self.listeners, *self._waiters, GatewayRateLimited.NAME} - LOCAL_NAMES
+        names = {*self.listeners, *self._waiters, GatewayRateLimited.NAME}
+        names -= LOCAL_NAMES | BOT_EVENT_NAMES
         if RAW_EVENT_NAME in names:
             return None
         if self._member_requests:
             names.add(MembersChunk.NAME)
+        if self._intents & Intents.GUILDS:
+            names |= {GuildCreate.NAME, GuildDelete.NAME}
         if self._caching:
             names |= self.cache.names
         if (
@@ -446,24 +511,21 @@ class Bot(Router):
             self._gateway._filter(self._dispatch_names())
 
     @override
-    def _registered(self) -> None:
+    def _registered(self, listener: Listener | None = None) -> None:
         self._refresh_filter()
-
-    def _warn_about_privileged_intents(self) -> None:
-        for listeners in self.listeners.values():
-            for listener in listeners:
-                event = listener.event
-                if event is None:
-                    continue
-                missing = event.INTENTS & PRIVILEGED_INTENTS & ~self._intents
-                if missing:
-                    log.warning(
-                        "%s listens to %s, which needs the %s intent; enable it in "
-                        "Bot(intents=...) and in the Developer Portal",
-                        _python_name(listener.callback),
-                        event.NAME,
-                        missing.name,
-                    )
+        event = None if listener is None else listener.event
+        if listener is None or event is None or not event.INTENTS:
+            return
+        if not event.INTENTS & self._intents:
+            privileged = event.INTENTS & PRIVILEGED_INTENTS == event.INTENTS
+            log.warning(
+                "%s listens to %s, which needs the %s intent; add it to "
+                "Bot(intents=...)%s",
+                _python_name(listener.callback),
+                event.NAME,
+                event.INTENTS.name,
+                " and turn it on in the Developer Portal" if privileged else "",
+            )
 
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
         match delivery:
@@ -480,12 +542,19 @@ class Bot(Router):
                         exc_info=True,
                     )
                     self._failed_dispatches.add(name)
-            case ("disconnected", shard_id, _, _, resuming):
+            case ("disconnected", shard_id, code, reason, resuming):
                 if resuming:
                     self._replaying.add(shard_id)
                 else:
                     self._replaying.discard(shard_id)
+                    if self._readiness is not None:
+                        self._readiness.ended(shard_id)
                 self.gateway._handle(delivery)
+                self._emit(
+                    ShardDisconnect(
+                        shard_id=shard_id, code=code, reason=reason, resuming=resuming
+                    )
+                )
             case ("stopped" | "backpressure" | "invalid_requests", *_):
                 self.gateway._handle(delivery)
             case (
@@ -505,18 +574,54 @@ class Bot(Router):
             ):
                 self.voice._handle(delivery)
 
-    def _emit(self, event: VoiceEvent) -> None:
+    def _emit(self, event: LocalEvent) -> None:
         for waiter in self._waiters.get(event.NAME, ()):
-            if not waiter.future.done():
-                _resolve(waiter, event)
+            _resolve(waiter, event)
         for listener in self.listeners.get(event.NAME, ()):
-            spawn(self._tasks, _run_listener(listener, event, event.NAME), eager=True)
+            spawn(
+                self._tasks,
+                self._run_listener(listener, event, event.NAME),
+                eager=True,
+            )
+
+    async def _run_listener(
+        self, listener: Listener, event: AnyEvent, name: str
+    ) -> None:
+        try:
+            await listener.callback(event)
+        except Exception as error:
+            if isinstance(event, ListenerError):
+                log.exception(
+                    "the ListenerError listener %s raised",
+                    _python_name(listener.callback),
+                )
+                return
+            if ListenerError.NAME not in self.listeners:
+                log.exception(
+                    "the listener %s raised on %s",
+                    _python_name(listener.callback),
+                    name,
+                )
+            self._emit(
+                ListenerError(listener=listener.callback, event=event, error=error)
+            )
+
+    def _shard_ready(self, shard_id: int) -> None:
+        self._emit(ShardReady(shard_id=shard_id))
+        self._unready.discard(shard_id)
+        if self._unready or self._ready:
+            return
+        self._ready = True
+        for future in self._ready_waiters:
+            if not future.done():
+                future.set_result(None)
+        self._emit(Started())
 
     def _dispatch(
         self, shard_id: int, seq: int, name: str, data: bytes, received: float
     ) -> None:
         dispatch = _Dispatch(shard_id, seq, name, data)
-        self._follow_session(dispatch)
+        readied = self._follow_session(dispatch)
         self._answer_member_request(dispatch)
         if self._caching and name in self.cache.names:
             cls = EVENTS[name]
@@ -525,8 +630,7 @@ class Bot(Router):
                 dispatch.decoded[cls] = self.cache.apply(cached)
         for key in (name, RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
-                if not waiter.future.done():
-                    _resolve(waiter, dispatch.event(waiter.event))
+                _resolve(waiter, dispatch.event(waiter.event))
         if name == InteractionCreate.NAME:
             created = dispatch.event(InteractionCreate)
             if created is not None:
@@ -541,27 +645,40 @@ class Bot(Router):
                 else cast("type[Event]", listener.event)
             )
             if payload is not None:
-                spawn(self._tasks, _run_listener(listener, payload, name), eager=True)
+                spawn(
+                    self._tasks,
+                    self._run_listener(listener, payload, name),
+                    eager=True,
+                )
+        if readied:
+            self._shard_ready(shard_id)
 
-    def _follow_session(self, dispatch: _Dispatch) -> None:
-        if dispatch.name == Ready.NAME:
-            self._replaying.discard(dispatch.shard_id)
-            ready = dispatch.event(Ready)
-            if ready is not None:
-                self.user = ready.user
-                self.application_id = ready.application.id
-            self._unready.discard(dispatch.shard_id)
-            if not self._unready and not self._ready:
-                self._ready = True
-                for future in self._ready_waiters:
-                    if not future.done():
-                        future.set_result(None)
-        elif dispatch.name == Resumed.NAME:
-            self._replaying.discard(dispatch.shard_id)
-        elif dispatch.name == UserUpdate.NAME:
-            update = dispatch.event(UserUpdate)
-            if update is not None:
-                self.user = update.user
+    def _follow_session(self, dispatch: _Dispatch) -> bool:
+        readiness = self._readiness
+        match dispatch.name:
+            case Ready.NAME:
+                self._replaying.discard(dispatch.shard_id)
+                ready = dispatch.event(Ready)
+                if ready is not None:
+                    self.user = ready.user
+                    self.application_id = ready.application.id
+                if readiness is not None:
+                    return readiness.ready(dispatch.shard_id, dispatch.data)
+            case Resumed.NAME:
+                self._replaying.discard(dispatch.shard_id)
+            case UserUpdate.NAME:
+                update = dispatch.event(UserUpdate)
+                if update is not None:
+                    self.user = update.user
+            case GuildCreate.NAME if readiness is not None:
+                joined, readied = readiness.created(dispatch.shard_id, dispatch.data)
+                dispatch.fields["joined"] = joined
+                return readied
+            case GuildDelete.NAME if readiness is not None:
+                return readiness.deleted(dispatch.shard_id, dispatch.data)
+            case _:
+                pass
+        return False
 
     def _answer_member_request(self, dispatch: _Dispatch) -> None:
         answer: MemberAnswer | None = None
@@ -773,24 +890,25 @@ def _resolve_token(token: str | None) -> str:
 
 
 def _resolve[E: AnyEvent](waiter: _Waiter[E], event: E | None) -> None:
-    if event is None:
+    if event is None or waiter.closed:
         return
     try:
         matched = waiter.check is None or waiter.check(event)
     except Exception as error:
-        waiter.future.set_exception(error)
+        waiter.queue.put_nowait(error)
+        waiter.closed = True
         return
     if matched:
-        waiter.future.set_result(event)
+        waiter.queue.put_nowait(event)
+        waiter.closed = waiter.once
 
 
-async def _run_listener(listener: Listener, event: AnyEvent, name: str) -> None:
-    try:
-        await listener.callback(event)
-    except Exception:
-        log.exception(
-            "the listener %s raised on %s", _python_name(listener.callback), name
-        )
+async def _queued[T](queue: asyncio.Queue[T | Exception]) -> AsyncIterator[T]:
+    while True:
+        item = await queue.get()
+        if isinstance(item, Exception):
+            raise item
+        yield item
 
 
 async def _answer_failure(

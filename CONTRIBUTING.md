@@ -52,7 +52,7 @@ Keep a pull request to one change. Its title goes into the release notes as it i
 Rust needs no change: the core forwards any dispatch name Python asks for.
 
 1. Add a class to `python/bostie/events.py` that subclasses `Event` with `kw_only=True`, and set `NAME` to the dispatch name. `MessageDelete` and `TypingStart` are short ones to copy. msgspec doesn't inherit `kw_only`, so every subclass repeats it.
-2. Set `INTENTS` to the intents Discord needs to send the event. The bot uses it to warn at startup when a listener's [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents) is missing.
+2. Set `INTENTS` to the intents that make Discord send the event, any one of them enough. The bot warns when a listener registers for an event none of its intents delivers.
 3. Add the class to the `EVENTS` registry in the same file.
 4. Save the `d` payload as `tests/fixtures/models/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, ClassVar, Self, dataclass_transform, override
 
@@ -125,12 +126,13 @@ class _GuildCreatePayload(Guild, kw_only=True):
 
 
 class GuildCreate(Event, kw_only=True):
-    """A guild became available or the bot joined it. Its children lack `guild_id`."""
+    """A guild arrived: joined if `joined`, else available; children lack guild_id."""
 
     NAME = "GUILD_CREATE"
     INTENTS = Intents.GUILDS
 
     guild: Guild | UnavailableGuild
+    joined: bool = False
     channels: tuple[Channel, ...] = ()
     threads: tuple[Channel, ...] = ()
     roles: tuple[Role, ...] = ()
@@ -333,6 +335,8 @@ class RoleDelete(Event, kw_only=True):
 
 
 class _MessageEvent(Event, kw_only=True):
+    """Content fields need Intents.MESSAGE_CONTENT, except in DMs and mentions."""
+
     INTENTS = Intents.GUILD_MESSAGES | Intents.DIRECT_MESSAGES
 
     message: Message | WebhookMessage
@@ -515,7 +519,7 @@ class MemberJoin(Event, kw_only=True):
 
 
 class MemberUpdate(Event, kw_only=True):
-    """A member changed, or its user did."""
+    """A member changed; without GUILD_MEMBERS only the bot's own updates arrive."""
 
     NAME = "GUILD_MEMBER_UPDATE"
     INTENTS = Intents.GUILD_MEMBERS
@@ -1120,6 +1124,61 @@ class RawEvent(Event, kw_only=True):
 
     name: str
     seq: int
+
+
+@dataclass_transform(kw_only_default=True, frozen_default=True)
+class BotEvent(msgspec.Struct, kw_only=True, frozen=True):
+    """Base of the events bostie sends about the bot itself, not from Discord."""
+
+    NAME: ClassVar[str]
+    INTENTS: ClassVar[Intents] = Intents(0)
+
+
+class Started(BotEvent, kw_only=True):
+    """Every shard is ready, once per start(); wait_until_ready() returns now."""
+
+    NAME = "bot.started"
+
+
+class Stopping(BotEvent, kw_only=True):
+    """close() began after Started; its listeners finish before the gateway closes."""
+
+    NAME = "bot.stopping"
+
+
+class ShardReady(BotEvent, kw_only=True):
+    """A shard's new session is ready: the guilds its READY listed have arrived."""
+
+    NAME = "shard.ready"
+
+    shard_id: int
+
+
+class ShardDisconnect(BotEvent, kw_only=True):
+    """A shard lost its connection; it resumes the session if `resuming`."""
+
+    NAME = "shard.disconnect"
+
+    shard_id: int
+    code: int | None
+    reason: str
+    resuming: bool
+
+
+class ListenerError(BotEvent, kw_only=True):
+    """A listener raised; without a ListenerError listener the error is logged."""
+
+    NAME = "bot.listener_error"
+
+    listener: Callable[..., Any]
+    event: Any
+    error: Exception
+
+
+BOT_EVENT_NAMES = frozenset(
+    event.NAME
+    for event in (Started, Stopping, ShardReady, ShardDisconnect, ListenerError)
+)
 
 
 EVENTS: dict[str, type[Event]] = {

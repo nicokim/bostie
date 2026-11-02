@@ -45,8 +45,10 @@ from bostie import (
 from bostie.commands import CommandSettings
 from bostie.events import (
     ChannelUpdate,
+    Event,
     GuildCreate,
     InteractionCreate,
+    ListenerError,
     MemberJoin,
     MembersChunk,
     MessageCreate,
@@ -54,6 +56,11 @@ from bostie.events import (
     RawEvent,
     Ready,
     Resumed,
+    ShardDisconnect,
+    ShardReady,
+    Started,
+    Stopping,
+    ThreadMembersUpdate,
     UserUpdate,
 )
 from bostie.gateway import GatewayClient
@@ -65,6 +72,8 @@ USER = OptionType.USER
 MENTIONS = {"parse": ["users", "roles"]}
 EPHEMERAL = 64
 MEMBER_ID = "820774541721731073"
+GUILD = 1335172792320131073
+OUTAGE_GUILD = 1335927767040131073
 
 
 class Unit(Enum):
@@ -212,25 +221,47 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
     run(scenario)
 
 
-def test_startup_warns_about_listeners_whose_privileged_intent_is_off(
+@pytest.mark.parametrize(
+    ("intents", "event", "warning"),
+    [
+        (
+            Intents.DEFAULT,
+            MemberJoin,
+            (
+                "on_event listens to GUILD_MEMBER_ADD, which needs the GUILD_MEMBERS "
+                "intent; add it to Bot(intents=...) and turn it on in the Developer "
+                "Portal"
+            ),
+        ),
+        (
+            Intents.GUILD_MESSAGES,
+            GuildCreate,
+            (
+                "on_event listens to GUILD_CREATE, which needs the GUILDS intent; add "
+                "it to Bot(intents=...)"
+            ),
+        ),
+        (Intents.DEFAULT, ThreadMembersUpdate, None),
+    ],
+)
+def test_a_listener_whose_events_no_intent_delivers_logs_a_warning(
+    intents: Intents,
+    event: type[Event],
+    warning: str | None,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
+    bot = Bot(intents=intents)
+    plugin = Router()
 
-        @bot.listen
-        async def greet(event: MemberJoin) -> None:
-            pass
+    @plugin.listen(event)
+    async def on_event(event: Event) -> None:
+        pass
 
-        async with running(bot, fake):
-            pass
+    bot.include(plugin)
 
-    run(scenario)
-
-    warnings = [record for record in caplog.records if "intent" in record.message]
-    assert len(warnings) == 1
-    assert "greet listens to GUILD_MEMBER_ADD" in warnings[0].message
-    assert "GUILD_MEMBERS" in warnings[0].message
+    assert [
+        record.getMessage().partition("<locals>.")[2] for record in caplog.records
+    ] == ([] if warning is None else [warning])
 
 
 def test_a_slash_command_gets_its_typed_options_and_defaults() -> None:
@@ -612,22 +643,87 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache(
         plugin = Router()
         bot.include(plugin)
         deleted: asyncio.Queue[int] = asyncio.Queue()
+        guilds = ["GUILD_CREATE", "GUILD_DELETE"]
         async with running(bot, fake):
-            assert filters[-1] == ["RATE_LIMITED"]
-            created, _ = await asyncio.gather(
-                bot.wait_for(GuildCreate),
-                fake.dispatch("GUILD_CREATE", payloads.guild()),
+            assert filters[-1] == [*guilds, "RATE_LIMITED"]
+            updated, _ = await asyncio.gather(
+                bot.wait_for(ChannelUpdate),
+                fake.dispatch("CHANNEL_UPDATE", payloads.channel()),
             )
-            assert bot.cache.guild(created.guild.id) is None
-            assert filters[-2:] == [["GUILD_CREATE", "RATE_LIMITED"], ["RATE_LIMITED"]]
+            assert bot.cache.channel(updated.channel.id) is None
+            assert filters[-2:] == [
+                ["CHANNEL_UPDATE", *guilds, "RATE_LIMITED"],
+                [*guilds, "RATE_LIMITED"],
+            ]
 
             @plugin.listen
             async def on_delete(event: MessageDelete) -> None:
                 deleted.put_nowait(event.id)
 
-            assert filters[-1] == ["MESSAGE_DELETE", "RATE_LIMITED"]
+            assert filters[-1] == [*guilds, "MESSAGE_DELETE", "RATE_LIMITED"]
             await fake.dispatch("MESSAGE_DELETE", {"id": "3", "channel_id": "1"})
             assert await deleted.get() == 3
+
+            plugin.remove_listener(on_delete)
+            assert filters[-1] == [*guilds, "RATE_LIMITED"]
+            assert (plugin.listeners, MessageDelete.NAME in bot.listeners) == (
+                {},
+                False,
+            )
+
+    run(scenario)
+
+
+def test_startup_waits_for_the_ready_guilds_and_sends_started_once() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.ready_guilds = [GUILD, OUTAGE_GUILD]
+        bot = Bot(api_url=fake.api_url, guild_ready_timeout=0.05)
+        seen: list[tuple[object, ...]] = []
+
+        @bot.listen(GuildCreate, ShardReady, Started, ShardDisconnect)
+        async def follow(event: Event | ShardReady | Started | ShardDisconnect) -> None:
+            match event:
+                case GuildCreate():
+                    seen.append((event.guild.id, event.joined))
+                case ShardDisconnect():
+                    seen.append((event.code, event.resuming))
+                case _:
+                    seen.append((event.NAME,))
+
+        started = asyncio.create_task(bot.start(fake.token))
+        ready = asyncio.create_task(bot.wait_until_ready())
+        await fake.next_identify()
+        await fake.dispatch("GUILD_CREATE", payloads.guild())
+        waiting = (bot.is_ready, ready.done())
+        await fake.dispatch(
+            "GUILD_DELETE", {"id": str(OUTAGE_GUILD), "unavailable": True}
+        )
+        await ready
+        assert (waiting, bot.is_ready) == ((False, False), True)
+
+        await fake.close_gateway(4007)
+        await fake.next_identify()
+        renewed = asyncio.ensure_future(bot.wait_for(ShardReady))
+        await fake.dispatch("GUILD_CREATE", payloads.guild())
+        await renewed
+        joined = payloads.snowflake()
+        await asyncio.gather(
+            bot.wait_for(GuildCreate),
+            fake.dispatch("GUILD_CREATE", payloads.guild(id=joined)),
+        )
+        await bot.close()
+        await started
+
+        assert seen == [
+            (GUILD, False),
+            ("shard.ready",),
+            ("bot.started",),
+            (4007, False),
+            (GUILD, False),
+            ("shard.ready",),
+            (int(joined), True),
+        ]
+        assert not bot.is_ready
 
     run(scenario)
 
@@ -729,7 +825,7 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
         waiting = asyncio.create_task(bot.wait_until_ready())
         await bot.close()
         await started
-        with pytest.raises(StateError, match="stopped before READY"):
+        with pytest.raises(StateError, match="stopped before it was ready"):
             await waiting
         assert not fake.connections
 
@@ -739,7 +835,7 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
         ]
         for token, error in failures:
             started = asyncio.create_task(bot.start(token))
-            with pytest.raises(StateError, match="stopped before READY"):
+            with pytest.raises(StateError, match="stopped before it was ready"):
                 await bot.wait_until_ready()
             with pytest.raises(error):
                 await started
@@ -1138,6 +1234,67 @@ def test_a_member_request_whose_chunks_stop_raises_timeout_error() -> None:
             )
             with pytest.raises(TimeoutError):
                 await requested
+
+    run(scenario)
+
+
+def test_stream_queues_matching_events_until_its_block_ends() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            async with bot.stream(MessageDelete, check=lambda e: e.id != 2) as deletes:
+                for id in ("1", "2", "3"):
+                    await fake.dispatch("MESSAGE_DELETE", {"id": id, "channel_id": "1"})
+                received = [(await anext(deletes)).id for _ in range(2)]
+
+            assert received == [1, 3]
+
+    run(scenario)
+
+
+def test_listener_errors_go_to_listener_error_listeners_instead_of_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        reported: asyncio.Queue[ListenerError] = asyncio.Queue()
+
+        @bot.listen
+        async def broken(event: MessageCreate) -> None:
+            raise RuntimeError("listener bug")
+
+        @bot.listen
+        async def report(failure: ListenerError) -> None:
+            reported.put_nowait(failure)
+
+        async with running(bot, fake):
+            await fake.dispatch("MESSAGE_CREATE", payloads.message())
+            failure = await reported.get()
+
+        assert failure.listener is broken
+        assert isinstance(failure.event, MessageCreate)
+        assert str(failure.error) == "listener bug"
+
+    run(scenario)
+
+    assert failures(caplog) == []
+
+
+def test_stopping_listeners_finish_while_the_gateway_is_still_open() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        open_codes: list[int | None] = []
+
+        @bot.listen
+        async def goodbye(event: Stopping) -> None:
+            await asyncio.sleep(0.05)
+            open_codes.append(fake.connections[-1].close_code)
+
+        async with running(bot, fake):
+            pass
+
+        assert open_codes == [None]
+        assert fake.connections[-1].close_code == 1000
 
     run(scenario)
 

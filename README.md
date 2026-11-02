@@ -126,6 +126,21 @@ Everything bostie does not model yet stays reachable:
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
 
+## Events
+
+`@bot.listen` takes the typed events of `bostie.events`. `await bot.wait_for(Event, check=...)` waits for the next one, and `async with bot.stream(Event, check=...) as events:` queues every match for `async for` until the block ends; bound either with `asyncio.timeout()`.
+
+- `Ready` is Discord's READY: one shard started a session, and the guilds it lists arrive afterwards as `GuildCreate` events. It fires again for every new session.
+- `ShardReady` follows once those guilds have arrived, or after `guild_ready_timeout` seconds without one, so the shard's guilds are in `bot.cache`. It too fires for every new session.
+- `Started` fires once per `start()`, when every shard is ready. `await bot.wait_until_ready()` returns at that moment and `bot.is_ready` turns true. `Stopping` fires when `close()` begins after `Started`, and `close()` gives its listeners up to 5 s while the gateway and REST still work.
+- `GuildCreate.joined` is true for a guild the bot was just added to, false for one that became available.
+- Update events carry the object as the cache held it in `old`, and delete events the removed one: `GuildDelete.guild`, `RoleDelete.role`, `ThreadDelete.thread`, `MessageDelete.message`.
+- `ShardDisconnect` says a shard lost its connection, with the close code and whether it resumes the session.
+- An exception in a listener goes to the `ListenerError` listeners, or to the log when there are none. `router.remove_listener(callback)` stops a listener.
+- Registering a listener for an event that none of the bot's intents delivers logs a warning.
+
+`await bot.request_members(guild_id, query=..., limit=...)` or `user_ids=...` asks the gateway for members and gathers every chunk of the answer, with `presences=True` their presences too. Without `query` or `user_ids` it asks for every member, which needs `Intents.GUILD_MEMBERS`; presences need `Intents.GUILD_PRESENCES`. It raises `bostie.MemberRequestRateLimited` with `retry_after` when Discord refuses, and `TimeoutError` when a chunk takes over `timeout` seconds, 30 by default.
+
 ## Voice
 
 ```python
@@ -240,15 +255,16 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 - `dev_guilds`: guild ids to sync commands to. When set, commands sync to these guilds only and global commands are left alone. Leave it empty to sync globally.
 - `auto_sync`: `False` skips the startup sync. `await bot.sync_commands()` syncs again while the bot is running and returns a `bostie.SyncResult` for each scope, saying what differed.
 - `auto_defer`: seconds before an unanswered handler is deferred, or `None` to never defer. `@bot.command(auto_defer=...)` overrides it for one command.
-- `cache`: `False` leaves `bot.cache` empty. By default it keeps guilds, channels, active threads, roles, voice states and the bot's own member in each guild current, but no other members. Update events carry the object as the cache held it in `old`, and delete events the removed one, such as `GuildDelete.guild`. `bot.cache.permissions(channel_id, member)` and `bot.cache.guild_permissions(guild_id, member)` compute a member's permissions from it as Discord does, the bot's own when `member` is left out. `Guild.member_count` follows joins and leaves only with `Intents.GUILD_MEMBERS`. `await bot.request_members(guild_id, query=..., limit=...)` or `user_ids=...` asks the gateway for members and gathers every chunk of the answer, with `presences=True` their presences too. Without `query` or `user_ids` it asks for every member, which needs `Intents.GUILD_MEMBERS`; presences need `Intents.GUILD_PRESENCES`. It raises `bostie.MemberRequestRateLimited` with `retry_after` when Discord refuses, and `TimeoutError` when a chunk takes over `timeout` seconds, 30 by default.
+- `cache`: `False` leaves `bot.cache` empty. By default it keeps guilds, channels, active threads, roles, voice states and the bot's own member in each guild current, but no other members. `bot.cache.permissions(channel_id, member)` and `bot.cache.guild_permissions(guild_id, member)` compute a member's permissions from it as Discord does, the bot's own when `member` is left out. `Guild.member_count` follows joins and leaves only with `Intents.GUILD_MEMBERS`.
 - `max_messages`: how many of the latest messages the cache keeps, 0 by default. `bot.cache.message(id)` reads them, and `MessageUpdate.old`, `MessageDelete.message` and `MessageDeleteBulk.messages` carry them.
+- `guild_ready_timeout`: seconds a shard waits for the next of its guilds before it counts as ready anyway, 2 by default. Guilds in an outage arrive later.
 - `allowed_mentions`: who the bot's messages may ping. The default allows users and roles, not `@everyone`.
 - `status`, `activities`, `afk` and `idle_since`: the presence the bot shows, online with no activity by default. `bostie.activity` builds activities, such as `activity.playing("chess")` or `activity.custom("Rolling dice")`. `await bot.update_presence(...)` changes any of them on every shard, and sessions that start later show the change too.
 - `global_rate_limit`: requests per second across all routes, 50 by default. Interaction responses and follow-ups do not count.
 - `api_url`: the REST API base URL, for a proxy or a fake Discord in tests.
 - `voice`: a `voice.Defaults` with the settings every voice connection and sink starts from.
 - `shard_count`: how many shards the bot splits its guilds across. The default, `"auto"`, takes Discord's recommendation at each start, so one process runs every shard it needs.
-- `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `wait_until_ready()` waits for every shard here, and each event carries its `shard_id`.
+- `shard_ids`: the shards this process runs, for a bot split across processes. It needs an explicit `shard_count`; the default runs them all. `Started` waits for every shard here, and each event carries its `shard_id`.
 
 ## Errors
 
