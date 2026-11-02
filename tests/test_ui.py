@@ -12,6 +12,7 @@ from bostie import (
     ui,
 )
 from bostie.models import decode_components
+from bostie.router import Router
 
 
 def test_ui_builders_return_discord_component_dicts() -> None:
@@ -348,3 +349,25 @@ def test_ui_modal_builders_return_discord_modal_dicts() -> None:
     }
     assert ui.file_upload("doc", file_types=[".pdf"])["file_types"] == [".pdf"]
     assert ui.text_input("name", value="Ann")["value"] == "Ann"
+
+
+def test_a_pager_builds_restart_safe_page_buttons() -> None:
+    async def show(ctx: object, topic: str, page: int) -> None:
+        pass
+
+    route = Router().on_component("help:{topic}:{page:int}")(show)
+    first, middle, last = (ui.pager(route, page, 3, topic="voice") for page in range(3))
+
+    previous, counter, following = first["components"]
+    assert [b.get("custom_id") for b in (previous, counter, following)] == [
+        "help:voice:-1",
+        "help:voice:0",
+        "help:voice:1",
+    ]
+    assert (counter.get("label"), counter["disabled"]) == ("1 / 3", True)
+    assert [b["disabled"] for b in middle["components"]] == [False, True, False]
+    assert [b["disabled"] for b in last["components"]] == [False, True, True]
+    assert previous["disabled"] is True
+    assert route.match(str(following.get("custom_id"))) == {"topic": "voice", "page": 1}
+    with pytest.raises(ValueError, match="page must be 0-2"):
+        ui.pager(route, 3, 3, topic="voice")

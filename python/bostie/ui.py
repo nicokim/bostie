@@ -1,7 +1,7 @@
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal, NewType, NotRequired, TypedDict, cast
 
-from bostie.custom_id import MAX_CUSTOM_ID
+from bostie.custom_id import MAX_CUSTOM_ID, ComponentRoute
 from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
 from bostie.models.components import SelectDefaultType
 
@@ -45,6 +45,7 @@ __all__ = [
     "media_gallery",
     "mentionable_select",
     "modal",
+    "pager",
     "premium_button",
     "radio_group",
     "raw",
@@ -341,6 +342,35 @@ def button(
         "disabled": disabled,
     }
     return _labelled(button, label, emoji, id)
+
+
+def pager(
+    route: ComponentRoute[...], page: int, count: int, **params: str | int
+) -> RowDict:
+    """Previous and next buttons around "page / count" for a `{page:int}` route.
+
+    Each button's custom_id is `route.id(page=..., **params)`, so pages survive a
+    restart; the first page is 0.
+    """
+    if not 0 <= page < count:
+        raise ValueError(f"page must be 0-{count - 1}, got {page}")
+    return row(
+        button(
+            "\N{LEFTWARDS ARROW}",
+            custom_id=route.id(page=page - 1, **params),
+            disabled=page == 0,
+        ),
+        button(
+            f"{page + 1} / {count}",
+            custom_id=route.id(page=page, **params),
+            disabled=True,
+        ),
+        button(
+            "\N{RIGHTWARDS ARROW}",
+            custom_id=route.id(page=page + 1, **params),
+            disabled=page == count - 1,
+        ),
+    )
 
 
 def link_button(
