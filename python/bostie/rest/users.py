@@ -2,7 +2,7 @@ from functools import partial
 from typing import TypedDict, Unpack
 
 from bostie.file import File
-from bostie.models import User, decode
+from bostie.models import CurrentUser, User, decode
 from bostie.rest.base import Group, wire
 
 
@@ -13,9 +13,9 @@ class UserEditCurrent(TypedDict, total=False):
 
 
 class Users(Group):
-    async def edit_current(self, **options: Unpack[UserEditCurrent]) -> User:
+    async def edit_current(self, **options: Unpack[UserEditCurrent]) -> CurrentUser:
         return await self._http._decoded(
-            partial(decode, User),
+            partial(decode, CurrentUser),
             "PATCH",
             "/users/@me",
             json=wire(options, UserEditCurrent),
@@ -26,5 +26,7 @@ class Users(Group):
             partial(decode, User), "GET", "/users/{user_id}", user_id=user_id
         )
 
-    async def fetch_current(self) -> User:
-        return await self._http._decoded(partial(decode, User), "GET", "/users/@me")
+    async def fetch_current(self) -> CurrentUser:
+        return await self._http._decoded(
+            partial(decode, CurrentUser), "GET", "/users/@me"
+        )

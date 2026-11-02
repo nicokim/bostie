@@ -207,6 +207,7 @@ from bostie.models.template import GuildTemplate
 from bostie.models.user import (
     AvatarDecorationData,
     Collectibles,
+    CurrentUser,
     Nameplate,
     PartialUser,
     PrimaryGuild,
@@ -264,6 +265,7 @@ __all__ = [
     "ComponentInteractionMetadata",
     "Container",
     "ContentScanMetadata",
+    "CurrentUser",
     "CurrentUserGuild",
     "DefaultReaction",
     "EditParts",

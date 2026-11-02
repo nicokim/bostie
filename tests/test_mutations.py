@@ -104,6 +104,7 @@ ENUM_KEYS = {
     "mfa_level",
     "default_message_notifications",
     "explicit_content_filter",
+    "premium_type",
 }
 ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
 FLAG_KEYS = {

@@ -21,6 +21,7 @@ from bostie.models import (
     AvatarDecorationData,
     Channel,
     Collectibles,
+    CurrentUser,
     Emoji,
     Entitlement,
     Guild,
@@ -94,7 +95,7 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 class Ready(Event, kw_only=True):
     NAME = "READY"
 
-    user: User
+    user: CurrentUser
     guilds: tuple[UnavailableGuild, ...]
     application: PartialApplication
     session_id: str
@@ -866,12 +867,12 @@ class UserUpdate(Event, kw_only=True):
 
     NAME = "USER_UPDATE"
 
-    user: User
+    user: CurrentUser
 
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        return cls(shard_id=shard_id, raw_json=data, user=decode(User, data))
+        return cls(shard_id=shard_id, raw_json=data, user=decode(CurrentUser, data))
 
 
 class CommandPermissionsUpdate(Event, kw_only=True):

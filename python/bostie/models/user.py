@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, override
 
-from bostie.enums import UserFlags
+from bostie.enums import PremiumType, UserFlags
 from bostie.models.base import Model
 
 if TYPE_CHECKING:
@@ -74,3 +74,14 @@ class User(PartialUser, kw_only=True):
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":
         return resolved.users.get(id)
+
+
+class CurrentUser(User, kw_only=True):
+    """The bot's own user, with the fields only the account's owner sees."""
+
+    mfa_enabled: bool | None = None
+    locale: str | None = None
+    verified: bool | None = None
+    email: str | None = None
+    flags: UserFlags = UserFlags(0)
+    premium_type: PremiumType | None = None

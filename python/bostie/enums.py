@@ -562,6 +562,13 @@ class SKUType(DiscordIntEnum):
     SUBSCRIPTION_GROUP = 6
 
 
+class PremiumType(DiscordIntEnum):
+    NONE = 0
+    NITRO_CLASSIC = 1
+    NITRO = 2
+    NITRO_BASIC = 3
+
+
 class Status(DiscordStrEnum):
     ONLINE = "online"
     DND = "dnd"

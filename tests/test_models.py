@@ -27,8 +27,10 @@ from bostie.enums import (
     MFALevel,
     OptionType,
     Permissions,
+    PremiumType,
     SystemChannelFlags,
     UnfurledMediaItemFlags,
+    UserFlags,
 )
 from bostie.file import File
 from bostie.models import (
@@ -45,6 +47,7 @@ from bostie.models import (
     ComponentInteractionMetadata,
     Container,
     ContentScanMetadata,
+    CurrentUser,
     Embed,
     EmbedField,
     Entitlement,
@@ -580,6 +583,14 @@ def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:
 
     assert obfuscated.obfuscated
     assert not named_like_it.obfuscated
+
+
+def test_the_current_user_carries_its_account_settings() -> None:
+    user = decode(CurrentUser, payload("events/USER_UPDATE.json"))
+
+    assert (user.mfa_enabled, user.verified, user.email) == (True, True, None)
+    assert (user.locale, user.premium_type) == ("en-US", PremiumType.NONE)
+    assert user.flags == UserFlags(0)
 
 
 def test_mentions_and_display_names() -> None:
