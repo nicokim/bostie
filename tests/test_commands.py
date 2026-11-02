@@ -9,6 +9,7 @@ import pytest
 
 from bostie.commands import (
     Choice,
+    ChoiceValue,
     Command,
     CommandCallback,
     CommandDefaults,
@@ -786,33 +787,28 @@ def test_autocomplete_functions_are_found_by_option_name() -> None:
 
 
 def test_autocomplete_choices_normalizes_values() -> None:
-    result: list[str | int | float | Choice] = [
-        "rules",
-        3,
-        1.5,
-        Choice("Named", "value"),
-    ]
+    result: list[str | int | float | Choice] = [3, 1.5, Choice("Named", 2)]
 
-    assert autocomplete_choices(result, suggest) == [
-        {"name": "rules", "value": "rules"},
+    assert autocomplete_choices(result, suggest, OptionType.NUMBER) == [
         {"name": "3", "value": 3},
         {"name": "1.5", "value": 1.5},
-        {"name": "Named", "value": "value"},
+        {"name": "Named", "value": 2},
     ]
 
 
 def test_autocomplete_choices_fixes_what_discord_would_reject() -> None:
     long_name = Choice("n" * 150, "ok")
     long_value = "v" * 101
-    result = [long_name, long_name, "", long_value, long_value, *range(30)]
+    result: list[ChoiceValue | Choice] = [long_name, long_name, "", long_value, 7]
+    result += map(str, range(30))
 
     with pytest.warns(UserWarning, match="test_commands.suggest returned") as warned:
-        choices = autocomplete_choices(result, suggest)
+        choices = autocomplete_choices(result, suggest, OptionType.STRING)
 
     assert choices[0] == {"name": "n" * 100, "value": "ok"}
     assert len(choices) == 25
     assert all(choice["name"] for choice in choices)
-    assert all(choice["value"] != long_value for choice in choices)
+    assert all(choice["value"] not in (long_value, 7) for choice in choices)
     messages = sorted(str(warning.message) for warning in warned)
     assert len(messages) == 3
     assert all(

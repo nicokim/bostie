@@ -1192,7 +1192,7 @@ class Bot(Router):
         if focused is None or function is None:
             return None
         ctx = AutocompleteContext(interaction, self, received=received)
-        return self._autocomplete(ctx, command, function, focused.value)
+        return self._autocomplete(ctx, command, function, focused)
 
     async def _run_handler(
         self,
@@ -1243,12 +1243,11 @@ class Bot(Router):
         ctx: AutocompleteContext,
         command: Command,
         function: AutocompleteCallback,
-        value: Any,
+        focused: InteractionDataOption,
     ) -> None:
         try:
-            await ctx._respond(
-                autocomplete_choices(await function(ctx, value), function)
-            )
+            result = await function(ctx, focused.value)
+            await ctx._respond(autocomplete_choices(result, function, focused.type))
         except Exception as error:
             await self._handle_error(ctx, command, function, error)
 

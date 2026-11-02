@@ -729,15 +729,19 @@ class EntryPointCommand(_Registered):
 
 
 def autocomplete_choices(
-    result: Iterable[ChoiceValue | Choice], function: Callable[..., object]
+    result: Iterable[ChoiceValue | Choice],
+    function: Callable[..., object],
+    option_type: OptionType,
 ) -> list[dict[str, Any]]:
     """Turn what an autocomplete function returned into at most 25 valid choices."""
     choices: list[dict[str, Any]] = []
     truncated = dropped = False
     for item in result:
         choice = item if isinstance(item, Choice) else Choice(str(item), item)
-        if not choice.name or (
-            isinstance(choice.value, str) and len(choice.value) > MAX_TEXT
+        if (
+            not choice.name
+            or type(choice.value) not in VALUE_TYPES[option_type]
+            or (isinstance(choice.value, str) and len(choice.value) > MAX_TEXT)
         ):
             dropped = True
             continue
@@ -746,7 +750,8 @@ def autocomplete_choices(
     where = _python_name(function)
     if dropped:
         _warn(
-            f"{where} returned empty names or string values over 100 characters; "
+            f"{where} returned empty names, values that are not "
+            f"{option_type.name} or strings over 100 characters; "
             "those choices were dropped"
         )
     if truncated:
