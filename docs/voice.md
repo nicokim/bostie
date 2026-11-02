@@ -32,6 +32,22 @@ A URL ending in `.m3u8`, or served as an HLS playlist, plays as HLS. A master pl
 
 bostie does not extract media from web pages. A tool such as yt-dlp can: pass the direct URL it finds, with the HTTP headers it says that URL needs, to `voice.Url`.
 
+## Soundboard
+
+`await bot.rest.soundboard.send(vc.channel_id, sound_id=...)` plays a soundboard sound in the bot's channel, mixed by Discord with whatever the bot sends; pass `source_guild_id` for a sound from another server. The bot needs the Speak and Use Soundboard permissions, plus Use External Sounds for a sound from another server, and Discord refuses while `vc.deaf`, `vc.self_deaf`, `vc.mute` or `vc.suppress` is true.
+
+## Leaving an empty channel
+
+bostie stays in a channel until you disconnect. To leave once everyone else has gone:
+
+```python
+@bot.listen
+async def on_leave(event: voice.UserLeave) -> None:
+    vc = bot.voice.get(event.guild_id)
+    if vc is not None and not vc.members:
+        await vc.disconnect()
+```
+
 ## Voice messages
 
 A voice message is a message with one audio file and nothing else, which Discord shows with a play button and a waveform. `voice.message()` makes that file: it decodes the audio in Rust, off the event loop, and fills in `duration_secs` and a `waveform` of one byte per 100 ms, at most 256 of them, each the loudest sample there. Any format `voice.File` plays works; Discord clients send 48 kHz mono Ogg Opus.
