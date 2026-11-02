@@ -1,4 +1,4 @@
-from bostie import activity, oauth2, ui, voice
+from bostie import activity, cdn, oauth2, ui, voice
 from bostie.asgi import ASGIApp
 from bostie.bot import Bot
 from bostie.client import BearerClient, RESTClient, SyncWebhookClient, WebhookClient
@@ -676,6 +676,7 @@ __all__ = [
     "WelcomeScreen",
     "WelcomeScreenChannel",
     "activity",
+    "cdn",
     "decode_webhook_event",
     "oauth2",
     "ui",

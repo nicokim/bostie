@@ -272,6 +272,10 @@ Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 1
 - A receiver ends when the bot leaves or is moved to another channel, which ends `captions` above.
 - Tell people before you record or transcribe them. [docs/voice.md](docs/voice.md#receiving-audio) covers every option, and privacy and consent.
 
+## Helpers
+
+- `bostie.cdn` builds image URLs on Discord's CDN, such as `cdn.display_avatar(user)` for a thumbnail, `cdn.member_avatar(guild_id, user_id, member.avatar)` or `cdn.guild_icon(guild.id, guild.icon, size=256)`. They default to WebP, animated when the hash starts with `a_`, and raise `ValueError` for a size or format the CDN does not serve.
+
 ## Bot parameters
 
 Every parameter of `bostie.Bot` is keyword-only and optional.
