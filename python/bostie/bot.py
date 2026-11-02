@@ -46,7 +46,6 @@ from bostie.custom_id import ComponentRoute
 from bostie.enums import CommandType, Intents, Status
 from bostie.errors import MemberRequestRateLimited, StateError, TransportError
 from bostie.events import (
-    BOT_EVENT_NAMES,
     EVENTS,
     BotEvent,
     ChannelInfo,
@@ -105,7 +104,7 @@ from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.voice.connection import VoiceManager
-from bostie.voice.events import LOCAL_NAMES, VoiceEvent
+from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults
 
 log = logging.getLogger("bostie.bot")
@@ -426,6 +425,10 @@ class Bot(Router):
                 del self._waiters[event.NAME]
                 self._refresh_filter()
 
+    def dispatch(self, event: BotEvent) -> None:
+        """Send an event of your own to its listeners, waiters and streams."""
+        self._emit(event)
+
     async def update_presence(self, **options: Unpack[PresenceOptions]) -> None:
         """Change what the bot shows on every shard, and on sessions it starts later."""
         check_keys(options, PRESENCE_OPTIONS, "presence options")
@@ -568,8 +571,11 @@ class Bot(Router):
                 future.set_exception(StateError("the bot stopped before it was ready"))
 
     def _dispatch_names(self) -> list[str] | None:
-        names = {*self.listeners, *self._waiters, GatewayRateLimited.NAME}
-        names -= LOCAL_NAMES | BOT_EVENT_NAMES
+        names = {
+            name
+            for name in (*self.listeners, *self._waiters, GatewayRateLimited.NAME)
+            if "." not in name
+        }
         if RAW_EVENT_NAME in names:
             return None
         names |= {name for name, _ in self._requests}

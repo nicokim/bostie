@@ -1131,10 +1131,20 @@ class RawEvent(Event, kw_only=True):
 
 @dataclass_transform(kw_only_default=True, frozen_default=True)
 class BotEvent(msgspec.Struct, kw_only=True, frozen=True):
-    """Base of the events bostie sends about the bot itself, not from Discord."""
+    """Base of the events that come from the bot, not Discord: bostie's and yours.
+
+    Subclass it for an event of your own and send it with `bot.dispatch()`; a
+    subclass without a NAME is named `<module>.<qualname>`.
+    """
 
     NAME: ClassVar[str]
     INTENTS: ClassVar[Intents] = Intents(0)
+
+    @override
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "NAME" not in vars(cls):
+            cls.NAME = f"{cls.__module__}.{cls.__qualname__}"
 
 
 class Started(BotEvent, kw_only=True):
@@ -1195,20 +1205,6 @@ class ListenerError(BotEvent, kw_only=True):
     listener: Callable[..., Any]
     event: Any
     error: Exception
-
-
-BOT_EVENT_NAMES = frozenset(
-    event.NAME
-    for event in (
-        Started,
-        Stopping,
-        ShardReady,
-        ShardDisconnect,
-        ShardStop,
-        ShardBackpressure,
-        ListenerError,
-    )
-)
 
 
 EVENTS: dict[str, type[Event]] = {

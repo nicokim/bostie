@@ -45,6 +45,7 @@ from bostie import (
 from bostie._bridge import Bridge, StatusDelivery
 from bostie.commands import CommandSettings
 from bostie.events import (
+    BotEvent,
     ChannelUpdate,
     Event,
     GuildCreate,
@@ -77,6 +78,10 @@ EPHEMERAL = 64
 MEMBER_ID = "820774541721731073"
 GUILD = 1335172792320131073
 OUTAGE_GUILD = 1335927767040131073
+
+
+class LevelUp(BotEvent):
+    user_id: int
 
 
 class Unit(Enum):
@@ -692,6 +697,27 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache(
             )
 
     run(scenario)
+
+
+def test_dispatched_events_reach_listeners_and_waiters_but_not_the_filter() -> None:
+    async def main() -> None:
+        bot = Bot()
+        heard: asyncio.Queue[LevelUp] = asyncio.Queue()
+
+        @bot.listen
+        async def on_level_up(event: LevelUp) -> None:
+            heard.put_nowait(event)
+
+        async with bot.stream(LevelUp) as levels:
+            bot.dispatch(LevelUp(user_id=7))
+            streamed = await anext(levels)
+            names = bot._dispatch_names()
+
+        assert streamed == await heard.get() == LevelUp(user_id=7)
+        assert names is not None
+        assert (LevelUp.NAME, LevelUp.NAME in names) == (f"{__name__}.LevelUp", False)
+
+    asyncio.run(main())
 
 
 def test_startup_waits_for_the_ready_guilds_and_sends_started_once() -> None:
