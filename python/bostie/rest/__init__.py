@@ -10,13 +10,16 @@ from bostie.rest.commands import BearerCommands, Commands
 from bostie.rest.emojis import Emojis
 from bostie.rest.gateway import Gateway
 from bostie.rest.guilds import BearerGuilds, Guilds
+from bostie.rest.identities import Identities
 from bostie.rest.integrations import Integrations
 from bostie.rest.invites import Invites
+from bostie.rest.lobbies import BearerLobbies, Lobbies
 from bostie.rest.members import BearerMembers, Members
 from bostie.rest.messages import Messages
 from bostie.rest.monetization import Monetization
 from bostie.rest.oauth2 import OAuth2
 from bostie.rest.onboarding import Onboarding
+from bostie.rest.partner_sdk import PartnerSDK
 from bostie.rest.polls import Polls
 from bostie.rest.reactions import Reactions
 from bostie.rest.roles import Roles
@@ -47,12 +50,15 @@ class REST:
         self.emojis = Emojis(*shared)
         self.gateway = Gateway(*shared)
         self.guilds = Guilds(*shared)
+        self.identities = Identities(*shared)
         self.integrations = Integrations(*shared)
         self.invites = Invites(*shared)
+        self.lobbies = Lobbies(*shared)
         self.members = Members(*shared)
         self.messages = Messages(*shared)
         self.monetization = Monetization(*shared)
         self.onboarding = Onboarding(*shared)
+        self.partner_sdk = PartnerSDK(*shared)
         self.polls = Polls(*shared)
         self.reactions = Reactions(*shared)
         self.roles = Roles(*shared)
@@ -76,6 +82,7 @@ class BearerREST:
         shared = (http, allowed_mentions, cache)
         self.commands = BearerCommands(*shared)
         self.guilds = BearerGuilds(*shared)
+        self.lobbies = BearerLobbies(*shared)
         self.members = BearerMembers(*shared)
         self.oauth2 = OAuth2(*shared)
         self.users = BearerUsers(*shared)

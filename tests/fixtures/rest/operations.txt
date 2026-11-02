@@ -76,6 +76,11 @@ GET /guilds/{guild_id}/widget guilds.fetch_widget_settings
 DELETE /users/@me/guilds/{guild_id} guilds.leave
 GET /users/@me/guilds guilds.list
 GET /users/@me/guilds guilds.list bearer
+POST /users/{user_id}/application-identities/{application_id}/{provider_type}/{provider_issued_user_id}/delete identities.delete
+GET /applications/{application_id}/users/{user_id}/identities/{provider_issued_user_id}/profile identities.fetch_profile
+GET /users/{user_id}/application-identities/{application_id} identities.list
+GET /applications/{application_id}/application-identities/{provider_type}/{provider_issued_user_id} identities.list_by_external_id
+PATCH /applications/{application_id}/users/{user_id}/identities/{provider_issued_user_id}/profile identities.update_profile
 DELETE /guilds/{guild_id}/integrations/{integration_id} integrations.delete reason
 GET /guilds/{guild_id}/integrations integrations.list
 PUT /invites/{code}/target-users/{user_id} invites.add_target_user
@@ -90,6 +95,22 @@ GET /guilds/{guild_id}/invites invites.list_guild
 GET /invites/{code}/target-users invites.list_target_users
 DELETE /invites/{code}/target-users/{user_id} invites.remove_target_user
 PUT /invites/{code}/target-users invites.update_target_users
+PUT /lobbies/{lobby_id}/members/{user_id} lobbies.add_member
+POST /lobbies/{lobby_id}/members/bulk lobbies.bulk_update_members
+POST /lobbies lobbies.create
+POST /lobbies/{lobby_id}/members/@me/invites lobbies.create_invite_for_self bearer
+POST /lobbies/{lobby_id}/members/{user_id}/invites lobbies.create_invite_for_user
+PUT /lobbies lobbies.create_or_join bearer
+DELETE /lobbies/{lobby_id} lobbies.delete
+PATCH /lobbies/{lobby_id} lobbies.edit
+GET /lobbies/{lobby_id} lobbies.fetch
+DELETE /lobbies/{lobby_id}/members/@me lobbies.leave bearer
+PATCH /lobbies/{lobby_id}/channel-linking lobbies.link_channel bearer
+GET /lobbies/{lobby_id}/messages lobbies.list_messages bearer
+DELETE /lobbies/{lobby_id}/members/{user_id} lobbies.remove_member
+POST /lobbies/{lobby_id}/messages lobbies.send_message bearer
+PATCH /lobbies/{lobby_id}/channel-linking lobbies.unlink_channel bearer
+PUT /lobbies/{lobby_id}/messages/{message_id}/moderation-metadata lobbies.update_message_moderation_metadata
 PUT /guilds/{guild_id}/members/{user_id} members.add
 PUT /guilds/{guild_id}/members/{user_id}/roles/{role_id} members.add_role reason
 PATCH /guilds/{guild_id}/members/{user_id} members.edit reason
@@ -127,6 +148,12 @@ POST /oauth2/token oauth2.refresh bearer
 POST /oauth2/token/revoke oauth2.revoke bearer
 PUT /guilds/{guild_id}/onboarding onboarding.edit reason
 GET /guilds/{guild_id}/onboarding onboarding.fetch
+POST /partner-sdk/token/bot partner_sdk.create_provisional_token
+POST /partner-sdk/child-token partner_sdk.exchange_child_token
+POST /partner-sdk/token partner_sdk.exchange_external_token
+POST /partner-sdk/provisional-accounts/unmerge partner_sdk.unmerge_external_account
+POST /partner-sdk/provisional-accounts/unmerge/bot partner_sdk.unmerge_provisional_account
+PUT /partner-sdk/dms/{user_id_1}/{user_id_2}/messages/{message_id}/moderation-metadata partner_sdk.update_dm_moderation_metadata
 POST /channels/{channel_id}/polls/{message_id}/expire polls.end
 GET /channels/{channel_id}/polls/{message_id}/answers/{answer_id} polls.list_answer_voters
 PUT /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me reactions.create

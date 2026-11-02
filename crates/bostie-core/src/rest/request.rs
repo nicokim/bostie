@@ -169,7 +169,7 @@ fn placeholder(segment: &str) -> Result<Option<&str>, CoreError> {
             !name.is_empty()
                 && name
                     .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
         })
         .map(Some)
         .ok_or_else(|| CoreError::InvalidRequest(format!("invalid placeholder {segment:?}")))
@@ -228,6 +228,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn placeholder_names_may_hold_digits() {
+        let request = parse(
+            "PUT",
+            "/partner-sdk/dms/{user_id_1}/{user_id_2}/messages/{message_id}/moderation-metadata",
+            &[("user_id_1", "1"), ("user_id_2", "2"), ("message_id", "3")],
+        )
+        .unwrap();
+
+        assert_eq!(
+            request
+                .url(&Url::parse("https://discord.com/api/v10").unwrap())
+                .as_str(),
+            "https://discord.com/api/v10/partner-sdk/dms/1/2/messages/3/moderation-metadata"
+        );
     }
 
     #[test]

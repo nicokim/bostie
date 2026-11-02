@@ -436,6 +436,12 @@ class ConnectionVisibility(DiscordIntEnum):
     EVERYONE = 1
 
 
+class ProfileFieldType(DiscordIntEnum):
+    STRING = 1
+    NUMBER = 2
+    MEDIA = 3
+
+
 class ActivityLocationKind(DiscordStrEnum):
     GUILD_CHANNEL = "gc"
     PRIVATE_CHANNEL = "pc"
@@ -833,6 +839,10 @@ class SKUFlags(DiscordIntFlag):
     AVAILABLE = 1 << 2
     GUILD_SUBSCRIPTION = 1 << 7
     USER_SUBSCRIPTION = 1 << 8
+
+
+class LobbyMemberFlags(DiscordIntFlag):
+    CAN_LINK_LOBBY = 1 << 0
 
 
 class GuildInviteFlags(DiscordIntFlag):
