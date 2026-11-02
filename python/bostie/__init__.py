@@ -1,7 +1,7 @@
 from bostie import activity, oauth2, ui, voice
 from bostie.asgi import ASGIApp
 from bostie.bot import Bot
-from bostie.client import BearerClient, RESTClient, WebhookClient
+from bostie.client import BearerClient, RESTClient, SyncWebhookClient, WebhookClient
 from bostie.commands import Choice, Option, Range
 from bostie.context import (
     AutocompleteContext,
@@ -633,6 +633,7 @@ __all__ = [
     "Subscription",
     "SubscriptionStatus",
     "SyncResult",
+    "SyncWebhookClient",
     "SystemChannelFlags",
     "TargetUsersJob",
     "TargetUsersJobStatus",

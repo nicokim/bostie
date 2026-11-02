@@ -1,7 +1,9 @@
+import asyncio
+
 import pytest
 from fakediscord import FakeDiscord, payloads, run
 
-from bostie import RESTClient, StateError, WebhookClient
+from bostie import RESTClient, StateError, SyncWebhookClient, WebhookClient
 
 
 def test_a_rest_client_reaches_the_api_without_a_gateway() -> None:
@@ -45,5 +47,18 @@ def test_a_webhook_client_posts_from_its_url_alone() -> None:
         assert "authorization" not in execute.headers | slack.headers
         with pytest.raises(ValueError, match="is not a webhook URL"):
             WebhookClient("https://discord.com/channels/1/2")
+
+    run(scenario)
+
+
+def test_a_sync_webhook_client_runs_its_own_event_loop() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        url = "https://discord.com/api/webhooks/1/secret-token"
+        sent = payloads.fixture("rest/message") | {"webhook_id": "1"}
+        webhook = SyncWebhookClient(url, api_url=fake.api_url)
+        fake.fail("POST", "/webhooks/1/secret-token", 200, sent)
+        message = await asyncio.to_thread(webhook.execute, "deploy done")
+        assert message.id == int(sent["id"])
+        assert fake.requests[-1].json["content"] == "deploy done"
 
     run(scenario)

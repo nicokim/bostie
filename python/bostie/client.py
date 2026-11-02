@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from functools import partial
 from types import TracebackType
 from typing import Any, Self, Unpack, override
 from urllib.parse import urlsplit
@@ -224,6 +226,74 @@ class WebhookClient(_Client[Webhooks]):
     @override
     def _open(self, http: HTTPClient) -> Webhooks:
         return Webhooks(http, self._allowed_mentions, Cache())
+
+
+class SyncWebhookClient:
+    """A WebhookClient for code without an event loop; each call runs its own."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        api_url: str = API_URL,
+        allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
+    ) -> None:
+        self._client = partial(
+            WebhookClient, url, api_url=api_url, allowed_mentions=allowed_mentions
+        )
+        checked = self._client()
+        self.id = checked.id
+        self.token = checked.token
+
+    def delete(self) -> None:
+        self._run(WebhookClient.delete)
+
+    def delete_message(
+        self, message_id: int, /, **options: Unpack[WebhookMessageIn]
+    ) -> None:
+        self._run(lambda webhook: webhook.delete_message(message_id, **options))
+
+    def edit(self, **options: Unpack[WebhookEditWithToken]) -> Webhook:
+        return self._run(lambda webhook: webhook.edit(**options))
+
+    def edit_message(
+        self, message_id: int, /, **parts: Unpack[WebhookEditMessage]
+    ) -> WebhookMessage:
+        """Edit what the webhook sent: a part not given stays and None clears it."""
+        return self._run(lambda webhook: webhook.edit_message(message_id, **parts))
+
+    def execute(
+        self, content: str | None = None, **parts: Unpack[WebhookExecute]
+    ) -> WebhookMessage:
+        """Send a message and return it once Discord saved it."""
+        return self._run(lambda webhook: webhook.execute(content, **parts))
+
+    def execute_github(
+        self, payload: Mapping[str, Any], **options: Unpack[WebhookExecuteCompatible]
+    ) -> None:
+        """Post a GitHub webhook event payload, as GitHub would."""
+        self._run(lambda webhook: webhook.execute_github(payload, **options))
+
+    def execute_slack(
+        self, payload: Mapping[str, Any], **options: Unpack[WebhookExecuteCompatible]
+    ) -> None:
+        """Post a message in Slack's incoming webhook format."""
+        self._run(lambda webhook: webhook.execute_slack(payload, **options))
+
+    def fetch(self) -> Webhook:
+        return self._run(WebhookClient.fetch)
+
+    def fetch_message(
+        self, message_id: int, /, **options: Unpack[WebhookMessageIn]
+    ) -> WebhookMessage:
+        return self._run(lambda webhook: webhook.fetch_message(message_id, **options))
+
+    def _run[T](self, call: Callable[[WebhookClient], Awaitable[T]]) -> T:
+        async def run() -> T:
+            async with self._client() as webhook:
+                return await call(webhook)
+
+        return asyncio.run(run())
 
 
 def _on_delivery(delivery: GatewayDelivery, _received: float) -> None:
