@@ -302,6 +302,7 @@ Every parameter of `bostie.Bot` is keyword-only and optional.
 A bad argument raises `ValueError` or `TypeError`. Every other error bostie raises, the Rust core's included, is a `bostie.BostieError`:
 
 - `HTTPException` and its subclasses such as `NotFound` when Discord answers with an error status, `TransportError` when a request fails before it answers, and `GatewayClosed` when Discord ends the gateway session for good.
+- An `HTTPException` names each field Discord rejected, as in `embeds.0.title: Must be 256 or fewer in length.`, and its `code` is a `JSONErrorCode`, which has every code Discord documents, such as `CANNOT_SEND_MESSAGES_TO_THIS_USER`.
 - `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` or `bot.rest` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.
 - `MissingIntent`, also a `ValueError`, when a feature needs an intent the bot did not ask for, and `StartupError`, also an `OSError`, when bostie cannot set up a thread, socket, HTTP client or TLS context it needs.
 - `CommandError` for commands and interactions, and `voice.VoiceError` for voice.

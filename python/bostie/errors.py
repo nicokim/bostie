@@ -1,8 +1,9 @@
-from typing import Any, override
+from collections.abc import Mapping
+from typing import Any, cast, override
 
 import msgspec
 
-from bostie.enums import DisconnectReason
+from bostie.enums import DisconnectReason, JSONErrorCode
 
 
 class BostieError(Exception):
@@ -47,7 +48,7 @@ class RequestBudgetExhausted(BostieError):
 
 
 class HTTPException(BostieError):
-    """A request ended with an error status."""
+    """A request ended with an error status; its text lists each field's errors."""
 
     def __init__(
         self,
@@ -57,12 +58,32 @@ class HTTPException(BostieError):
         errors: dict[str, Any],
         body: bytes,
     ) -> None:
-        super().__init__(f"{status} {message} (error code {code})")
+        lines = [f"{status} {message} (error code {code})", *_form_errors(errors)]
+        super().__init__("\n".join(lines))
         self.status = status
-        self.code = code
+        self.code = JSONErrorCode(code)
         self.message = message
         self.errors = errors
         self.body = body
+
+
+def _form_errors(tree: object, path: tuple[str, ...] = ()) -> list[str]:
+    if not isinstance(tree, Mapping):
+        return []
+    lines: list[str] = []
+    for key, value in cast("Mapping[object, object]", tree).items():
+        if key != "_errors":
+            lines += _form_errors(value, (*path, str(key)))
+        elif isinstance(value, list):
+            for error in cast("list[object]", value):
+                fields = cast("Mapping[str, object]", error)
+                text = str(
+                    fields.get("message", fields)
+                    if isinstance(error, Mapping)
+                    else error
+                )
+                lines.append(f"{'.'.join(path)}: {text}" if path else text)
+    return lines
 
 
 class BadRequest(HTTPException):

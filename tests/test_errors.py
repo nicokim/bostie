@@ -4,7 +4,9 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from bostie import (
+    BadRequest,
     GatewayQueueFull,
+    JSONErrorCode,
     ShardNotRunning,
     StateError,
     _native,
@@ -147,3 +149,27 @@ def test_each_native_error_raises_its_bostie_class(
         call(core)
 
     assert type(raised.value) is error
+
+
+def test_an_http_error_lists_each_form_error_under_its_field_path() -> None:
+    errors = {
+        "activities": {
+            "0": {
+                "platform": {
+                    "_errors": [{"code": "BASE_TYPE_CHOICES", "message": "Bad."}]
+                },
+                "type": {"_errors": [{"code": "BASE_TYPE_CHOICES", "message": "No."}]},
+            }
+        },
+        "_errors": [{"code": "APPLICATION_COMMAND_TOO_LARGE", "message": "Too big."}],
+    }
+
+    error = BadRequest(400, 50035, "Invalid Form Body", errors, b"")
+
+    assert error.code is JSONErrorCode.INVALID_FORM_BODY_OR_CONTENT_TYPE
+    assert str(error).splitlines() == [
+        "400 Invalid Form Body (error code 50035)",
+        "activities.0.platform: Bad.",
+        "activities.0.type: No.",
+        "Too big.",
+    ]
