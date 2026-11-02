@@ -5,11 +5,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
-use tracing::error;
+use tracing::{debug, error};
 
+use crate::ids::UserId;
+use crate::inbox::Delivery;
 use crate::voice::connection::Info;
 use crate::voice::crypto::ReplayWindow;
 use crate::voice::media::{Arrival, Media, Transport};
+use crate::voice::rtcp;
+use crate::voice::rtp::Kind;
 use crate::voice::types::SILENCE_FRAME;
 use crate::voice::{Throttle, panic_message};
 
@@ -19,6 +23,7 @@ pub(crate) struct Intake {
     media: Arc<Media>,
     info: Arc<Info>,
     socket: Arc<UdpSocket>,
+    user: UserId,
     transport: Option<Arc<Transport>>,
     windows: HashMap<u32, ReplayWindow>,
     replay_window: u32,
@@ -30,12 +35,14 @@ impl Intake {
         media: Arc<Media>,
         info: Arc<Info>,
         socket: Arc<UdpSocket>,
+        user: UserId,
         replay_window: u32,
     ) -> Self {
         Self {
             media,
             info,
             socket,
+            user,
             transport: None,
             windows: HashMap::new(),
             replay_window,
@@ -43,8 +50,13 @@ impl Intake {
         }
     }
 
-    pub(crate) fn rtp(&mut self, packet: &mut [u8]) {
-        if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(|| self.open(packet)))
+    pub(crate) fn receive(&mut self, kind: Kind, packet: &mut [u8]) {
+        let opened = panic::catch_unwind(AssertUnwindSafe(|| match kind {
+            Kind::Rtp => self.open(packet),
+            Kind::Rtcp => self.report(packet),
+            Kind::Other => {}
+        }));
+        if let Err(payload) = opened
             && self.panicked.allows(Instant::now())
         {
             error!(
@@ -54,16 +66,53 @@ impl Intake {
         }
     }
 
-    fn open(&mut self, packet: &mut [u8]) {
-        let media = &self.media;
-        if !media.speech_activity() && media.open_receivers() == 0 {
-            return;
-        }
+    fn adopt_transport(&mut self) {
         if self.transport.is_none() {
-            let installed = media.transport.lock().clone();
+            let installed = self.media.transport.lock().clone();
             self.transport =
                 installed.filter(|transport| Arc::ptr_eq(&transport.socket, &self.socket));
         }
+    }
+
+    fn report(&mut self, packet: &mut [u8]) {
+        self.adopt_transport();
+        let Some(transport) = &self.transport else {
+            return;
+        };
+        let Ok(plain) = transport.cipher.open_rtcp(packet) else {
+            debug!("an RTCP packet failed to decrypt and was dropped");
+            return;
+        };
+        let mut packets = rtcp::parse(plain);
+        if packets.is_empty() {
+            return;
+        }
+        {
+            let ssrcs = self.info.ssrcs.lock();
+            let owner = |ssrc: u32| {
+                if ssrc == transport.ssrc {
+                    Some(self.user)
+                } else {
+                    ssrcs.get(&ssrc).map(|&(user, _)| user)
+                }
+            };
+            for packet in &mut packets {
+                packet.user = owner(packet.ssrc);
+                for report in &mut packet.reports {
+                    report.user = owner(report.ssrc);
+                }
+            }
+        }
+        let guild = self.media.guild();
+        self.media.push(Delivery::VoiceRtcp { guild, packets });
+    }
+
+    fn open(&mut self, packet: &mut [u8]) {
+        if !self.media.speech_activity() && self.media.open_receivers() == 0 {
+            return;
+        }
+        self.adopt_transport();
+        let media = &self.media;
         let Some(transport) = &self.transport else {
             media.transport_failed();
             return;
@@ -116,7 +165,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
+    use crate::ids::{ChannelId, GuildId, Handle, ShardId};
     use crate::voice::crypto::{Cipher, Mode};
     use crate::voice::receiver::Receiver;
     use crate::voice::sink::tests::Fixture;
@@ -131,7 +180,7 @@ mod tests {
     const BOB_SSRC: u32 = 1_002;
 
     struct Rig {
-        _fixture: Fixture,
+        fixture: Fixture,
         info: Arc<Info>,
         intake: Intake,
         cipher: Cipher,
@@ -171,9 +220,9 @@ mod tests {
             })));
             let info = Arc::new(Info::new(guild, ShardId::from(0)));
             Self {
-                _fixture: fixture,
+                fixture,
                 info: Arc::clone(&info),
-                intake: Intake::new(media, info, socket, 64),
+                intake: Intake::new(media, info, socket, UserId::from(100), 64),
                 cipher: Cipher::new(Mode::Aes256GcmRtpSize, &KEY),
             }
         }
@@ -186,7 +235,7 @@ mod tests {
         fn send(&mut self, nonce: u32, ssrc: u32) -> Vec<u32> {
             let sealing = Sealing::default();
             let mut packet = sfu::seal(&self.cipher, nonce, ssrc, 0, 0, &SILENCE_FRAME, &sealing);
-            self.intake.rtp(&mut packet);
+            self.intake.receive(Kind::Rtp, &mut packet);
             let mut windows: Vec<u32> = self.intake.windows.keys().copied().collect();
             windows.sort_unstable();
             windows
@@ -211,6 +260,52 @@ mod tests {
 
         assert_eq!(piled, [vec![ALICE_SSRC, BOB_SSRC], unmapped].concat());
         assert_eq!(swept, [BOB_SSRC, 1_003]);
+    }
+
+    #[test]
+    fn rtcp_reports_reach_python_with_the_user_of_each_ssrc() {
+        let mut rig = Rig::new();
+        rig.map(ALICE_SSRC);
+        let blocks = [
+            [BOT_SSRC, 1, 0, 0, 0, 0],
+            [ALICE_SSRC, 2, 0, 0, 0, 0],
+            [5, 3, 0, 0, 0, 0],
+        ];
+        let report = rtcp::tests::receiver_report(1, &blocks);
+        let (header, body) = report.split_at(rtcp::HEADER_LEN);
+        let mut sealed = Vec::new();
+        rig.cipher.seal(0, header, body, &mut sealed).unwrap();
+        let mut forged = sealed.clone();
+        forged[rtcp::HEADER_LEN] ^= 1;
+
+        rig.intake.receive(Kind::Rtcp, &mut forged);
+        rig.intake.receive(Kind::Rtcp, &mut sealed);
+
+        let delivered: Vec<Vec<(u32, Option<UserId>)>> = rig
+            .fixture
+            .inbox
+            .drain()
+            .into_iter()
+            .filter_map(|delivery| match delivery {
+                Delivery::VoiceRtcp { packets, .. } => Some(
+                    packets[0]
+                        .reports
+                        .iter()
+                        .map(|report| (report.ssrc, report.user))
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .collect();
+        let alice = UserId::from(u64::from(ALICE_SSRC));
+        assert_eq!(
+            delivered,
+            [vec![
+                (BOT_SSRC, Some(UserId::from(100))),
+                (ALICE_SSRC, Some(alice)),
+                (5, None)
+            ]]
+        );
     }
 
     proptest! {

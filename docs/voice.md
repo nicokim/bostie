@@ -54,6 +54,18 @@ async def on_leave(event: voice.UserLeave) -> None:
         await vc.disconnect()
 ```
 
+## RTCP reports
+
+Discord's voice server also sends RTCP packets, such as receiver reports on how the bot's own audio reaches it. bostie decrypts each one and fires `voice.RtcpPacket` with its `packet_type` (200 for a sender report, 201 for a receiver report), `count`, the sender's `ssrc`, its `user_id` when it is someone in the call, and `data`, the packet after its 8-byte header. For sender and receiver reports, `reports` holds one `voice.ReceptionReport` per stream they cover: its `ssrc` and `user_id`, the `fraction_lost` since the previous report from 0 to 1, the packets `lost` in all, the `highest_sequence` received, the `jitter` in seconds, and `last_sender_report` and `delay`, in seconds, for round-trip timing. A report about the bot's own stream carries the bot's user id:
+
+```python
+@bot.listen
+async def on_rtcp(event: voice.RtcpPacket) -> None:
+    for report in event.reports:
+        if bot.user and report.user_id == bot.user.id and report.fraction_lost > 0.05:
+            print(f"Discord lost {report.fraction_lost:.0%} of the bot's audio")
+```
+
 ## Voice messages
 
 A voice message is a message with one audio file and nothing else, which Discord shows with a play button and a waveform. `voice.message()` makes that file: it decodes the audio in Rust, off the event loop, and fills in `duration_secs` and a `waveform` of one byte per 100 ms, at most 256 of them, each the loudest sample there. Any format `voice.File` plays works; Discord clients send 48 kHz mono Ogg Opus.

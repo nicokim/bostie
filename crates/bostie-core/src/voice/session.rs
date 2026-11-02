@@ -449,12 +449,14 @@ impl<'c> Session<'c> {
                 Arc::clone(&self.conn.media),
                 Arc::clone(&self.conn.info),
                 Arc::clone(&sender),
+                self.conn.user,
                 self.conn.tuning.receive.replay_window,
             );
             let ssrc = ready.ssrc;
             tokio::spawn(async move {
-                let received =
-                    udp::receive(&socket, ssrc, &answer_slot, |packet| intake.rtp(packet));
+                let received = udp::receive(&socket, ssrc, &answer_slot, |kind, packet| {
+                    intake.receive(kind, packet);
+                });
                 if let Err(error) = received.await {
                     debug!(%error, "the voice UDP receiver stopped");
                 }

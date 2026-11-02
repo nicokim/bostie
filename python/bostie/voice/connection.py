@@ -43,6 +43,7 @@ from bostie.voice.events import (
     MediaResumed,
     MediaStalled,
     Moved,
+    RtcpPacket,
     SpeakingUpdate,
     SpeechStart,
     SpeechStop,
@@ -100,6 +101,7 @@ type ConnectionDelivery = (
     | _native.VoiceStalledDelivery
     | _native.VoiceSpeechDelivery
     | _native.VoiceDeafDelivery
+    | _native.VoiceRtcpDelivery
 )
 type VoiceDelivery = (
     ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
@@ -1044,6 +1046,26 @@ class VoiceConnection:
                 self._set_state(status, reason, code, detail)
             case ("voice_moved", _, old, new, by_us):
                 self._moved(old, new, by_us=by_us)
+            case ("voice_self", _, self_mute, self_deaf, mute, suppress):
+                self._self_mute, self._self_deaf = self_mute, self_deaf
+                self._mute, self._suppress = mute, suppress
+                self._changed()
+            case ("voice_clients", _, user_ids):
+                self._clients(user_ids)
+            case ("voice_client_left", _, user_id):
+                self._members -= {user_id}
+                self._emit(UserLeave(guild_id=self.guild_id, user_id=user_id))
+            case ("voice_speech", _, user_id, ssrc, True, age, _):
+                self._speech_started(user_id, ssrc, age)
+            case ("voice_speech", _, user_id, ssrc, False, age, duration):
+                self._speech_stopped(user_id, ssrc, age, duration)
+            case ("voice_deaf", _, deaf):
+                self._set_deaf(deaf=deaf)
+            case _:
+                self._announce(delivery)
+
+    def _announce(self, delivery: ConnectionDelivery) -> None:
+        match delivery:
             case ("voice_dave", _, version, epoch, transition):
                 self._emit(
                     DaveTransition(
@@ -1053,10 +1075,6 @@ class VoiceConnection:
                         transition_id=transition,
                     )
                 )
-            case ("voice_self", _, self_mute, self_deaf, mute, suppress):
-                self._self_mute, self._self_deaf = self_mute, self_deaf
-                self._mute, self._suppress = mute, suppress
-                self._changed()
             case ("voice_speaking", _, user_id, ssrc, flags):
                 self._emit(
                     SpeakingUpdate(
@@ -1066,11 +1084,6 @@ class VoiceConnection:
                         flags=SpeakingFlags(flags),
                     )
                 )
-            case ("voice_clients", _, user_ids):
-                self._clients(user_ids)
-            case ("voice_client_left", _, user_id):
-                self._members -= {user_id}
-                self._emit(UserLeave(guild_id=self.guild_id, user_id=user_id))
             case ("voice_stalled", _, direction, stalled, seconds):
                 change = MediaStalled if stalled else MediaResumed
                 self._emit(
@@ -1080,12 +1093,11 @@ class VoiceConnection:
                         duration=seconds,
                     )
                 )
-            case ("voice_speech", _, user_id, ssrc, True, age, _):
-                self._speech_started(user_id, ssrc, age)
-            case ("voice_speech", _, user_id, ssrc, False, age, duration):
-                self._speech_stopped(user_id, ssrc, age, duration)
-            case ("voice_deaf", _, deaf):
-                self._set_deaf(deaf=deaf)
+            case ("voice_rtcp", _, packets):
+                for packet in packets:
+                    self._emit(RtcpPacket.decode(self.guild_id, packet))
+            case _:
+                pass
 
     def _set_deaf(self, *, deaf: bool) -> None:
         if deaf and not self._deaf and self._receivers:

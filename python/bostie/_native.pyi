@@ -127,6 +127,9 @@ type VoiceSpeechDelivery = tuple[
     Literal["voice_speech"], int, int, int, bool, float, float
 ]
 type VoiceDeafDelivery = tuple[Literal["voice_deaf"], int, bool]
+type ReportItem = tuple[int, int | None, int, int, int, int, int, int]
+type RtcpPacketItem = tuple[int, int, int, int | None, list[ReportItem], bytes]
+type VoiceRtcpDelivery = tuple[Literal["voice_rtcp"], int, list[RtcpPacketItem]]
 type LogDelivery = tuple[Literal["log"], int, str, str]
 type Delivery = (
     ResponseDelivery
@@ -149,6 +152,7 @@ type Delivery = (
     | VoiceMarkerDelivery
     | VoiceSpeechDelivery
     | VoiceDeafDelivery
+    | VoiceRtcpDelivery
     | LogDelivery
 )
 

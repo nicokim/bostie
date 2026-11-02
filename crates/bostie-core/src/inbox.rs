@@ -11,6 +11,7 @@ use tracing::Level;
 use crate::bell::Bell;
 use crate::gateway::SavedSession;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
+use crate::voice::RtcpPacket;
 use crate::voice::types::{Direction, DisconnectReason, Speaking, VoiceStatus};
 
 const DISPATCH_BYTES_LIMIT: usize = 64 * 1024 * 1024;
@@ -121,6 +122,10 @@ pub enum Delivery {
     VoiceDeaf {
         guild: GuildId,
         deaf: bool,
+    },
+    VoiceRtcp {
+        guild: GuildId,
+        packets: Vec<RtcpPacket>,
     },
     Log {
         level: Level,

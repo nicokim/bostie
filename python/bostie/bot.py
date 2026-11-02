@@ -708,7 +708,8 @@ class Bot(Router):
                 | "voice_wake"
                 | "voice_marker"
                 | "voice_speech"
-                | "voice_deaf",
+                | "voice_deaf"
+                | "voice_rtcp",
                 *_,
             ):
                 self.voice._handle(delivery)

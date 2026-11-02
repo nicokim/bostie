@@ -1,4 +1,4 @@
-from typing import ClassVar, dataclass_transform
+from typing import TYPE_CHECKING, ClassVar, Self, dataclass_transform
 
 import msgspec
 
@@ -9,6 +9,12 @@ from bostie.enums import (
     SpeakingFlags,
     State,
 )
+
+if TYPE_CHECKING:
+    from bostie._native import RtcpPacketItem
+
+RTP_RATE = 48_000
+DELAY_UNITS = 65_536
 
 
 @dataclass_transform(kw_only_default=True, frozen_default=True)
@@ -107,6 +113,58 @@ class SpeechStop(VoiceEvent, kw_only=True):
     offset: int | None = None
 
 
+class ReceptionReport(msgspec.Struct, frozen=True, gc=False):
+    """How one stream reaches whoever sent the report, as RFC 3550 measures it."""
+
+    ssrc: int
+    user_id: int | None
+    fraction_lost: float
+    lost: int
+    highest_sequence: int
+    jitter: float
+    last_sender_report: int
+    delay: float
+
+
+class RtcpPacket(VoiceEvent, kw_only=True):
+    """An RTCP packet from the voice server, decrypted, with its reports read."""
+
+    NAME = "voice.rtcp_packet"
+
+    packet_type: int
+    count: int
+    ssrc: int
+    user_id: int | None
+    reports: tuple[ReceptionReport, ...]
+    data: bytes
+
+    @classmethod
+    def decode(cls, guild_id: int, packet: "RtcpPacketItem") -> Self:
+        kind, count, ssrc, user_id, blocks, data = packet
+        reports = tuple(
+            ReceptionReport(
+                ssrc,
+                user,
+                fraction / 256,
+                lost,
+                highest,
+                jitter / RTP_RATE,
+                last,
+                delay / DELAY_UNITS,
+            )
+            for ssrc, user, fraction, lost, highest, jitter, last, delay in blocks
+        )
+        return cls(
+            guild_id=guild_id,
+            packet_type=kind,
+            count=count,
+            ssrc=ssrc,
+            user_id=user_id,
+            reports=reports,
+            data=data,
+        )
+
+
 LOCAL_NAMES = frozenset(
     event.NAME
     for event in (
@@ -120,5 +178,6 @@ LOCAL_NAMES = frozenset(
         UserLeave,
         SpeechStart,
         SpeechStop,
+        RtcpPacket,
     )
 )

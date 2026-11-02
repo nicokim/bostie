@@ -5,6 +5,7 @@ use aes_gcm::aead::array::Array;
 use aes_gcm::aead::{AeadInOut, KeyInit};
 use chacha20poly1305::XChaCha20Poly1305;
 
+use super::rtcp;
 use super::rtp::{Header, RtpError};
 
 pub(crate) const KEY_LEN: usize = 32;
@@ -185,6 +186,26 @@ impl Cipher {
 
     pub(crate) fn open<'a>(&self, packet: &'a mut [u8]) -> Result<Opened<'a>, CryptoError> {
         let header = Header::parse(packet)?;
+        let (nonce, plain) = self.decrypt(packet, header.size())?;
+        let body: &'a [u8] = plain.get(header.size()..).unwrap_or_default();
+        Ok(Opened {
+            header,
+            nonce,
+            payload: header.payload(body)?,
+            extension: header.extension_body(body),
+        })
+    }
+
+    pub(crate) fn open_rtcp<'a>(&self, packet: &'a mut [u8]) -> Result<&'a [u8], CryptoError> {
+        let (_, plain) = self.decrypt(packet, rtcp::HEADER_LEN)?;
+        Ok(plain)
+    }
+
+    fn decrypt<'a>(
+        &self,
+        packet: &'a mut [u8],
+        header: usize,
+    ) -> Result<([u8; NONCE_LEN], &'a [u8]), CryptoError> {
         let too_short = CryptoError::TooShort(packet.len());
         let (sealed, nonce) = packet
             .split_last_chunk_mut::<NONCE_LEN>()
@@ -192,9 +213,7 @@ impl Cipher {
         let nonce = *nonce;
         let (sealed, tag) = sealed.split_last_chunk_mut::<TAG_LEN>().ok_or(too_short)?;
         let tag = Array::from(*tag);
-        let (aad, body) = sealed
-            .split_at_mut_checked(header.size())
-            .ok_or(too_short)?;
+        let (aad, body) = sealed.split_at_mut_checked(header).ok_or(too_short)?;
         let opened = match &self.0 {
             Aead::Aes256Gcm(aead) => aead.decrypt_inout_detached(
                 &full_nonce(nonce).into(),
@@ -212,13 +231,7 @@ impl Cipher {
         if opened.is_err() {
             return Err(CryptoError::Authentication);
         }
-        let body: &'a [u8] = body;
-        Ok(Opened {
-            header,
-            nonce,
-            payload: header.payload(body)?,
-            extension: header.extension_body(body),
-        })
+        Ok((nonce, sealed))
     }
 }
 

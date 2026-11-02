@@ -3,7 +3,7 @@ import inspect
 import logging
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fakediscord import settle
@@ -27,6 +27,9 @@ from voice_fakes import (
 from bostie import voice
 from bostie.enums import SpeakingFlags
 from bostie.voice import connection as connection_module
+
+if TYPE_CHECKING:
+    from bostie._native import RtcpPacketItem
 
 
 async def awaited(result: object) -> None:
@@ -112,6 +115,9 @@ def test_every_voice_delivery_updates_the_connection_and_emits_its_event() -> No
         bot.deliver(("voice_client_left", GUILD_ID, USER_ID))
         bot.deliver(("voice_stalled", GUILD_ID, "send", True, 2.0))
         bot.deliver(("voice_stalled", GUILD_ID, "send", False, 3.5))
+        report = (4242, USER_ID, 64, -2, 70_000, 480, 7, 32_768)
+        packets: list[RtcpPacketItem] = [(201, 1, 1, None, [report], b"rr")]
+        bot.deliver(("voice_rtcp", GUILD_ID, packets))
         bot.deliver(("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, False))
         assert vc.channel_id == OTHER_VOICE
         assert bot.events == [
@@ -140,6 +146,19 @@ def test_every_voice_delivery_updates_the_connection_and_emits_its_event() -> No
             ),
             voice.MediaResumed(
                 guild_id=GUILD_ID, direction=voice.Direction.SEND, duration=3.5
+            ),
+            voice.RtcpPacket(
+                guild_id=GUILD_ID,
+                packet_type=201,
+                count=1,
+                ssrc=1,
+                user_id=None,
+                reports=(
+                    voice.ReceptionReport(
+                        4242, USER_ID, 0.25, -2, 70_000, 0.01, 7, 0.5
+                    ),
+                ),
+                data=b"rr",
             ),
             voice.Moved(
                 guild_id=GUILD_ID,

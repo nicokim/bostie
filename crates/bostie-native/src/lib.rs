@@ -28,7 +28,8 @@ use crate::errors::{
     StartupError, StateError, VoiceNotConnected, VoiceQueueFull,
 };
 use crate::voice::{
-    Choice, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, speaking_parts,
+    Choice, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, rtcp_packet,
+    speaking_parts,
 };
 
 #[global_allocator]
@@ -616,6 +617,15 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         Delivery::VoiceDeaf { guild, deaf } => {
             (intern!(py, "voice_deaf"), u64::from(guild), deaf).into_bound_py_any(py)
         }
+        Delivery::VoiceRtcp { guild, packets } => (
+            intern!(py, "voice_rtcp"),
+            u64::from(guild),
+            packets
+                .into_iter()
+                .map(|packet| rtcp_packet(py, packet))
+                .collect::<PyResult<Vec<_>>>()?,
+        )
+            .into_bound_py_any(py),
         Delivery::Log {
             level,
             logger,

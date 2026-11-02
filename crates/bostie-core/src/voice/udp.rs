@@ -134,7 +134,7 @@ pub(crate) async fn receive(
     socket: &UdpSocket,
     ssrc: u32,
     answers: &watch::Sender<Option<Answer>>,
-    mut on_rtp: impl FnMut(&mut [u8]),
+    mut on_media: impl FnMut(Kind, &mut [u8]),
 ) -> io::Result<()> {
     let mut buffer = [0; MAX_DATAGRAM];
     loop {
@@ -158,8 +158,8 @@ pub(crate) async fn receive(
             answers.send_replace(Some(Answer { address, at }));
         } else {
             match rtp::classify(packet) {
-                Kind::Rtp => on_rtp(packet),
-                Kind::Rtcp | Kind::Other => {}
+                Kind::Other => {}
+                kind => on_media(kind, packet),
             }
         }
     }
@@ -331,21 +331,21 @@ mod tests {
 
     fn spawn_receiver(
         socket: Arc<UdpSocket>,
-    ) -> (watch::Receiver<Option<Answer>>, Arc<AtomicUsize>) {
+    ) -> (watch::Receiver<Option<Answer>>, Arc<[AtomicUsize; 2]>) {
         let (answers, receiver) = watch::channel(None);
-        let rtp = Arc::new(AtomicUsize::new(0));
-        let counted = Arc::clone(&rtp);
+        let media = Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]);
+        let counted = Arc::clone(&media);
         tokio::spawn(async move {
-            receive(&socket, SSRC, &answers, |_| {
-                counted.fetch_add(1, Ordering::Relaxed);
+            receive(&socket, SSRC, &answers, |kind, _| {
+                counted[usize::from(kind == Kind::Rtcp)].fetch_add(1, Ordering::Relaxed);
             })
             .await
         });
-        (receiver, rtp)
+        (receiver, media)
     }
 
     #[tokio::test]
-    async fn the_receiver_routes_answers_counts_rtp_and_ignores_everything_else() {
+    async fn the_receiver_routes_answers_rtp_and_rtcp_and_ignores_everything_else() {
         let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let (socket, _sender) = bind(server.local_addr().unwrap()).unwrap();
         let client = SocketAddr::new(
@@ -373,7 +373,8 @@ mod tests {
         let answer = answers.borrow_and_update().unwrap();
         assert_eq!(answer.address, external());
         assert!(answer.at >= before);
-        assert_eq!(rtp.load(Ordering::Relaxed), 2);
+        let counts = rtp.each_ref().map(|count| count.load(Ordering::Relaxed));
+        assert_eq!(counts, [2, 1]);
     }
 
     #[tokio::test]

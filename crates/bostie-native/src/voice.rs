@@ -7,8 +7,8 @@ use bostie_core::voice::types::{
     SampleFormat, SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
-    Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, Sink, SinkStats, Source,
-    SourceRead,
+    Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, RtcpPacket, Sink, SinkStats,
+    Source, SourceRead,
 };
 use bostie_core::{CoreError, UserId};
 use pyo3::IntoPyObjectExt;
@@ -534,6 +534,34 @@ fn received_item(
             (intern!(py, "leave"), u64::from(user), offset, queued).into_bound_py_any(py)
         }
     }
+}
+
+pub(crate) fn rtcp_packet(py: Python<'_>, packet: RtcpPacket) -> PyResult<Bound<'_, PyAny>> {
+    let reports: Vec<_> = packet
+        .reports
+        .into_iter()
+        .map(|report| {
+            (
+                report.ssrc,
+                report.user.map(u64::from),
+                report.fraction_lost,
+                report.lost,
+                report.highest_sequence,
+                report.jitter,
+                report.last_sender_report,
+                report.delay,
+            )
+        })
+        .collect();
+    (
+        packet.kind,
+        packet.count,
+        packet.ssrc,
+        packet.user.map(u64::from),
+        reports,
+        PyBytes::new(py, &packet.body),
+    )
+        .into_bound_py_any(py)
 }
 
 pub(crate) fn speaking_parts(speaking: Speaking) -> (bool, f64) {

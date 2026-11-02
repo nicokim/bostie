@@ -11,7 +11,7 @@ use crate::voice::crypto::{Cipher, Mode};
 use crate::voice::dave::{Outbound, SendMode};
 use crate::voice::media::Transport;
 use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
-use crate::voice::rtp;
+use crate::voice::rtp::{self, Kind};
 use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
@@ -211,6 +211,7 @@ impl Rig {
             Arc::clone(&self.media),
             Arc::clone(&self.info),
             Arc::clone(&self.socket),
+            user(BOT),
             64,
         )
     }
@@ -428,6 +429,7 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
         Arc::clone(&rig.media),
         Arc::clone(&rig.info),
         other_socket,
+        user(BOT),
         64,
     );
     let mut intake = rig.intake();
@@ -439,16 +441,16 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
         sfu::seal(cipher, nonce, ssrc, sequence, 0, &SILENCE_FRAME, sealing)
     };
 
-    stale.rtp(&mut packet(&cipher, 0, ALICE_SSRC, 0, &tagged));
-    intake.rtp(&mut packet(&cipher, 1, ALICE_SSRC, 1, &tagged));
+    stale.receive(Kind::Rtp, &mut packet(&cipher, 0, ALICE_SSRC, 0, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&cipher, 1, ALICE_SSRC, 1, &tagged));
     rig.media.set_speech_activity(false);
-    intake.rtp(&mut packet(&cipher, 2, ALICE_SSRC, 2, &tagged));
-    intake.rtp(&mut packet(&stranger, 5, ALICE_SSRC, 6, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&cipher, 2, ALICE_SSRC, 2, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&stranger, 5, ALICE_SSRC, 6, &tagged));
     let _packets = rig.open(options(ReceiveFormat::Packets));
-    intake.rtp(&mut packet(&cipher, 2, ALICE_SSRC, 2, &tagged));
-    intake.rtp(&mut packet(&cipher, 2, ALICE_SSRC, 3, &tagged));
-    intake.rtp(&mut packet(&cipher, 3, BOT_SSRC, 4, &tagged));
-    intake.rtp(&mut packet(&stranger, 4, ALICE_SSRC, 5, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&cipher, 2, ALICE_SSRC, 2, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&cipher, 2, ALICE_SSRC, 3, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&cipher, 3, BOT_SSRC, 4, &tagged));
+    intake.receive(Kind::Rtp, &mut packet(&stranger, 4, ALICE_SSRC, 5, &tagged));
 
     let arrivals: Vec<Arrival> = rig.media.arrivals.lock().drain(..).collect();
     let shapes: Vec<(u16, bool, bool)> = arrivals
@@ -480,7 +482,7 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
             &SILENCE_FRAME,
             &sealing,
         );
-        intake.rtp(&mut packet);
+        intake.receive(Kind::Rtp, &mut packet);
     }
 
     assert_eq!(rig.media.arrivals.lock().len(), 2);
@@ -562,7 +564,7 @@ fn a_receive_panic_ends_the_stall_it_reported() {
             &SILENCE_FRAME,
             &sealing,
         );
-        intake.rtp(&mut packet);
+        intake.receive(Kind::Rtp, &mut packet);
         rig.step();
     }
     let stalled = rig.stalls();
@@ -691,7 +693,7 @@ fn the_receive_watchdog_reports_media_that_never_plays_and_its_end() {
                     &SILENCE_FRAME,
                     &sealing,
                 );
-                intake.rtp(&mut packet);
+                intake.receive(Kind::Rtp, &mut packet);
             } else {
                 rig.send(ALICE_SSRC, sequence, &garbage(sequence));
             }
