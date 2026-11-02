@@ -213,6 +213,7 @@ from bostie.models.scheduled_event import (
 from bostie.models.social import (
     ApplicationIdentity,
     ApplicationIdentityProfile,
+    GameDirectMessage,
     Lobby,
     LobbyMember,
     LobbyMessage,
@@ -305,6 +306,7 @@ __all__ = [
     "FileComponent",
     "FollowedChannel",
     "ForumTag",
+    "GameDirectMessage",
     "GatewayBotInfo",
     "GatewayInfo",
     "Guild",

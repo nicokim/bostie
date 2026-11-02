@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "application_id": "1234560123453231555",
+  "type": 1,
+  "event": {
+    "type": "APPLICATION_AUTHORIZED",
+    "timestamp": "2024-10-18T14:42:53.064834",
+    "data": {
+      "integration_type": 1,
+      "scopes": [
+        "applications.commands"
+      ],
+      "user": {
+        "id": "111178765189277770",
+        "username": "player",
+        "discriminator": "0",
+        "global_name": "Player",
+        "avatar": null
+      }
+    }
+  }
+}

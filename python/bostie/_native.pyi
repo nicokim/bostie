@@ -41,6 +41,7 @@ __all__ = [
     "Sink",
     "Source",
     "log_levels",
+    "verify_signature",
     "versions",
     "voice_message",
 ]
@@ -372,4 +373,7 @@ class OpusEncoder:
 
 def versions() -> dict[str, str]: ...
 def log_levels(levels: list[int]) -> None: ...
+def verify_signature(
+    public_key: str, signature: str, timestamp: str, body: bytes
+) -> bool: ...
 def voice_message(data: bytes, hint: str | None = None) -> tuple[float, bytes]: ...

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "application_id": "1234560123453231555",
+  "type": 1,
+  "event": {
+    "type": "LOBBY_MESSAGE_DELETE",
+    "timestamp": "2025-08-05T21:44:09.412957",
+    "data": {
+      "id": "1402406637632884857",
+      "lobby_id": "1402399883394285659"
+    }
+  }
+}

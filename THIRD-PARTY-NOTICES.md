@@ -669,7 +669,7 @@ Used by:
 
 Used by:
 
-- [aws-lc-sys 0.46.0](https://github.com/aws/aws-lc-rs)
+- [aws-lc-sys 0.47.0](https://github.com/aws/aws-lc-rs)
 - [hax-lib-macros 0.3.6](https://github.com/hacspec/hax)
 - [hax-lib 0.3.6](https://github.com/hacspec/hax)
 - [libcrux-intrinsics 0.0.6](https://github.com/cryspen/libcrux)
@@ -760,7 +760,7 @@ limitations under the License.
 
 Used by:
 
-- [aws-lc-sys 0.46.0](https://github.com/aws/aws-lc-rs)
+- [aws-lc-sys 0.47.0](https://github.com/aws/aws-lc-rs)
 
 ````text
 /*
@@ -1175,7 +1175,7 @@ Used by:
 
 Used by:
 
-- [aws-lc-sys 0.46.0](https://github.com/aws/aws-lc-rs)
+- [aws-lc-sys 0.47.0](https://github.com/aws/aws-lc-rs)
 
 ````text
 AWS Libcrypto (AWS-LC)
@@ -1541,7 +1541,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 Used by:
 
-- [aws-lc-rs 1.18.2](https://github.com/aws/aws-lc-rs)
+- [aws-lc-rs 1.19.0](https://github.com/aws/aws-lc-rs)
 
 ````text
 SPDX-License-Identifier: ISC AND (Apache-2.0 OR ISC)
@@ -6037,7 +6037,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- [aws-lc-sys 0.46.0](https://github.com/aws/aws-lc-rs)
+- [aws-lc-sys 0.47.0](https://github.com/aws/aws-lc-rs)
 
 ````text
 The MIT License (MIT)

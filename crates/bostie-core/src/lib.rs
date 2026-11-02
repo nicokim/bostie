@@ -5,6 +5,7 @@ mod ids;
 pub(crate) mod inbox;
 pub(crate) mod rest;
 mod runtime;
+mod signature;
 mod tasks;
 pub mod voice;
 
@@ -24,6 +25,7 @@ pub use crate::gateway::{IdentifyLimit, SavedSession};
 pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind, LogSink};
 pub use crate::rest::{Auth, RestRequest};
+pub use crate::signature::verify_signature;
 
 use crate::gateway::Gateway;
 use crate::inbox::Inbox;

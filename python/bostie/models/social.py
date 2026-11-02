@@ -1,8 +1,10 @@
+from datetime import datetime
 from typing import Any
 
 from bostie.enums import LobbyMemberFlags, MessageFlags, MessageType, ProfileFieldType
 from bostie.models.base import Builder, Model
 from bostie.models.channel import Channel
+from bostie.models.message import Attachment
 from bostie.models.user import User
 
 
@@ -41,6 +43,28 @@ class LobbyMessage(Model, kw_only=True):
     moderation_metadata: dict[str, str] | None = None
     flags: MessageFlags
     application_id: int | None = None
+
+
+class GameDirectMessage(Model, kw_only=True):
+    """A direct message sent while a player has a Social SDK session.
+
+    A message between two provisional accounts exists only in game and carries
+    `channel` with the recipients; another one is a regular message.
+    """
+
+    id: int
+    content: str
+    author: User
+    type: MessageType = MessageType.DEFAULT
+    channel_id: int | None = None
+    channel: Channel | None = None
+    recipient_id: int | None = None
+    lobby_id: int | None = None
+    flags: MessageFlags = MessageFlags(0)
+    application_id: int | None = None
+    timestamp: datetime | None = None
+    edited_timestamp: datetime | None = None
+    attachments: tuple[Attachment, ...] = ()
 
 
 class ApplicationIdentity(Model, kw_only=True):

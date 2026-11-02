@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
+aws-lc-rs = { version = "1.19.0", default-features = false, features = ["aws-lc-sys"] }
 bostie-core = { path = "crates/bostie-core" }
 bytes = "1.12.1"
 chacha20poly1305 = { version = "0.11.0", default-features = false }

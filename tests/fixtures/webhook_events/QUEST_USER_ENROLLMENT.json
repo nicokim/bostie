@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "application_id": "1234560123453231555",
+  "type": 1,
+  "event": {
+    "type": "QUEST_USER_ENROLLMENT",
+    "timestamp": "2025-08-20T17:01:50.099204",
+    "data": {}
+  }
+}

@@ -196,6 +196,7 @@ from bostie.models import (
     FileComponent,
     FollowedChannel,
     ForumTag,
+    GameDirectMessage,
     GatewayBotInfo,
     GatewayInfo,
     Guild,
@@ -334,6 +335,7 @@ from bostie.models import (
 )
 from bostie.router import Router
 from bostie.sync import SyncResult
+from bostie.webhook_events import decode_webhook_event, verify_signature
 
 __all__ = [
     "SKU",
@@ -447,6 +449,7 @@ __all__ = [
     "Forbidden",
     "ForumLayoutType",
     "ForumTag",
+    "GameDirectMessage",
     "GatewayBotInfo",
     "GatewayClosed",
     "GatewayInfo",
@@ -668,7 +671,9 @@ __all__ = [
     "WelcomeScreen",
     "WelcomeScreenChannel",
     "activity",
+    "decode_webhook_event",
     "oauth2",
     "ui",
+    "verify_signature",
     "voice",
 ]

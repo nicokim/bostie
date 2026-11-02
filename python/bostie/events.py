@@ -7,6 +7,7 @@ import msgspec
 
 from bostie.enums import (
     AnimationType,
+    ApplicationIntegrationType,
     AutoModerationTriggerType,
     ChannelType,
     Intents,
@@ -24,10 +25,12 @@ from bostie.models import (
     Collectibles,
     CurrentUser,
     Emoji,
+    GameDirectMessage,
     Guild,
     GuildCommandPermissions,
     Integration,
     Interaction,
+    LobbyMessage,
     Member,
     Message,
     Model,
@@ -853,6 +856,84 @@ class EntitlementUpdate(_EntitlementEvent, kw_only=True):
 
 class EntitlementDelete(_EntitlementEvent, kw_only=True):
     NAME = "ENTITLEMENT_DELETE"
+
+
+class ApplicationAuthorized(Event, kw_only=True):
+    """A user added the app to a guild or to their account; only a webhook event."""
+
+    NAME = "APPLICATION_AUTHORIZED"
+
+    integration_type: ApplicationIntegrationType | None = None
+    user: User
+    scopes: tuple[str, ...]
+    guild: Guild | None = None
+
+
+class ApplicationDeauthorized(Event, kw_only=True):
+    """A user removed the app, or its OAuth2 tokens ended; only a webhook event."""
+
+    NAME = "APPLICATION_DEAUTHORIZED"
+
+    user: User
+
+
+class _LobbyMessageEvent(Event, kw_only=True):
+    message: LobbyMessage
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(shard_id=shard_id, raw_json=data, message=decode(LobbyMessage, data))
+
+
+class LobbyMessageCreate(_LobbyMessageEvent, kw_only=True):
+    """A message arrived in a lobby; only a webhook event."""
+
+    NAME = "LOBBY_MESSAGE_CREATE"
+
+
+class LobbyMessageUpdate(_LobbyMessageEvent, kw_only=True):
+    """A lobby message was edited; only a webhook event."""
+
+    NAME = "LOBBY_MESSAGE_UPDATE"
+
+
+class LobbyMessageDelete(Event, kw_only=True):
+    """A lobby message was deleted; only a webhook event."""
+
+    NAME = "LOBBY_MESSAGE_DELETE"
+
+    id: int
+    lobby_id: int
+
+
+class _GameDirectMessageEvent(Event, kw_only=True):
+    message: GameDirectMessage
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        return cls(
+            shard_id=shard_id, raw_json=data, message=decode(GameDirectMessage, data)
+        )
+
+
+class GameDirectMessageCreate(_GameDirectMessageEvent, kw_only=True):
+    """A direct message was sent in a Social SDK session; only a webhook event."""
+
+    NAME = "GAME_DIRECT_MESSAGE_CREATE"
+
+
+class GameDirectMessageUpdate(_GameDirectMessageEvent, kw_only=True):
+    """A direct message was edited in a Social SDK session; only a webhook event."""
+
+    NAME = "GAME_DIRECT_MESSAGE_UPDATE"
+
+
+class GameDirectMessageDelete(_GameDirectMessageEvent, kw_only=True):
+    """A direct message was deleted in a Social SDK session; only a webhook event."""
+
+    NAME = "GAME_DIRECT_MESSAGE_DELETE"
 
 
 class _SubscriptionEvent(Event, kw_only=True):

@@ -748,6 +748,11 @@ mod _native {
     fn log_levels(levels: [i32; 4]) {
         super::log::set_levels(levels);
     }
+
+    #[pyfunction]
+    fn verify_signature(public_key: &str, signature: &str, timestamp: &str, body: &[u8]) -> bool {
+        bostie_core::verify_signature(public_key, signature, timestamp, body)
+    }
     use super::voice::{ReceiveKind, SinkKind, names};
 
     #[pymodule_init]

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "application_id": "1234560123453231555",
+  "type": 1,
+  "event": {
+    "type": "LOBBY_MESSAGE_CREATE",
+    "timestamp": "2024-10-18T18:41:21.109604",
+    "data": {
+      "id": "1397729799727878254",
+      "type": 0,
+      "content": "welcome to the party!",
+      "lobby_id": "1397729744753266719",
+      "channel_id": "1397729744753266719",
+      "author": {
+        "id": "111178765189277770",
+        "username": "player",
+        "discriminator": "0",
+        "global_name": "Player",
+        "avatar": null
+      },
+      "flags": 65536,
+      "application_id": "1234567765431056709"
+    }
+  }
+}
