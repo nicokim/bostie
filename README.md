@@ -110,7 +110,7 @@ A few things the example takes for granted:
 `bot.rest` has every documented REST operation the bot token reaches, grouped by resource, once the bot has started. Those that need a user's OAuth2 token are on a `BearerClient`, below; interaction answers go through the contexts, and deprecated or legacy routes are left out.
 
 - `await bot.rest.channels.edit(channel_id, name="news", topic=None)`: ids come first and positional, in the order of the URL. A keyword you leave out is left as it is, and `None` clears the field.
-- `reason="..."` goes to the audit log on the operations that take one, such as `bot.rest.bans.create(guild_id, user_id, reason="spam")`.
+- `reason="..."` goes to the audit log on the operations that take one, such as `bot.rest.bans.create(guild_id, user_id, reason="spam")`. It takes 1 to 512 characters.
 - A list Discord pages is an async iterator that pages for you: `async for message in bot.rest.messages.list(channel_id, limit=500)`. `bot.rest.audit_log.list(guild_id)` yields whole pages, with the users and webhooks the entries refer to.
 - Image options such as `icon`, `avatar` and `banner` take a `File`.
 - When an edit lists `attachments`, only those stay. A listed `Attachment` sends its `description` and spoiler flag too, so `msgspec.structs.replace(attachment, description="...")` changes its alt text.

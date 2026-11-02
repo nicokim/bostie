@@ -270,3 +270,16 @@ def test_params_and_query_values_are_sent_as_text(
         ]
 
     asyncio.run(main())
+
+
+def test_an_audit_log_reason_outside_1_to_512_characters_is_not_sent() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        for reason in ("", "x" * 513):
+            with pytest.raises(ValueError, match="1 to 512 characters"):
+                await http.request("GET", "/users/@me", reason=reason)
+
+        await http.request("GET", "/users/@me", reason="x" * 512)
+
+        assert len(fake.requests) == 1
+
+    run(scenario)

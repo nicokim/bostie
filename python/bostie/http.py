@@ -25,6 +25,7 @@ from bostie.models.base import encoder
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
 OAUTH2_TOKEN_ROUTES = ("/oauth2/token", "/oauth2/token/revoke")
+MAX_REASON = 512
 
 type QueryValue = str | int | float | bool | datetime
 type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
@@ -113,6 +114,10 @@ class HTTPClient:
         reason: str | None = None,
         **params: object,
     ) -> bytes:
+        if reason is not None and not 1 <= len(reason) <= MAX_REASON:
+            raise ValueError(
+                f"reason must be 1 to {MAX_REASON} characters, got {len(reason)}"
+            )
         content_type = None
         body = None
         parts: dict[str, object] = {
