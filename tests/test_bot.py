@@ -1147,6 +1147,20 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
             """Crash."""
             raise RuntimeError("boom")
 
+        reported: asyncio.Future[Context] = asyncio.get_running_loop().create_future()
+
+        @bot.on_error(ValueError)
+        async def report(ctx: ErrorContext, error: ValueError) -> None:
+            hooks.append("report")
+            await asyncio.sleep(0.05)
+            assert isinstance(ctx, Context)
+            reported.set_result(ctx)
+
+        @bot.command(auto_defer=0.01)
+        async def odd(ctx: Context) -> None:
+            """Raise a ValueError."""
+            raise ValueError("odd")
+
         bot.include(admin)
         async with running(bot, fake):
             fake.fail(
@@ -1157,14 +1171,20 @@ def test_error_hooks_run_from_the_owning_router_upward_then_the_default(
             )
             explained = await fake.interaction(2, payloads.command("purge"))
             crashed = await fake.interaction(2, payloads.command("crash"))
+            deferred = await fake.interaction(2, payloads.command("odd"))
+            await (await reported).followup("after the fallback")
+            filled = fake.requests[-2]
 
-        assert hooks == ["admin", "bot"]
+        assert hooks == ["admin", "bot", "report"]
         assert explained.json["data"]["content"] == "Discord said 50013"
         assert crashed.json["data"]["content"] == FAILED["content"]
+        assert deferred.json == {"type": 5}
+        assert (filled.method, filled.json) == ("PATCH", FAILED)
 
     run(scenario)
 
     assert failures(caplog) == [(logging.ERROR, "boom")]
+    assert any("left interaction" in record.message for record in caplog.records)
 
 
 FAILED = {"content": "Something went wrong.", "allowed_mentions": MENTIONS}

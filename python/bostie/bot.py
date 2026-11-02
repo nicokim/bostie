@@ -133,6 +133,9 @@ STALE_INTERACTION_MS = 5000
 SLOW_HANDLER_START = 1.0
 TASK_CANCEL_TIMEOUT = 5.0
 FAILURE_ANSWER = "Something went wrong."
+UNANSWERED = frozenset(
+    {ResponseState.PENDING, ResponseState.DEFERRED, ResponseState.DEFERRED_UPDATE}
+)
 PRIVILEGED_INTENTS = (
     Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
 )
@@ -1105,12 +1108,12 @@ class Bot(Router):
         handler: Handler,
         arguments: Callable[[], Mapping[str, Any]],
     ) -> None:
-        try:
-            with ctx.auto_defer():
+        with ctx.auto_defer():
+            try:
                 await handler(ctx, **arguments())
-        except Exception as error:
-            await self._handle_error(ctx, owner, handler, error)
-            return
+            except Exception as error:
+                await self._handle_error(ctx, owner, handler, error)
+                return
         if ctx.state is ResponseState.PENDING:
             log.warning(
                 "%s returned without answering; Discord shows "
@@ -1156,12 +1159,18 @@ class Bot(Router):
                     _python_name(hook),
                     error,
                 )
+            if ctx.state in UNANSWERED:
+                log.warning(
+                    "the error hook %s left interaction %d unanswered; "
+                    "bostie answered %r",
+                    _python_name(hook),
+                    ctx.interaction.id,
+                    FAILURE_ANSWER,
+                )
+                await _answer_failure(ctx)
             return
         log.error("%s raised", _python_name(handler), exc_info=error)
-        try:
-            await _answer_failure(ctx)
-        except Exception:
-            log.exception("answering interaction %d failed", ctx.interaction.id)
+        await _answer_failure(ctx)
 
 
 def _command_defaults(
@@ -1211,13 +1220,16 @@ async def _queued[T](
 async def _answer_failure(
     ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
 ) -> None:
-    if isinstance(ctx, AutocompleteContext):
-        if ctx.state is ResponseState.PENDING:
-            await ctx._respond([])
-    elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
-        await ctx.respond(FAILURE_ANSWER, ephemeral=True)
-    elif ctx.state is ResponseState.DEFERRED:
-        await ctx.respond(FAILURE_ANSWER)
+    try:
+        if isinstance(ctx, AutocompleteContext):
+            if ctx.state is ResponseState.PENDING:
+                await ctx._respond([])
+        elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
+            await ctx.respond(FAILURE_ANSWER, ephemeral=True)
+        elif ctx.state is ResponseState.DEFERRED:
+            await ctx.respond(FAILURE_ANSWER)
+    except Exception:
+        log.exception("answering interaction %d failed", ctx.interaction.id)
 
 
 def _shard_ids(
