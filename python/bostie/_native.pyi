@@ -7,17 +7,23 @@ __all__ = [
     "DIRECTIONS",
     "DISCONNECT_REASONS",
     "LOGGERS",
+    "MAX_BANDS",
+    "MAX_BAND_FREQUENCY",
     "MAX_BITRATE",
     "MAX_BUFFER",
     "MAX_COMPLEXITY",
+    "MAX_GAIN",
     "MAX_JITTER",
     "MAX_RATE",
     "MAX_RESAMPLER_BLOCK",
     "MAX_SPEECH_HANGOVER",
+    "MAX_SPEED",
+    "MIN_BAND_FREQUENCY",
     "MIN_BITRATE",
     "MIN_BUFFER",
     "MIN_RATE",
     "MIN_SPEECH_HANGOVER",
+    "MIN_SPEED",
     "OPUS_APPLICATIONS",
     "OPUS_BANDWIDTHS",
     "OPUS_SIGNALS",
@@ -52,6 +58,12 @@ MAX_BUFFER: Final[float]
 MIN_SPEECH_HANGOVER: Final[float]
 MAX_SPEECH_HANGOVER: Final[float]
 MAX_JITTER: Final[float]
+MAX_BANDS: Final[int]
+MIN_BAND_FREQUENCY: Final[float]
+MAX_BAND_FREQUENCY: Final[float]
+MAX_GAIN: Final[float]
+MIN_SPEED: Final[float]
+MAX_SPEED: Final[float]
 OPUS_APPLICATIONS: Final[list[str]]
 OPUS_BANDWIDTHS: Final[list[str]]
 OPUS_SIGNALS: Final[list[str]]
@@ -304,6 +316,9 @@ class Sink:
     def flush(self) -> tuple[int, int]: ...
     def clear(self, until: int | None = None, since: int | None = None) -> None: ...
     def set_volume(self, volume: float) -> None: ...
+    def set_filters(
+        self, bands: list[tuple[float, float]], bass: float, speed: float, pitch: float
+    ) -> None: ...
     def queued(self) -> float: ...
     def passthrough(self) -> bool: ...
     def stats(self) -> tuple[int, int, int, int, int, int]: ...

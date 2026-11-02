@@ -1,5 +1,7 @@
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal, TypedDict, get_args
 
 from bostie import _native
@@ -17,6 +19,12 @@ MAX_BUFFER = _native.MAX_BUFFER
 MIN_SPEECH_HANGOVER = _native.MIN_SPEECH_HANGOVER
 MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
 MAX_JITTER = _native.MAX_JITTER
+MAX_BANDS = _native.MAX_BANDS
+MIN_BAND_FREQUENCY = _native.MIN_BAND_FREQUENCY
+MAX_BAND_FREQUENCY = _native.MAX_BAND_FREQUENCY
+MAX_GAIN = _native.MAX_GAIN
+MIN_SPEED = _native.MIN_SPEED
+MAX_SPEED = _native.MAX_SPEED
 DECODE_RATES = frozenset(_native.DECODE_RATES)
 
 type Overflow = Literal["drop_oldest", "drop_newest"]
@@ -120,6 +128,49 @@ class EncoderSettings:
                 "signal_type must be 'auto', 'voice' or 'music', "
                 f"got {self.signal_type!r}"
             )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Filters:
+    """Effects applied in Rust as a sink plays; the defaults change nothing.
+
+    `equalizer` maps band centres in Hz to gains in dB, each an octave wide; `bass`
+    is a gain in dB below 100 Hz; `speed` keeps the pitch and `pitch` the tempo.
+    """
+
+    equalizer: Mapping[float, float] = MappingProxyType({})
+    bass: float = 0.0
+    speed: float = 1.0
+    pitch: float = 1.0
+
+    def __post_init__(self) -> None:
+        if len(self.equalizer) > MAX_BANDS:
+            raise ValueError(
+                f"equalizer takes at most {MAX_BANDS} bands, got {len(self.equalizer)}"
+            )
+        for frequency, gain in self.equalizer.items():
+            if not MIN_BAND_FREQUENCY <= frequency <= MAX_BAND_FREQUENCY:
+                raise ValueError(
+                    f"equalizer frequencies must be from {MIN_BAND_FREQUENCY:g} to "
+                    f"{MAX_BAND_FREQUENCY:g} Hz, got {frequency}"
+                )
+            _check_gain("equalizer gains", gain)
+        _check_gain("bass", self.bass)
+        for name, value in (("speed", self.speed), ("pitch", self.pitch)):
+            if not MIN_SPEED <= value <= MAX_SPEED:
+                raise ValueError(
+                    f"{name} must be from {MIN_SPEED:g} to {MAX_SPEED:g}, got {value}"
+                )
+
+
+def _check_gain(name: str, gain: float) -> None:
+    if not -MAX_GAIN <= gain <= MAX_GAIN:
+        raise ValueError(
+            f"{name} must be from -{MAX_GAIN:g} to {MAX_GAIN:g} dB, got {gain}"
+        )
+
+
+NO_FILTERS = Filters()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

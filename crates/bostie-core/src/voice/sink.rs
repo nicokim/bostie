@@ -13,8 +13,8 @@ use crate::runtime::Owner;
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
-    CHANNELS, FRAME_LEN, FRAME_SAMPLES, NANOS_PER_SECOND, SAMPLE_RATE, SinkFormat, SinkOptions,
-    StallPolicy,
+    CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters, NANOS_PER_SECOND, SAMPLE_RATE, SinkFormat,
+    SinkOptions, StallPolicy,
 };
 
 const FRAME_FRAMES: u64 = FRAME_SAMPLES as u64;
@@ -50,6 +50,7 @@ struct Queue {
     tainted: bool,
     wake_armed: bool,
     volume: f32,
+    filters: Option<Arc<Filters>>,
     closed: bool,
     passthrough: bool,
     playing: bool,
@@ -238,6 +239,13 @@ impl Sink {
         Ok(())
     }
 
+    pub fn set_filters(&self, filters: Filters) -> Result<(), CoreError> {
+        self.owner.check()?;
+        filters.validate()?;
+        self.open_queue()?.filters = (!filters.is_neutral()).then(|| Arc::new(filters));
+        Ok(())
+    }
+
     pub fn queued(&self) -> Result<Duration, CoreError> {
         self.owner.check()?;
         let frames = self.queue.lock().queued;
@@ -277,6 +285,11 @@ impl Sink {
 
     pub fn volume(&self) -> f32 {
         self.queue.lock().volume
+    }
+
+    pub(crate) fn controls(&self) -> (f32, Option<Arc<Filters>>) {
+        let queue = self.queue.lock();
+        (queue.volume, queue.filters.clone())
     }
 
     pub fn pull_pcm(&self, frame: &mut [f32]) -> bool {

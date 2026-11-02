@@ -105,6 +105,9 @@ class FakeSink:
         self.closed = False
         self.failure: Exception | None = None
         self.counters = (0, 0, 0, 0, 0)
+        self.filters: tuple[list[tuple[float, float]], float, float, float] | None = (
+            None
+        )
 
     @property
     def id(self) -> int:
@@ -148,6 +151,12 @@ class FakeSink:
     def set_volume(self, volume: float) -> None:
         self._check()
         self.volume = volume
+
+    def set_filters(
+        self, bands: list[tuple[float, float]], bass: float, speed: float, pitch: float
+    ) -> None:
+        self._check()
+        self.filters = (bands, bass, speed, pitch)
 
     def queued(self) -> float:
         self._check()

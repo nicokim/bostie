@@ -127,6 +127,28 @@ def test_defaults_check_their_bounds(
         voice.Defaults(**settings)
 
 
+@pytest.mark.parametrize(
+    ("settings", "outcome"),
+    [
+        ({"equalizer": {20: -24.0, 20_000: 24.0}, "speed": 0.5, "pitch": 2.0}, VALID),
+        ({"equalizer": {19.9: 1.0}}, invalid("equalizer frequencies")),
+        ({"equalizer": {100: 24.1}}, invalid("equalizer gains")),
+        (
+            {"equalizer": {float(hz): 1.0 for hz in range(100, 1_800, 100)}},
+            invalid("16"),
+        ),
+        ({"bass": math.nan}, invalid("bass")),
+        ({"speed": 2.1}, invalid("speed")),
+        ({"pitch": 0.49}, invalid("pitch")),
+    ],
+)
+def test_filters_check_their_bounds(
+    settings: dict[str, Any], outcome: AbstractContextManager[object]
+) -> None:
+    with outcome:
+        voice.Filters(**settings)
+
+
 def test_formats_default_to_the_documented_values() -> None:
     defaults = voice.Defaults()
 

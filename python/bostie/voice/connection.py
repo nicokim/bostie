@@ -54,12 +54,14 @@ from bostie.voice.events import (
 )
 from bostie.voice.formats import (
     DEFAULT_PCM,
+    NO_FILTERS,
     PACKET_RECEIVE_OPTIONS,
     PCM,
     RECEIVE_OPTIONS,
     SINK_OPTIONS,
     Defaults,
     EncoderSettings,
+    Filters,
     Format,
     Latency,
     Opus,
@@ -665,6 +667,7 @@ class VoiceConnection:
         volume: float = 1.0,
         after: Sink | None = None,
         crossfade: float = 0.0,
+        filters: Filters = NO_FILTERS,
         **options: Unpack[SinkOptions],
     ) -> Sink:
         """Open a bounded writer whose audio is mixed into this connection.
@@ -700,6 +703,7 @@ class VoiceConnection:
             stall=stall,
             volume=volume,
             crossfade=crossfade,
+            filters=filters,
         )
         self._sinks[sink] = None
         self.manager._handles[native.id] = sink
@@ -846,12 +850,15 @@ class VoiceConnection:
         source: "Source",
         *,
         volume: float = 1.0,
+        filters: Filters = NO_FILTERS,
         meta: Any = None,
         **options: Unpack[SinkOptions],
     ) -> layers.Track:
         """Play a source on its own sink, mixed with anything else playing."""
         self._check_live()
-        return await layers.play(self, source, volume=volume, meta=meta, **options)
+        return await layers.play(
+            self, source, volume=volume, filters=filters, meta=meta, **options
+        )
 
     def stop(self) -> None:
         """Close every sink, so nothing plays; their tracks end STOPPED."""

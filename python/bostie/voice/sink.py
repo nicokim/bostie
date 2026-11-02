@@ -6,7 +6,15 @@ from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from bostie._aio import Wake
 from bostie.errors import BostieError, BufferFull, SinkClosed
-from bostie.voice.formats import SAMPLE_BYTES, SAMPLE_RATE, Format, Opus, SinkStall
+from bostie.voice.formats import (
+    NO_FILTERS,
+    SAMPLE_BYTES,
+    SAMPLE_RATE,
+    Filters,
+    Format,
+    Opus,
+    SinkStall,
+)
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceConnection
@@ -22,6 +30,9 @@ class NativeSink(Protocol):
     def flush(self) -> tuple[int, int]: ...
     def clear(self, until: int | None = None, since: int | None = None) -> None: ...
     def set_volume(self, volume: float) -> None: ...
+    def set_filters(
+        self, bands: list[tuple[float, float]], bass: float, speed: float, pitch: float
+    ) -> None: ...
     def queued(self) -> float: ...
     def passthrough(self) -> bool: ...
     def stats(self) -> tuple[int, int, int, int, int, int]: ...
@@ -71,6 +82,7 @@ class Sink:
         stall: SinkStall,
         volume: float,
         crossfade: float = 0.0,
+        filters: Filters = NO_FILTERS,
     ) -> None:
         self.format = format
         self.buffer = buffer
@@ -80,12 +92,15 @@ class Sink:
         self._native = native
         self._handle = native.id
         self._volume = volume
+        self._filters = NO_FILTERS
         self._piece = _piece_bytes(format, buffer)
         self._room = Wake()
         self._markers: dict[int, asyncio.Future[bool]] = {}
         self._stats = SinkStats(0.0, 0.0, 0, 0, 0.0, 0)
         self._closed = False
         self._playing = False
+        if filters != NO_FILTERS:
+            self.filters = filters
 
     @property
     def queued(self) -> float:
@@ -110,6 +125,18 @@ class Sink:
         if not self._closed:
             self._native.set_volume(volume)
         self._volume = volume
+
+    @property
+    def filters(self) -> Filters:
+        """The effects Rust applies as this sink plays; changes take effect at once."""
+        return self._filters
+
+    @filters.setter
+    def filters(self, filters: Filters) -> None:
+        if not self._closed:
+            bands = list(filters.equalizer.items())
+            self._native.set_filters(bands, filters.bass, filters.speed, filters.pitch)
+        self._filters = filters
 
     async def write(self, data: Buffer) -> None:
         """Queue audio, waiting while the sink holds `buffer` seconds or more."""

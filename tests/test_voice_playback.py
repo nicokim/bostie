@@ -20,6 +20,7 @@ from bostie.voice.formats import (
     PCM,
     Defaults,
     EncoderSettings,
+    Filters,
     Format,
     Opus,
     SinkOptions,
@@ -104,8 +105,10 @@ class FakeSink:
         volume: float,
         stall: str,
         after: "FakeSink | None" = None,
+        filters: Filters | None = None,
     ) -> None:
         self.vc = vc
+        self.filters = filters or Filters()
         self.born = vc.clock.ticks + 1
         self.after = after
         self.opened_after = after
@@ -266,13 +269,14 @@ class FakeConnection:
         volume: float = 1.0,
         after: FakeSink | None = None,
         crossfade: float = 0.0,
+        filters: Filters | None = None,
         **options: Unpack[SinkOptions],
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
             raise VoiceNotConnected("the voice connection has ended")
         buffer = options.get("buffer", 0.2)
         stall = options.get("stall", "hold")
-        sink = FakeSink(self, format, buffer, volume, stall, after)
+        sink = FakeSink(self, format, buffer, volume, stall, after, filters)
         sink.crossfade = crossfade
         self.sinks.append(sink)
         self.clock.sinks.append(sink)
@@ -460,10 +464,12 @@ def test_play_raises_the_open_error_and_closes_the_source() -> None:
 def test_sink_settings_reach_the_connection() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
+        bass = Filters(bass=6.0)
         track = await play(
             vc, FakeSource(clock, "a", 5), volume=0.5, buffer=0.4, stall="drop", meta=7
         )
-        add(queue(vc, volume=0.7, buffer=0.1, stall="drop"), FakeSource(clock, "b", 5))
+        loud = queue(vc, volume=0.7, filters=bass, buffer=0.1, stall="drop")
+        add(loud, FakeSource(clock, "b", 5))
         await clock.until(lambda: len(vc.sinks) == 2)
         packets = FakeSource(clock, "c", 3, format=Opus())
         await layers.broadcast(cast("Any", packets), [cast("Any", vc)])
@@ -480,6 +486,7 @@ def test_sink_settings_reach_the_connection() -> None:
             (1.0, 0.2, "hold"),
         ]
         assert [sink.format for sink in vc.sinks[2:]] == [Opus(), Opus()]
+        assert [sink.filters for sink in vc.sinks[:2]] == [Filters(), bass]
         assert track.meta == 7
 
     run(scenario)
@@ -1029,6 +1036,8 @@ def test_a_track_controls_its_queue_only_while_it_is_current() -> None:
         first.resume()
         second.volume = 0.3
         assert (q.volume, first.volume, vc.sinks[0].volume) == (0.3, 0.3, 0.3)
+        second.filters = Filters(speed=1.5)
+        assert q.filters == first.filters == vc.sinks[0].filters == Filters(speed=1.5)
         with pytest.raises(RuntimeError, match="current track"):
             await second.seek(0.1)
         with pytest.raises(RuntimeError, match="has not started"):

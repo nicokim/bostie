@@ -4,6 +4,7 @@ pub(crate) mod connection;
 pub(crate) mod convert;
 pub(crate) mod crypto;
 pub(crate) mod dave;
+pub(crate) mod effects;
 pub(crate) mod media;
 pub(crate) mod mixer;
 pub(crate) mod pacer;

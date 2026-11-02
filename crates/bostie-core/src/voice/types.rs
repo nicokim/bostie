@@ -28,6 +28,10 @@ pub const MAX_COMPLEXITY: u8 = 10;
 pub const RATES: RangeInclusive<u32> = 8_000..=192_000;
 pub const MAX_RESAMPLER_BLOCK: u32 = 960;
 pub const BUFFERS: RangeInclusive<Duration> = FRAME..=Duration::from_secs(60);
+pub const MAX_BANDS: usize = 16;
+pub const BAND_FREQUENCIES: RangeInclusive<f32> = 20.0..=20_000.0;
+pub const MAX_GAIN: f32 = 24.0;
+pub const SPEEDS: RangeInclusive<f32> = 0.5..=2.0;
 
 const MAX_PACKET_LOSS: u8 = 100;
 
@@ -249,6 +253,65 @@ impl SinkOptions {
             )));
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Filters {
+    pub bands: Vec<(f32, f32)>,
+    pub bass: f32,
+    pub speed: f32,
+    pub pitch: f32,
+}
+
+impl Filters {
+    pub fn validate(&self) -> Result<(), CoreError> {
+        let invalid = |text: String| Err(CoreError::InvalidRequest(text));
+        if self.bands.len() > MAX_BANDS {
+            return invalid(format!(
+                "an equalizer takes at most {MAX_BANDS} bands, got {}",
+                self.bands.len()
+            ));
+        }
+        let gains = -MAX_GAIN..=MAX_GAIN;
+        for &(frequency, gain) in &self.bands {
+            if !BAND_FREQUENCIES.contains(&frequency) {
+                return invalid(format!(
+                    "a band frequency must be from {} to {} Hz, got {frequency}",
+                    BAND_FREQUENCIES.start(),
+                    BAND_FREQUENCIES.end()
+                ));
+            }
+            if !gains.contains(&gain) {
+                return invalid(format!(
+                    "a band gain must be from -{MAX_GAIN} to {MAX_GAIN} dB, got {gain}"
+                ));
+            }
+        }
+        if !gains.contains(&self.bass) {
+            return invalid(format!(
+                "bass must be from -{MAX_GAIN} to {MAX_GAIN} dB, got {}",
+                self.bass
+            ));
+        }
+        for (name, value) in [("speed", self.speed), ("pitch", self.pitch)] {
+            if !SPEEDS.contains(&value) {
+                return invalid(format!(
+                    "{name} must be from {} to {}, got {value}",
+                    SPEEDS.start(),
+                    SPEEDS.end()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[expect(clippy::float_cmp)]
+    pub(crate) fn is_neutral(&self) -> bool {
+        self.bands.iter().all(|&(_, gain)| gain == 0.0)
+            && self.bass == 0.0
+            && self.speed == 1.0
+            && self.pitch == 1.0
     }
 }
 

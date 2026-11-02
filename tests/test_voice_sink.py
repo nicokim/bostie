@@ -344,12 +344,24 @@ def test_async_with_clears_then_closes_when_the_block_raises(
     run(scenario)
 
 
-def test_volume_goes_to_the_native_sink() -> None:
+def test_volume_and_filters_go_to_the_native_sink() -> None:
     async def scenario(bot: FakeBot) -> None:
         sink, native = await open_sink(bot, volume=0.8)
-        assert sink.volume == 0.8
+        assert (sink.volume, sink.filters, native.filters) == (
+            0.8,
+            voice.Filters(),
+            None,
+        )
         sink.volume = 0.25
         assert (sink.volume, native.volume) == (0.25, 0.25)
+        nightcore = voice.Filters(equalizer={60: 3.0}, bass=2.0, speed=1.25, pitch=1.25)
+        sink.filters = nightcore
+        assert (sink.filters, native.filters) == (
+            nightcore,
+            ([(60, 3.0)], 2.0, 1.25, 1.25),
+        )
+        _, opened = await open_sink(bot, filters=voice.Filters(speed=0.5))
+        assert opened.filters == ([], 0.0, 0.5, 1.0)
 
     run(scenario)
 

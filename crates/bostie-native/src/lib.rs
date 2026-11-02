@@ -818,4 +818,16 @@ mod _native {
     const MAX_SPEECH_HANGOVER: f64 = types::SPEECH_HANGOVERS.end().as_secs_f64();
     #[pymodule_export]
     const MAX_JITTER: f64 = types::MAX_JITTER.as_secs_f64();
+    #[pymodule_export]
+    const MAX_BANDS: usize = types::MAX_BANDS;
+    #[pymodule_export]
+    const MIN_BAND_FREQUENCY: f32 = *types::BAND_FREQUENCIES.start();
+    #[pymodule_export]
+    const MAX_BAND_FREQUENCY: f32 = *types::BAND_FREQUENCIES.end();
+    #[pymodule_export]
+    const MAX_GAIN: f32 = types::MAX_GAIN;
+    #[pymodule_export]
+    const MIN_SPEED: f32 = *types::SPEEDS.start();
+    #[pymodule_export]
+    const MAX_SPEED: f32 = *types::SPEEDS.end();
 }

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
-    Application, Bandwidth, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall,
-    SampleFormat, SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
+    Application, Bandwidth, EncoderSettings, Filters, Overflow, PcmFormat, ReceiveFormat,
+    ReceiveStall, SampleFormat, SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
     Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, RtcpPacket, Sink, SinkStats,
@@ -53,6 +53,16 @@ impl NativeSink {
 
     fn set_volume(&self, volume: f32) -> Result<()> {
         Ok(self.0.set_volume(volume)?)
+    }
+
+    fn set_filters(&self, bands: Vec<(f32, f32)>, bass: f32, speed: f32, pitch: f32) -> Result<()> {
+        let filters = Filters {
+            bands,
+            bass,
+            speed,
+            pitch,
+        };
+        Ok(self.0.set_filters(filters)?)
     }
 
     fn queued(&self) -> Result<f64> {

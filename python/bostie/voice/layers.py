@@ -32,11 +32,13 @@ from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import (
     DEFAULT_PCM,
+    NO_FILTERS,
     PCM,
     SAMPLE_BYTES,
     SAMPLE_RATE,
     SINK_OPTIONS,
     EncoderSettings,
+    Filters,
     Format,
     Opus,
     SinkOptions,
@@ -166,6 +168,14 @@ class Track:
     def volume(self, volume: float) -> None:
         self._player.volume = volume
 
+    @property
+    def filters(self) -> Filters:
+        return self._player.filters
+
+    @filters.setter
+    def filters(self, filters: Filters) -> None:
+        self._player.filters = filters
+
     def pause(self) -> None:
         """Stop feeding the sink; the audio it already holds still plays."""
         if self._player.is_current(self._entry):
@@ -189,11 +199,13 @@ class _Player:
         *,
         volume: float,
         options: SinkOptions,
+        filters: Filters = NO_FILTERS,
         crossfade: float = 0.0,
         history: int = 0,
     ) -> None:
         self.vc = vc
         self.closed = False
+        self._filters = filters
         self.history: deque[Track] = deque(maxlen=history)
         self._volume = volume
         self._options = options
@@ -235,6 +247,17 @@ class _Player:
         for sink in (*self._retiring, self._sink):
             if sink is not None:
                 sink.volume = volume
+
+    @property
+    def filters(self) -> Filters:
+        return self._filters
+
+    @filters.setter
+    def filters(self, filters: Filters) -> None:
+        self._filters = filters
+        for sink in (*self._retiring, self._sink):
+            if sink is not None:
+                sink.filters = filters
 
     def is_current(self, entry: _Entry) -> bool:
         return bool(self._entries) and self._entries[0] is entry
@@ -589,6 +612,7 @@ class _Player:
         self._sink = self.vc.sink(
             format,
             volume=self._volume,
+            filters=self._filters,
             after=previous,
             crossfade=self._crossfade,
             **self._options,
@@ -685,6 +709,7 @@ class Queue:
         vc: "VoiceConnection",
         *,
         volume: float = 1.0,
+        filters: Filters = NO_FILTERS,
         crossfade: float | None = None,
         history: int | None = None,
         **options: Unpack[SinkOptions],
@@ -699,6 +724,7 @@ class Queue:
             vc,
             volume=volume,
             options=options,
+            filters=filters,
             crossfade=self.crossfade,
             history=defaults.history if history is None else history,
         )
@@ -748,6 +774,15 @@ class Queue:
         self._player.volume = volume
 
     @property
+    def filters(self) -> Filters:
+        """The effects on every track: equalizer, bass, speed and pitch."""
+        return self._player.filters
+
+    @filters.setter
+    def filters(self, filters: Filters) -> None:
+        self._player.filters = filters
+
+    @property
     def history(self) -> tuple[Track, ...]:
         """The tracks that played, oldest first, as many as `history` keeps."""
         return tuple(self._player.history)
@@ -790,17 +825,18 @@ async def play(
     source: "Source",
     *,
     volume: float = 1.0,
+    filters: Filters = NO_FILTERS,
     meta: Any = None,
     **options: Unpack[SinkOptions],
 ) -> Track:
     check_keys(options, SINK_OPTIONS, "options")
     try:
         await source.open(vc.manager)
-        sink = vc.sink(source.format, volume=volume, **options)
+        sink = vc.sink(source.format, volume=volume, filters=filters, **options)
     except BaseException:
         await source.aclose()
         raise
-    player = _Player(vc, volume=volume, options=options)
+    player = _Player(vc, volume=volume, options=options, filters=filters)
     return player.start(source, sink, meta)
 
 

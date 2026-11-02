@@ -7,9 +7,11 @@ use opus::{Channels, Decoder, SoftClip};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::voice::codec::{self, Encoder};
+use crate::voice::effects::{Equalizer, Rate};
 use crate::voice::sink::Sink;
 use crate::voice::types::{
-    CHANNELS, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, SAMPLE_RATE, SinkFormat, StallPolicy,
+    CHANNELS, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, Filters, SAMPLE_RATE, SinkFormat,
+    StallPolicy,
 };
 
 pub(crate) struct Mixer {
@@ -33,6 +35,9 @@ struct Strip {
     decoder: Option<Decoder>,
     carry: Vec<f32>,
     carried: usize,
+    filters: Option<Arc<Filters>>,
+    equalizer: Option<Equalizer>,
+    rate: Option<Box<Rate>>,
 }
 
 impl Mixer {
@@ -88,7 +93,10 @@ impl Mixer {
                 continue;
             }
             let strip = self.strip(sink);
-            if strip.gather(sink) && sink.options().format == SinkFormat::Opus {
+            if strip.gather(sink)
+                && sink.options().format == SinkFormat::Opus
+                && strip.rate.is_none()
+            {
                 strip.fill(sink, false);
             }
             strip.gain = strip.target;
@@ -129,7 +137,7 @@ impl Mixer {
             if !strip.live {
                 continue;
             }
-            if sink.options().format == SinkFormat::Opus {
+            if sink.options().format == SinkFormat::Opus && strip.rate.is_none() {
                 strip.fill(sink, true);
             }
             strip.add_to(&mut self.sum);
@@ -223,13 +231,33 @@ impl Strip {
             decoder: None,
             carry: Vec::new(),
             carried: 0,
+            filters: None,
+            equalizer: None,
+            rate: None,
         }
     }
 
     fn gather(&mut self, sink: &Sink) -> bool {
-        self.target = sink.volume();
+        let (volume, filters) = sink.controls();
+        self.target = volume;
+        self.adopt(filters);
         self.packet = None;
-        self.live = match sink.options().format {
+        self.live = match self.rate.take() {
+            Some(mut rate) => {
+                while rate.wants_input() && self.pull(sink) {
+                    rate.push(&self.frame);
+                }
+                let live = rate.render(&mut self.frame);
+                self.rate = Some(rate);
+                live
+            }
+            None => self.take(sink),
+        };
+        self.live
+    }
+
+    fn take(&mut self, sink: &Sink) -> bool {
+        match sink.options().format {
             SinkFormat::Pcm(_) => sink.pull_pcm(&mut self.frame),
             SinkFormat::Opus => {
                 self.has_carry() || {
@@ -237,8 +265,39 @@ impl Strip {
                     self.packet.is_some()
                 }
             }
+        }
+    }
+
+    fn pull(&mut self, sink: &Sink) -> bool {
+        let taken = self.take(sink);
+        if taken && sink.options().format == SinkFormat::Opus {
+            self.fill(sink, true);
+        }
+        taken
+    }
+
+    #[expect(clippy::float_cmp)]
+    fn adopt(&mut self, filters: Option<Arc<Filters>>) {
+        let unchanged = match (&self.filters, &filters) {
+            (Some(old), Some(new)) => Arc::ptr_eq(old, new),
+            (old, new) => old.is_none() && new.is_none(),
         };
-        self.live
+        if unchanged {
+            return;
+        }
+        let (speed, pitch) = filters
+            .as_deref()
+            .map_or((1.0, 1.0), |filters| (filters.speed, filters.pitch));
+        let previous = self.equalizer.take();
+        self.equalizer = filters
+            .as_deref()
+            .and_then(|filters| Equalizer::new(filters, previous));
+        if self.rate.is_some() || speed != 1.0 || pitch != 1.0 {
+            self.rate
+                .get_or_insert_with(|| Box::new(Rate::new()))
+                .set(speed, pitch);
+        }
+        self.filters = filters;
     }
 
     fn has_carry(&self) -> bool {
@@ -250,6 +309,8 @@ impl Strip {
         self.gain == 1.0
             && self.target == 1.0
             && self.fade.is_none()
+            && self.filters.is_none()
+            && self.rate.is_none()
             && !self.has_carry()
             && self
                 .packet
@@ -301,6 +362,9 @@ impl Strip {
     }
 
     fn add_to(&mut self, sum: &mut [f32]) {
+        if let Some(equalizer) = &mut self.equalizer {
+            equalizer.apply(&mut self.frame);
+        }
         let start = self.gain;
         let change = self.target - start;
         let fade = self.fade;
@@ -689,6 +753,33 @@ mod tests {
             Delivery::VoiceMarker { marker: id, played: true, .. } if *id == marker
         )));
         assert!(mixer.mix(&sinks).is_none());
+    }
+
+    #[test]
+    fn filters_turn_passthrough_off_and_a_faster_speed_pulls_more_audio() {
+        let mut fixture = Fixture::new();
+        let filters = |bass, speed| Filters {
+            bands: Vec::new(),
+            bass,
+            speed,
+            pitch: 1.0,
+        };
+        let opus = opus_sink(&mut fixture);
+        opus.set_filters(filters(6.0, 1.0)).unwrap();
+        opus.write(&packet(Channels::Stereo, 960)).unwrap();
+        let fast = pcm_sink(&mut fixture, 0.25, 960 * 20);
+        fast.set_filters(filters(0.0, 2.0)).unwrap();
+        let mut mixer = Mixer::new(settings()).unwrap();
+
+        mixer.mix(std::slice::from_ref(&opus)).unwrap();
+        for _ in 0..5 {
+            mixer.mix(std::slice::from_ref(&fast)).unwrap();
+        }
+
+        assert!(!opus.passthrough().unwrap());
+        assert_eq!(consumed(&fast), 960 * 11);
+        assert!(mixer.sum.iter().all(|sample| (sample - 0.25).abs() < 1e-3));
+        assert!(fast.set_filters(filters(0.0, 3.0)).is_err());
     }
 
     #[test]

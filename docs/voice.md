@@ -32,6 +32,22 @@ A URL ending in `.m3u8`, or served as an HLS playlist, plays as HLS. A master pl
 
 bostie does not extract media from web pages. A tool such as yt-dlp can: pass the direct URL it finds, with the HTTP headers it says that URL needs, to `voice.Url`.
 
+## Audio filters
+
+`voice.Filters` changes how a sink sounds, in Rust, as it plays:
+
+```python
+queue = voice.Queue(vc, filters=voice.Filters(bass=6.0))
+queue.filters = voice.Filters(speed=1.25, pitch=1.25)
+```
+
+- `equalizer={60: 4.0, 8_000: -3.0}` raises or lowers a band one octave wide around each frequency, by that many dB. It takes up to 16 bands from 20 Hz to 20 kHz.
+- `bass=6.0` raises everything below 100 Hz by 6 dB; a negative gain lowers it. Gains go from -24 to 24 dB.
+- `speed=1.5` plays 50% faster at the same pitch, and `pitch=1.5` plays a fifth higher at the same speed. Both go from 0.5 to 2. The same value for both changes them together, like a record played faster.
+- `vc.sink(filters=...)`, `vc.play(filters=...)` and `voice.Queue(vc, filters=...)` start with filters. `sink.filters`, `track.filters` and `queue.filters` change them while audio plays, from the next 20 ms frame; a track's filters are its queue's. `voice.Filters()` turns them off.
+- A sink with filters is decoded and encoded again, as one at a volume other than 1 is, so Opus passes through only without them. On one core of a desktop CPU, ten bands with bass take about 20 µs per 20 ms frame, speed about 25 µs, and pitch 40 to 50 µs. A sink without filters costs nothing more.
+- Speed and pitch work on about 50 ms of audio past what plays. The audio a sink still holds there when it closes is not played, and after `sink.clear()` that much of the earlier audio still plays.
+
 ## Going back in a queue
 
 `voice.Queue(vc, history=20)` keeps the last 20 tracks that played in `queue.history`, oldest first; `voice.Defaults(history=20)` does it for every queue. A queue keeps none by default, because a kept track holds on to its source, and a `voice.Bytes` source to its audio. A track counts once its audio started, whether it finished or was skipped.
