@@ -1286,22 +1286,26 @@ class ContextVoice:
         check_keys(options, CONNECT_OPTIONS, "options")
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
-        try:
-            state = await self._manager._bot.rest.voice.fetch_state(
-                self._guild_id, self._user_id
-            )
-        except NotFound as error:
-            if error.code != JSONErrorCode.UNKNOWN_VOICE_STATE:
-                raise
-            channel_id = None
-        else:
-            channel_id = state.channel_id
+        channel_id = await self._channel_id(self._guild_id)
         if channel_id is None:
             raise NotInVoice(
                 f"user {self._user_id} is not in a voice channel of guild "
                 f"{self._guild_id}"
             )
         return await self._manager.connect(channel_id, **options)
+
+    async def _channel_id(self, guild_id: int) -> int | None:
+        bot = self._manager._bot
+        if bot.cache.guild(guild_id) is not None:
+            cached = bot.cache.voice_state(guild_id, self._user_id)
+            return None if cached is None else cached.channel_id
+        try:
+            state = await bot.rest.voice.fetch_state(guild_id, self._user_id)
+        except NotFound as error:
+            if error.code != JSONErrorCode.UNKNOWN_VOICE_STATE:
+                raise
+            return None
+        return state.channel_id
 
 
 def versions() -> dict[str, str]:

@@ -479,6 +479,30 @@ def test_context_voice_connects_to_the_users_channel() -> None:
     run(scenario)
 
 
+@pytest.mark.parametrize("cached", [OTHER_VOICE, None])
+def test_context_voice_reads_a_cached_guilds_voice_states(cached: int | None) -> None:
+    async def scenario(bot: FakeBot) -> None:
+        states = [] if cached is None else [rest_voice_state(cached)]
+        guild = payloads.guild(
+            id=str(GUILD_ID),
+            channels=[{"id": str(OTHER_VOICE), "type": 2}],
+            threads=[],
+            voice_states=states,
+        )
+        bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
+        if cached is None:
+            with pytest.raises(voice.NotInVoice):
+                await context_voice(bot).connect()
+        else:
+            task = asyncio.ensure_future(context_voice(bot).connect())
+            await settle()
+            bot.deliver(ready())
+            assert (await task).channel_id == OTHER_VOICE
+        assert bot.api.requests == []
+
+    run(scenario)
+
+
 @pytest.mark.parametrize("case", ["dm", "unknown voice state", "no channel"])
 def test_context_voice_raises_not_in_voice(case: str) -> None:
     async def scenario(bot: FakeBot) -> None:
