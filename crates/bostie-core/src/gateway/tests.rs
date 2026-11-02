@@ -9,7 +9,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use sonic_rs::{JsonValueTrait, Value};
-use tokio::net::{TcpSocket, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep, timeout, timeout_at};
@@ -25,6 +26,7 @@ use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
+use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::rest::tests::{LIMITS as REST_LIMITS, NO_REPLY, Server, reply};
 use crate::voice::tap::GatewayTap;
@@ -308,7 +310,13 @@ impl Harness {
     fn limited(zstd: bool, limits: Limits) -> Self {
         let refusing = crate::refusing_socket();
         let api_url = format!("http://{}/api/v10", address_of(&refusing));
-        Self::with(FakeGateway::start(zstd), &api_url, limits, Some(refusing))
+        Self::with(
+            FakeGateway::start(zstd),
+            &api_url,
+            limits,
+            Some(refusing),
+            None,
+        )
     }
 
     fn with(
@@ -316,6 +324,7 @@ impl Harness {
         api_url: &str,
         limits: Limits,
         refusing_api: Option<TcpSocket>,
+        proxy: Option<Proxy>,
     ) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
@@ -327,6 +336,7 @@ impl Harness {
             global_limit,
             Arc::clone(&inbox),
             REST_LIMITS,
+            None,
         );
         let rest = Arc::new(rest.unwrap());
         let tap = Arc::new(GatewayTap::new());
@@ -336,6 +346,7 @@ impl Harness {
             TOKEN,
             Arc::downgrade(&rest),
             Arc::clone(&tap),
+            proxy,
             limits,
         )
         .unwrap();
@@ -608,7 +619,7 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
         connect_timeout: Duration::from_millis(500),
         ..LIMITS
     };
-    let mut harness = Harness::with(fake, &api.url, limits, None);
+    let mut harness = Harness::with(fake, &api.url, limits, None, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
 
@@ -638,7 +649,7 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
 #[tokio::test]
 async fn a_failed_reconnect_resumes_on_the_base_url_without_refreshing_it() {
     let mut api = Server::start(Vec::new()).await;
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, LIMITS, None);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, LIMITS, None, None);
     let closed = crate::refusing_socket();
     let dead = address_of(&closed).to_string();
     harness.start();
@@ -675,7 +686,7 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
         connect_timeout: NEVER,
         ..LIMITS
     };
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, limits, None);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, limits, None, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
     harness
@@ -1395,4 +1406,48 @@ async fn a_later_ready_reaches_the_voice_tap_after_stale_commands() {
         assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("5"));
     }
     assert_eq!(slot.borrow().main_session, first_session + 1);
+}
+
+#[tokio::test]
+async fn a_proxied_shard_tunnels_with_connect_and_the_proxy_credentials() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = Proxy::parse(&format!(
+        "http://bot:p%40ss@{}",
+        listener.local_addr().unwrap()
+    ));
+    let (heads, mut connects) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let (mut client, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(client.read_u8().await.unwrap());
+        }
+        let head = String::from_utf8(head).unwrap();
+        let mut upstream = TcpStream::connect(head.split(' ').nth(1).unwrap())
+            .await
+            .unwrap();
+        client
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await
+            .unwrap();
+        heads.send(head).unwrap();
+        drop(copy_bidirectional(&mut client, &mut upstream).await);
+    });
+    let fake = FakeGateway::start(false);
+    let address = fake.address;
+    let refusing = crate::refusing_socket();
+    let api_url = format!("http://{}/api/v10", address_of(&refusing));
+    let mut harness = Harness::with(fake, &api_url, LIMITS, Some(refusing), proxy.ok());
+
+    harness.ready(41_250).await;
+
+    let head = connects.recv().await.unwrap();
+    assert!(
+        head.starts_with(&format!("CONNECT {address} HTTP/1.1\r\n")),
+        "{head}"
+    );
+    assert!(
+        head.contains("Proxy-Authorization: Basic Ym90OnBAc3M=\r\n"),
+        "{head}"
+    );
 }

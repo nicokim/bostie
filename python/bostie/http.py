@@ -43,13 +43,14 @@ STATUS_ERRORS: dict[int, type[HTTPException]] = {
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HTTPSettings:
-    """How bostie paces, retries and times out its REST requests."""
+    """How bostie paces, retries and times out its REST requests, and its proxy."""
 
     global_rate_limit: int = 50
     max_rate_limit_wait: float = 30.0
     retries: int = 2
     connect_timeout: float = 10.0
     read_timeout: float = 60.0
+    proxy: str | None = None
 
     def __post_init__(self) -> None:
         if self.global_rate_limit < 1:

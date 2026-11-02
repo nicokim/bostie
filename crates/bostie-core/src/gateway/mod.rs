@@ -29,6 +29,7 @@ use self::shard::{Session, Shard, Signals, UNKNOWN_LATENCY};
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
+use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::voice::tap::GatewayTap;
 
@@ -53,6 +54,7 @@ struct Shared {
     inbox: Arc<Inbox>,
     token: Box<str>,
     connector: Connector,
+    proxy: Option<Proxy>,
     filter: RwLock<Filter>,
     identify: IdentifyGate,
     identify_gated: AtomicBool,
@@ -80,8 +82,9 @@ impl Gateway {
         token: &str,
         rest: Weak<Rest>,
         tap: Arc<GatewayTap>,
+        proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
-        Self::with_limits(runtime, inbox, token, rest, tap, Limits::default())
+        Self::with_limits(runtime, inbox, token, rest, tap, proxy, Limits::default())
     }
 
     fn with_limits(
@@ -90,6 +93,7 @@ impl Gateway {
         token: &str,
         rest: Weak<Rest>,
         tap: Arc<GatewayTap>,
+        proxy: Option<Proxy>,
         limits: Limits,
     ) -> Result<Self, CoreError> {
         Ok(Self {
@@ -98,6 +102,7 @@ impl Gateway {
                 inbox,
                 token: token.into(),
                 connector: Connector::new().map_err(CoreError::Tls)?,
+                proxy,
                 filter: RwLock::new(None),
                 identify: IdentifyGate::new(limits.identify_spacing),
                 identify_gated: AtomicBool::new(false),

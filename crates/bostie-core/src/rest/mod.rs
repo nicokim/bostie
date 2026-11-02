@@ -28,6 +28,7 @@ use self::request::RouteClass;
 use crate::error::{CoreError, describe};
 use crate::ids::Ticket;
 use crate::inbox::{Delivery, FailureKind, Inbox};
+use crate::proxy::Proxy;
 
 const USER_AGENT: &str = concat!(
     "DiscordBot (https://pypi.org/project/bostie, ",
@@ -89,13 +90,18 @@ impl Rest {
         global_limit: NonZeroU16,
         inbox: Arc<Inbox>,
         limits: HttpSettings,
+        proxy: Option<&Proxy>,
     ) -> Result<Self, CoreError> {
         let base = Url::parse(api_url)
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https"))
             .ok_or_else(|| CoreError::InvalidRequest(format!("invalid api url {api_url:?}")))?;
         let authorization = auth.header()?;
-        let client = reqwest::Client::builder()
+        let builder = match proxy {
+            Some(proxy) => reqwest::Client::builder().proxy(proxy.for_requests()?),
+            None => reqwest::Client::builder().no_proxy(),
+        };
+        let client = builder
             .user_agent(USER_AGENT)
             .connect_timeout(limits.connect_timeout)
             .read_timeout(limits.read_timeout)
@@ -596,7 +602,7 @@ pub(crate) mod tests {
         let (bell, receiver) = bell::pair().unwrap();
         let global_limit = NonZeroU16::new(global_limit).unwrap();
         let inbox = Arc::new(Inbox::new(bell));
-        let rest = Rest::new(auth, url, global_limit, inbox, limits).unwrap();
+        let rest = Rest::new(auth, url, global_limit, inbox, limits, None).unwrap();
         (rest, receiver)
     }
 
@@ -764,6 +770,23 @@ pub(crate) mod tests {
                 "{method} {before_sending}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn requests_go_through_the_proxy_in_absolute_form() {
+        let mut server = Server::start(vec![reply("200 OK", &[], "{}")]).await;
+        let proxy = Proxy::parse(server.url.trim_end_matches("/api/v10")).unwrap();
+        let (bell, _receiver) = bell::pair().unwrap();
+        let global_limit = NonZeroU16::new(50).unwrap();
+        let inbox = Arc::new(Inbox::new(bell));
+        let api_url = "http://discord.invalid/api/v10";
+        let auth = Auth::Bot("token");
+        let rest = Rest::new(auth, api_url, global_limit, inbox, LIMITS, Some(&proxy));
+
+        let (got, _) = status(rest.unwrap().execute(Ticket::from(1), me()).await);
+
+        assert_eq!(got, 200);
+        assert_eq!(server.next().await.path, format!("{api_url}/users/@me"));
     }
 
     #[tokio::test]

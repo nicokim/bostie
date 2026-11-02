@@ -12,6 +12,7 @@ publish = false
 [workspace.dependencies]
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
 aws-lc-rs = { version = "1.19.0", default-features = false, features = ["aws-lc-sys"] }
+base64 = "0.23.1"
 bostie-core = { path = "crates/bostie-core" }
 bytes = "1.12.1"
 chacha20poly1305 = { version = "0.11.0", default-features = false }
@@ -32,7 +33,7 @@ rubato = "5.0.1"
 sonic-rs = "0.5.10"
 symphonia = { version = "0.6.1", default-features = false, features = ["ogg", "mkv", "isomp4", "flac", "vorbis", "mp3", "aac", "wav", "pcm", "id3v2", "opt-simd"] }
 thiserror = "2.0.21"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
 tokio-websockets = { version = "0.13.3", features = ["client", "fastrand", "aws_lc_rs", "rustls-platform-verifier"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"

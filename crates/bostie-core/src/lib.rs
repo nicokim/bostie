@@ -3,6 +3,7 @@ mod error;
 pub(crate) mod gateway;
 mod ids;
 pub(crate) mod inbox;
+mod proxy;
 pub(crate) mod rest;
 mod runtime;
 mod signature;
@@ -29,6 +30,7 @@ pub use crate::signature::verify_signature;
 
 use crate::gateway::Gateway;
 use crate::inbox::Inbox;
+use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::runtime::Owner;
 use crate::tasks::{PendingTicket, TaskTable};
@@ -68,7 +70,9 @@ impl Core {
         api_url: &str,
         global_limit: NonZeroU16,
         http: HttpSettings,
+        proxy: Option<&str>,
     ) -> Result<(Self, BellReceiver), CoreError> {
+        let proxy = proxy.map(Proxy::parse).transpose()?;
         let runtime = runtime::shared()?;
         let (bell, receiver) = bell::pair().map_err(CoreError::Bell)?;
         let inbox = Arc::new(Inbox::new(bell));
@@ -80,6 +84,7 @@ impl Core {
                 global_limit,
                 Arc::clone(&inbox),
                 http,
+                proxy.as_ref(),
             )?);
             let tap = Arc::new(GatewayTap::new());
             let gateway = Arc::new(Gateway::new(
@@ -88,6 +93,7 @@ impl Core {
                 auth.bot_token().unwrap_or_default(),
                 Arc::downgrade(&rest),
                 Arc::clone(&tap),
+                proxy,
             )?);
             let voice = Voice::new(
                 runtime.clone(),
@@ -299,6 +305,7 @@ mod tests {
             api_url,
             GLOBAL_LIMIT,
             HttpSettings::default(),
+            None,
         )
     }
 

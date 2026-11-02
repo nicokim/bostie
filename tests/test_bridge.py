@@ -21,6 +21,7 @@ from bostie.errors import (
     TransportError,
 )
 from bostie.gateway import GatewayClient
+from bostie.http import HTTPSettings
 
 TOKEN = "dummy-token"
 API_URL = "https://discord.test/api/v10"
@@ -189,6 +190,11 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
             assert "SECRET-TOKEN" not in str(raised.value)
 
     run(main())
+
+
+def test_a_proxy_bostie_cannot_tunnel_through_is_refused() -> None:
+    with pytest.raises(ValueError, match="http:// URL"):
+        Bridge(TOKEN, API_URL, ignore, http=HTTPSettings(proxy="socks5://proxy:1080"))
 
 
 def test_requires_a_running_bridge(run: Runner) -> None:

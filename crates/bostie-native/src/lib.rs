@@ -50,6 +50,7 @@ impl NativeCore {
         retries,
         connect_timeout,
         read_timeout,
+        proxy,
         bearer=false,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -61,6 +62,7 @@ impl NativeCore {
         retries: u32,
         connect_timeout: f64,
         read_timeout: f64,
+        proxy: Option<String>,
         bearer: bool,
     ) -> Result<(Self, RawBellHandle)> {
         let auth = match (token, bearer) {
@@ -75,7 +77,7 @@ impl NativeCore {
             read_timeout: seconds("read_timeout", read_timeout)?,
             ..HttpSettings::default()
         };
-        let (core, bell) = Core::new(auth, api_url, global_limit, http)?;
+        let (core, bell) = Core::new(auth, api_url, global_limit, http, proxy.as_deref())?;
         log::register(core.log_sink());
         Ok((Self(core), bell.into_raw()))
     }

@@ -22,6 +22,7 @@ use super::{SavedSession, Shared};
 use crate::error::describe;
 use crate::ids::ShardId;
 use crate::inbox::Delivery;
+use crate::proxy::Proxy;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
 const NORMAL_CLOSE: u16 = 1000;
@@ -345,7 +346,7 @@ impl Shard {
             biased;
             () = self.signals.close.notified() => return Ending::Stop,
             () = self.signals.reconnect.notified() => return Ending::Requested,
-            connected = timeout(limits.connect_timeout, connect(url, &self.shared.connector)) => match connected {
+            connected = timeout(limits.connect_timeout, connect(url, &self.shared.connector, self.shared.proxy.as_ref())) => match connected {
                 Ok(Ok(socket)) => socket,
                 Ok(Err(error)) => return Ending::Unreachable(error),
                 Err(_) => return Ending::Unreachable(format!("no connection within {:?}", limits.connect_timeout)),
@@ -759,14 +760,32 @@ fn is_voice_update(name: &str) -> bool {
     matches!(name, VOICE_STATE_UPDATE | VOICE_SERVER_UPDATE)
 }
 
-async fn connect(url: &Url, connector: &Connector) -> Result<Socket, String> {
+async fn connect(
+    url: &Url,
+    connector: &Connector,
+    proxy: Option<&Proxy>,
+) -> Result<Socket, String> {
     let builder = ClientBuilder::new()
         .uri(url.as_str())
-        .map_err(|error| error.to_string())?;
-    let (socket, _) = builder
+        .map_err(|error| error.to_string())?
         .connector(connector)
-        .limits(Limits::default())
-        .connect()
+        .limits(Limits::default());
+    let Some(proxy) = proxy else {
+        let (socket, _) = builder.connect().await.map_err(|error| describe(&error))?;
+        return Ok(socket);
+    };
+    let host = url.host_str().unwrap_or_default();
+    let port = url.port_or_known_default().unwrap_or(443);
+    let tunnel = proxy.tunnel(host, port).await?;
+    let domain = host.trim_start_matches('[').trim_end_matches(']');
+    let stream = if url.scheme() == "wss" {
+        connector.wrap(domain, tunnel).await
+    } else {
+        Connector::Plain.wrap(domain, tunnel).await
+    }
+    .map_err(|error| describe(&error))?;
+    let (socket, _) = builder
+        .connect_on(stream)
         .await
         .map_err(|error| describe(&error))?;
     Ok(socket)
