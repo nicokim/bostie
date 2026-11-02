@@ -389,60 +389,62 @@ class Bot(Router):
         self._replaying.clear()
         self._command_ids.clear()
         async with bridge:
-            self._http = http = HTTPClient(bridge)
-            self._rest = REST(http, self._allowed_mentions, self.cache)
+            self._http = HTTPClient(bridge)
+            self._rest = REST(self._http, self._allowed_mentions, self.cache)
             self._gateway = None
             try:
-                info = await http.request("GET", "/gateway/bot")
-                count = (
-                    self._shard_count
-                    if isinstance(self._shard_count, int)
-                    else int(info["shards"])
-                )
-                self._gateway = gateway = GatewayClient(
-                    bridge,
-                    token,
-                    intents=self._intents,
-                    shard_count=count,
-                    shard_ids=range(count)
-                    if isinstance(self._shard_ids, str)
-                    else self._shard_ids,
-                    large_threshold=self._large_threshold,
-                    session_file=self._session_file,
-                )
-                self._unready = set(gateway.shard_ids)
-                self._readiness = Readiness(
-                    gateway.shard_ids,
-                    self._shard_ready,
-                    guilds=bool(self._intents & Intents.GUILDS),
-                    timeout=self._guild_ready_timeout,
-                    tasks=self._tasks,
-                    chunk=partial(
-                        self.request_members, presences=self._presences_cached
-                    )
-                    if self._chunk_members
-                    else None,
-                    small_guilds_complete=bool(self._intents & Intents.GUILD_PRESENCES),
-                )
-                application = await http.request("GET", "/applications/@me")
-                self.application_id = int(application["id"])
-                await self._setup()
-                if self._auto_sync:
-                    await self._sync(always_put=False)
-                if resumed := gateway._load_sessions():
-                    self._replaying |= resumed
-                    user = await self.rest.users.fetch_current()
-                    self.user = self.cache._current = user
-                gateway._filter(self._dispatch_names())
-                gateway._identify_limit(info["session_start_limit"])
-                if self._before_identify is not None:
-                    gateway._gate_identifies()
-                await gateway._start(info["url"], self._presence)
+                await self._connect(bridge, token)
             except (TransportError, StateError):
                 if self._closing is None:
                     raise
             finally:
                 await self.close()
+
+    async def _connect(self, bridge: Bridge, token: str) -> None:
+        http = self.http
+        info = await http.request("GET", "/gateway/bot")
+        count = (
+            self._shard_count
+            if isinstance(self._shard_count, int)
+            else int(info["shards"])
+        )
+        self._gateway = gateway = GatewayClient(
+            bridge,
+            token,
+            intents=self._intents,
+            shard_count=count,
+            shard_ids=range(count)
+            if isinstance(self._shard_ids, str)
+            else self._shard_ids,
+            large_threshold=self._large_threshold,
+            session_file=self._session_file,
+        )
+        self._unready = set(gateway.shard_ids)
+        self._readiness = Readiness(
+            gateway.shard_ids,
+            self._shard_ready,
+            guilds=bool(self._intents & Intents.GUILDS),
+            timeout=self._guild_ready_timeout,
+            tasks=self._tasks,
+            chunk=partial(self.request_members, presences=self._presences_cached)
+            if self._chunk_members
+            else None,
+            small_guilds_complete=bool(self._intents & Intents.GUILD_PRESENCES),
+        )
+        application = await http.request("GET", "/applications/@me")
+        self.application_id = int(application["id"])
+        await self._setup()
+        if self._auto_sync:
+            await self._sync(always_put=False)
+        if resumed := gateway._load_sessions():
+            self._replaying |= resumed
+            user = await self.rest.users.fetch_current()
+            self.user = self.cache._current = user
+        gateway._filter(self._dispatch_names())
+        gateway._identify_limit(info["session_start_limit"])
+        if self._before_identify is not None:
+            gateway._gate_identifies()
+        await gateway._start(info["url"], self._presence)
 
     async def close(self) -> None:
         """Disconnect, cancel running handlers after `shutdown_grace`, close the bridge.
