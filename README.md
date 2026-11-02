@@ -134,7 +134,7 @@ Everything bostie does not model yet stays reachable:
 
 To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in. `bot.include("mybot.music")` imports that module and adds the Router it names `router`; `bot.exclude(...)` takes out a router or module and all it added, and `bot.reload("mybot.music")` imports the module anew in its place, keeping the old one when that fails. Commands added or removed while the bot runs reach Discord at the next `await bot.sync_commands()`.
 
-`@bot.every(seconds=300)` runs `async def task()` every 5 minutes while the bot is ready: first when `Started` fires, then on a fixed beat, skipping the beats a slow run overlaps. `@bot.every(time=datetime.time(9, 30))` runs it daily at 09:30 UTC, or in the time's `tzinfo`, and takes a list of times too. `close()` cancels tasks, and a task that raises goes on at its next time; the error reaches `TaskError` listeners, or the log when there are none.
+`@bot.every(seconds=300)` runs `async def task()` every 5 minutes while the bot is ready: first when `Started` fires, or when an `ASGIApp` without a gateway starts, then on a fixed beat, skipping the beats a slow run overlaps. `@bot.every(time=datetime.time(9, 30))` runs it daily at 09:30 UTC, or in the time's `tzinfo`, and takes a list of times too. `close()` cancels tasks, and a task that raises goes on at its next time; the error reaches `TaskError` listeners, or the log when there are none.
 
 `await bot.start()` and `await bot.close()` run the bot inside an asyncio program that owns the event loop, such as a web app; [docs/running.md][running] shows how, with FastAPI.
 
@@ -163,8 +163,8 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 
 - It checks each request's signature with the app's public key, answers Discord's PINGs, and runs commands, components and modals with the same routers and contexts as over the gateway.
 - Webhook events, such as `ApplicationAuthorized`, reach `@bot.listen`, `bot.wait_for` and `bot.stream`. A bot on the gateway can serve them through the same app.
-- The server's lifespan starts the bot's REST, without a gateway, and syncs commands. Mounted in another framework, call `await app.start()` and `await app.close()` from that framework's lifespan.
-- Without a gateway there is no voice, `bot.cache` stays empty, gateway events never arrive and `Started` never fires.
+- The server's lifespan starts the bot's REST, without a gateway, sends `Starting`, syncs commands and starts the bot's tasks; at shutdown it closes the bot, which sends `Stopped`. Mounted in another framework, call `await app.start()` and `await app.close()` from that framework's lifespan.
+- Without a gateway there is no voice, `bot.cache` stays empty, gateway events never arrive, `Started` never fires and `await bot.wait_until_ready()` never returns.
 
 ## Voice
 

@@ -64,6 +64,8 @@ async def announce(channel_id: int, text: str) -> dict[str, str]:
 
 `Starting` listeners run once per `start()`, before commands sync and the gateway connects, and `start()` waits for them: open database pools or HTTP clients there, or include routers that depend on them. `Stopped` listeners run at the end of `close()`. `Stopping` comes before it, while the gateway and REST still work, and only after `Started`.
 
+An `ASGIApp` serving interactions over HTTP sends `Starting` and `Stopped` too when its lifespan starts and closes the bot, and runs the bot's tasks in between. With no gateway, no shard ever becomes ready: `Started` and `Stopping` never fire, and `wait_until_ready()` never returns.
+
 ## Several bots
 
 Each `Bot` has its own connection to the Rust core, so one process can run several bots, each started and closed on its own.

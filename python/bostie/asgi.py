@@ -76,6 +76,7 @@ class ASGIApp:
             except BaseException:
                 await self.close()
                 raise
+            bot._start_tasks()
         elif self._public_key is None:
             self._public_key = (await bot.rest.application.fetch()).verify_key
 
@@ -91,6 +92,7 @@ class ASGIApp:
         if self._public_key is None:
             self._public_key = application.verify_key
         bot.user = bot.cache._current = await bot.rest.users.fetch_current()
+        await bot._setup()
         if bot._auto_sync:
             await sync.sync_commands(
                 bot.http,

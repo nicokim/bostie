@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from bostie import ASGIApp, Bot, Context
-from bostie.events import ApplicationAuthorized
+from bostie.events import ApplicationAuthorized, Starting, Stopped
 from bostie.testing import FakeDiscord, payloads, run
 
 KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -81,6 +81,33 @@ def test_signed_interactions_reach_commands_without_a_gateway() -> None:
             assert (await callback).json["data"]["content"] == "pong"
         assert fake.connections == []
         assert fake.commands[0]["name"] == "ping"
+
+    run(scenario)
+
+
+def test_http_mode_runs_tasks_between_starting_and_stopped() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        seen: list[str] = []
+        ticked = asyncio.Event()
+
+        @bot.listen
+        async def set_up(event: Starting) -> None:
+            seen.append("starting")
+
+        @bot.listen
+        async def tear_down(event: Stopped) -> None:
+            seen.append("stopped")
+
+        @bot.every(seconds=60)
+        async def tick() -> None:
+            ticked.set()
+
+        async with serving(ASGIApp(bot, token=fake.token, public_key=PUBLIC_KEY)):
+            await ticked.wait()
+            assert not bot.is_ready
+
+        assert seen == ["starting", "stopped"]
 
     run(scenario)
 

@@ -278,6 +278,7 @@ class Bot(Router):
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
+        self._tasks_on = False
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
         self._requests: dict[tuple[str, object], list[_Request]] = {}
@@ -595,6 +596,7 @@ class Bot(Router):
             await started
 
     async def _shut_down(self) -> None:
+        self._tasks_on = False
         if self._ready:
             running = set(self._tasks)
             self._emit(Stopping())
@@ -792,8 +794,12 @@ class Bot(Router):
                 ListenerError(listener=listener.callback, event=event, error=error)
             )
 
+    def _start_tasks(self) -> None:
+        self._tasks_on = True
+        self._run_tasks()
+
     def _run_tasks(self) -> None:
-        if not self._ready:
+        if not self._tasks_on:
             return
         for callback, task in self.tasks.items():
             if callback not in self._running_tasks:
@@ -818,7 +824,7 @@ class Bot(Router):
         for future in self._ready_waiters:
             if not future.done():
                 future.set_result(None)
-        self._run_tasks()
+        self._start_tasks()
         self._emit(Started())
 
     def _dispatch(
