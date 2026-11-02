@@ -1,5 +1,5 @@
-from collections.abc import Iterable, Mapping
-from typing import Any, Literal, NewType, NotRequired, TypedDict
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Literal, NewType, NotRequired, TypedDict, cast
 
 from bostie.custom_id import MAX_CUSTOM_ID
 from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
@@ -45,6 +45,7 @@ __all__ = [
     "media_gallery",
     "mentionable_select",
     "modal",
+    "premium_button",
     "radio_group",
     "raw",
     "role_select",
@@ -58,6 +59,34 @@ __all__ = [
     "thumbnail",
     "user_select",
 ]
+
+MAX_BUTTON_LABEL = 80
+MAX_URL = 512
+MAX_ROW_BUTTONS = 5
+MAX_SELECT_OPTIONS = 25
+MAX_PLACEHOLDER = 150
+MAX_OPTION_TEXT = 100
+MAX_SECTION_TEXTS = 3
+MAX_GALLERY_ITEMS = 10
+MAX_ALT_TEXT = 1024
+MAX_MODAL_TITLE = 45
+MAX_MODAL_COMPONENTS = 5
+MAX_LABEL = 45
+MAX_LABEL_DESCRIPTION = 100
+MAX_INPUT = 4000
+MAX_INPUT_PLACEHOLDER = 100
+MAX_UPLOADS = 10
+MAX_FILE_TYPES = 10
+MAX_GROUP_OPTIONS = 10
+SELECT_TYPES = frozenset(
+    {
+        ComponentType.STRING_SELECT,
+        ComponentType.USER_SELECT,
+        ComponentType.ROLE_SELECT,
+        ComponentType.MENTIONABLE_SELECT,
+        ComponentType.CHANNEL_SELECT,
+    }
+)
 
 type _Emoji = str | Mapping[str, Any]
 RawComponent = NewType("RawComponent", dict[str, Any])
@@ -74,10 +103,12 @@ type _EntitySelectType = Literal[
 
 class ButtonDict(TypedDict):
     type: Literal[ComponentType.BUTTON]
+    id: NotRequired[int]
     style: ButtonStyle
     label: NotRequired[str]
     emoji: NotRequired[Mapping[str, Any]]
     custom_id: NotRequired[str]
+    sku_id: NotRequired[int]
     url: NotRequired[str]
     disabled: bool
 
@@ -92,6 +123,7 @@ class SelectOptionDict(TypedDict):
 
 class StringSelectDict(TypedDict):
     type: Literal[ComponentType.STRING_SELECT]
+    id: NotRequired[int]
     custom_id: str
     options: list[SelectOptionDict]
     placeholder: NotRequired[str]
@@ -108,6 +140,7 @@ class SelectDefaultDict(TypedDict):
 
 class EntitySelectDict(TypedDict):
     type: _EntitySelectType
+    id: NotRequired[int]
     custom_id: str
     channel_types: NotRequired[list[ChannelType]]
     placeholder: NotRequired[str]
@@ -123,16 +156,19 @@ type _RowChild = ButtonDict | StringSelectDict | EntitySelectDict | RawComponent
 
 class RowDict(TypedDict):
     type: Literal[ComponentType.ACTION_ROW]
+    id: NotRequired[int]
     components: list[_RowChild]
 
 
 class TextDict(TypedDict):
     type: Literal[ComponentType.TEXT_DISPLAY]
+    id: NotRequired[int]
     content: str
 
 
 class ThumbnailDict(TypedDict):
     type: Literal[ComponentType.THUMBNAIL]
+    id: NotRequired[int]
     media: dict[str, str]
     description: NotRequired[str]
     spoiler: bool
@@ -140,6 +176,7 @@ class ThumbnailDict(TypedDict):
 
 class SectionDict(TypedDict):
     type: Literal[ComponentType.SECTION]
+    id: NotRequired[int]
     components: list[TextDict | RawComponent]
     accessory: ButtonDict | ThumbnailDict | RawComponent
 
@@ -152,17 +189,20 @@ class GalleryItemDict(TypedDict):
 
 class MediaGalleryDict(TypedDict):
     type: Literal[ComponentType.MEDIA_GALLERY]
+    id: NotRequired[int]
     items: list[GalleryItemDict | RawComponent]
 
 
 class FileDict(TypedDict):
     type: Literal[ComponentType.FILE]
+    id: NotRequired[int]
     file: dict[str, str]
     spoiler: bool
 
 
 class SeparatorDict(TypedDict):
     type: Literal[ComponentType.SEPARATOR]
+    id: NotRequired[int]
     divider: bool
     spacing: Literal[1, 2]
 
@@ -180,6 +220,7 @@ type _ContainerChild = (
 
 class ContainerDict(TypedDict):
     type: Literal[ComponentType.CONTAINER]
+    id: NotRequired[int]
     components: list[_ContainerChild]
     accent_color: NotRequired[int]
     spoiler: bool
@@ -187,6 +228,7 @@ class ContainerDict(TypedDict):
 
 class TextInputDict(TypedDict):
     type: Literal[ComponentType.TEXT_INPUT]
+    id: NotRequired[int]
     custom_id: str
     style: TextInputStyle
     min_length: NotRequired[int]
@@ -198,6 +240,7 @@ class TextInputDict(TypedDict):
 
 class FileUploadDict(TypedDict):
     type: Literal[ComponentType.FILE_UPLOAD]
+    id: NotRequired[int]
     custom_id: str
     min_values: int
     max_values: int
@@ -214,6 +257,7 @@ class GroupOptionDict(TypedDict):
 
 class RadioGroupDict(TypedDict):
     type: Literal[ComponentType.RADIO_GROUP]
+    id: NotRequired[int]
     custom_id: str
     options: list[GroupOptionDict]
     required: bool
@@ -221,6 +265,7 @@ class RadioGroupDict(TypedDict):
 
 class CheckboxGroupDict(TypedDict):
     type: Literal[ComponentType.CHECKBOX_GROUP]
+    id: NotRequired[int]
     custom_id: str
     options: list[GroupOptionDict]
     min_values: int
@@ -230,6 +275,7 @@ class CheckboxGroupDict(TypedDict):
 
 class CheckboxDict(TypedDict):
     type: Literal[ComponentType.CHECKBOX]
+    id: NotRequired[int]
     custom_id: str
     default: bool
 
@@ -248,6 +294,7 @@ type _LabelChild = (
 
 class LabelDict(TypedDict):
     type: Literal[ComponentType.LABEL]
+    id: NotRequired[int]
     label: str
     description: NotRequired[str]
     component: _LabelChild
@@ -267,9 +314,14 @@ def raw(component: Mapping[str, Any]) -> RawComponent:
     return RawComponent(dict(component))
 
 
-def row(*components: _RowChild) -> RowDict:
+def row(*components: _RowChild, id: int | None = None) -> RowDict:
     """An action row holding up to five buttons or one select menu."""
-    return {"type": ComponentType.ACTION_ROW, "components": list(components)}
+    selects = [child for child in components if child.get("type") in SELECT_TYPES]
+    if selects and len(components) > 1:
+        raise ValueError("a row holds one select menu and nothing else")
+    _count("a row", components, 1, MAX_ROW_BUTTONS)
+    row: RowDict = {"type": ComponentType.ACTION_ROW, "components": list(components)}
+    return _with(row, id=id)
 
 
 def button(
@@ -279,6 +331,7 @@ def button(
     style: InteractiveStyle = ButtonStyle.SECONDARY,
     emoji: _Emoji | None = None,
     disabled: bool = False,
+    id: int | None = None,
 ) -> ButtonDict:
     """A button that sends `custom_id` to the bot when clicked."""
     button: ButtonDict = {
@@ -287,20 +340,38 @@ def button(
         "custom_id": _checked(custom_id),
         "disabled": disabled,
     }
-    return _labelled(button, label, emoji)
+    return _labelled(button, label, emoji, id)
 
 
 def link_button(
-    label: str | None, url: str, *, emoji: _Emoji | None = None, disabled: bool = False
+    label: str | None,
+    url: str,
+    *,
+    emoji: _Emoji | None = None,
+    disabled: bool = False,
+    id: int | None = None,
 ) -> ButtonDict:
     """A button that opens `url` and never reaches the bot."""
     button: ButtonDict = {
         "type": ComponentType.BUTTON,
         "style": ButtonStyle.LINK,
-        "url": url,
+        "url": _short("url", url, MAX_URL),
         "disabled": disabled,
     }
-    return _labelled(button, label, emoji)
+    return _labelled(button, label, emoji, id)
+
+
+def premium_button(
+    sku_id: int, *, disabled: bool = False, id: int | None = None
+) -> ButtonDict:
+    """A button that offers the SKU `sku_id` for sale and never reaches the bot."""
+    button: ButtonDict = {
+        "type": ComponentType.BUTTON,
+        "style": ButtonStyle.PREMIUM,
+        "sku_id": sku_id,
+        "disabled": disabled,
+    }
+    return _with(button, id=id)
 
 
 def string_select(
@@ -312,21 +383,27 @@ def string_select(
     max_values: int = 1,
     required: bool = True,
     disabled: bool = False,
+    id: int | None = None,
 ) -> StringSelectDict:
     """A select menu of fixed options; build them with `select_option`."""
+    listed = list(options)
+    _count("a string select", listed, 1, MAX_SELECT_OPTIONS)
+    _check_values(min_values, max_values, MAX_SELECT_OPTIONS, required=required)
     select: StringSelectDict = {
         "type": ComponentType.STRING_SELECT,
         "custom_id": _checked(custom_id),
-        "options": list(options),
+        "options": listed,
         "min_values": min_values,
         "max_values": max_values,
         "disabled": disabled,
     }
-    if placeholder is not None:
-        select["placeholder"] = placeholder
     if not required:
         select["required"] = required
-    return select
+    return _with(
+        select,
+        placeholder=_short("placeholder", placeholder, MAX_PLACEHOLDER),
+        id=id,
+    )
 
 
 def user_select(
@@ -338,6 +415,7 @@ def user_select(
     max_values: int = 1,
     required: bool = True,
     disabled: bool = False,
+    id: int | None = None,
 ) -> EntitySelectDict:
     """A select menu of users; `defaults` are the ids of users shown as chosen."""
     return _entity_select(
@@ -349,6 +427,7 @@ def user_select(
         max_values=max_values,
         required=required,
         disabled=disabled,
+        id=id,
     )
 
 
@@ -361,6 +440,7 @@ def role_select(
     max_values: int = 1,
     required: bool = True,
     disabled: bool = False,
+    id: int | None = None,
 ) -> EntitySelectDict:
     """A select menu of roles; `defaults` are the ids of roles shown as chosen."""
     return _entity_select(
@@ -372,6 +452,7 @@ def role_select(
         max_values=max_values,
         required=required,
         disabled=disabled,
+        id=id,
     )
 
 
@@ -385,6 +466,7 @@ def mentionable_select(
     max_values: int = 1,
     required: bool = True,
     disabled: bool = False,
+    id: int | None = None,
 ) -> EntitySelectDict:
     """A select menu of users and roles, with these ids shown as chosen."""
     return _entity_select(
@@ -396,6 +478,7 @@ def mentionable_select(
         max_values=max_values,
         required=required,
         disabled=disabled,
+        id=id,
     )
 
 
@@ -409,6 +492,7 @@ def channel_select(
     max_values: int = 1,
     required: bool = True,
     disabled: bool = False,
+    id: int | None = None,
 ) -> EntitySelectDict:
     """A select menu of channels, of `channel_types` only when given."""
     select = _entity_select(
@@ -420,6 +504,7 @@ def channel_select(
         max_values=max_values,
         required=required,
         disabled=disabled,
+        id=id,
     )
     types = list(channel_types)
     if types:
@@ -436,33 +521,45 @@ def select_option(
     default: bool = False,
 ) -> SelectOptionDict:
     """One entry of a select menu; `value` is what the bot receives."""
-    option: SelectOptionDict = {"label": label, "value": value, "default": default}
-    if description is not None:
-        option["description"] = description
-    if emoji is not None:
-        option["emoji"] = _emoji(emoji)
-    return option
+    option: SelectOptionDict = {
+        "label": _short("label", label, MAX_OPTION_TEXT),
+        "value": _short("value", value, MAX_OPTION_TEXT),
+        "default": default,
+    }
+    return _with(
+        option,
+        description=_short("description", description, MAX_OPTION_TEXT),
+        emoji=None if emoji is None else _emoji(emoji),
+    )
 
 
-def text(content: str) -> TextDict:
+def text(content: str, *, id: int | None = None) -> TextDict:
     """Markdown text; Components V2 messages use it instead of `content`."""
-    return {"type": ComponentType.TEXT_DISPLAY, "content": content}
+    text: TextDict = {"type": ComponentType.TEXT_DISPLAY, "content": content}
+    return _with(text, id=id)
 
 
 def section(
     *texts: TextDict | RawComponent,
     accessory: ButtonDict | ThumbnailDict | RawComponent,
+    id: int | None = None,
 ) -> SectionDict:
     """One to three `text` components with a `button` or `thumbnail` beside them."""
-    return {
+    _count("a section", texts, 1, MAX_SECTION_TEXTS)
+    section: SectionDict = {
         "type": ComponentType.SECTION,
         "components": list(texts),
         "accessory": accessory,
     }
+    return _with(section, id=id)
 
 
 def thumbnail(
-    url: str, *, description: str | None = None, spoiler: bool = False
+    url: str,
+    *,
+    description: str | None = None,
+    spoiler: bool = False,
+    id: int | None = None,
 ) -> ThumbnailDict:
     """A small image for a `section`; `url` may be `attachment://<filename>`."""
     thumbnail: ThumbnailDict = {
@@ -470,14 +567,23 @@ def thumbnail(
         "media": {"url": url},
         "spoiler": spoiler,
     }
-    if description is not None:
-        thumbnail["description"] = description
-    return thumbnail
+    return _with(
+        thumbnail,
+        description=_short("description", description, MAX_ALT_TEXT),
+        id=id,
+    )
 
 
-def media_gallery(*items: GalleryItemDict | RawComponent) -> MediaGalleryDict:
+def media_gallery(
+    *items: GalleryItemDict | RawComponent, id: int | None = None
+) -> MediaGalleryDict:
     """One to ten images or videos built with `gallery_item`."""
-    return {"type": ComponentType.MEDIA_GALLERY, "items": list(items)}
+    _count("a media gallery", items, 1, MAX_GALLERY_ITEMS)
+    gallery: MediaGalleryDict = {
+        "type": ComponentType.MEDIA_GALLERY,
+        "items": list(items),
+    }
+    return _with(gallery, id=id)
 
 
 def gallery_item(
@@ -485,29 +591,36 @@ def gallery_item(
 ) -> GalleryItemDict:
     """One entry of a `media_gallery`; `url` may be `attachment://<filename>`."""
     item: GalleryItemDict = {"media": {"url": url}, "spoiler": spoiler}
-    if description is not None:
-        item["description"] = description
-    return item
+    return _with(item, description=_short("description", description, MAX_ALT_TEXT))
 
 
-def file(filename: str, *, spoiler: bool = False) -> FileDict:
+def file(filename: str, *, spoiler: bool = False, id: int | None = None) -> FileDict:
     """A file uploaded with the message, named as in its `File`."""
-    return {
+    file: FileDict = {
         "type": ComponentType.FILE,
         "file": {"url": f"attachment://{filename}"},
         "spoiler": spoiler,
     }
+    return _with(file, id=id)
 
 
-def separator(*, divider: bool = True, spacing: Literal[1, 2] = 1) -> SeparatorDict:
+def separator(
+    *, divider: bool = True, spacing: Literal[1, 2] = 1, id: int | None = None
+) -> SeparatorDict:
     """Space between components; `spacing=2` is large, and `divider` draws a line."""
-    return {"type": ComponentType.SEPARATOR, "divider": divider, "spacing": spacing}
+    separator: SeparatorDict = {
+        "type": ComponentType.SEPARATOR,
+        "divider": divider,
+        "spacing": spacing,
+    }
+    return _with(separator, id=id)
 
 
 def container(
     *components: _ContainerChild,
     accent_color: int | None = None,
     spoiler: bool = False,
+    id: int | None = None,
 ) -> ContainerDict:
     """A box around rows, texts, sections, galleries, files and separators."""
     container: ContainerDict = {
@@ -515,13 +628,14 @@ def container(
         "components": list(components),
         "spoiler": spoiler,
     }
-    if accent_color is not None:
-        container["accent_color"] = accent_color
-    return container
+    return _with(container, accent_color=accent_color, id=id)
 
 
 def modal(custom_id: str, title: str, *components: _ModalChild) -> ModalDict:
     """A popup form of one to five `label` and `text` components."""
+    if not 1 <= len(title) <= MAX_MODAL_TITLE:
+        raise ValueError(f"a modal title must be 1-45 characters, got {title!r}")
+    _count("a modal", components, 1, MAX_MODAL_COMPONENTS)
     return {
         "custom_id": _checked(custom_id),
         "title": title,
@@ -530,17 +644,23 @@ def modal(custom_id: str, title: str, *components: _ModalChild) -> ModalDict:
 
 
 def label(
-    label: str, component: _LabelChild, *, description: str | None = None
+    label: str,
+    component: _LabelChild,
+    *,
+    description: str | None = None,
+    id: int | None = None,
 ) -> LabelDict:
     """A modal field: `label` and `description` over one input, select or upload."""
     field: LabelDict = {
         "type": ComponentType.LABEL,
-        "label": label,
+        "label": _short("label", label, MAX_LABEL),
         "component": component,
     }
-    if description is not None:
-        field["description"] = description
-    return field
+    return _with(
+        field,
+        description=_short("description", description, MAX_LABEL_DESCRIPTION),
+        id=id,
+    )
 
 
 def text_input(
@@ -552,23 +672,27 @@ def text_input(
     min_length: int | None = None,
     max_length: int | None = None,
     required: bool = True,
+    id: int | None = None,
 ) -> TextInputDict:
     """A text box in a `label`; `value` fills it in beforehand."""
+    if min_length is not None:
+        _within("min_length", min_length, 0, MAX_INPUT)
+    if max_length is not None:
+        _within("max_length", max_length, 1, MAX_INPUT)
     text_input: TextInputDict = {
         "type": ComponentType.TEXT_INPUT,
         "custom_id": _checked(custom_id),
         "style": style,
         "required": required,
     }
-    if min_length is not None:
-        text_input["min_length"] = min_length
-    if max_length is not None:
-        text_input["max_length"] = max_length
-    if value is not None:
-        text_input["value"] = value
-    if placeholder is not None:
-        text_input["placeholder"] = placeholder
-    return text_input
+    return _with(
+        text_input,
+        min_length=min_length,
+        max_length=max_length,
+        value=_short("value", value, MAX_INPUT),
+        placeholder=_short("placeholder", placeholder, MAX_INPUT_PLACEHOLDER),
+        id=id,
+    )
 
 
 def file_upload(
@@ -578,8 +702,12 @@ def file_upload(
     max_values: int = 1,
     required: bool = True,
     file_types: Iterable[str] = (),
+    id: int | None = None,
 ) -> FileUploadDict:
     """Up to ten files uploaded in a `label`; `file_types` such as "image" or ".pdf"."""
+    _check_values(min_values, max_values, MAX_UPLOADS, required=required)
+    types = list(file_types)
+    _count("file_types", types, 0, MAX_FILE_TYPES)
     upload: FileUploadDict = {
         "type": ComponentType.FILE_UPLOAD,
         "custom_id": _checked(custom_id),
@@ -587,22 +715,26 @@ def file_upload(
         "max_values": max_values,
         "required": required,
     }
-    types = list(file_types)
-    if types:
-        upload["file_types"] = types
-    return upload
+    return _with(upload, file_types=types or None, id=id)
 
 
 def radio_group(
-    custom_id: str, options: Iterable[GroupOptionDict], *, required: bool = True
+    custom_id: str,
+    options: Iterable[GroupOptionDict],
+    *,
+    required: bool = True,
+    id: int | None = None,
 ) -> RadioGroupDict:
     """Two to ten options in a `label`, of which one is picked."""
-    return {
+    listed = list(options)
+    _count("a radio group", listed, 2, MAX_GROUP_OPTIONS)
+    group: RadioGroupDict = {
         "type": ComponentType.RADIO_GROUP,
         "custom_id": _checked(custom_id),
-        "options": list(options),
+        "options": listed,
         "required": required,
     }
+    return _with(group, id=id)
 
 
 def checkbox_group(
@@ -612,37 +744,51 @@ def checkbox_group(
     min_values: int = 1,
     max_values: int | None = None,
     required: bool = True,
+    id: int | None = None,
 ) -> CheckboxGroupDict:
     """Checkboxes in a `label`; without `max_values` all of them can be ticked."""
+    listed = list(options)
+    _count("a checkbox group", listed, 1, MAX_GROUP_OPTIONS)
+    _check_values(
+        min_values,
+        len(listed) if max_values is None else max_values,
+        MAX_GROUP_OPTIONS,
+        required=required,
+    )
     group: CheckboxGroupDict = {
         "type": ComponentType.CHECKBOX_GROUP,
         "custom_id": _checked(custom_id),
-        "options": list(options),
+        "options": listed,
         "min_values": min_values,
         "required": required,
     }
-    if max_values is not None:
-        group["max_values"] = max_values
-    return group
+    return _with(group, max_values=max_values, id=id)
 
 
 def group_option(
     label: str, value: str, *, description: str | None = None, default: bool = False
 ) -> GroupOptionDict:
     """One entry of a `radio_group` or `checkbox_group`."""
-    option: GroupOptionDict = {"value": value, "label": label, "default": default}
-    if description is not None:
-        option["description"] = description
-    return option
+    option: GroupOptionDict = {
+        "value": _short("value", value, MAX_OPTION_TEXT),
+        "label": _short("label", label, MAX_OPTION_TEXT),
+        "default": default,
+    }
+    return _with(
+        option, description=_short("description", description, MAX_OPTION_TEXT)
+    )
 
 
-def checkbox(custom_id: str, *, default: bool = False) -> CheckboxDict:
+def checkbox(
+    custom_id: str, *, default: bool = False, id: int | None = None
+) -> CheckboxDict:
     """A single yes or no box in a `label`."""
-    return {
+    box: CheckboxDict = {
         "type": ComponentType.CHECKBOX,
         "custom_id": _checked(custom_id),
         "default": default,
     }
+    return _with(box, id=id)
 
 
 def _entity_select(
@@ -655,7 +801,13 @@ def _entity_select(
     max_values: int,
     required: bool,
     disabled: bool,
+    id: int | None,
 ) -> EntitySelectDict:
+    _check_values(min_values, max_values, MAX_SELECT_OPTIONS, required=required)
+    if defaults and not min_values <= len(defaults) <= max_values:
+        raise ValueError(
+            f"{len(defaults)} defaults; the select takes {min_values}-{max_values}"
+        )
     select: EntitySelectDict = {
         "type": type,
         "custom_id": _checked(custom_id),
@@ -664,11 +816,13 @@ def _entity_select(
         "max_values": max_values,
         "disabled": disabled,
     }
-    if placeholder is not None:
-        select["placeholder"] = placeholder
     if not required:
         select["required"] = required
-    return select
+    return _with(
+        select,
+        placeholder=_short("placeholder", placeholder, MAX_PLACEHOLDER),
+        id=id,
+    )
 
 
 def _defaults(ids: Iterable[int], type: SelectDefaultType) -> list[SelectDefaultDict]:
@@ -676,13 +830,21 @@ def _defaults(ids: Iterable[int], type: SelectDefaultType) -> list[SelectDefault
 
 
 def _labelled(
-    button: ButtonDict, label: str | None, emoji: _Emoji | None
+    button: ButtonDict, label: str | None, emoji: _Emoji | None, id: int | None
 ) -> ButtonDict:
-    if label is not None:
-        button["label"] = label
-    if emoji is not None:
-        button["emoji"] = _emoji(emoji)
-    return button
+    return _with(
+        button,
+        label=_short("label", label, MAX_BUTTON_LABEL),
+        emoji=None if emoji is None else _emoji(emoji),
+        id=id,
+    )
+
+
+def _with[C: Mapping[str, Any]](component: C, **fields: object) -> C:
+    cast("dict[str, object]", component).update(
+        (name, value) for name, value in fields.items() if value is not None
+    )
+    return component
 
 
 def _emoji(emoji: _Emoji) -> Mapping[str, Any]:
@@ -695,3 +857,28 @@ def _checked(custom_id: str) -> str:
             f"custom_id must be 1-100 characters, got {len(custom_id)}: {custom_id!r}"
         )
     return custom_id
+
+
+def _short[T: str | None](name: str, text: T, limit: int) -> T:
+    if text is not None and len(text) > limit:
+        raise ValueError(f"{name} is {len(text)} characters; Discord allows {limit}")
+    return text
+
+
+def _within(name: str, value: int, low: int, high: int) -> None:
+    if not low <= value <= high:
+        raise ValueError(f"{name} must be {low}-{high}, got {value}")
+
+
+def _count(what: str, items: Sequence[object], low: int, high: int) -> None:
+    if not low <= len(items) <= high:
+        raise ValueError(f"{what} takes {low}-{high} items, got {len(items)}")
+
+
+def _check_values(
+    min_values: int, max_values: int, high: int, *, required: bool
+) -> None:
+    if required and min_values == 0:
+        raise ValueError("min_values=0 needs required=False")
+    _within("min_values", min_values, 0, high)
+    _within("max_values", max_values, max(1, min_values), high)
