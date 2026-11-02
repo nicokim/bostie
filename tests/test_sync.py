@@ -426,6 +426,32 @@ def test_a_400_names_the_command_option_and_function_of_each_error() -> None:
     run(scenario)
 
 
+def test_a_400_whose_path_misses_the_commands_names_what_it_can() -> None:
+    errors = {
+        "9": {"name": {"_errors": [{"code": "X", "message": "Bad name."}]}},
+        "0": {
+            "options": {
+                "7": {"description": {"_errors": [{"code": "X", "message": "Long."}]}}
+            }
+        },
+    }
+
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        fake.commands = remote(kit={"description": "Old text"})
+        route = f"/applications/{fake.application_id}/commands"
+        fake.fail("PUT", route, 400, {"code": 50035, "errors": errors})
+
+        with pytest.raises(CommandSyncError) as raised:
+            await sync_commands(http, fake.application_id, COMMANDS, ())
+
+        assert str(raised.value).splitlines() == [
+            "9.name: Bad name.",
+            "/kit: options.7.description: Long.",
+        ]
+
+    run(scenario)
+
+
 @pytest.mark.parametrize(
     ("index", "command"),
     [("2", f"User Info ({__name__}.user_info)"), ("3", "launch")],

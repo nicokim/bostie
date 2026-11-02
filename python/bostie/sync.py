@@ -344,16 +344,20 @@ def _problem(
     body: Sequence[Mapping[str, Any]],
     commands: Sequence[AnyCommand],
 ) -> SyncProblem:
-    if not path:
-        return SyncProblem("", "", message)
-    index, rest = int(path[0]), path[1:]
-    node = body[index]
+    index = _position(path[0], body) if path else None
+    if index is None:
+        field = ".".join(path)
+        return SyncProblem("", "", f"{field}: {message}" if field else message)
+    node, rest = body[index], path[1:]
     slash = _key(node)[0] == CommandType.CHAT_INPUT
     names = [node["name"]]
     option = ""
     while len(rest) > 1 and rest[0] == "options":
-        node = node["options"][int(rest[1])]
-        rest = rest[2:]
+        options = node.get("options", [])
+        position = _position(rest[1], options)
+        if position is None:
+            break
+        node, rest = options[position], rest[2:]
         if node["type"] in NESTING_TYPES:
             names.append(node["name"])
         else:
@@ -366,6 +370,10 @@ def _problem(
         command += f" ({callback_name})"
     field = ".".join(rest)
     return SyncProblem(command, option, f"{field}: {message}" if field else message)
+
+
+def _position(key: str, items: Sequence[object]) -> int | None:
+    return int(key) if key.isdecimal() and int(key) < len(items) else None
 
 
 def _callback_name(node: AnyCommand, names: Sequence[str]) -> str | None:
