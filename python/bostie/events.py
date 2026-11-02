@@ -1239,6 +1239,15 @@ class BotEvent(msgspec.Struct, kw_only=True, frozen=True):
             cls.NAME = f"{cls.__module__}.{cls.__qualname__}"
 
 
+class Starting(BotEvent, kw_only=True):
+    """start() is about to sync commands and connect; REST works already.
+
+    start() awaits each listener in turn, and raises what one raises.
+    """
+
+    NAME = "bot.starting"
+
+
 class Started(BotEvent, kw_only=True):
     """Every shard is ready, once per start(); wait_until_ready() returns now."""
 
@@ -1249,6 +1258,12 @@ class Stopping(BotEvent, kw_only=True):
     """close() began after Started; its listeners finish before the gateway closes."""
 
     NAME = "bot.stopping"
+
+
+class Stopped(BotEvent, kw_only=True):
+    """close() finished a start() that sent Starting; the gateway and REST are gone."""
+
+    NAME = "bot.stopped"
 
 
 class ShardReady(BotEvent, kw_only=True):

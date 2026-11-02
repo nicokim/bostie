@@ -66,6 +66,8 @@ from bostie.events import (
     ShardReady,
     ShardStop,
     Started,
+    Starting,
+    Stopped,
     Stopping,
     ThreadMembersUpdate,
     UserUpdate,
@@ -1496,6 +1498,59 @@ def test_stopping_listeners_finish_while_the_gateway_is_still_open() -> None:
 
         assert open_codes == [None]
         assert fake.connections[-1].close_code == 1000
+
+    run(scenario)
+
+
+def test_starting_comes_before_sync_and_connect_and_stopped_after_close() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        late = Router()
+        seen: list[tuple[str, object]] = []
+
+        @late.command
+        async def ping(ctx: Context) -> None:
+            """Answer pong."""
+
+        @bot.listen
+        async def set_up(event: Starting) -> None:
+            me = await bot.rest.users.fetch_current()
+            seen.append(("starting", (me.username, len(fake.connections))))
+            bot.include(late)
+
+        @bot.listen
+        async def tear_down(event: Stopped) -> None:
+            seen.append(("stopped", fake.connections[-1].close_code))
+
+        async with running(bot, fake):
+            assert [command["name"] for command in fake.commands] == ["ping"]
+
+        assert seen == [
+            ("starting", (fake.bot_user["username"], 0)),
+            ("stopped", 1000),
+        ]
+
+    run(scenario)
+
+
+def test_a_raising_starting_listener_stops_start_before_it_connects() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        stopped: list[Stopped] = []
+
+        @bot.listen
+        async def set_up(event: Starting) -> None:
+            raise RuntimeError("no database")
+
+        @bot.listen
+        async def tear_down(event: Stopped) -> None:
+            stopped.append(event)
+
+        with pytest.raises(RuntimeError, match="no database"):
+            await bot.start(fake.token)
+
+        assert fake.connections == []
+        assert len(stopped) == 1
 
     run(scenario)
 

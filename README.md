@@ -136,6 +136,7 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 
 `@bot.listen` takes the typed events of `bostie.events`. `await bot.wait_for(Event, check=...)` waits for the next one, and `async with bot.stream(Event, check=...) as events:` queues every match for `async for` until the block ends; bound either with `asyncio.timeout()`.
 
+- `Starting` fires once per `start()`, when REST works and before commands sync and the gateway connects: open a database pool or include more routers there. `start()` awaits its listeners one at a time and raises what one raises. `Stopped` fires at the end of `close()` for every `start()` that sent `Starting`, once the gateway and REST are gone: close the pool there.
 - `Ready` is Discord's READY: one shard started a session, and the guilds it lists arrive afterwards as `GuildCreate` events. It fires again for every new session.
 - `ShardReady` follows once those guilds have arrived, with their members when the cache keeps members, or after `guild_ready_timeout` seconds without one, so the shard's guilds are in `bot.cache`. It too fires for every new session.
 - `Started` fires once per `start()`, when every shard is ready. `await bot.wait_until_ready()` returns at that moment and `bot.is_ready` turns true. `Stopping` fires when `close()` begins after `Started`, and `close()` gives its listeners up to 5 s while the gateway and REST still work.

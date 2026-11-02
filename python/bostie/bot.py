@@ -71,6 +71,8 @@ from bostie.events import (
     ShardStop,
     SoundboardSounds,
     Started,
+    Starting,
+    Stopped,
     Stopping,
     UserUpdate,
     decode_event,
@@ -266,6 +268,7 @@ class Bot(Router):
         self._rest: REST | None = None
         self._gateway: GatewayClient | None = None
         self._closing: asyncio.Task[None] | None = None
+        self._set_up = False
         self._ready = False
         self._unready: set[int] = set()
         self._readiness: Readiness | None = None
@@ -386,6 +389,7 @@ class Bot(Router):
                 )
                 application = await http.request("GET", "/applications/@me")
                 self.application_id = int(application["id"])
+                await self._setup()
                 if self._auto_sync:
                     await sync.sync_commands(
                         http,
@@ -608,6 +612,21 @@ class Bot(Router):
         self._bridge = None
         self._ready = False
         self._stop_ready_waiters()
+        if self._set_up:
+            self._set_up = False
+            stopped = Stopped()
+            for waiter in self._waiters.get(Stopped.NAME, ()):
+                _resolve(waiter, stopped)
+            for listener in list(self.listeners.get(Stopped.NAME, ())):
+                await self._run_listener(listener, stopped, Stopped.NAME)
+
+    async def _setup(self) -> None:
+        self._set_up = True
+        starting = Starting()
+        for waiter in self._waiters.get(Starting.NAME, ()):
+            _resolve(waiter, starting)
+        for listener in list(self.listeners.get(Starting.NAME, ())):
+            await listener.callback(starting)
 
     def _stop_ready_waiters(self) -> None:
         for future in self._ready_waiters:
