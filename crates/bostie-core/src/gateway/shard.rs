@@ -196,14 +196,27 @@ impl Connection {
         Ok(())
     }
 
-    async fn close(&mut self, code: u16) {
+    async fn close(&mut self, code: u16, queued: Option<&mut mpsc::Receiver<Bytes>>) {
+        let patience = self.close_timeout;
         let closing = async {
+            if let Some(queued) = queued {
+                while self.running
+                    && let Ok(payload) = queued.try_recv()
+                {
+                    if let Some(slot) = self.next_command_slot(Instant::now()) {
+                        sleep_until(slot).await;
+                    }
+                    if self.send(payload).await.is_err() {
+                        break;
+                    }
+                }
+            }
             let frame = Message::close(CloseCode::try_from(code).ok(), "");
             if self.socket.send(frame).await.is_ok() {
                 while self.socket.next().await.is_some() {}
             }
         };
-        if timeout(self.close_timeout, closing).await.is_err() {
+        if timeout(patience, closing).await.is_err() {
             debug!(code, "the close handshake timed out");
         }
     }
@@ -368,12 +381,16 @@ impl Shard {
         };
         let ending = self.serve(&mut connection).await;
         match ending {
-            Ending::Stop if self.signals.keep_session.load(Ordering::Acquire) => {
-                connection.close(SESSION_KEEPING_CLOSE).await;
+            Ending::Stop => {
+                let code = if self.signals.keep_session.load(Ordering::Acquire) {
+                    SESSION_KEEPING_CLOSE
+                } else {
+                    NORMAL_CLOSE
+                };
+                connection.close(code, Some(&mut self.commands)).await;
             }
-            Ending::Stop => connection.close(NORMAL_CLOSE).await,
             Ending::Closed(_) | Ending::Lost(_) => {}
-            _ => connection.close(SESSION_KEEPING_CLOSE).await,
+            _ => connection.close(SESSION_KEEPING_CLOSE, None).await,
         }
         ending
     }

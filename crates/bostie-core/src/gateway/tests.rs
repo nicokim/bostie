@@ -1100,6 +1100,18 @@ async fn queued_commands_wait_for_ready_or_resumed() {
 }
 
 #[tokio::test]
+async fn commands_queued_before_close_go_out_before_the_close_frame() {
+    let mut harness = Harness::new(false);
+    let mut peer = harness.ready(SLOW_HEARTBEAT).await;
+
+    harness.gateway.send(shard(), voice_state(1)).unwrap();
+    harness.gateway.close(shard()).unwrap();
+
+    assert_eq!(peer.receive().await["d"]["guild_id"].as_str(), Some("1"));
+    assert_eq!(peer.close_code().await, Some(1000));
+}
+
+#[tokio::test]
 async fn a_reidentify_sends_the_latest_payload_and_keeps_later_commands() {
     let mut harness = Harness::new(false);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
