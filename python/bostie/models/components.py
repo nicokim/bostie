@@ -3,7 +3,13 @@ from typing import Literal, cast
 
 import msgspec
 
-from bostie.enums import ButtonStyle, ChannelType, ComponentType
+from bostie.enums import (
+    ButtonStyle,
+    ChannelType,
+    ComponentType,
+    ContentScanMetadataFlags,
+    UnfurledMediaItemFlags,
+)
 from bostie.models.base import Builder, Model, decoder
 
 
@@ -95,6 +101,12 @@ class ChannelSelect(
     channel_types: tuple[ChannelType, ...] = ()
 
 
+class ContentScanMetadata(Builder, kw_only=True):
+    """What Discord's content scan found in a media item."""
+
+    flags: ContentScanMetadataFlags
+
+
 class UnfurledMediaItem(Builder, kw_only=True):
     """An image, video or file shown by a component; only `url` is set when sending."""
 
@@ -102,7 +114,11 @@ class UnfurledMediaItem(Builder, kw_only=True):
     proxy_url: str | None = None
     height: int | None = None
     width: int | None = None
+    placeholder: str | None = None
+    placeholder_version: int | None = None
     content_type: str | None = None
+    flags: UnfurledMediaItemFlags | None = None
+    content_scan_metadata: ContentScanMetadata | None = None
     attachment_id: int | None = None
 
 

@@ -54,7 +54,10 @@
                 "placeholder": "HBkSHYSIeHiPiHh8eJd4eTN0EEQG",
                 "placeholder_version": 1,
                 "content_type": "image/webp",
-                "flags": 0
+                "flags": 0,
+                "content_scan_metadata": {
+                  "flags": 0
+                }
               },
               "description": null,
               "spoiler": false

@@ -300,6 +300,17 @@ class BaseTheme(DiscordIntEnum):
     MIDNIGHT = 4
 
 
+class EmbedType(DiscordStrEnum):
+    RICH = "rich"
+    IMAGE = "image"
+    VIDEO = "video"
+    GIFV = "gifv"
+    ARTICLE = "article"
+    LINK = "link"
+    POLL_RESULT = "poll_result"
+    COMPONENTS = "components"
+
+
 class WebhookType(DiscordIntEnum):
     INCOMING = 1
     CHANNEL_FOLLOWER = 2
@@ -816,6 +827,27 @@ class SystemChannelFlags(DiscordIntFlag):
     SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3
     SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATIONS = 1 << 4
     SUPPRESS_ROLE_SUBSCRIPTION_PURCHASE_NOTIFICATION_REPLIES = 1 << 5
+
+
+class EmbedFlags(DiscordIntFlag):
+    CONTAINS_EXPLICIT_CONTENT = 1 << 4
+    IS_CONTENT_INVENTORY_ENTRY = 1 << 5
+    CONTAINS_GORE_CONTENT = 1 << 6
+    CONTAINS_SELF_HARM_CONTENT = 1 << 7
+
+
+class EmbedMediaFlags(DiscordIntFlag):
+    IS_ANIMATED = 1 << 5
+
+
+class UnfurledMediaItemFlags(DiscordIntFlag):
+    IS_ANIMATED = 1 << 0
+
+
+class ContentScanMetadataFlags(DiscordIntFlag):
+    IS_EXPLICIT_CONTENT = 1 << 0
+    IS_GORE_CONTENT = 1 << 1
+    IS_SELF_HARM_CONTENT = 1 << 2
 
 
 class AttachmentFlags(DiscordIntFlag):

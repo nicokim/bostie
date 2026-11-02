@@ -13,6 +13,10 @@ from bostie.enums import (
     ChannelFlags,
     ChannelType,
     ComponentType,
+    ContentScanMetadataFlags,
+    EmbedFlags,
+    EmbedMediaFlags,
+    EmbedType,
     ExplicitContentFilterLevel,
     GuildFeature,
     MessageActivityType,
@@ -23,6 +27,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
     SystemChannelFlags,
+    UnfurledMediaItemFlags,
 )
 from bostie.file import File
 from bostie.models import (
@@ -38,6 +43,7 @@ from bostie.models import (
     ComponentInteraction,
     ComponentInteractionMetadata,
     Container,
+    ContentScanMetadata,
     Embed,
     EmbedField,
     FileComponent,
@@ -71,6 +77,7 @@ from bostie.models import (
     decode,
     decode_interaction,
 )
+from bostie.models.base import decoder
 from bostie.models.message import decode_interaction_metadata, message_body
 
 FIXTURES = Path(__file__).parent / "fixtures" / "models"
@@ -256,6 +263,31 @@ def test_the_rarer_message_parts_decode_into_their_models() -> None:
     assert message.resolved.roles[1335174302269571073].name == ROLE["name"]
     assert message.call is not None
     assert message.call.participants == (820774541721731073,)
+
+
+def test_embeds_and_media_items_carry_their_content_scan_flags() -> None:
+    first, video = decode(Message, payload("events/MESSAGE_CREATE.rich.json")).embeds
+    container = decode(
+        Message, payload("events/MESSAGE_CREATE.components_v2.json")
+    ).components[0]
+    text = {"type": 10, "content": "A preview"}
+    preview = {"type": "components", "flags": 64, "components": [text]}
+
+    assert (first.type, video.type) == (EmbedType.RICH, EmbedType.VIDEO)
+    assert first.thumbnail is not None
+    assert first.thumbnail.flags == EmbedMediaFlags.IS_ANIMATED
+    assert first.thumbnail.content_type == "image/gif"
+    assert isinstance(container, Container)
+    gallery = container.components[1]
+    assert isinstance(gallery, MediaGallery)
+    media = gallery.items[0].media
+    assert media.flags == UnfurledMediaItemFlags(0)
+    assert media.content_scan_metadata == ContentScanMetadata(
+        flags=ContentScanMetadataFlags(0)
+    )
+    link = decoder(Embed).decode(msgspec.json.encode(preview))
+    assert link.flags == EmbedFlags.CONTAINS_GORE_CONTENT
+    assert link.components == (TextDisplay(content="A preview"),)
 
 
 def test_components_decode_known_types_and_keep_unknown_ones() -> None:

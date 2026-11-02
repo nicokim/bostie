@@ -10,6 +10,9 @@ from bostie.enums import (
     BaseTheme,
     ChannelType,
     ComponentType,
+    EmbedFlags,
+    EmbedMediaFlags,
+    EmbedType,
     InteractionType,
     MessageActivityType,
     MessageFlags,
@@ -128,6 +131,11 @@ class EmbedMedia(Builder, kw_only=True):
     proxy_url: str | None = None
     height: int | None = None
     width: int | None = None
+    content_type: str | None = None
+    placeholder: str | None = None
+    placeholder_version: int | None = None
+    description: str | None = None
+    flags: EmbedMediaFlags | None = None
 
 
 class EmbedProvider(Builder, kw_only=True):
@@ -139,7 +147,7 @@ class Embed(Builder, kw_only=True):
     """A rich embed, as received in messages or built to send one."""
 
     title: str | None = None
-    type: str | None = None
+    type: EmbedType | None = None
     description: str | None = None
     url: str | None = None
     timestamp: datetime | None = None
@@ -151,6 +159,13 @@ class Embed(Builder, kw_only=True):
     provider: EmbedProvider | None = None
     author: EmbedAuthor | None = None
     fields: tuple[EmbedField, ...] = ()
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
+    flags: EmbedFlags | None = None
+
+    @property
+    def components(self) -> tuple[Component, ...]:
+        """The components of a link preview built from components."""
+        return decode_components(self._components)
 
 
 class ReactionCountDetails(Model, kw_only=True):
