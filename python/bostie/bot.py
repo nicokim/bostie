@@ -214,6 +214,7 @@ class Bot(Router):
         shard_ids: Iterable[int] | Literal["all"] = "all",
         before_identify: Callable[[int], Awaitable[object]] | None = None,
         session_file: str | os.PathLike[str] | None = None,
+        shutdown_grace: float = 0.0,
     ) -> None:
         super().__init__()
         for name, value in (
@@ -254,6 +255,7 @@ class Bot(Router):
         self._large_threshold = large_threshold
         self._before_identify = before_identify
         self._session_file = None if session_file is None else Path(session_file)
+        self._shutdown_grace = shutdown_grace
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
             {
@@ -417,7 +419,7 @@ class Bot(Router):
                 await self.close()
 
     async def close(self) -> None:
-        """Disconnect, cancel running handlers and close the bridge.
+        """Disconnect, cancel running handlers after `shutdown_grace`, close the bridge.
 
         The shards end their sessions with code 1000, or save them to the session file.
         """
@@ -607,6 +609,11 @@ class Bot(Router):
             await self._gateway.close()
         if self._readiness is not None:
             self._readiness.close()
+        for task in self._running_tasks.values():
+            task.cancel()
+        busy = self._tasks - set(self._running_tasks.values())
+        if self._shutdown_grace and busy:
+            await asyncio.wait(busy, timeout=self._shutdown_grace)
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
@@ -619,12 +626,15 @@ class Bot(Router):
         self._ready = False
         self._stop_ready_waiters()
         if self._set_up:
-            self._set_up = False
-            stopped = Stopped()
-            for waiter in self._waiters.get(Stopped.NAME, ()):
-                _resolve(waiter, stopped)
-            for listener in list(self.listeners.get(Stopped.NAME, ())):
-                await self._run_listener(listener, stopped, Stopped.NAME)
+            await self._teardown()
+
+    async def _teardown(self) -> None:
+        self._set_up = False
+        stopped = Stopped()
+        for waiter in self._waiters.get(Stopped.NAME, ()):
+            _resolve(waiter, stopped)
+        for listener in list(self.listeners.get(Stopped.NAME, ())):
+            await self._run_listener(listener, stopped, Stopped.NAME)
 
     async def _setup(self) -> None:
         self._set_up = True

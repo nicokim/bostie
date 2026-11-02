@@ -62,7 +62,7 @@ async def announce(channel_id: int, text: str) -> dict[str, str]:
 
 ## Setup and cleanup
 
-`Starting` listeners run once per `start()`, before commands sync and the gateway connects, and `start()` waits for them: open database pools or HTTP clients there, or include routers that depend on them. `Stopped` listeners run at the end of `close()`. `Stopping` comes before it, while the gateway and REST still work, and only after `Started`.
+`Starting` listeners run once per `start()`, before commands sync and the gateway connects, and `start()` waits for them: open database pools or HTTP clients there, or include routers that depend on them. `Bot(shutdown_grace=10.0)` gives handlers still running up to 10 s to finish once the gateway has closed, so a deploy's SIGTERM does not cut answers short. `Stopped` listeners run at the end of `close()`. `Stopping` comes before it, while the gateway and REST still work, and only after `Started`.
 
 An `ASGIApp` serving interactions over HTTP sends `Starting` and `Stopped` too when its lifespan starts and closes the bot, and runs the bot's tasks in between. With no gateway, no shard ever becomes ready: `Started` and `Stopping` never fire, and `wait_until_ready()` never returns.
 

@@ -1651,6 +1651,43 @@ def test_two_bots_run_in_one_process_and_close_on_their_own() -> None:
     run(scenario)
 
 
+def test_shutdown_grace_lets_a_running_handler_finish_after_tasks_stop() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, shutdown_grace=5.0)
+        tasks_stopped = asyncio.Event()
+        handling = asyncio.Event()
+        answered = asyncio.Event()
+
+        @bot.every(seconds=60)
+        async def wait() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                tasks_stopped.set()
+
+        @bot.command
+        async def slow(ctx: Context) -> None:
+            """Answer through a slow callback."""
+            handling.set()
+            await ctx.respond("done")
+            answered.set()
+
+        async with running(bot, fake):
+            held = fake.hold("POST", "/interactions/")
+            await fake.dispatch(
+                "INTERACTION_CREATE", payloads.interaction(2, payloads.command("slow"))
+            )
+            await handling.wait()
+            closing = asyncio.create_task(bot.close())
+            await tasks_stopped.wait()
+            held.set()
+            await closing
+
+        assert answered.is_set()
+
+    run(scenario)
+
+
 def test_close_sends_1000_and_cancels_running_listeners(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
