@@ -15,7 +15,7 @@ from bostie.commands import (
     _warn,
 )
 from bostie.enums import CommandType, InteractionContextType, Locale, OptionType
-from bostie.errors import BadRequest, CommandSyncError
+from bostie.errors import BadRequest, CommandSyncError, SyncProblem, _form_errors
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient
@@ -332,9 +332,20 @@ def _sync_error(
     body: Sequence[Mapping[str, Any]],
     commands: Sequence[AnyCommand],
 ) -> CommandSyncError:
-    path, message = _first_error(error.errors) or ((), error.message)
+    found = _form_errors(error.errors) or [((), error.message)]
+    return CommandSyncError(
+        _problem(path, message, body, commands) for path, message in found
+    )
+
+
+def _problem(
+    path: tuple[str, ...],
+    message: str,
+    body: Sequence[Mapping[str, Any]],
+    commands: Sequence[AnyCommand],
+) -> SyncProblem:
     if not path:
-        return CommandSyncError("", "", message)
+        return SyncProblem("", "", message)
     index, rest = int(path[0]), path[1:]
     node = body[index]
     slash = _key(node)[0] == CommandType.CHAT_INPUT
@@ -354,21 +365,7 @@ def _sync_error(
     if callback_name is not None:
         command += f" ({callback_name})"
     field = ".".join(rest)
-    return CommandSyncError(
-        command, option, f"{field}: {message}" if field else message
-    )
-
-
-def _first_error(
-    tree: Mapping[str, Any], path: tuple[str, ...] = ()
-) -> tuple[tuple[str, ...], str] | None:
-    for key, value in tree.items():
-        if key == "_errors":
-            return path, " ".join(error["message"] for error in value)
-        found = _first_error(value, (*path, key))
-        if found is not None:
-            return found
-    return None
+    return SyncProblem(command, option, f"{field}: {message}" if field else message)
 
 
 def _callback_name(node: AnyCommand, names: Sequence[str]) -> str | None:

@@ -367,7 +367,7 @@ A bad argument raises `ValueError` or `TypeError`. Every other error bostie rais
 - `NotFound` with the code `UNKNOWN_WEBHOOK` when Discord says a webhook is gone. bostie then sends nothing more to that webhook, as Discord asks, and raises the same error at once.
 - `StateError`, also a `RuntimeError`, when an object is not in a state that allows the call, such as `bot.http` or `bot.rest` before `start()`. `ShardNotRunning` and `voice.AlreadyConnected` are kinds of it.
 - `MissingIntent`, also a `ValueError`, when a feature needs an intent the bot did not ask for, and `StartupError`, also an `OSError`, when bostie cannot set up a thread, socket, HTTP client or TLS context it needs.
-- `CommandError` for commands and interactions, and `voice.VoiceError` for voice.
+- `CommandError` for commands and interactions, and `voice.VoiceError` for voice. When Discord refuses the commands a sync sends, `CommandSyncError` names each field it rejected on a line of its own, with the command, option and function it belongs to, and holds them in `problems` as `SyncProblem`s.
 
 `@bot.on_error` registers `async def hook(ctx: bostie.ErrorContext, error: Exception)` for what handlers raise, and `@router.on_error(NotFound, Forbidden)` one for those types only, typed `error: NotFound | Forbidden`. Each router from the failing handler's up to the bot offers the hook for the nearest exception class; the first one runs, and a hook that raises the error again passes it to the next. With no hook, the user gets an ephemeral "Something went wrong." The context is the handler's, so an autocomplete error comes with an `AutocompleteContext`, which has no `respond`.
 

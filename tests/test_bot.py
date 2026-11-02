@@ -41,6 +41,7 @@ from bostie import (
     Router,
     StateError,
     Status,
+    SyncProblem,
     WebhookMessage,
     activity,
     ui,
@@ -1204,12 +1205,12 @@ def test_a_rejected_command_put_raises_an_error_naming_the_function() -> None:
         with pytest.raises(CommandSyncError) as raised:
             await bot.start(fake.token)
 
-        assert (
-            raised.value.command == f"/dice ({__name__}.{dice.callback.__qualname__})"
-        )
-        assert raised.value.option_path == "option 'count'"
-        assert raised.value.discord_message == (
-            "description: Must be 100 or fewer in length."
+        assert raised.value.problems == (
+            SyncProblem(
+                f"/dice ({__name__}.{dice.callback.__qualname__})",
+                "option 'count'",
+                "description: Must be 100 or fewer in length.",
+            ),
         )
         assert not fake.connections
 

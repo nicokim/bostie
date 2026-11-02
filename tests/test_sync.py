@@ -394,8 +394,13 @@ def test_guild_scope_without_differences_sends_no_put() -> None:
     run(scenario)
 
 
-def test_a_400_names_the_command_option_and_function() -> None:
+def test_a_400_names_the_command_option_and_function_of_each_error() -> None:
     error = json.loads((FIXTURES / "error_400_commands.json").read_bytes())
+    error["errors"]["1"] = {
+        "options": {
+            "0": {"max_length": {"_errors": [{"code": "X", "message": "Too long."}]}}
+        }
+    }
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote(kit={"description": "Old text"})
@@ -405,11 +410,17 @@ def test_a_400_names_the_command_option_and_function() -> None:
         with pytest.raises(CommandSyncError) as raised:
             await sync_commands(http, fake.application_id, COMMANDS, ())
 
-        assert str(raised.value) == (
-            f"/kit inspect all ({kit_all.callback.__module__}.kit_all): "
-            "option 'count': description: Must be between 1 and 100 in length."
-        )
-        assert raised.value.option_path == "option 'count'"
+        assert str(raised.value).splitlines() == [
+            (
+                f"/kit inspect all ({kit_all.callback.__module__}.kit_all): "
+                "option 'count': description: Must be between 1 and 100 in length."
+            ),
+            f"/search ({__name__}.search): option 'query': max_length: Too long.",
+        ]
+        assert [problem.option_path for problem in raised.value.problems] == [
+            "option 'count'",
+            "option 'query'",
+        ]
         assert isinstance(raised.value.__cause__, BadRequest)
 
     run(scenario)

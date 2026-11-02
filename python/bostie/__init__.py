@@ -134,6 +134,7 @@ from bostie.errors import (
     ShardNotRunning,
     StartupError,
     StateError,
+    SyncProblem,
     TransportError,
     UnexpectedResponse,
 )
@@ -662,6 +663,7 @@ __all__ = [
     "SubmittedValues",
     "Subscription",
     "SubscriptionStatus",
+    "SyncProblem",
     "SyncResult",
     "SyncWebhookClient",
     "SystemChannelFlags",

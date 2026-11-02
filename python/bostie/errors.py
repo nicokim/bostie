@@ -1,5 +1,6 @@
 import time
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast, override
 
 import msgspec
@@ -73,7 +74,13 @@ class HTTPException(BostieError):
         body: bytes,
     ) -> None:
         coded = f" (error code {code})" if code else ""
-        lines = [f"{status} {message}{coded}", *_form_errors(errors)]
+        lines = [
+            f"{status} {message}{coded}",
+            *(
+                f"{'.'.join(path)}: {text}" if path else text
+                for path, text in _form_errors(errors)
+            ),
+        ]
         super().__init__("\n".join(lines))
         self.status = status
         self.code = JSONErrorCode(code)
@@ -82,13 +89,15 @@ class HTTPException(BostieError):
         self.body = body
 
 
-def _form_errors(tree: object, path: tuple[str, ...] = ()) -> list[str]:
+def _form_errors(
+    tree: object, path: tuple[str, ...] = ()
+) -> list[tuple[tuple[str, ...], str]]:
     if not isinstance(tree, Mapping):
         return []
-    lines: list[str] = []
+    found: list[tuple[tuple[str, ...], str]] = []
     for key, value in cast("Mapping[object, object]", tree).items():
         if key != "_errors":
-            lines += _form_errors(value, (*path, str(key)))
+            found += _form_errors(value, (*path, str(key)))
         elif isinstance(value, list):
             for error in cast("list[object]", value):
                 fields = cast("Mapping[str, object]", error)
@@ -97,8 +106,8 @@ def _form_errors(tree: object, path: tuple[str, ...] = ()) -> list[str]:
                     if isinstance(error, Mapping)
                     else error
                 )
-                lines.append(f"{'.'.join(path)}: {text}" if path else text)
-    return lines
+                found.append((path, text))
+    return found
 
 
 class BadRequest(HTTPException):
@@ -201,16 +210,26 @@ class CommandDefinitionError(CommandError, TypeError):
     """A command, group or option is defined in a way Discord does not accept."""
 
 
-class CommandSyncError(CommandError):
-    """Discord rejected the commands sent during a sync."""
+@dataclass(frozen=True, slots=True)
+class SyncProblem:
+    """One field Discord rejected in a sync, with the command and option it is in."""
 
-    def __init__(self, command: str, option_path: str, discord_message: str) -> None:
-        super().__init__(
-            ": ".join(part for part in (command, option_path, discord_message) if part)
-        )
-        self.command = command
-        self.option_path = option_path
-        self.discord_message = discord_message
+    command: str
+    option_path: str
+    discord_message: str
+
+    @override
+    def __str__(self) -> str:
+        parts = (self.command, self.option_path, self.discord_message)
+        return ": ".join(part for part in parts if part)
+
+
+class CommandSyncError(CommandError):
+    """Discord rejected the commands sent during a sync, one line per problem."""
+
+    def __init__(self, problems: Iterable[SyncProblem]) -> None:
+        self.problems = tuple(problems)
+        super().__init__("\n".join(map(str, self.problems)))
 
 
 class OptionConversionError(CommandError):
