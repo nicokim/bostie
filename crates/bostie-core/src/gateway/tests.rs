@@ -322,7 +322,7 @@ impl Harness {
         let inbox = Arc::new(Inbox::with_dispatch_limit(bell, INBOX_LIMIT));
         let global_limit = NonZeroU16::new(50).unwrap();
         let rest = Rest::with_limits(
-            TOKEN,
+            crate::rest::Auth::Bot(TOKEN),
             api_url,
             global_limit,
             Arc::clone(&inbox),

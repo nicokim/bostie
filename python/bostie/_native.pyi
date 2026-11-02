@@ -79,7 +79,9 @@ DIRECTIONS: Final[list[str]]
 CLOSED_REASONS: Final[list[str]]
 LOGGERS: Final[list[str]]
 
-type FailureKind = Literal["transport", "invalid_token", "request_budget", "bug"]
+type FailureKind = Literal[
+    "transport", "invalid_token", "no_token", "request_budget", "bug"
+]
 type VoiceStateName = Literal[
     "connecting", "ready", "resuming", "reconnecting", "disconnected"
 ]
@@ -193,7 +195,9 @@ type ReceivedItem = FrameItem | PacketItem | SpeechItem | LeaveItem
 @final
 class Core:
     @staticmethod
-    def create(token: str, api_url: str, global_limit: int) -> tuple[Core, int]: ...
+    def create(
+        token: str | None, api_url: str, global_limit: int, bearer: bool = False
+    ) -> tuple[Core, int]: ...
     def request(
         self,
         method: str,

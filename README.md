@@ -115,6 +115,7 @@ A few things the example takes for granted:
 - Image options such as `icon`, `avatar` and `banner` take a `File`.
 - When an edit lists `attachments`, only those stay. A listed `Attachment` sends its `description` and spoiler flag too, so `msgspec.structs.replace(attachment, description="...")` changes its alt text.
 - Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
+- `async with bostie.RESTClient(token) as client:` opens the same operations on `client.rest` without a gateway, for scripts and web backends. The token defaults to `BOSTIE_TOKEN`.
 
 Everything bostie does not model yet stays reachable:
 

@@ -14,7 +14,7 @@ use bostie_core::voice::types::{
     ReceiveStall, SampleFormat, SignalType, SourceSpec, StallPolicy,
 };
 use bostie_core::{
-    ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
+    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, IdentifyLimit, RawBellHandle,
     RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
@@ -41,12 +41,19 @@ struct NativeCore(Core);
 #[pymethods]
 impl NativeCore {
     #[staticmethod]
+    #[pyo3(signature = (token, api_url, global_limit, bearer=false))]
     fn create(
-        token: &str,
+        token: Option<&str>,
         api_url: &str,
         global_limit: NonZeroU16,
+        bearer: bool,
     ) -> Result<(Self, RawBellHandle)> {
-        let (core, bell) = Core::new(token, api_url, global_limit)?;
+        let auth = match (token, bearer) {
+            (None, _) => Auth::None,
+            (Some(token), false) => Auth::Bot(token),
+            (Some(token), true) => Auth::Bearer(token),
+        };
+        let (core, bell) = Core::new(auth, api_url, global_limit)?;
         log::register(core.log_sink());
         Ok((Self(core), bell.into_raw()))
     }
@@ -649,6 +656,7 @@ fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
     match kind {
         FailureKind::Transport => intern!(py, FailureKind::Transport.as_str()),
         FailureKind::InvalidToken => intern!(py, FailureKind::InvalidToken.as_str()),
+        FailureKind::NoToken => intern!(py, FailureKind::NoToken.as_str()),
         FailureKind::RequestBudget => intern!(py, FailureKind::RequestBudget.as_str()),
         FailureKind::Bug => intern!(py, FailureKind::Bug.as_str()),
     }

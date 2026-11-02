@@ -40,13 +40,44 @@ const HTTP2_PING_INTERVAL: Duration = Duration::from_secs(30);
 const RATE_LIMIT_RETRIES: u32 = 3;
 const FAILURE_RETRIES: u32 = 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Auth<'a> {
+    None,
+    Bot(&'a str),
+    Bearer(&'a str),
+}
+
+impl<'a> Auth<'a> {
+    pub const fn bot_token(self) -> Option<&'a str> {
+        match self {
+            Self::Bot(token) => Some(token),
+            Self::None | Self::Bearer(_) => None,
+        }
+    }
+
+    fn header(self) -> Result<Option<HeaderValue>, CoreError> {
+        let value = match self {
+            Self::None => return Ok(None),
+            Self::Bot(token) => format!("Bot {token}"),
+            Self::Bearer(token) => format!("Bearer {token}"),
+        };
+        let Ok(mut header) = HeaderValue::try_from(value) else {
+            return Err(CoreError::InvalidRequest(
+                "the token contains invalid characters".to_owned(),
+            ));
+        };
+        header.set_sensitive(true);
+        Ok(Some(header))
+    }
+}
+
 pub(crate) struct Rest {
     client: reqwest::Client,
     limiter: RateLimiter,
     interaction_buckets: Mutex<InteractionBuckets>,
     gate: GlobalGate,
     invalid: Mutex<InvalidRequests>,
-    token: HeaderValue,
+    authorization: Option<HeaderValue>,
     base: Url,
     token_invalid: AtomicBool,
     inbox: Arc<Inbox>,
@@ -55,16 +86,16 @@ pub(crate) struct Rest {
 
 impl Rest {
     pub(crate) fn new(
-        token: &str,
+        auth: Auth<'_>,
         api_url: &str,
         global_limit: NonZeroU16,
         inbox: Arc<Inbox>,
     ) -> Result<Self, CoreError> {
-        Self::with_limits(token, api_url, global_limit, inbox, Limits::default())
+        Self::with_limits(auth, api_url, global_limit, inbox, Limits::default())
     }
 
     pub(crate) fn with_limits(
-        token: &str,
+        auth: Auth<'_>,
         api_url: &str,
         global_limit: NonZeroU16,
         inbox: Arc<Inbox>,
@@ -74,12 +105,7 @@ impl Rest {
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https"))
             .ok_or_else(|| CoreError::InvalidRequest(format!("invalid api url {api_url:?}")))?;
-        let Ok(mut token) = HeaderValue::try_from(format!("Bot {token}")) else {
-            return Err(CoreError::InvalidRequest(
-                "the token contains invalid characters".to_owned(),
-            ));
-        };
-        token.set_sensitive(true);
+        let authorization = auth.header()?;
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(CONNECT_TIMEOUT)
@@ -94,7 +120,7 @@ impl Rest {
             interaction_buckets: Mutex::new(InteractionBuckets::default()),
             gate: GlobalGate::default(),
             invalid: Mutex::new(InvalidRequests::default()),
-            token,
+            authorization,
             base,
             token_invalid: AtomicBool::new(false),
             inbox,
@@ -170,12 +196,21 @@ impl Rest {
     }
 
     fn refusal(&self, ticket: Ticket, request: &RestRequest) -> Option<Delivery> {
+        if request.class == RouteClass::Bot && self.authorization.is_none() {
+            return Some(Delivery::Failure {
+                ticket,
+                kind: FailureKind::NoToken,
+                detail: "this client has no token, so it sends only webhook, interaction and OAuth2 token requests"
+                    .to_owned(),
+            });
+        }
         if request.class == RouteClass::Bot && self.token_invalid.load(Ordering::Relaxed) {
             return Some(Delivery::Failure {
                 ticket,
                 kind: FailureKind::InvalidToken,
-                detail: "Discord rejected the bot token, so bostie no longer sends requests that need it"
-                    .to_owned(),
+                detail:
+                    "Discord rejected the token, so bostie no longer sends requests that need it"
+                        .to_owned(),
             });
         }
         let wait = self.invalid.lock().refusal(Instant::now())?;
@@ -241,8 +276,8 @@ impl Rest {
             .client
             .request(request.method.clone(), url)
             .headers(request.headers.clone());
-        if request.class == RouteClass::Bot {
-            builder = builder.header(AUTHORIZATION, self.token.clone());
+        if let (RouteClass::Bot, Some(authorization)) = (request.class, &self.authorization) {
+            builder = builder.header(AUTHORIZATION, authorization.clone());
         }
         if let Some(body) = &request.body {
             builder = builder.body(body.clone());
@@ -278,7 +313,7 @@ impl Rest {
 
     fn observe(&self, class: RouteClass, status: StatusCode, limited: Option<Limited>) {
         if status == StatusCode::UNAUTHORIZED && class == RouteClass::Bot {
-            tracing::debug!("Discord rejected the bot token");
+            tracing::debug!("Discord rejected the token");
             self.token_invalid.store(true, Ordering::Relaxed);
         }
         if let Some(Limited {
@@ -557,10 +592,19 @@ pub(crate) mod tests {
     }
 
     fn limited_rest(url: &str, global_limit: u16, limits: Limits) -> (Rest, BellReceiver) {
+        rest_with(Auth::Bot("token"), url, global_limit, limits)
+    }
+
+    fn rest_with(
+        auth: Auth<'_>,
+        url: &str,
+        global_limit: u16,
+        limits: Limits,
+    ) -> (Rest, BellReceiver) {
         let (bell, receiver) = bell::pair().unwrap();
         let global_limit = NonZeroU16::new(global_limit).unwrap();
         let inbox = Arc::new(Inbox::new(bell));
-        let rest = Rest::with_limits("token", url, global_limit, inbox, limits).unwrap();
+        let rest = Rest::with_limits(auth, url, global_limit, inbox, limits).unwrap();
         (rest, receiver)
     }
 
@@ -728,45 +772,78 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn sends_the_token_only_on_bot_routes() {
+    async fn each_auth_sends_its_token_only_on_bot_routes() {
         crate::init_test_tracing();
-        let mut server = Server::start(vec![reply("200 OK", &[], "hello")]).await;
-        let (rest, _receiver) = rest(&server.url);
-        let webhook = RestRequest::parse(
-            "POST",
-            "/webhooks/{webhook_id}/{webhook_token}",
-            &HashMap::from([
-                ("webhook_id".to_owned(), "1".to_owned()),
-                ("webhook_token".to_owned(), "secret".to_owned()),
-            ]),
-            Vec::new(),
-            Some(b"{}".to_vec()),
-            None,
-            None,
-        )
-        .unwrap();
+        for (auth, authorization) in [
+            (Auth::Bot("token"), Some("Bot token")),
+            (Auth::Bearer("token"), Some("Bearer token")),
+            (Auth::None, None),
+        ] {
+            let mut server = Server::start(vec![reply("200 OK", &[], "hello")]).await;
+            let (rest, _receiver) = rest_with(auth, &server.url, 50, LIMITS);
+            let webhook = RestRequest::parse(
+                "POST",
+                "/webhooks/{webhook_id}/{webhook_token}",
+                &HashMap::from([
+                    ("webhook_id".to_owned(), "1".to_owned()),
+                    ("webhook_token".to_owned(), "secret".to_owned()),
+                ]),
+                Vec::new(),
+                Some(b"{}".to_vec()),
+                None,
+                None,
+            )
+            .unwrap();
+            let token = request("POST", "/oauth2/token", &[]);
 
-        let (code, body) = status(rest.execute(Ticket::from(1), me()).await);
-        status(rest.execute(Ticket::from(1), callback()).await);
-        status(rest.execute(Ticket::from(1), webhook).await);
+            let bot = rest.execute(Ticket::from(1), me()).await;
+            for unauthenticated in [callback(), webhook, token] {
+                assert_eq!(
+                    status(rest.execute(Ticket::from(2), unauthenticated).await).0,
+                    200
+                );
+            }
 
-        assert_eq!((code, &body[..]), (200, &b"hello"[..]));
-        let bot = server.next().await;
-        let interaction = server.next().await;
-        let webhook = server.next().await;
-        assert_eq!(bot.path, "/api/v10/users/@me");
-        assert_eq!(bot.headers["authorization"], "Bot token");
-        assert_eq!(interaction.path, "/api/v10/interactions/1/abc/callback");
-        assert_eq!(webhook.path, "/api/v10/webhooks/1/secret");
-        assert_eq!(webhook.headers["content-type"], "application/json");
-        for captured in [&bot, &interaction, &webhook] {
-            assert!(
-                captured.headers["user-agent"]
-                    .starts_with("DiscordBot (https://pypi.org/project/bostie, ")
+            if let Some(authorization) = authorization {
+                assert_eq!(status(bot), (200, Bytes::from_static(b"hello")));
+                let bot = server.next().await;
+                assert_eq!(bot.path, "/api/v10/users/@me");
+                assert_eq!(bot.headers["authorization"], authorization);
+            } else {
+                assert!(
+                    matches!(
+                        bot,
+                        Delivery::Failure {
+                            kind: FailureKind::NoToken,
+                            ..
+                        }
+                    ),
+                    "{bot:?}"
+                );
+            }
+            let sent = [
+                server.next().await,
+                server.next().await,
+                server.next().await,
+            ];
+            let paths = sent.each_ref().map(|captured| captured.path.as_str());
+            assert_eq!(
+                paths,
+                [
+                    "/api/v10/interactions/1/abc/callback",
+                    "/api/v10/webhooks/1/secret",
+                    "/api/v10/oauth2/token"
+                ]
             );
-        }
-        for unauthenticated in [&interaction, &webhook] {
-            assert!(!unauthenticated.headers.contains_key("authorization"));
+            let [_, webhook, _] = &sent;
+            assert_eq!(webhook.headers["content-type"], "application/json");
+            for captured in &sent {
+                assert!(!captured.headers.contains_key("authorization"));
+                assert!(
+                    captured.headers["user-agent"]
+                        .starts_with("DiscordBot (https://pypi.org/project/bostie, ")
+                );
+            }
         }
     }
 

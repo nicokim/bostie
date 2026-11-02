@@ -1,5 +1,6 @@
 from bostie import activity, ui, voice
 from bostie.bot import Bot
+from bostie.client import RESTClient
 from bostie.commands import Choice, Option, Range
 from bostie.context import (
     AutocompleteContext,
@@ -520,6 +521,7 @@ __all__ = [
     "PresenceUser",
     "PrimaryGuild",
     "PrivilegedIntentsRequired",
+    "RESTClient",
     "Range",
     "RateLimited",
     "Reaction",

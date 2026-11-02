@@ -112,7 +112,7 @@ impl RestRequest {
             RouteClass::Interaction
         } else if placeholders.contains(&"webhook_token") {
             RouteClass::Webhook
-        } else if route == "/gateway" {
+        } else if matches!(route, "/gateway" | "/oauth2/token" | "/oauth2/token/revoke") {
             RouteClass::Anonymous
         } else {
             RouteClass::Bot

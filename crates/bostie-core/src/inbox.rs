@@ -138,6 +138,7 @@ pub enum Delivery {
 pub enum FailureKind {
     Transport,
     InvalidToken,
+    NoToken,
     RequestBudget,
     Bug,
 }
@@ -147,6 +148,7 @@ impl FailureKind {
         match self {
             Self::Transport => "transport",
             Self::InvalidToken => "invalid_token",
+            Self::NoToken => "no_token",
             Self::RequestBudget => "request_budget",
             Self::Bug => "bug",
         }
