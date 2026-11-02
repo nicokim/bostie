@@ -207,6 +207,10 @@ class FakeSource:
         self._check()
         return self.probe
 
+    def tags(self) -> tuple[str | None, str | None, str | None]:
+        self._check()
+        return self.core.tags
+
     def read(self) -> list[bytes] | None:
         self._check()
         if not self.items:
@@ -317,6 +321,7 @@ class FakeCore:
         self.latency: tuple[float | None, float | None] = (0.01, 0.02)
         self.dave_view: tuple[int, int | None, str | None] = (1, 4, "11111 22222")
         self.live: set[int] = set()
+        self.tags: tuple[str | None, str | None, str | None] = (None, None, None)
         self._next_handle = 100
 
     def deliver(self, delivery: VoiceDelivery) -> None:

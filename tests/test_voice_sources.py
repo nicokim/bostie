@@ -27,7 +27,7 @@ def test_properties_need_open_first() -> None:
         voice.File("a.ogg"),
         voice.Stream(aiter_of(), voice.Opus()),
     ):
-        for name in ("format", "duration", "seekable"):
+        for name in ("format", "duration", "seekable", "tags"):
             with pytest.raises(RuntimeError, match=r"open\(\) the source first"):
                 getattr(source, name)
 
@@ -45,6 +45,7 @@ def test_open_waits_for_the_probe_and_reports_its_format(
 ) -> None:
     async def scenario(bot: FakeBot) -> None:
         bot.core.probe = None
+        bot.core.tags = ("Song", "Band", None)
         source = voice.File(Path("song.flac"))
         opening = asyncio.ensure_future(source.open(bot.voice))
         await settle()
@@ -54,6 +55,7 @@ def test_open_waits_for_the_probe_and_reports_its_format(
         native.feed()
         await opening
         assert (source.format, source.duration, source.seekable) == expected
+        assert source.tags == voice.Tags(title="Song", artist="Band")
         assert bot.core.calls[-1][:2] == ("voice_file", ("song.flac",))
 
     run(scenario)

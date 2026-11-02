@@ -35,6 +35,13 @@ impl SourceKind {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tags {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SourceInfo {
     pub kind: SourceKind,
@@ -65,6 +72,7 @@ struct Shared {
 
 struct State {
     info: Option<SourceInfo>,
+    tags: Tags,
     chunks: Vec<Bytes>,
     buffered: u64,
     progress: Progress,
@@ -118,6 +126,7 @@ impl Source {
             prefetch: frames_in(prefetch),
             state: Mutex::new(State {
                 info: None,
+                tags: Tags::default(),
                 chunks: Vec::new(),
                 buffered: 0,
                 progress: Progress::Playing,
@@ -154,6 +163,11 @@ impl Source {
     pub fn info(&self) -> Result<Option<SourceInfo>, CoreError> {
         self.owner.check()?;
         Ok(self.shared.state.lock().info)
+    }
+
+    pub fn tags(&self) -> Result<Tags, CoreError> {
+        self.owner.check()?;
+        Ok(self.shared.state.lock().tags.clone())
     }
 
     pub fn read(&self) -> Result<SourceRead, CoreError> {
@@ -237,9 +251,10 @@ impl Drop for Source {
 }
 
 impl Shared {
-    fn publish(&self, info: SourceInfo) -> u64 {
+    fn publish(&self, info: SourceInfo, tags: Tags) -> u64 {
         let mut state = self.state.lock();
         state.info = Some(info);
+        state.tags = tags;
         self.wake(&mut state);
         state.generation
     }
@@ -300,7 +315,7 @@ fn play(shared: &Shared, input: Input) {
         Ok(decoder) => decoder,
         Err(error) => return shared.finish(0, Some(error.to_string())),
     };
-    let mut generation = shared.publish(decoder.info());
+    let mut generation = shared.publish(decoder.info(), decoder.tags());
     loop {
         match shared.command() {
             Command::Close => return,
@@ -564,6 +579,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_tagged_file_reports_its_title_and_an_untagged_one_nothing() {
+        let mut harness = Harness::new();
+        let tagged = harness.file("tone.mp3");
+        let untagged = harness.file("tone.flac");
+        wait_for_info(&tagged);
+        wait_for_info(&untagged);
+
+        let title = tagged.tags().unwrap().title;
+
+        assert_eq!(title.as_deref(), Some("Tone"));
+        assert_eq!(untagged.tags().unwrap(), Tags::default());
+    }
+
+    #[test]
     fn five_point_one_is_downmixed_with_the_centre_at_minus_3_db_and_no_lfe() {
         let mut harness = Harness::new();
         let source = harness.file("tone-5.1.flac");
@@ -737,7 +766,7 @@ pub(crate) mod tests {
     fn a_seek_after_the_decoder_panicked_still_reports_the_panic() {
         let mut harness = Harness::new();
         let source = harness.spawn(|shared| {
-            shared.publish(seekable_pcm());
+            shared.publish(seekable_pcm(), Tags::default());
             panic!("bad frame");
         });
         wait_until(|| source.error().unwrap().is_some(), "the panic");
@@ -755,7 +784,7 @@ pub(crate) mod tests {
         let mut harness = Harness::new();
         let (step, steps) = std::sync::mpsc::channel::<()>();
         let source = harness.spawn(move |shared| {
-            let generation = shared.publish(seekable_pcm());
+            let generation = shared.publish(seekable_pcm(), Tags::default());
             steps.recv().unwrap();
             shared.push(generation, Bytes::from_static(&[0; 8]), 1);
             steps.recv().unwrap();
@@ -794,7 +823,7 @@ pub(crate) mod tests {
         let (seeked, seeks) = std::sync::mpsc::channel();
         let source = harness.spawn(move |shared| {
             shared.push(0, Bytes::from_static(b"buffered"), 1);
-            let generation = shared.publish(seekable_pcm());
+            let generation = shared.publish(seekable_pcm(), Tags::default());
             steps.recv().unwrap();
             shared.push(generation, Bytes::from_static(b"stale..."), 1);
             shared.finish(generation, Some("stale end".to_owned()));
@@ -824,10 +853,13 @@ pub(crate) mod tests {
             held.recv().unwrap_err();
         });
         let live = harness.spawn(|shared| {
-            shared.publish(SourceInfo {
-                seekable: false,
-                ..seekable_pcm()
-            });
+            shared.publish(
+                SourceInfo {
+                    seekable: false,
+                    ..seekable_pcm()
+                },
+                Tags::default(),
+            );
         });
         wait_for_info(&live);
 
@@ -844,7 +876,7 @@ pub(crate) mod tests {
         let mut harness = Harness::new();
         let (hold, held) = std::sync::mpsc::channel::<()>();
         let source = harness.spawn(move |shared| {
-            shared.publish(seekable_pcm());
+            shared.publish(seekable_pcm(), Tags::default());
             held.recv().unwrap_err();
         });
         wait_for_info(&source);

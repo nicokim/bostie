@@ -109,6 +109,11 @@ impl NativeSource {
         }))
     }
 
+    fn tags(&self) -> Result<(Option<String>, Option<String>, Option<String>)> {
+        let tags = self.0.tags()?;
+        Ok((tags.title, tags.artist, tags.album))
+    }
+
     fn read<'py>(&self, py: Python<'py>) -> Result<Option<Vec<Bound<'py, PyBytes>>>> {
         Ok(match self.0.read()? {
             SourceRead::Pending => Some(Vec::new()),

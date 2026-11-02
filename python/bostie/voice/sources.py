@@ -5,6 +5,7 @@ import shutil
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, Self, override
 from urllib.parse import urlsplit
 
@@ -27,10 +28,20 @@ FFMPEG_OUTPUT = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class Tags:
+    """What a file's tags say about it; None where they are silent."""
+
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+
+
 class NativeSource(Protocol):
     @property
     def id(self) -> int: ...
     def info(self) -> tuple[Literal["pcm", "opus"], float | None, bool] | None: ...
+    def tags(self) -> tuple[str | None, str | None, str | None]: ...
     def read(self) -> list[bytes] | None: ...
     def error(self) -> str | None: ...
     def seek(self, position: float) -> None: ...
@@ -47,6 +58,7 @@ class Source(ABC):
     _duration: float | None = None
     _seekable = False
     _done = False
+    _tags = Tags()
 
     @property
     def format(self) -> Format:
@@ -64,6 +76,12 @@ class Source(ABC):
     def seekable(self) -> bool:
         self._check_opened()
         return self._seekable
+
+    @property
+    def tags(self) -> Tags:
+        """The title, artist and album the file names, read by `open()`."""
+        self._check_opened()
+        return self._tags
 
     @abstractmethod
     async def open(self, manager: "VoiceManager") -> None:
@@ -121,6 +139,7 @@ class _DecodedSource(Source):
             await self._woken.wait()
             self._check_unused()
         kind, self._duration, self._seekable = info
+        self._tags = Tags(*native.tags())
         self._format = Opus() if kind == "opus" else NATIVE_PCM
 
     @override

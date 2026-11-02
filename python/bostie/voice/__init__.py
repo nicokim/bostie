@@ -76,7 +76,7 @@ from bostie.voice.layers import (
 from bostie.voice.message import message
 from bostie.voice.receiver import Receiver, ReceiverStats
 from bostie.voice.sink import Marker, Sink, SinkStats
-from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Url
+from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Tags, Url
 
 __all__ = [
     "DECODE_RATES",
@@ -143,6 +143,7 @@ __all__ = [
     "State",
     "StateChange",
     "Stream",
+    "Tags",
     "Track",
     "TrackEnd",
     "Url",

@@ -15,14 +15,14 @@ use symphonia::core::errors::{Error as MediaError, SeekErrorKind};
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, Track, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
-use symphonia::core::meta::MetadataOptions;
+use symphonia::core::meta::{MetadataOptions, StandardTag};
 use symphonia::core::packet::Packet;
 use symphonia::core::units::{Time, TimeBase, Timestamp};
 
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::source::http::HttpMedia;
-use crate::voice::source::{SourceInfo, SourceKind};
+use crate::voice::source::{SourceInfo, SourceKind, Tags};
 use crate::voice::types::{CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, SampleFormat};
 
 const MINUS_3_DB: f32 = std::f32::consts::FRAC_1_SQRT_2;
@@ -59,6 +59,7 @@ pub(crate) struct Decoder {
     track: u32,
     time_base: Option<TimeBase>,
     info: SourceInfo,
+    tags: Tags,
     output: Output,
     resume_at: Option<Timestamp>,
     finished: bool,
@@ -124,13 +125,14 @@ impl Decoder {
             }
         };
         let stream = MediaSourceStream::new(media, MediaSourceStreamOptions::default());
-        let format = probe(&hint, stream).map_err(|error| match error {
+        let mut format = probe(&hint, stream).map_err(|error| match error {
             MediaError::Unsupported(_) => no_decoder_for(described),
             MediaError::IoError(io) if io.kind() == ErrorKind::UnexpectedEof => {
                 no_decoder_for(described)
             }
             other => DecodeError::Media(other),
         })?;
+        let tags = read_tags(format.as_mut());
         let mut decoder = Self {
             format: Some(format),
             hint,
@@ -141,6 +143,7 @@ impl Decoder {
                 duration: None,
                 seekable,
             },
+            tags,
             output: Output::Opus,
             resume_at: None,
             finished: false,
@@ -151,6 +154,10 @@ impl Decoder {
 
     pub(crate) fn info(&self) -> SourceInfo {
         self.info
+    }
+
+    pub(crate) fn tags(&self) -> Tags {
+        self.tags.clone()
     }
 
     pub(crate) fn step(&mut self) -> Result<Step, DecodeError> {
@@ -514,6 +521,28 @@ fn probe(
         FormatOptions::default(),
         MetadataOptions::default(),
     )
+}
+
+fn read_tags(format: &mut dyn FormatReader) -> Tags {
+    let mut tags = Tags::default();
+    let mut metadata = format.metadata();
+    let Some(revision) = metadata.skip_to_latest() else {
+        return tags;
+    };
+    let per_track = revision
+        .per_track
+        .iter()
+        .flat_map(|track| &track.metadata.tags);
+    for tag in revision.media.tags.iter().chain(per_track) {
+        let (slot, value) = match &tag.std {
+            Some(StandardTag::TrackTitle(value)) => (&mut tags.title, value),
+            Some(StandardTag::Artist(value)) => (&mut tags.artist, value),
+            Some(StandardTag::Album(value)) => (&mut tags.album, value),
+            _ => continue,
+        };
+        slot.get_or_insert_with(|| value.to_string());
+    }
+    tags
 }
 
 fn lost() -> DecodeError {
