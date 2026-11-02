@@ -71,6 +71,7 @@ from bostie.events import (
     decode_event,
 )
 from bostie.gateway import (
+    LARGE_THRESHOLD,
     MEMBER_REQUEST,
     PRESENCE_OPTIONS,
     REQUEST_CHANNEL_INFO,
@@ -187,6 +188,7 @@ class Bot(Router):
         cache: bool = True,
         max_messages: int = 0,
         guild_ready_timeout: float = 2.0,
+        large_threshold: int = LARGE_THRESHOLD.start,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
         status: Status = Status.ONLINE,
         activities: Iterable[ActivityDict] = (),
@@ -202,6 +204,10 @@ class Bot(Router):
         super().__init__()
         if max_messages and not cache:
             raise ValueError("max_messages needs cache=True")
+        if large_threshold not in LARGE_THRESHOLD:
+            raise ValueError(
+                f"large_threshold must be 50 to 250, got {large_threshold}"
+            )
         self._shard_count = shard_count
         self._shard_ids = _shard_ids(shard_count, shard_ids)
         self.cache = Cache(max_messages)
@@ -214,6 +220,7 @@ class Bot(Router):
         self.auto_defer = auto_defer
         self._caching = cache
         self._guild_ready_timeout = guild_ready_timeout
+        self._large_threshold = large_threshold
         self._before_identify = before_identify
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
@@ -332,6 +339,7 @@ class Bot(Router):
                     shard_ids=range(count)
                     if isinstance(self._shard_ids, str)
                     else self._shard_ids,
+                    large_threshold=self._large_threshold,
                 )
                 self._unready = set(gateway.shard_ids)
                 self._readiness = Readiness(

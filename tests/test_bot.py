@@ -182,6 +182,7 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
             activities=[activity.streaming("dice", "https://twitch.tv/bostie")],
             afk=True,
             idle_since=datetime(2026, 11, 1, tzinfo=UTC),
+            large_threshold=250,
         )
         async with running(bot, fake):
             identify = await fake.next_identify()
@@ -203,6 +204,7 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
         assert bot.user.id == int(fake.bot_user["id"])
         assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
         assert "capabilities" not in identify
+        assert identify["large_threshold"] == 250
         assert identify["presence"] == {
             "since": 1_793_491_200_000,
             "activities": [
@@ -222,6 +224,21 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
         assert fake.put_count == 2
 
     run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        ({"cache": False, "max_messages": 10}, ValueError, "needs cache=True"),
+        ({"large_threshold": 49}, ValueError, "50 to 250"),
+        ({"large_threshold": 251}, ValueError, "50 to 250"),
+    ],
+)
+def test_cache_and_gateway_settings_are_checked_when_the_bot_is_built(
+    options: dict[str, Any], error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
+        Bot(**options)
 
 
 @pytest.mark.parametrize(

@@ -32,6 +32,7 @@ REQUEST_SOUNDBOARD_SOUNDS = 31
 REQUEST_CHANNEL_INFO = 43
 REQUEST_TIMEOUT = 30.0
 MAX_REQUESTED_MEMBERS = 100
+LARGE_THRESHOLD = range(50, 251)
 BUG_CLOSE_CODES = frozenset({4001, 4002, 4005, 4008})
 AUTHENTICATION_FAILED = 4004
 CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
@@ -157,10 +158,12 @@ class GatewayClient:
         intents: int,
         shard_count: int,
         shard_ids: Iterable[int],
+        large_threshold: int = LARGE_THRESHOLD.start,
     ) -> None:
         self._bridge = bridge
         self._token = token
         self._intents = intents
+        self._large_threshold = large_threshold
         self.shard_count = shard_count
         self._shards = {shard_id: Shard(bridge, shard_id) for shard_id in shard_ids}
         self._running: set[int] = set()
@@ -222,6 +225,7 @@ class GatewayClient:
                     "browser": "bostie",
                     "device": "bostie",
                 },
+                "large_threshold": self._large_threshold,
                 "shard": [shard_id, self.shard_count],
                 "presence": presence,
             }

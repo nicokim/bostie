@@ -107,6 +107,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
                 "browser": "bostie",
                 "device": "bostie",
             },
+            "large_threshold": 50,
             "shard": [0, 1],
             "presence": PRESENCE,
         }
