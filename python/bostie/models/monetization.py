@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import Any
+
+import msgspec
 
 from bostie.enums import EntitlementType, SKUFlags, SKUType, SubscriptionStatus
-from bostie.models.base import Model
+from bostie.models.base import Model, decoder
 
 
 class PartialEntitlement(Model, kw_only=True):
@@ -22,6 +25,18 @@ class Entitlement(PartialEntitlement, kw_only=True):
 
     starts_at: datetime | None
     ends_at: datetime | None
+
+
+class _Period(msgspec.Struct, gc=False):
+    starts_at: Any = msgspec.UNSET
+
+
+def decode_entitlement(data: bytes) -> PartialEntitlement:
+    """Decode an entitlement, as a `PartialEntitlement` when it has no period."""
+    period = decoder(_Period).decode(data).starts_at
+    model = PartialEntitlement if period is msgspec.UNSET else Entitlement
+    entitlement: PartialEntitlement = decoder(model).decode(data)
+    return entitlement
 
 
 class SKU(Model, kw_only=True):

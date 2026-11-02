@@ -209,6 +209,14 @@ class Guild(Model, kw_only=True):
     unavailable: bool = False
 
 
+class InteractionGuild(Model, kw_only=True):
+    """The part of a guild an interaction from it carries."""
+
+    id: int
+    locale: str | None = None
+    features: tuple[GuildFeature, ...] = ()
+
+
 class CurrentUserGuild(Model, kw_only=True):
     """A guild the bot is in, with the bot's permissions there."""
 

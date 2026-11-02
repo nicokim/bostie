@@ -47,6 +47,7 @@ from bostie.models import (
     ContentScanMetadata,
     Embed,
     EmbedField,
+    Entitlement,
     FileComponent,
     Guild,
     InteractionMetadata,
@@ -57,6 +58,7 @@ from bostie.models import (
     ModalSubmitInteraction,
     Model,
     PartialChannel,
+    PartialEntitlement,
     ReactionCountDetails,
     Role,
     Section,
@@ -523,6 +525,26 @@ def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> N
     assert isinstance(unknown, UnknownInteraction)
     assert unknown.type == 99
     assert unknown.raw == future
+
+
+def test_an_interaction_carries_its_guild_owners_and_entitlements() -> None:
+    document = json.loads(payload("events/INTERACTION_CREATE.command.json"))
+    (paid,) = document["entitlements"]
+    test = {key: value for key, value in paid.items() if not key.endswith("_at")}
+    document["entitlements"].append(test)
+
+    interaction = decode(CommandInteraction, msgspec.json.encode(document))
+
+    assert interaction.guild is not None
+    assert interaction.guild.id == interaction.guild_id
+    assert GuildFeature.ROLE_ICONS in interaction.guild.features
+    assert interaction.authorizing_integration_owners == {
+        ApplicationIntegrationType.GUILD_INSTALL: interaction.guild_id
+    }
+    subscription, test_entitlement = interaction.entitlements
+    assert isinstance(subscription, Entitlement)
+    assert subscription.ends_at == datetime(2026, 11, 1, 9, tzinfo=UTC)
+    assert type(test_entitlement) is PartialEntitlement
 
 
 def test_a_modal_submit_decodes_each_answer_inside_its_label() -> None:

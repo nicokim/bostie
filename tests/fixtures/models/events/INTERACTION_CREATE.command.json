@@ -274,7 +274,19 @@
   "app_permissions": "4069281901182529",
   "locale": "en-GB",
   "guild_locale": "en-US",
-  "entitlements": [],
+  "entitlements": [
+    {
+      "id": "1564609863064092929",
+      "sku_id": "1564600000000000001",
+      "application_id": "1329027298099331073",
+      "user_id": "820774541721731073",
+      "type": 8,
+      "deleted": false,
+      "consumed": false,
+      "starts_at": "2026-10-01T09:00:00+00:00",
+      "ends_at": "2026-11-01T09:00:00+00:00"
+    }
+  ],
   "authorizing_integration_owners": {
     "0": "1335172792320131073"
   },

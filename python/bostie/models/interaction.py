@@ -17,7 +17,7 @@ from bostie.enums import (
 from bostie.models.base import Builder, Model, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.components import SubmittedComponent, decode_submitted
-from bostie.models.guild import Member
+from bostie.models.guild import InteractionGuild, Member
 from bostie.models.message import (
     NULL,
     Message,
@@ -25,6 +25,7 @@ from bostie.models.message import (
     WebhookMessage,
     nested_message,
 )
+from bostie.models.monetization import PartialEntitlement, decode_entitlement
 from bostie.models.user import User
 
 
@@ -130,8 +131,10 @@ class _Interaction(Model, kw_only=True):
     version: int
     _app_permissions: str = msgspec.field(name="app_permissions")
     locale: str
-    authorizing_integration_owners: dict[str, int]
+    authorizing_integration_owners: dict[ApplicationIntegrationType, int]
     attachment_size_limit: int
+    _entitlements: tuple[msgspec.Raw, ...] = msgspec.field(name="entitlements")
+    guild: InteractionGuild | None = None
     guild_id: int | None = None
     channel: PartialChannel | None = None
     channel_id: int | None = None
@@ -153,6 +156,11 @@ class _Interaction(Model, kw_only=True):
     @property
     def app_permissions(self) -> Permissions:
         return Permissions(int(self._app_permissions))
+
+    @property
+    def entitlements(self) -> tuple[PartialEntitlement, ...]:
+        """The user's entitlements to the app's SKUs; test ones have no period."""
+        return tuple(decode_entitlement(raw) for raw in self._entitlements)
 
 
 class CommandInteraction(_Interaction, kw_only=True):
