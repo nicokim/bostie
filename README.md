@@ -103,7 +103,7 @@ A few things the example takes for granted:
 - Options come from the type hints: `str`, `int`, `float`, `bool`, `User`, `Member`, `PartialChannel`, `Role`, `Attachment` and `User | Role`. `Range[int, 2, 100]` bounds a number or a string's length, a string in `Annotated` is the description, a default or `| None` makes the option optional, and a `Literal`, an `Enum` or `Option(choices=...)` gives choices.
 - `@bot.user_command` and `@bot.message_command` add a command to the context menu of a user or a message. The handler takes the target after the context, typed `User` or `Member`, or `Message`, `WebhookMessage` or both.
 - `ctx.modal(ui.modal(...))` opens a form from a command or a component. `@bot.on_modal` routes its submit by custom id template, like a component, and `ctx.text`, `ctx.values`, `ctx.ids`, `ctx.attachments`, `ctx.choice` and `ctx.checked` read the answers by their custom ids: `ctx.values` gives the options picked as strings, `ctx.ids` the users, roles, channels or uploads picked as ids.
-- Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you.
+- Messages use [Components V2](https://docs.discord.com/developers/components/overview): `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.file` and `ui.separator` build them, and bostie sets the `IS_COMPONENTS_V2` flag for you. Such a message cannot also carry content, embeds, stickers or a poll, and bostie raises `ValueError` before sending one.
 - Custom id templates such as `reroll:{sides:int}` are parsed into typed handler arguments, and `reroll.id(sides=6)` builds a matching id, so buttons keep working after a restart.
 - The listener needs no [privileged intent](https://docs.discord.com/developers/events/gateway#privileged-intents): mentions always arrive, and a message that mentions the bot carries its content too.
 
@@ -113,6 +113,7 @@ A few things the example takes for granted:
 - `reason="..."` goes to the audit log on the operations that take one, such as `bot.rest.bans.create(guild_id, user_id, reason="spam")`.
 - A list Discord pages is an async iterator that pages for you: `async for message in bot.rest.messages.list(channel_id, limit=500)`. `bot.rest.audit_log.list(guild_id)` yields whole pages, with the users and webhooks the entries refer to.
 - Image options such as `icon`, `avatar` and `banner` take a `File`.
+- When an edit lists `attachments`, only those stay. A listed `Attachment` sends its `description` and spoiler flag too, so `msgspec.structs.replace(attachment, description="...")` changes its alt text.
 - Results are bostie models, and they do not change `bot.cache`: the gateway events that follow do.
 
 Everything bostie does not model yet stays reachable:
