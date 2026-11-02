@@ -9,6 +9,7 @@ import pytest
 from bostie import ui
 from bostie.enums import (
     ApplicationIntegrationType,
+    AttachmentFlags,
     ButtonStyle,
     ChannelFlags,
     ChannelType,
@@ -288,6 +289,29 @@ def test_embeds_and_media_items_carry_their_content_scan_flags() -> None:
     link = decoder(Embed).decode(msgspec.json.encode(preview))
     assert link.flags == EmbedFlags.CONTAINS_GORE_CONTENT
     assert link.components == (TextDisplay(content="A preview"),)
+
+
+def test_attachments_carry_voice_message_and_clip_details() -> None:
+    message = decode(Message, payload("events/MESSAGE_CREATE.voice.json"))
+    clip = json.loads(payload("events/MESSAGE_CREATE.rich.json"))["attachments"][0]
+    clip |= {
+        "flags": AttachmentFlags.IS_CLIP,
+        "clip_participants": [MESSAGE["author"]],
+        "clip_created_at": "2026-10-27T11:58:00+00:00",
+        "application": {"id": "1329027298099331073"},
+    }
+
+    (voice,) = message.attachments
+    decoded_clip = decode(Attachment, msgspec.json.encode(clip))
+
+    assert MessageFlags.IS_VOICE_MESSAGE in message.flags
+    assert voice.duration_secs == 2.2
+    assert voice.waveform is not None
+    assert (len(voice.waveform), max(voice.waveform)) == (22, 255)
+    assert decoded_clip.placeholder_version == 1
+    assert decoded_clip.clip_participants[0].username == "linus"
+    assert decoded_clip.clip_created_at == datetime(2026, 10, 27, 11, 58, tzinfo=UTC)
+    assert decoded_clip.application is not None
 
 
 def test_components_decode_known_types_and_keep_unknown_ones() -> None:

@@ -64,9 +64,15 @@ class Attachment(Model, kw_only=True):
     proxy_url: str
     height: int | None = None
     width: int | None = None
+    placeholder: str | None = None
+    placeholder_version: int | None = None
     ephemeral: bool = False
     duration_secs: float | None = None
+    waveform: bytes | None = None
     flags: AttachmentFlags = AttachmentFlags(0)
+    clip_participants: tuple[User, ...] = ()
+    clip_created_at: datetime | None = None
+    application: PartialApplication | None = None
 
     @classmethod
     def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":

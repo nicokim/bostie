@@ -1,0 +1,60 @@
+{
+  "id": "1564609640105213953",
+  "type": 0,
+  "channel_id": "1335173295636611073",
+  "author": {
+    "id": "820774541721731073",
+    "username": "linus",
+    "global_name": null,
+    "discriminator": "0",
+    "avatar": null,
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "content": "",
+  "timestamp": "2026-10-27T12:00:00.123000+00:00",
+  "edited_timestamp": null,
+  "tts": false,
+  "mention_everyone": false,
+  "mentions": [],
+  "mention_roles": [],
+  "attachments": [
+    {
+      "id": "1564609640012939265",
+      "filename": "voice-message.ogg",
+      "size": 14630,
+      "url": "https://cdn.discordapp.com/attachments/1335173295636611073/1564609640012939265/voice-message.ogg?ex=69005f00&is=68ff0d80&hm=5d1c0e7a2b9f4a63c8e1d7b0a4f2e6c9d3b8a1f5e7c2d4b6a8f0e1c3d5b7a9f2&",
+      "proxy_url": "https://media.discordapp.net/attachments/1335173295636611073/1564609640012939265/voice-message.ogg?ex=69005f00&is=68ff0d80&hm=5d1c0e7a2b9f4a63c8e1d7b0a4f2e6c9d3b8a1f5e7c2d4b6a8f0e1c3d5b7a9f2&",
+      "content_type": "audio/ogg",
+      "duration_secs": 2.2,
+      "waveform": "AAwoYLT/0oxYPB8JABZLgsmgYisKAA==",
+      "flags": 0
+    }
+  ],
+  "embeds": [],
+  "components": [],
+  "pinned": false,
+  "flags": 8192,
+  "nonce": "1564609639962607617",
+  "channel_type": 0,
+  "guild_id": "1335172792320131073",
+  "member": {
+    "avatar": null,
+    "banner": null,
+    "communication_disabled_until": null,
+    "flags": 2,
+    "joined_at": "2025-04-18T19:03:11.987000+00:00",
+    "nick": null,
+    "premium_since": null,
+    "roles": [],
+    "unusual_dm_activity_until": null,
+    "collectibles": null,
+    "avatar_decoration_data": null,
+    "deaf": false,
+    "mute": false
+  }
+}
