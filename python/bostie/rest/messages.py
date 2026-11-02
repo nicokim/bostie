@@ -39,9 +39,9 @@ class MessageCreate(MessageParts, total=False):
 class MessageList(TypedDict, total=False):
     """Where `messages.list` starts, at most one of them, and how many it yields."""
 
-    before: int
-    after: int
-    around: int
+    before: int | datetime
+    after: int | datetime
+    around: int | datetime
     limit: int
 
 
@@ -232,6 +232,7 @@ class Messages(Group):
             items=tuple,
             cursor=lambda pin: pin.pinned_at,
             page_size=50,
+            time_cursor=True,
             channel_id=channel_id,
         )
         return (pin async for page in pages for pin in page)

@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
 from functools import partial
 from typing import Literal, Required, TypedDict, Unpack
 
@@ -18,8 +19,8 @@ class MonetizationCreateTestEntitlement(TypedDict, total=False):
 class MonetizationListEntitlements(TypedDict, total=False):
     user_id: int
     sku_ids: Sequence[int]
-    before: int
-    after: int
+    before: int | datetime
+    after: int | datetime
     limit: int
     guild_id: int
     exclude_ended: bool
@@ -27,8 +28,8 @@ class MonetizationListEntitlements(TypedDict, total=False):
 
 
 class MonetizationListSubscriptions(TypedDict, total=False):
-    before: int
-    after: int
+    before: int | datetime
+    after: int | datetime
     limit: int
     user_id: int
 

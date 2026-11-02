@@ -84,8 +84,8 @@ class GuildFetchWidgetImage(TypedDict, total=False):
 
 
 class GuildList(TypedDict, total=False):
-    before: int
-    after: int
+    before: int | datetime
+    after: int | datetime
     limit: int
     shard: int
     with_counts: bool

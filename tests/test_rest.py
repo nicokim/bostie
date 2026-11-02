@@ -4,6 +4,7 @@ import inspect
 import re
 import textwrap
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -15,6 +16,7 @@ from bostie.cache import Cache
 from bostie.events import GuildCreate
 from bostie.models import AllowedMentions
 from bostie.rest import REST, BearerREST
+from bostie.rest.messages import MessageList
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient
@@ -212,10 +214,16 @@ def history(channel_id: int, ids: range) -> list[dict[str, Any]]:
             range(60, 40, -1),
             [{"limit": "100", "around": "50"}],
         ),
+        (
+            {"after": datetime(2016, 4, 30, 11, 18, 25, 796000, tzinfo=UTC)},
+            [range(5, 4, -1)],
+            range(5, 6),
+            [{"limit": "100", "after": "175928847303180287"}],
+        ),
     ],
 )
 def test_a_listing_walks_pages_from_its_cursor_up_to_its_limit(
-    options: dict[str, int],
+    options: MessageList,
     pages: list[range],
     walked: range,
     queries: list[dict[str, str]],

@@ -13,6 +13,7 @@ from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
 from bostie.models.base import check_keys, decoder
 from bostie.models.message import PartialMessage, in_guild
+from bostie.snowflake import time_snowflake
 
 CURSORS = ("before", "after", "around")
 DATA_URI_TYPES = {
@@ -98,9 +99,13 @@ def paginate[P, I](
     cursor: Callable[[I], int | datetime],
     page_size: int,
     forward: bool = False,
+    time_cursor: bool = False,
     **params: object,
 ) -> AsyncIterator[P]:
-    """Walk a GET route by its cursor up to `limit` items, or all of them without it."""
+    """Walk a GET route by its cursor up to `limit` items, or all of them without it.
+
+    A datetime cursor becomes the id of that moment unless `time_cursor` is set.
+    """
     given = [name for name in CURSORS if name in options]
     if len(given) > 1:
         raise ValueError(f"{' and '.join(given)} are mutually exclusive")
@@ -108,7 +113,11 @@ def paginate[P, I](
     limit: int | None = options.get("limit")
 
     async def pages() -> AsyncIterator[P]:
-        query = {name: value for name, value in options.items() if name != "limit"}
+        query = {
+            name: _position(name, value, time_cursor=time_cursor)
+            for name, value in options.items()
+            if name != "limit"
+        }
         remaining = limit
         while remaining is None or remaining > 0:
             size = page_size if remaining is None else min(page_size, remaining)
@@ -128,3 +137,9 @@ def paginate[P, I](
             )
 
     return pages()
+
+
+def _position(name: str, value: object, *, time_cursor: bool) -> object:
+    if time_cursor or name not in CURSORS or not isinstance(value, datetime):
+        return value
+    return time_snowflake(value, high=name == "after")

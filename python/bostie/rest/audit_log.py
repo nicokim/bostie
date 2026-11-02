@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import datetime
 from functools import partial
 from typing import TypedDict, Unpack
 
@@ -10,8 +11,8 @@ from bostie.rest.base import Group, paginate, wire
 class AuditLogList(TypedDict, total=False):
     user_id: int
     action_type: AuditLogEvent
-    before: int
-    after: int
+    before: int | datetime
+    after: int | datetime
     limit: int
 
 

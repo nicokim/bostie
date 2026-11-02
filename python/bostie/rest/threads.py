@@ -71,7 +71,7 @@ class ThreadListArchived(TypedDict, total=False):
 
 
 class ThreadListJoinedPrivateArchived(TypedDict, total=False):
-    before: int
+    before: int | datetime
     limit: int
 
 
@@ -128,6 +128,7 @@ class Threads(Group):
             wire(options, ThreadListJoinedPrivateArchived),
             lambda thread: thread.id,
             channel_id,
+            time_cursor=False,
         )
 
     def list_members(
@@ -156,6 +157,7 @@ class Threads(Group):
             wire(options, ThreadListArchived),
             _archived_at,
             channel_id,
+            time_cursor=True,
         )
 
     def list_public_archived(
@@ -167,6 +169,7 @@ class Threads(Group):
             wire(options, ThreadListArchived),
             _archived_at,
             channel_id,
+            time_cursor=True,
         )
 
     async def remove_member(self, channel_id: int, user_id: int, /) -> None:
@@ -244,6 +247,8 @@ class Threads(Group):
         options: dict[str, Any],
         cursor: Callable[[Channel], int | datetime],
         channel_id: int,
+        *,
+        time_cursor: bool,
     ) -> AsyncIterator[Channel]:
         limit: int | None = options.get("limit")
         if limit is not None and limit % ARCHIVED_PAGE == 1:
@@ -256,6 +261,7 @@ class Threads(Group):
             items=tuple,
             cursor=cursor,
             page_size=ARCHIVED_PAGE,
+            time_cursor=time_cursor,
             channel_id=channel_id,
         )
         return _first(pages, limit)
