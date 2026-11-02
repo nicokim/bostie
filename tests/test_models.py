@@ -759,3 +759,5 @@ def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:
         build_message("hi", components=[ui.text("hi")])
     with pytest.raises(ValueError, match="Components V2"):
         build_message(embeds=[Embed(title="x")], flags=v2)
+    with pytest.raises(ValueError, match="Components V2"):
+        message_body(None, {"components": [ui.text("hi")], "sticker_ids": [1]})

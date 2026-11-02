@@ -38,6 +38,8 @@ type MentionType = Literal["roles", "users", "everyone"]
 
 NULL = msgspec.Raw(b"null")
 
+NOT_IN_V2 = ("content", "embeds", "sticker_ids", "poll", "shared_client_theme")
+
 V2_COMPONENT_TYPES = frozenset(
     {
         ComponentType.SECTION,
@@ -587,10 +589,10 @@ def message_body(
         if any(_type_of(component) in V2_COMPONENT_TYPES for component in components):
             body["flags"] = MessageFlags.IS_COMPONENTS_V2 | (body.get("flags") or 0)
     components_v2 = bool((body.get("flags") or 0) & MessageFlags.IS_COMPONENTS_V2)
-    if components_v2 and (body.get("content") or body.get("embeds")):
+    if components_v2 and any(body.get(part) for part in NOT_IN_V2):
         raise ValueError(
-            "messages with Components V2 cannot have content or embeds; "
-            "use ui.text() and ui.container() instead"
+            "messages with Components V2 cannot have content, embeds, stickers, "
+            "a poll or a shared client theme; use ui.text() and ui.container() instead"
         )
     if reply_to is not None:
         if "message_reference" in body:
