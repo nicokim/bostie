@@ -353,10 +353,16 @@ class FakeDiscord(VoiceGateway):
     async def interaction(self, type: int, data: Json, **fields: Any) -> Recorded:
         """Dispatch ``payloads.interaction(...)`` and return its first callback."""
         payload = payloads.interaction(type, data, **fields)
-        callback: asyncio.Future[Recorded] = asyncio.get_running_loop().create_future()
-        self._callback_waiters[payload["id"]] = callback
+        callback = self.expect_callback(payload)
         await self.dispatch("INTERACTION_CREATE", payload)
         return await callback
+
+    def expect_callback(self, interaction: Json) -> asyncio.Future[Recorded]:
+        """Accept callbacks for ``interaction``; the future gets the first one."""
+        self._interactions[interaction["token"]] = interaction
+        callback: asyncio.Future[Recorded] = asyncio.get_running_loop().create_future()
+        self._callback_waiters[interaction["id"]] = callback
+        return callback
 
     def rate_limit(
         self,

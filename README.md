@@ -148,6 +148,15 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 
 `await bot.request_members(guild_id, query=..., limit=...)` or `user_ids=...` asks the gateway for members and gathers every chunk of the answer, with `presences=True` their presences too. `limit` goes up to 100 and `user_ids` takes at most 100. Without `query` or `user_ids` it asks for every member, which needs `Intents.GUILD_MEMBERS`; presences need `Intents.GUILD_PRESENCES`. It raises `bostie.MemberRequestRateLimited` with `retry_after` when Discord refuses, and `TimeoutError` when a chunk takes over `timeout` seconds, 30 by default. `await bot.request_soundboard_sounds(guild_id)` and `await bot.request_channel_info(guild_id)` ask the gateway for a guild's soundboard sounds and its channels' voice status. A request raises `StateError` when its shard starts a new session before the answer.
 
+## Interactions over HTTP
+
+`app = bostie.ASGIApp(bot)` is an ASGI app for the Interactions Endpoint URL and the Webhook Events URL of the Developer Portal. Run it with any ASGI server, such as `uvicorn mybot:app`, instead of `bot.run()`:
+
+- It checks each request's signature with the app's public key, answers Discord's PINGs, and runs commands, components and modals with the same routers and contexts as over the gateway.
+- Webhook events, such as `ApplicationAuthorized`, reach `@bot.listen`, `bot.wait_for` and `bot.stream`. A bot on the gateway can serve them through the same app.
+- The server's lifespan starts the bot's REST, without a gateway, and syncs commands. Mounted in another framework, call `await app.start()` and `await app.close()` from that framework's lifespan.
+- Without a gateway there is no voice, `bot.cache` stays empty, gateway events never arrive and `Started` never fires.
+
 ## Voice
 
 ```python

@@ -1,4 +1,5 @@
 from bostie import activity, oauth2, ui, voice
+from bostie.asgi import ASGIApp
 from bostie.bot import Bot
 from bostie.client import BearerClient, RESTClient, WebhookClient
 from bostie.commands import Choice, Option, Range
@@ -339,6 +340,7 @@ from bostie.webhook_events import decode_webhook_event, verify_signature
 
 __all__ = [
     "SKU",
+    "ASGIApp",
     "AccessToken",
     "ActionRow",
     "ActiveThreads",
