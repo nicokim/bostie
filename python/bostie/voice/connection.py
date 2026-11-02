@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -251,6 +251,9 @@ class VoiceHost(Protocol):
     async def wait_for[E: Event](
         self, event: type[E], *, check: Callable[[E], bool] | None = None
     ) -> E: ...
+    def stream[E: Event](
+        self, event: type[E], *, check: Callable[[E], bool] | None = None
+    ) -> contextlib.AbstractAsyncContextManager[AsyncIterator[E]]: ...
     def _emit(self, event: VoiceEvent) -> None: ...
 
 
@@ -276,14 +279,44 @@ class Dave:
 class ExternalVoice:
     """The session and server an external voice engine connects with.
 
-    bostie has no media in that guild; later VoiceServerUpdate events are the
-    external engine's to follow.
+    bostie has no media in that guild; `updates()` hands on what changes later.
     """
 
     state: VoiceStateUpdate
     server: VoiceServerUpdate
     _manager: "VoiceManager" = field(repr=False, compare=False)
     _guild_id: int = field(repr=False, compare=False)
+
+    @contextlib.asynccontextmanager
+    async def updates(
+        self,
+    ) -> AsyncGenerator[AsyncIterator[VoiceServerUpdate | VoiceStateUpdate]]:
+        """Queue the guild's new voice servers and the bot's own voice states."""
+        bot = self._manager._bot
+        user_id = self.state.voice_state.user_id
+        queue: asyncio.Queue[VoiceServerUpdate | VoiceStateUpdate] = asyncio.Queue()
+        async with (
+            bot.stream(
+                VoiceServerUpdate, check=lambda event: event.guild_id == self._guild_id
+            ) as servers,
+            bot.stream(
+                VoiceStateUpdate,
+                check=lambda event: (
+                    event.voice_state.guild_id == self._guild_id
+                    and event.voice_state.user_id == user_id
+                ),
+            ) as states,
+        ):
+            pumps = [
+                asyncio.create_task(_pump(servers, queue)),
+                asyncio.create_task(_pump(states, queue)),
+            ]
+            try:
+                yield _drain(queue)
+            finally:
+                for pump in pumps:
+                    pump.cancel()
+                await asyncio.wait(pumps)
 
     async def disconnect(self) -> None:
         """Leave the voice channel."""
@@ -342,8 +375,8 @@ class VoiceManager:
     ) -> ExternalVoice:
         """Join a voice channel for an external voice engine and return its credentials.
 
-        bostie then has no media in that guild, and later VoiceServerUpdate events
-        are the external engine's to follow.
+        bostie then has no media in that guild; `external.updates()` hands on what
+        changes later.
         """
         user = self._running_user("bot.voice.connect_external()")
         if guild_id in self._connections:
@@ -1306,6 +1339,16 @@ class ContextVoice:
                 raise
             return None
         return state.channel_id
+
+
+async def _pump[T](events: AsyncIterator[T], queue: asyncio.Queue[T]) -> None:
+    async for event in events:
+        queue.put_nowait(event)
+
+
+async def _drain[T](queue: asyncio.Queue[T]) -> AsyncIterator[T]:
+    while True:
+        yield await queue.get()
 
 
 def versions() -> dict[str, str]:

@@ -436,6 +436,29 @@ def test_connect_external_returns_the_state_and_server_and_disconnects() -> None
     run(scenario)
 
 
+def test_connect_external_hands_on_later_servers_and_bot_states() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
+        await settle()
+        bot.dispatch(voice_state_update(VOICE))
+        bot.dispatch(VoiceServerUpdate(guild_id=GUILD_ID, token="t", endpoint="a"))
+        external = await task
+        moved = voice_state_update(OTHER_VOICE)
+        server = VoiceServerUpdate(guild_id=GUILD_ID, token="u", endpoint="b")
+        async with external.updates() as updates:
+            bot.dispatch(voice_state_update(OTHER_VOICE, user_id=USER_ID))
+            bot.dispatch(
+                VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="x", endpoint=None)
+            )
+            bot.dispatch(moved)
+            bot.dispatch(server)
+            got = [await anext(updates), await anext(updates)]
+            assert moved in got
+            assert server in got
+
+    run(scenario)
+
+
 def test_connect_external_refuses_a_guild_bostie_already_runs() -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(bot)

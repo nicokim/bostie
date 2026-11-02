@@ -1,8 +1,9 @@
 import asyncio
+import contextlib
 import json
 import threading
 from collections import deque
-from collections.abc import Buffer, Callable, Coroutine
+from collections.abc import AsyncGenerator, AsyncIterator, Buffer, Callable, Coroutine
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -576,6 +577,9 @@ class FakeBot:
         self._waiters: list[
             tuple[type[Event], Callable[[Any], bool] | None, asyncio.Future[Event]]
         ] = []
+        self._streams: list[
+            tuple[type[Event], Callable[[Any], bool] | None, asyncio.Queue[Event]]
+        ] = []
 
     def _emit(self, event: VoiceEvent) -> None:
         self.events.append(event)
@@ -595,7 +599,31 @@ class FakeBot:
         finally:
             self._waiters.remove(waiter)
 
+    @contextlib.asynccontextmanager
+    async def stream[E: Event](
+        self, event: type[E], *, check: Callable[[E], bool] | None = None
+    ) -> AsyncGenerator[AsyncIterator[E]]:
+        queue: asyncio.Queue[Event] = asyncio.Queue()
+        streamer = (
+            cast("type[Event]", event),
+            cast("Callable[[Any], bool] | None", check),
+            queue,
+        )
+        self._streams.append(streamer)
+
+        async def events() -> AsyncIterator[E]:
+            while True:
+                yield cast("E", await queue.get())
+
+        try:
+            yield events()
+        finally:
+            self._streams.remove(streamer)
+
     def dispatch(self, event: Event) -> None:
+        for kind, check, queue in list(self._streams):
+            if isinstance(event, kind) and (check is None or check(event)):
+                queue.put_nowait(event)
         for kind, check, future in list(self._waiters):
             if (
                 isinstance(event, kind)
