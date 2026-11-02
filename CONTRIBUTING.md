@@ -70,7 +70,7 @@ If a payload still doesn't fit, for example because it lacks a required field, `
 
 ## Adding a REST operation
 
-`bot.rest` has one method per documented bot operation, in the group that `tests/fixtures/rest/operations.txt` names. Each row there is `VERB path group.method`, ending in `reason` when the docs say the operation takes the `X-Audit-Log-Reason` header. A new operation gets its row by these rules:
+`bot.rest` has one method per documented bot operation, in the group that `tests/fixtures/rest/operations.txt` names. Each row there is `VERB path group.method`, ending in `reason` when the docs say the operation takes the `X-Audit-Log-Reason` header, or in `bearer` when it needs a user's OAuth2 token: that row belongs to `BearerClient.rest`, whose groups live in the module of the same name, and a row both tokens reach is listed twice. A new operation gets its row by these rules:
 
 - The group is the noun the docs heading acts on: Create Guild Ban is `bans.create`, Add Guild Member Role is `members.add_role`.
 - Get one is `fetch`, Get or List many is `list`, Modify and Edit are `edit`, Create is `create`, Delete is `delete` and Bulk X is `bulk_x`. Any other verb, such as Add, Remove, Start or Sync, stays as the docs word. The rest of the heading follows without the group noun: Get Guild Role Member Counts is `roles.fetch_member_counts`.
