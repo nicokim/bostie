@@ -757,10 +757,17 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
         return _command_name(self.interaction.data)
 
     @property
-    def options(self) -> dict[str, str | int | float | bool | None]:
-        """The options filled so far, by name; required ones may be missing."""
-        _, leaves = _split_subcommands(self.interaction.data.options)
-        return {option.name: option.value for option in leaves}
+    def options(self) -> dict[str, Any]:
+        """The options filled so far by name, as the handler gets them if they convert.
+
+        Required ones may be missing, and the focused one is the text typed so far.
+        """
+        data = self.interaction.data
+        _, leaves = _split_subcommands(data.options)
+        found = self.bot._command(data)
+        if found is None:
+            return {option.name: option.value for option in leaves}
+        return found[0].filled(leaves, data.resolved)
 
     async def _respond(self, choices: list[dict[str, Any]]) -> None:
         async with self._lock:

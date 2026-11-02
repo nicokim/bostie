@@ -3,7 +3,7 @@ import itertools
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from functools import partial
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pytest
 from msgspec.json import encode
@@ -24,6 +24,7 @@ from bostie import (
     NotFound,
     Option,
     UnexpectedResponse,
+    User,
     WebhookMessage,
     ui,
 )
@@ -611,18 +612,28 @@ def test_autocomplete_sees_the_options_filled_so_far_and_the_command_name() -> N
             ctx: Context,
             query: Annotated[str, Option(autocomplete=suggest)],
             limit: int = 5,
+            author: User | None = None,
+            sort: Literal["new", "old"] = "new",
         ) -> None:
             pass
 
+        author = "820774541721731073"
         data = payloads.command(
             "search",
             payloads.option("limit", 4, 10),
+            payloads.option("author", 6, author),
+            payloads.option("sort", 3, "ne"),
             payloads.option("query", 3, "lyre", focused=True),
+            resolved=payloads.resolved(),
         )
         async with running(bot, fake):
             await fake.interaction(4, data)
 
-        assert seen == [({"limit": 10, "query": "lyre"}, "search")]
+        ((options, name),) = seen
+        assert name == "search"
+        assert isinstance(options, dict)
+        assert options.pop("author").id == int(author)
+        assert options == {"limit": 10, "sort": "ne", "query": "lyre"}
 
     run(scenario)
 

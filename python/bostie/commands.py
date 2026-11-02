@@ -1,3 +1,4 @@
+import contextlib
 import inspect
 import typing
 import unicodedata
@@ -533,6 +534,23 @@ class Command(_Node):
                 )
             arguments[parameter.python_name] = parameter.default
         return arguments
+
+    def filled(
+        self, options: Sequence[InteractionDataOption], resolved: Resolved
+    ) -> dict[str, Any]:
+        """The options given so far by name, converted as far as they convert.
+
+        The focused option, and a partial value that does not convert, stay as sent.
+        """
+        filled: dict[str, Any] = {}
+        for option in options:
+            filled[option.name] = option.value
+            parameter = self._by_option_name.get(option.name)
+            if parameter is None or option.focused or option.type != parameter.type:
+                continue
+            with contextlib.suppress(OptionConversionError):
+                filled[option.name] = parameter.convert(option.value, resolved)
+        return filled
 
     async def arguments(
         self,
