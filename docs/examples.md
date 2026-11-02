@@ -4,7 +4,7 @@ These bots live in the `examples` folder of the repository. Set `BOSTIE_TOKEN` a
 
 ## Commands
 
-Slash commands with typed options, a group, autocomplete, user and message commands, a profile card built with `cdn` and `fmt`, and an error hook.
+Slash commands with typed options, a group, autocomplete, user and message commands, a profile card built with `cdn` and `fmt`, and an error hook. A check makes sure the bot may manage roles, a cooldown allows one high five every 30 s, and `Bot(translate=...)` fills the localizations from gettext catalogs.
 
 `examples/commands.py`:
 
@@ -14,7 +14,7 @@ Slash commands with typed options, a group, autocomplete, user and message comma
 
 ## Components
 
-Components V2 messages, a pager that keeps its page in the custom id, and a select menu.
+Components V2 messages, a `ui.pager` that keeps its page in the custom id, a select menu, and a kick that waits for a confirming click with `bot.wait_for_component`.
 
 `examples/components.py`:
 
@@ -24,12 +24,22 @@ Components V2 messages, a pager that keeps its page in the custom id, and a sele
 
 ## Modals
 
-A modal opened from a button, read when it is submitted.
+A modal opened from a button, read when it is submitted, and one a command opens and waits for with `bot.wait_for_modal`.
 
 `examples/modals.py`:
 
 ```python
 --8<-- "examples/modals.py"
+```
+
+## An Activity
+
+The entry point command that opens the app's Activity from the App Launcher, and a slash command that opens it too.
+
+`examples/activity.py`:
+
+```python
+--8<-- "examples/activity.py"
 ```
 
 ## Events
@@ -54,7 +64,7 @@ A database opened in `Starting` and closed in `Stopped`, with tasks on an interv
 
 ## Modules
 
-A bot that includes `greetings.py` by module name and reloads it with a command.
+A bot that includes `greetings.py` by module name and reloads it with a command. The router there keeps its commands to servers and answers them ephemerally.
 
 `examples/modular/bot.py`:
 

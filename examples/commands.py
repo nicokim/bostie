@@ -1,6 +1,13 @@
-"""Slash commands with typed options, a group, autocomplete and context menus."""
+"""Slash commands with typed options, a group, autocomplete, context menus and checks.
 
+Names and descriptions are translated from gettext catalogs, such as
+locales/fr/LC_MESSAGES/commands.mo next to this file, when there are any.
+"""
+
+import gettext
 from enum import Enum
+from functools import cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 import bostie
@@ -11,6 +18,7 @@ from bostie import (
     ErrorContext,
     Forbidden,
     InteractionContextType,
+    Locale,
     Message,
     Option,
     Permissions,
@@ -23,8 +31,22 @@ from bostie import (
     snowflake_time,
     ui,
 )
+from bostie.checks import Cooldown, bot_has_permissions
 
-bot = bostie.Bot()
+LOCALES = Path(__file__).parent / "locales"
+
+
+@cache
+def catalog(locale: Locale) -> gettext.NullTranslations:
+    language = locale.value.replace("-", "_")
+    return gettext.translation("commands", LOCALES, [language], fallback=True)
+
+
+def translate(text: str, locale: Locale) -> str | None:
+    return catalog(locale).gettext(text)
+
+
+bot = bostie.Bot(translate=translate)
 
 FRUITS = ("apple", "banana", "cherry", "grape", "lemon", "mango", "orange", "pear")
 NO_PINGS = AllowedMentions(parse=())
@@ -65,6 +87,7 @@ roles = bot.group(
     "Manage roles",
     default_permissions=Permissions.MANAGE_ROLES,
     contexts=[InteractionContextType.GUILD],
+    checks=[bot_has_permissions(Permissions.MANAGE_ROLES)],
 )
 
 
@@ -82,7 +105,7 @@ async def roles_give(
         )
 
 
-@bot.user_command("High five")
+@bot.user_command("High five", checks=[Cooldown(1, 30)])
 async def high_five(ctx: Context, user: User) -> None:
     await ctx.respond(f"{ctx.user.mention} high-fives {user.mention}!")
 

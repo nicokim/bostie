@@ -1,4 +1,7 @@
-"""A modal opened from a button, with a text input and a select, read on submit."""
+"""A modal opened from a button and read on submit, and one a command waits for."""
+
+import asyncio
+from typing import Literal
 
 import bostie
 from bostie import ButtonStyle, ComponentContext, Context, ModalContext, ui
@@ -39,6 +42,20 @@ async def submitted(ctx: ModalContext) -> None:
     await ctx.respond(
         f"Thanks! Filed as a {topic}: {ctx.text('details')}", ephemeral=True
     )
+
+
+@bot.command
+async def ask(ctx: Context, team: Literal["design", "support"]) -> None:
+    """Ask a team a question in a form."""
+    form = f"ask:{ctx.interaction.id}"
+    question = ui.text_input("question", style=ui.TextInputStyle.PARAGRAPH)
+    await ctx.modal(ui.modal(form, f"Ask {team}", ui.label("Question", question)))
+    try:
+        async with asyncio.timeout(600):
+            sent = await bot.wait_for_modal(form)
+    except TimeoutError:
+        return
+    await sent.respond(f"Sent to {team}: {sent.text('question')}", ephemeral=True)
 
 
 if __name__ == "__main__":

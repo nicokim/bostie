@@ -1,8 +1,11 @@
-"""A module of commands that bot.py includes, and reloads without a restart."""
+"""A module of commands that bot.py includes, and reloads without a restart.
 
-from bostie import Context, Router
+Its router keeps them to servers and answers so that only the caller sees it.
+"""
 
-router = Router()
+from bostie import Context, InteractionContextType, Router
+
+router = Router(contexts=[InteractionContextType.GUILD], ephemeral=True)
 
 
 @router.command

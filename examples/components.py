@@ -1,7 +1,19 @@
-"""Components V2 messages, a stateless pager and a select menu."""
+"""Components V2 messages, a pager, a select menu and a button that confirms a kick."""
+
+import asyncio
 
 import bostie
-from bostie import ComponentContext, Context, color, ui
+from bostie import (
+    ButtonStyle,
+    ComponentContext,
+    Context,
+    InteractionContextType,
+    Permissions,
+    ResolvedMember,
+    color,
+    ui,
+)
+from bostie.checks import bot_has_permissions
 
 bot = bostie.Bot()
 
@@ -10,20 +22,12 @@ COLORS = {"blurple": color.BLURPLE, "green": color.GREEN, "red": color.parse("#E
 
 
 def tour_page(number: int) -> list[ui.ContainerDict]:
-    buttons = ui.row(
-        ui.button("Back", custom_id=turn.id(page=number - 1), disabled=number == 0),
-        ui.button(
-            "Next",
-            custom_id=turn.id(page=number + 1),
-            disabled=number == len(PAGES) - 1,
-        ),
-    )
     return [
         ui.container(
-            ui.text(f"## Page {number + 1} of {len(PAGES)}"),
+            ui.text("## A short tour"),
             ui.text(PAGES[number]),
             ui.separator(),
-            buttons,
+            ui.pager(turn, number, len(PAGES)),
         )
     ]
 
@@ -59,6 +63,28 @@ async def chosen(ctx: ComponentContext) -> None:
             ui.container(ui.text(f"You chose {color}."), accent_color=COLORS[color])
         ]
     )
+
+
+@bot.command(
+    ephemeral=True,
+    default_permissions=Permissions.KICK_MEMBERS,
+    contexts=[InteractionContextType.GUILD],
+    checks=[bot_has_permissions(Permissions.KICK_MEMBERS)],
+)
+async def kick(ctx: Context, member: ResolvedMember) -> None:
+    """Kick a member once you confirm."""
+    confirm = f"kick:{ctx.interaction.id}"
+    button = ui.button("Kick", custom_id=confirm, style=ButtonStyle.DANGER)
+    await ctx.respond(components=[ui.text(f"Kick {member.mention}?"), ui.row(button)])
+    try:
+        async with asyncio.timeout(30):
+            press = await bot.wait_for_component(confirm)
+    except TimeoutError:
+        await ctx.edit(components=[ui.text("Nobody was kicked.")])
+        return
+    if ctx.guild_id is not None:
+        await bot.rest.members.remove(ctx.guild_id, member.user.id)
+    await press.update(components=[ui.text(f"Kicked {member.mention}.")])
 
 
 if __name__ == "__main__":
