@@ -136,6 +136,7 @@ To split a bot across modules, register commands and listeners on a `bostie.Rout
 - `GuildCreate.joined` is true for a guild the bot was just added to, false for one that became available.
 - Update events carry the object as the cache held it in `old`, and delete events the removed one: `GuildDelete.guild`, `RoleDelete.role`, `ThreadDelete.thread`, `MessageDelete.message`.
 - `ShardDisconnect` says a shard lost its connection, with the close code and whether it resumes the session.
+- `ShardStop` says a shard stopped for good, because `close()` ran or Discord ended it with a close code, and `ShardBackpressure` that a shard paused reading because listeners fall behind.
 - An exception in a listener goes to the `ListenerError` listeners, or to the log when there are none. `router.remove_listener(callback)` stops a listener.
 - Registering a listener for an event that none of the bot's intents delivers logs a warning.
 

@@ -1168,6 +1168,25 @@ class ShardDisconnect(BotEvent, kw_only=True):
     resuming: bool
 
 
+class ShardStop(BotEvent, kw_only=True):
+    """A shard stopped for good: `close()` ran, or Discord ended it with `code`."""
+
+    NAME = "shard.stop"
+
+    shard_id: int
+    code: int | None
+    reason: str
+
+
+class ShardBackpressure(BotEvent, kw_only=True):
+    """A shard paused reading: `queued_bytes` of events wait for the event loop."""
+
+    NAME = "shard.backpressure"
+
+    shard_id: int
+    queued_bytes: int
+
+
 class ListenerError(BotEvent, kw_only=True):
     """A listener raised; without a ListenerError listener the error is logged."""
 
@@ -1180,7 +1199,15 @@ class ListenerError(BotEvent, kw_only=True):
 
 BOT_EVENT_NAMES = frozenset(
     event.NAME
-    for event in (Started, Stopping, ShardReady, ShardDisconnect, ListenerError)
+    for event in (
+        Started,
+        Stopping,
+        ShardReady,
+        ShardDisconnect,
+        ShardStop,
+        ShardBackpressure,
+        ListenerError,
+    )
 )
 
 

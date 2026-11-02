@@ -42,6 +42,7 @@ from bostie import (
     activity,
     ui,
 )
+from bostie._bridge import Bridge, StatusDelivery
 from bostie.commands import CommandSettings
 from bostie.events import (
     ChannelUpdate,
@@ -56,8 +57,10 @@ from bostie.events import (
     RawEvent,
     Ready,
     Resumed,
+    ShardBackpressure,
     ShardDisconnect,
     ShardReady,
+    ShardStop,
     Started,
     Stopping,
     ThreadMembersUpdate,
@@ -1139,6 +1142,38 @@ def test_gateway_rate_limits_and_latency_reach_the_bot(
     run(scenario, heartbeat_interval=50)
 
     assert levels(caplog, "bostie.bot") == [logging.WARNING]
+
+
+@pytest.mark.parametrize(
+    ("delivery", "event"),
+    [
+        (
+            ("stopped", 1, 4014, "disallowed intents"),
+            ShardStop(shard_id=1, code=4014, reason="disallowed intents"),
+        ),
+        (
+            ("backpressure", 1, 70_000_000),
+            ShardBackpressure(shard_id=1, queued_bytes=70_000_000),
+        ),
+    ],
+)
+def test_shard_stops_and_backpressure_reach_listeners(
+    delivery: StatusDelivery, event: ShardStop | ShardBackpressure
+) -> None:
+    async def main() -> None:
+        bot = Bot()
+        bridge = Bridge(
+            "token", "http://127.0.0.1:1/api/v10", lambda *_: None, global_limit=50
+        )
+        bot._gateway = GatewayClient(
+            bridge, "token", intents=0, shard_count=2, shard_ids=[1]
+        )
+        async with bot.stream(type(event)) as events:
+            bot._on_gateway(delivery, 0.0)
+            assert await anext(events) == event
+        await bridge.close()
+
+    asyncio.run(main())
 
 
 def test_request_members_gathers_every_chunk_with_its_nonce() -> None:

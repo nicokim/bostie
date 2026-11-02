@@ -60,8 +60,10 @@ from bostie.events import (
     RawEvent,
     Ready,
     Resumed,
+    ShardBackpressure,
     ShardDisconnect,
     ShardReady,
+    ShardStop,
     SoundboardSounds,
     Started,
     Stopping,
@@ -626,7 +628,15 @@ class Bot(Router):
                 )
             case ("identify", shard_id, request):
                 spawn(self._tasks, self._approve_identify(shard_id, request))
-            case ("stopped" | "backpressure" | "invalid_requests", *_):
+            case ("stopped", shard_id, code, reason):
+                self.gateway._handle(delivery)
+                self._emit(ShardStop(shard_id=shard_id, code=code, reason=reason))
+            case ("backpressure", shard_id, queued_bytes):
+                self.gateway._handle(delivery)
+                self._emit(
+                    ShardBackpressure(shard_id=shard_id, queued_bytes=queued_bytes)
+                )
+            case ("invalid_requests", *_):
                 self.gateway._handle(delivery)
             case (
                 "voice_state"
