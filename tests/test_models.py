@@ -635,6 +635,16 @@ def test_documented_string_values_decode_into_their_enums() -> None:
     assert webhooks[1].name == "UNKNOWN_SOMETHING_NEW"
 
 
+def test_an_application_carries_its_guild() -> None:
+    app = json.loads(payload("rest/application_me.json"))
+    app["guild"] = json.loads(payload("rest/guild.json"))
+
+    application = decode(Application, msgspec.json.encode(app))
+
+    assert application.guild is not None
+    assert application.guild.name == app["guild"]["name"]
+
+
 def test_mentions_and_display_names() -> None:
     member = decode(Member, payload("rest/member.json"))
     user = decode(User, payload("rest/user.json"))

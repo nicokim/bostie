@@ -12,6 +12,7 @@ from bostie.enums import (
     WebhookEventType,
 )
 from bostie.models.base import Builder, Model
+from bostie.models.guild import Guild
 from bostie.models.user import PartialUser, User
 
 
@@ -69,6 +70,7 @@ class Application(PartialApplication, kw_only=True):
     verify_key: str
     team: Team | None
     guild_id: int | None = None
+    guild: Guild | None = None
     primary_sku_id: int | None = None
     slug: str | None = None
     cover_image: str | None = None
