@@ -240,9 +240,15 @@ class SubmittedTextInput(
 
 
 class SubmittedValues(SubmittedInput, kw_only=True):
-    """An answer of several values; those of entity selects and uploads are ids."""
+    """The options picked in a string select or a checkbox group."""
 
     values: tuple[str, ...]
+
+
+class SubmittedIds(SubmittedInput, kw_only=True):
+    """The users, roles or channels picked in a select, or the files uploaded."""
+
+    values: tuple[int, ...]
 
 
 class SubmittedStringSelect(
@@ -252,31 +258,31 @@ class SubmittedStringSelect(
 
 
 class SubmittedUserSelect(
-    SubmittedValues, kw_only=True, tag=ComponentType.USER_SELECT.value
+    SubmittedIds, kw_only=True, tag=ComponentType.USER_SELECT.value
 ):
     pass
 
 
 class SubmittedRoleSelect(
-    SubmittedValues, kw_only=True, tag=ComponentType.ROLE_SELECT.value
+    SubmittedIds, kw_only=True, tag=ComponentType.ROLE_SELECT.value
 ):
     pass
 
 
 class SubmittedMentionableSelect(
-    SubmittedValues, kw_only=True, tag=ComponentType.MENTIONABLE_SELECT.value
+    SubmittedIds, kw_only=True, tag=ComponentType.MENTIONABLE_SELECT.value
 ):
     pass
 
 
 class SubmittedChannelSelect(
-    SubmittedValues, kw_only=True, tag=ComponentType.CHANNEL_SELECT.value
+    SubmittedIds, kw_only=True, tag=ComponentType.CHANNEL_SELECT.value
 ):
     pass
 
 
 class SubmittedFileUpload(
-    SubmittedValues, kw_only=True, tag=ComponentType.FILE_UPLOAD.value
+    SubmittedIds, kw_only=True, tag=ComponentType.FILE_UPLOAD.value
 ):
     pass
 

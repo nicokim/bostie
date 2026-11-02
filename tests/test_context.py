@@ -219,7 +219,8 @@ def test_a_modal_context_reads_each_answer_by_custom_id() -> None:
         async def handler(ctx: ModalContext) -> None:
             assert ctx.text("feedback") == "The new queue command is great"
             assert ctx.choice("rating") == "great"
-            assert ctx.values("screenshots") == ("1564615271093121025",)
+            assert ctx.values("topics") == ("queue", "voice")
+            assert ctx.ids("screenshots") == (1564615271093121025,)
             assert [file.filename for file in ctx.attachments("screenshots")] == [
                 "queue.png"
             ]

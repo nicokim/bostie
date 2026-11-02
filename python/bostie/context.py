@@ -41,6 +41,7 @@ from bostie.models import (
     PartialMessage,
     SubmittedCheckbox,
     SubmittedFileUpload,
+    SubmittedIds,
     SubmittedInput,
     SubmittedLabel,
     SubmittedRadioGroup,
@@ -560,14 +561,18 @@ class ModalContext(_UpdatingContext[ModalSubmitInteraction]):
         return self._submitted(custom_id, SubmittedTextInput).value
 
     def values(self, custom_id: str) -> tuple[str, ...]:
-        """The values picked in a select or checkbox group, or the ids uploaded."""
+        """The options picked in the string select or checkbox group `custom_id`."""
         return self._submitted(custom_id, SubmittedValues).values
+
+    def ids(self, custom_id: str) -> tuple[int, ...]:
+        """The ids of the users, roles, channels or files picked in `custom_id`."""
+        return self._submitted(custom_id, SubmittedIds).values
 
     def attachments(self, custom_id: str) -> tuple[Attachment, ...]:
         """The files uploaded with the file upload `custom_id`."""
         uploaded = self._submitted(custom_id, SubmittedFileUpload).values
         files = self.interaction.data.resolved.attachments
-        return tuple(files[int(id)] for id in uploaded)
+        return tuple(files[id] for id in uploaded)
 
     def choice(self, custom_id: str) -> str | None:
         """The option picked in the radio group `custom_id`, if any."""

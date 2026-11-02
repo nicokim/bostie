@@ -79,6 +79,7 @@ from bostie.models import (
     SubmittedFileUpload,
     SubmittedLabel,
     SubmittedRadioGroup,
+    SubmittedStringSelect,
     SubmittedTextDisplay,
     SubmittedTextInput,
     TeamMember,
@@ -588,9 +589,10 @@ def test_a_modal_submit_decodes_each_answer_inside_its_label() -> None:
         ),
         SubmittedRadioGroup(id=5, custom_id="rating", value="great"),
         SubmittedFileUpload(
-            id=7, custom_id="screenshots", values=("1564615271093121025",)
+            id=7, custom_id="screenshots", values=(1564615271093121025,)
         ),
         SubmittedCheckbox(id=9, custom_id="subscribe", value=True),
+        SubmittedStringSelect(id=11, custom_id="topics", values=("queue", "voice")),
     ]
     assert modal.data.resolved.attachments[1564615271093121025].filename == (
         "queue.png"

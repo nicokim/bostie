@@ -50,6 +50,19 @@
           "custom_id": "subscribe",
           "value": true
         }
+      },
+      {
+        "type": 18,
+        "id": 10,
+        "component": {
+          "type": 3,
+          "id": 11,
+          "custom_id": "topics",
+          "values": [
+            "queue",
+            "voice"
+          ]
+        }
       }
     ],
     "resolved": {
