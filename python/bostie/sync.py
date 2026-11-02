@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +14,7 @@ from bostie.commands import (
     _python_name,
     _warn,
 )
-from bostie.enums import CommandType, InteractionContextType, OptionType
+from bostie.enums import CommandType, InteractionContextType, Locale, OptionType
 from bostie.errors import BadRequest, CommandSyncError
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("bostie.sync")
 
 type AnyCommand = Command | Group | ContextMenuCommand | EntryPointCommand
+type Translate = Callable[[str, Locale], str | None]
 
 GLOBAL_ROUTE = "/applications/{application_id}/commands"
 GUILD_ROUTE = "/applications/{application_id}/guilds/{guild_id}/commands"
@@ -86,6 +87,7 @@ async def sync_commands(
     guild_ids: Iterable[int],
     *,
     defaults: CommandDefaults | None = None,
+    translate: Translate | None = None,
     always_put: bool = False,
 ) -> list[SyncResult]:
     """Make Discord's commands match `commands`, one PUT per differing scope.
@@ -112,6 +114,7 @@ async def sync_commands(
             scoped,
             guild_id,
             defaults=defaults,
+            translate=translate,
             always_put=always_put,
         )
         for guild_id, scoped in scopes.items()
@@ -125,6 +128,7 @@ async def _sync_scope(
     guild_id: int | None,
     *,
     defaults: CommandDefaults | None,
+    translate: Translate | None,
     always_put: bool,
 ) -> SyncResult:
     scope: Scope
@@ -136,6 +140,8 @@ async def _sync_scope(
         scope, route, label = "guild", GUILD_ROUTE, f"guild {guild_id}"
         params = {"application_id": application_id, "guild_id": guild_id}
     local = [command.payload(scope, defaults) for command in commands]
+    if translate is not None:
+        local = [_translated(command, translate) for command in local]
     remote = await http.request(
         "GET", route, query={"with_localizations": True}, **params
     )
@@ -196,6 +202,39 @@ def slash_ids(commands: Iterable[Mapping[str, Any]]) -> dict[str, int]:
         for command in commands
         if _key(command)[0] == CommandType.CHAT_INPUT
     }
+
+
+def _translated(payload: Mapping[str, Any], translate: Translate) -> dict[str, Any]:
+    translated = dict(payload)
+    for key in ("name", "description"):
+        if translated.get(key):
+            _localize(translated, key, translate)
+    if "choices" in translated:
+        translated["choices"] = [
+            _localize(dict(choice), "name", translate)
+            for choice in translated["choices"]
+        ]
+    if "options" in translated:
+        translated["options"] = [
+            _translated(option, translate) for option in translated["options"]
+        ]
+    return translated
+
+
+def _localize(
+    payload: dict[str, Any], key: str, translate: Translate
+) -> dict[str, Any]:
+    text = payload[key]
+    texts = dict(payload.get(f"{key}_localizations") or {})
+    for locale in Locale:
+        if locale.value in texts:
+            continue
+        found = translate(text, locale)
+        if found and found != text:
+            texts[locale.value] = found
+    if texts:
+        payload[f"{key}_localizations"] = texts
+    return payload
 
 
 def _passthrough(command: Mapping[str, Any]) -> dict[str, Any]:

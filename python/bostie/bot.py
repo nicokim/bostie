@@ -221,6 +221,7 @@ class Bot(Router):
         auto_sync: bool = True,
         contexts: Iterable[InteractionContextType] | None = None,
         integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        translate: sync.Translate | None = None,
         auto_defer: float | None = 2.5,
         cache: bool = True,
         max_messages: int = 0,
@@ -272,6 +273,7 @@ class Bot(Router):
         self._dev_guilds = tuple(dev_guilds)
         self._command_ids: dict[int | None, Mapping[str, int]] = {}
         self._command_defaults = _command_defaults(contexts, integration_types)
+        self._translate = translate
         self._auto_sync = auto_sync
         self.auto_defer = auto_defer
         self._caching = cache
@@ -660,6 +662,7 @@ class Bot(Router):
             [*self.commands.values(), *self.context_menus.values()],
             self._dev_guilds,
             defaults=self._command_defaults,
+            translate=self._translate,
             always_put=always_put,
         )
         self._remember_ids(results)

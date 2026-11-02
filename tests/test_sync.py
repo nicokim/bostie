@@ -9,7 +9,7 @@ import pytest
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.commands import Choice, Command, ContextMenuCommand, Group, Option, Range
-from bostie.enums import InteractionContextType, Permissions
+from bostie.enums import InteractionContextType, Locale, Permissions
 from bostie.errors import BadRequest, CommandSyncError
 from bostie.http import HTTPClient
 from bostie.models import Attachment, Message, PartialChannel, Role, User
@@ -352,6 +352,33 @@ def test_an_entry_point_replaces_the_remote_one_and_stays_global() -> None:
             "search",
             "User Info",
         ]
+
+    run(scenario)
+
+
+def test_translate_fills_the_localizations_a_command_leaves_out() -> None:
+    french = {"kit": "trousse", "Exercise every option type": "Tout essayer"}
+
+    def translate(text: str, locale: Locale) -> str | None:
+        if locale is Locale.GERMAN:
+            return "nie"
+        return french.get(text) if locale is Locale.FRENCH else None
+
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        await sync_commands(
+            http,
+            fake.application_id,
+            COMMANDS,
+            (),
+            translate=translate,
+            always_put=True,
+        )
+
+        kit_payload = fake.requests[1].json[0]
+        assert kit_payload["name_localizations"] == {"de": "werkzeug", "fr": "trousse"}
+        assert kit_payload["description_localizations"]["fr"] == "Tout essayer"
+        (inspect,) = kit_payload["options"]
+        assert inspect["name_localizations"] == {"de": "nie"}
 
     run(scenario)
 
