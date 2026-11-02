@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -204,6 +206,51 @@ def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:
     bot.include(plugin)
     assert bot.commands == {"ping": ping, "echo": echo}
     assert bot.listeners == {"MESSAGE_CREATE": [Listener(on_message, MessageCreate)]}
+
+
+GREETINGS = """
+from bostie import Context, Router
+from bostie.events import MessageCreate
+
+router = Router()
+
+
+@router.command
+async def {name}(ctx: Context) -> None:
+    \"\"\"Greet.\"\"\"
+
+
+@router.listen
+async def seen(event: MessageCreate) -> None:
+    pass
+"""
+
+
+def test_a_module_router_is_included_reloaded_and_excluded_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.setattr(sys, "dont_write_bytecode", True)
+    source = tmp_path / "greetings.py"
+    source.write_text(GREETINGS.format(name="hello"))
+    bot = Router()
+
+    bot.include("greetings")
+    assert list(bot.commands) == ["hello"]
+    source.write_text(GREETINGS.format(name="howdy"))
+    bot.reload("greetings")
+    assert list(bot.commands) == ["howdy"]
+    assert len(bot.listeners["MESSAGE_CREATE"]) == 1
+    source.write_text("raise RuntimeError('broken')")
+    with pytest.raises(RuntimeError, match="broken"):
+        bot.reload("greetings")
+    assert list(bot.commands) == ["howdy"]
+    bot.exclude("greetings")
+
+    assert (bot.commands, bot.listeners) == ({}, {})
+    assert "greetings" not in sys.modules
+    with pytest.raises(ValueError, match="not included here"):
+        bot.exclude(Router())
 
 
 def test_error_hooks_register_bare_or_for_types_and_all_or_nothing() -> None:

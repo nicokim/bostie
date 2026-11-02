@@ -1596,6 +1596,30 @@ def test_tasks_run_while_ready_report_errors_and_stop_on_close(
     assert failures(caplog) == []
 
 
+def test_a_router_included_while_running_runs_its_tasks_until_excluded() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        jobs = Router()
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        @jobs.every(seconds=60)
+        async def wait() -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        async with running(bot, fake):
+            bot.include(jobs)
+            await started.wait()
+            bot.exclude(jobs)
+            await cancelled.wait()
+
+    run(scenario)
+
+
 def test_close_sends_1000_and_cancels_running_listeners(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

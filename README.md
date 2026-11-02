@@ -130,7 +130,7 @@ Everything bostie does not model yet stays reachable:
 - `ui.raw({...})` puts a component that `ui` has no builder for into a row, section, container, label or modal.
 - An `InteractionCreate` listener gets every interaction, routed or not. A type bostie does not model arrives as an `UnknownInteraction`, with the payload in `raw`.
 
-To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in.
+To split a bot across modules, register commands and listeners on a `bostie.Router()` and add it with `bot.include(router)`. Inside a router, `router.bot` is the bot it was included in. `bot.include("mybot.music")` imports that module and adds the Router it names `router`; `bot.exclude(...)` takes out a router or module and all it added, and `bot.reload("mybot.music")` imports the module anew in its place, keeping the old one when that fails. Commands added or removed while the bot runs reach Discord at the next `await bot.sync_commands()`.
 
 `@bot.every(seconds=300)` runs `async def task()` every 5 minutes while the bot is ready: first when `Started` fires, then on a fixed beat, skipping the beats a slow run overlaps. `@bot.every(time=datetime.time(9, 30))` runs it daily at 09:30 UTC, or in the time's `tzinfo`, and takes a list of times too. `close()` cancels tasks, and a task that raises goes on at its next time; the error reaches `TaskError` listeners, or the log when there are none.
 

@@ -1,9 +1,11 @@
 import datetime as dt
+import importlib
 import inspect
+import sys
 import typing
 from collections.abc import Callable, Coroutine, Iterable, Iterator
 from dataclasses import dataclass
-from types import UnionType
+from types import ModuleType, UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -239,8 +241,13 @@ class Router:
 
         return register
 
-    def include(self, router: "Router") -> None:
-        """Add a router's commands, listeners and routes, including later ones."""
+    def include(self, router: "Router | str") -> None:
+        """Add a router's commands, listeners, routes and tasks, including later ones.
+
+        A str names a module to import, whose `router` is added.
+        """
+        if isinstance(router, str):
+            router = _module_router(importlib.import_module(router))
         if router.parent is not None or router in self._chain():
             raise ValueError("a router can be included once, and never into itself")
         for registry in REGISTRIES:
@@ -253,6 +260,54 @@ class Router:
         for name, listeners in router.listeners.items():
             for listener in listeners:
                 self._add_listener(name, listener)
+
+    def exclude(self, router: "Router | str") -> None:
+        """Remove an included router and all it added; a str names its module.
+
+        Python forgets an excluded module, so including it again imports it anew.
+        """
+        name = router if isinstance(router, str) else None
+        if isinstance(router, str):
+            router = _imported_router(router)
+        if router.parent is not self:
+            raise ValueError("the router is not included here")
+        removed = {
+            id(listener) for kept in router.listeners.values() for listener in kept
+        }
+        for ancestor in self._chain():
+            for registry in REGISTRIES:
+                owned = registry.of(ancestor)
+                for key, value in registry.of(router).items():
+                    if owned.get(key) is value:
+                        del owned[key]
+            for event, listeners in list(ancestor.listeners.items()):
+                kept = [
+                    listener for listener in listeners if id(listener) not in removed
+                ]
+                if kept:
+                    ancestor.listeners[event] = kept
+                else:
+                    del ancestor.listeners[event]
+            ancestor._registered()
+        router.parent = None
+        if name is not None:
+            for module in _submodules(name):
+                del sys.modules[module]
+
+    def reload(self, name: str) -> None:
+        """Exclude a module's router, import the module anew and include its router.
+
+        When that fails, the old router stays included and the error is raised.
+        """
+        old = _imported_router(name)
+        modules = {module: sys.modules[module] for module in _submodules(name)}
+        self.exclude(name)
+        try:
+            self.include(name)
+        except BaseException:
+            sys.modules.update(modules)
+            self.include(old)
+            raise
 
     def match_component(
         self, custom_id: str
@@ -404,6 +459,28 @@ def _match(
         if params is not None:
             return route, params
     return None
+
+
+def _module_router(module: ModuleType) -> Router:
+    router = getattr(module, "router", None)
+    if not isinstance(router, Router):
+        raise TypeError(f"module {module.__name__!r} has no Router named `router`")
+    return router
+
+
+def _imported_router(name: str) -> Router:
+    module = sys.modules.get(name)
+    if module is None:
+        raise ValueError(f"module {name!r} is not imported")
+    return _module_router(module)
+
+
+def _submodules(name: str) -> list[str]:
+    return [
+        module
+        for module in list(sys.modules)
+        if module == name or module.startswith(f"{name}.")
+    ]
 
 
 def _annotated_events(listener: Callable[..., object]) -> tuple[Any, ...]:
