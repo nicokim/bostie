@@ -702,6 +702,22 @@ def test_build_message_lists_files_as_attachments() -> None:
     }
 
 
+def test_a_file_with_a_waveform_makes_a_voice_message_alone() -> None:
+    voice = File("hi.ogg", b"OggS", duration_secs=1.5, waveform=b"\x00\x80\xff")
+
+    body, _ = build_message(files=[voice], flags=MessageFlags.SUPPRESS_NOTIFICATIONS)
+
+    assert msgspec.json.decode(msgspec.json.encode(body)) == {
+        "flags": MessageFlags.IS_VOICE_MESSAGE | MessageFlags.SUPPRESS_NOTIFICATIONS,
+        "attachments": [
+            {"id": 0, "filename": "hi.ogg", "duration_secs": 1.5, "waveform": "AID/"}
+        ],
+    }
+    for parts in ({"content": "hi"}, {"files": [voice, File("a.txt", b"")]}):
+        with pytest.raises(ValueError, match="voice message"):
+            message_body(None, {"files": [voice], **parts})
+
+
 def test_empty_allowed_mentions_silence_every_mention() -> None:
     body, _ = build_message("@everyone", allowed_mentions=AllowedMentions(parse=()))
 

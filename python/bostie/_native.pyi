@@ -34,6 +34,7 @@ __all__ = [
     "Source",
     "log_levels",
     "versions",
+    "voice_message",
 ]
 
 SAMPLE_RATE: Final[int]
@@ -324,3 +325,4 @@ class OpusEncoder:
 
 def versions() -> dict[str, str]: ...
 def log_levels(levels: list[int]) -> None: ...
+def voice_message(data: bytes, hint: str | None = None) -> tuple[float, bytes]: ...

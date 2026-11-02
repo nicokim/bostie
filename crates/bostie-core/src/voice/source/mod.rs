@@ -1,5 +1,6 @@
 pub(crate) mod decode;
 pub(crate) mod http;
+pub(crate) mod waveform;
 
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};

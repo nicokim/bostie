@@ -1,4 +1,5 @@
 import array
+import asyncio
 import os
 import socket
 import sys
@@ -9,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from bostie import _native
-from bostie.errors import ReceiverClosed, ShardNotRunning, StateError
+from bostie import _native, voice
+from bostie.errors import ReceiverClosed, ShardNotRunning, SourceError, StateError
 from bostie.voice.formats import OpusApplication
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
@@ -263,6 +264,22 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
+def test_voice_message_measures_the_audio_and_names_the_file() -> None:
+    async def main() -> None:
+        file = await voice.message(MEDIA / "tone.opus")
+        assert (file.name, file.data) == (
+            "tone.opus",
+            (MEDIA / "tone.opus").read_bytes(),
+        )
+        assert file.duration_secs == pytest.approx(1.0, abs=0.01)
+        assert file.waveform is not None
+        assert len(file.waveform) == 11
+        with pytest.raises(SourceError, match=r"clip\.ogg"):
+            await voice.message(b"not audio", name="clip.ogg")
+
+    asyncio.run(main())
+
+
 def test_voice_handles_refuse_to_work_in_a_forked_child(
     connected: _native.Core,
 ) -> None:

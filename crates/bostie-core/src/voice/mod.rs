@@ -50,6 +50,7 @@ use self::receive::Reception;
 pub use self::receiver::{Ended, Item, ReceiveRead, Receiver, ReceiverStats};
 pub use self::sink::{Sink, SinkStats};
 use self::source::http::Http;
+pub use self::source::waveform::voice_message;
 pub use self::source::{Source, SourceRead};
 use self::tap::GatewayTap;
 use self::types::{

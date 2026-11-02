@@ -245,6 +245,18 @@ pub(crate) fn versions() -> HashMap<&'static str, String> {
     bostie_core::versions().into_iter().collect()
 }
 
+#[pyfunction]
+#[pyo3(signature = (data, hint=None))]
+pub(crate) fn voice_message<'py>(
+    py: Python<'py>,
+    data: &[u8],
+    hint: Option<String>,
+) -> Result<(f64, Bound<'py, PyBytes>)> {
+    let data = data.to_vec().into();
+    let (duration, waveform) = py.detach(|| bostie_core::voice::voice_message(data, hint))?;
+    Ok((duration.as_secs_f64(), PyBytes::new(py, &waveform)))
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct Choice<T>(pub(crate) T);
 

@@ -1,3 +1,4 @@
+import base64
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any, Literal, Self, TypedDict, Unpack, override
@@ -39,6 +40,14 @@ type MentionType = Literal["roles", "users", "everyone"]
 NULL = msgspec.Raw(b"null")
 
 NOT_IN_V2 = ("content", "embeds", "sticker_ids", "poll", "shared_client_theme")
+VOICE_MESSAGE_EXTRAS = (
+    "content",
+    "embeds",
+    "components",
+    "poll",
+    "sticker_ids",
+    "shared_client_theme",
+)
 
 V2_COMPONENT_TYPES = frozenset(
     {
@@ -594,6 +603,9 @@ def message_body(
             "messages with Components V2 cannot have content, embeds, stickers, "
             "a poll or a shared client theme; use ui.text() and ui.container() instead"
         )
+    if any(file.waveform is not None for file in files):
+        _check_voice_message(body, files)
+        body["flags"] = MessageFlags.IS_VOICE_MESSAGE | (body.get("flags") or 0)
     if reply_to is not None:
         if "message_reference" in body:
             raise ValueError("reply_to and message_reference are mutually exclusive")
@@ -640,4 +652,17 @@ def _attachment(index: int, file: File) -> dict[str, Any]:
         attachment["description"] = file.description
     if file.spoiler:
         attachment["is_spoiler"] = True
+    if file.duration_secs is not None:
+        attachment["duration_secs"] = file.duration_secs
+    if file.waveform is not None:
+        attachment["waveform"] = base64.b64encode(file.waveform).decode()
     return attachment
+
+
+def _check_voice_message(body: Mapping[str, Any], files: Sequence[File]) -> None:
+    extras = [part for part in VOICE_MESSAGE_EXTRAS if body.get(part)]
+    if len(files) != 1 or extras or files[0].duration_secs is None:
+        raise ValueError(
+            "a voice message is one audio file with duration_secs and a waveform, "
+            "and nothing else"
+        )

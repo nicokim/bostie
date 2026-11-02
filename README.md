@@ -186,6 +186,7 @@ bot.run()
 - `vc.sinks` lists what plays on a connection, and `vc.stop()` closes every sink so nothing does. Their tracks end `STOPPED`, and a queue takes new tracks afterwards.
 - `Bot(voice=voice.Defaults(...))` sets what every connection and sink starts from: self mute and deafen, timeout, encoder, speaking flags, sink buffer, stall policy, stage role and a queue's crossfade. Each call can override them.
 - Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`. A connection asks for its role each time it enters a stage channel.
+- `await voice.message("hello.ogg")` reads an audio file, or takes its bytes, into a `bostie.File` for a voice message: Rust decodes it to measure its duration and waveform. A message with that file is sent with `IS_VOICE_MESSAGE` set, and may hold nothing else. Discord clients send 48 kHz mono Ogg Opus.
 - Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
 - What the Rust core logs, such as a DAVE session reset or a dropped frame, goes to Python `logging` under `bostie.voice`, `bostie.gateway` and `bostie.rest`. The core reads those loggers' levels when the bot starts, and levels that are off cost nothing.
 

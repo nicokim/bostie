@@ -71,6 +71,7 @@ from bostie.voice.layers import (
     broadcast,
     utterances,
 )
+from bostie.voice.message import message
 from bostie.voice.receiver import Receiver, ReceiverStats
 from bostie.voice.sink import Marker, Sink, SinkStats
 from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Url
@@ -152,6 +153,7 @@ __all__ = [
     "VoiceNotConnected",
     "VoiceQueueFull",
     "broadcast",
+    "message",
     "utterances",
     "versions",
 ]

@@ -30,6 +30,19 @@ The wait applies only to a server change. A first connect and a move to another 
 
 bostie does not extract media from web pages. A tool such as yt-dlp can: pass the direct URL it finds, with the HTTP headers it says that URL needs, to `voice.Url`.
 
+## Voice messages
+
+A voice message is a message with one audio file and nothing else, which Discord shows with a play button and a waveform. `voice.message()` makes that file: it decodes the audio in Rust, off the event loop, and fills in `duration_secs` and a `waveform` of one byte per 100 ms, at most 256 of them, each the loudest sample there. Any format `voice.File` plays works; Discord clients send 48 kHz mono Ogg Opus.
+
+```python
+@bot.command
+async def greet(ctx: Context) -> None:
+    """Answer with a voice message."""
+    await ctx.respond(files=[await voice.message("greeting.ogg")])
+```
+
+A `bostie.File` with a `waveform` sets `MessageFlags.IS_VOICE_MESSAGE` on the message it goes in. Content, embeds, components, a poll, stickers or a second file raise `ValueError` instead, and so does a waveform without `duration_secs`. Discord does not let anyone edit a voice message.
+
 ## Receiving audio
 
 `vc.receive()` opens a receiver: a bounded async iterator over the audio the bot hears in the call. Open as many as you need, at any time. Each one has its own queue, format and settings, and none of them slows the bot's own audio down.

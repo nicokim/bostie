@@ -671,7 +671,9 @@ mod _native {
     #[pymodule_export]
     use super::NativeCore;
     #[pymodule_export]
-    use super::voice::{NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions};
+    use super::voice::{
+        NativeOpusEncoder, NativeReceiver, NativeSink, NativeSource, versions, voice_message,
+    };
     #[pymodule_export]
     const LOGGERS: [&str; 4] = super::log::LOGGERS;
 
