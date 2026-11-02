@@ -308,6 +308,8 @@ def test_assigning_an_encoder_applies_it_with_the_channels_bitrate() -> None:
                     "fec": False,
                     "packet_loss": 100,
                     "complexity": 5,
+                    "bandwidth": "auto",
+                    "signal": "auto",
                 },
             )
         ]
@@ -340,6 +342,8 @@ def test_a_move_reapplies_the_new_channels_bitrate_only_when_following_it() -> N
                     "fec": True,
                     "packet_loss": 10,
                     "complexity": 10,
+                    "bandwidth": "auto",
+                    "signal": "auto",
                 },
             )
         ]

@@ -19,6 +19,8 @@ __all__ = [
     "MIN_RATE",
     "MIN_SPEECH_HANGOVER",
     "OPUS_APPLICATIONS",
+    "OPUS_BANDWIDTHS",
+    "OPUS_SIGNALS",
     "OVERFLOWS",
     "RECEIVE_KINDS",
     "RECEIVE_STALLS",
@@ -51,6 +53,8 @@ MIN_SPEECH_HANGOVER: Final[float]
 MAX_SPEECH_HANGOVER: Final[float]
 MAX_JITTER: Final[float]
 OPUS_APPLICATIONS: Final[list[str]]
+OPUS_BANDWIDTHS: Final[list[str]]
+OPUS_SIGNALS: Final[list[str]]
 SAMPLES: Final[list[str]]
 SINK_KINDS: Final[list[str]]
 RECEIVE_KINDS: Final[list[str]]
@@ -81,6 +85,8 @@ type DisconnectReasonName = Literal[
     "closed",
 ]
 type ApplicationName = Literal["audio", "voip", "lowdelay"]
+type BandwidthName = Literal["auto", "narrow", "medium", "wide", "superwide", "full"]
+type SignalName = Literal["auto", "voice", "music"]
 type SampleName = Literal["s16le", "f32le"]
 type StallName = Literal["hold", "drop"]
 type ReceiveKindName = Literal["pcm", "opus", "packets"]
@@ -210,6 +216,8 @@ class Core:
         packet_loss: int,
         complexity: int,
         speaking: int,
+        bandwidth: BandwidthName,
+        signal: SignalName,
     ) -> None: ...
     def voice_update(
         self, guild_id: int, channel_id: int, self_mute: bool, self_deaf: bool
@@ -225,6 +233,8 @@ class Core:
         fec: bool,
         packet_loss: int,
         complexity: int,
+        bandwidth: BandwidthName,
+        signal: SignalName,
     ) -> None: ...
     def voice_speaking(self, guild_id: int, flags: int) -> None: ...
     def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
@@ -319,6 +329,8 @@ class OpusEncoder:
         fec: bool,
         packet_loss: int,
         complexity: int,
+        bandwidth: BandwidthName,
+        signal: SignalName,
     ) -> OpusEncoder: ...
     def encode(self, data: Buffer) -> list[bytes]: ...
     def flush(self) -> list[bytes]: ...

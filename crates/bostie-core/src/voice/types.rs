@@ -114,12 +114,31 @@ pub enum Application {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bandwidth {
+    Auto,
+    Narrow,
+    Medium,
+    Wide,
+    SuperWide,
+    Full,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalType {
+    Auto,
+    Voice,
+    Music,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncoderSettings {
     pub bitrate: u32,
     pub application: Application,
     pub fec: bool,
     pub packet_loss: u8,
     pub complexity: u8,
+    pub bandwidth: Bandwidth,
+    pub signal: SignalType,
 }
 
 impl EncoderSettings {
@@ -443,6 +462,8 @@ mod tests {
             fec: true,
             packet_loss: 10,
             complexity: 10,
+            bandwidth: Bandwidth::Auto,
+            signal: SignalType::Auto,
         }
     }
 

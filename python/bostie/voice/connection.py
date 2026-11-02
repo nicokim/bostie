@@ -63,6 +63,8 @@ from bostie.voice.formats import (
     Latency,
     Opus,
     OpusApplication,
+    OpusBandwidth,
+    OpusSignal,
     Overflow,
     PacketReceiveOptions,
     Packets,
@@ -122,6 +124,8 @@ class VoiceCore(Protocol):
         packet_loss: int,
         complexity: int,
         speaking: int,
+        bandwidth: OpusBandwidth,
+        signal: OpusSignal,
     ) -> None: ...
     def voice_update(
         self, guild_id: int, channel_id: int, *, self_mute: bool, self_deaf: bool
@@ -137,6 +141,8 @@ class VoiceCore(Protocol):
         fec: bool,
         packet_loss: int,
         complexity: int,
+        bandwidth: OpusBandwidth,
+        signal: OpusSignal,
     ) -> None: ...
     def voice_speaking(self, guild_id: int, flags: int) -> None: ...
     def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
@@ -897,6 +903,8 @@ class VoiceConnection:
                 packet_loss=percent(encoder.packet_loss),
                 complexity=encoder.complexity,
                 speaking=int(settings.speaking_flags),
+                bandwidth=encoder.bandwidth,
+                signal=encoder.signal_type,
             )
             self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
             self._core().voice_speech_activity(
@@ -1186,6 +1194,8 @@ class VoiceConnection:
             fec=encoder.fec,
             packet_loss=percent(encoder.packet_loss),
             complexity=encoder.complexity,
+            bandwidth=encoder.bandwidth,
+            signal=encoder.signal_type,
         )
 
     def _bitrate(self, encoder: EncoderSettings) -> int:

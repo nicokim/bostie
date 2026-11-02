@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, get_args
 
 from bostie import _native
 from bostie.enums import SpeakingFlags
@@ -23,6 +23,8 @@ type Overflow = Literal["drop_oldest", "drop_newest"]
 type ReceiveStall = Literal["wait", "end"]
 type SinkStall = Literal["hold", "drop"]
 type OpusApplication = Literal["audio", "voip", "lowdelay"]
+type OpusBandwidth = Literal["auto", "narrow", "medium", "wide", "superwide", "full"]
+type OpusSignal = Literal["auto", "voice", "music"]
 type Sample = Literal["s16le", "f32le"]
 type StageRole = Literal["listen", "request", "speak"]
 
@@ -75,13 +77,19 @@ type ReceiveFormat = PCM | Opus | Packets
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EncoderSettings:
-    """Opus encoder settings; `bitrate=None` follows the channel."""
+    """Opus encoder settings; `bitrate=None` follows the channel.
+
+    `bandwidth` caps the audio band and `signal_type` tunes for voice or music;
+    "auto" leaves both to libopus.
+    """
 
     bitrate: int | None = None
     application: OpusApplication = "audio"
     fec: bool = True
     packet_loss: float = 0.1
     complexity: int = 10
+    bandwidth: OpusBandwidth = "auto"
+    signal_type: OpusSignal = "auto"
 
     def __post_init__(self) -> None:
         if self.bitrate is not None and not MIN_BITRATE <= self.bitrate <= MAX_BITRATE:
@@ -101,6 +109,16 @@ class EncoderSettings:
         if not 0 <= self.complexity <= MAX_COMPLEXITY:
             raise ValueError(
                 f"complexity must be from 0 to {MAX_COMPLEXITY}, got {self.complexity}"
+            )
+        if self.bandwidth not in get_args(OpusBandwidth.__value__):
+            raise ValueError(
+                "bandwidth must be 'auto', 'narrow', 'medium', 'wide', 'superwide' "
+                f"or 'full', got {self.bandwidth!r}"
+            )
+        if self.signal_type not in get_args(OpusSignal.__value__):
+            raise ValueError(
+                "signal_type must be 'auto', 'voice' or 'music', "
+                f"got {self.signal_type!r}"
             )
 
 

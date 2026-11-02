@@ -47,6 +47,8 @@ def connect(core: _native.Core) -> None:
         packet_loss=10,
         complexity=10,
         speaking=1,
+        bandwidth="auto",
+        signal="auto",
     )
 
 

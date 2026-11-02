@@ -18,8 +18,8 @@ use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::pacer::ManualPacer;
 use crate::voice::testkit::sfu::Sfu;
 use crate::voice::types::{
-    Application, DaveOp, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp, ReceiveFormat,
-    ReceiveStall, ReceiveTuning, SampleFormat, SinkFormat, StallPolicy,
+    Application, Bandwidth, DaveOp, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp,
+    ReceiveFormat, ReceiveStall, ReceiveTuning, SampleFormat, SignalType, SinkFormat, StallPolicy,
 };
 use crate::voice::ws::Timeouts;
 
@@ -89,6 +89,8 @@ fn encoder() -> EncoderSettings {
         fec: true,
         packet_loss: 10,
         complexity: 10,
+        bandwidth: Bandwidth::Auto,
+        signal: SignalType::Auto,
     }
 }
 

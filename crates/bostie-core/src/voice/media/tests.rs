@@ -8,8 +8,8 @@ use crate::voice::crypto::Mode;
 use crate::voice::testkit::mls::Call;
 use crate::voice::testkit::sfu::{Packet, Sfu};
 use crate::voice::types::{
-    Application, FRAME, FRAME_SAMPLES, PcmFormat, SampleFormat, SinkFormat, SinkOptions,
-    StallPolicy,
+    Application, Bandwidth, FRAME, FRAME_SAMPLES, PcmFormat, SampleFormat, SignalType, SinkFormat,
+    SinkOptions, StallPolicy,
 };
 
 const GUILD: u64 = 10;
@@ -29,6 +29,8 @@ fn settings() -> EncoderSettings {
         fec: true,
         packet_loss: 10,
         complexity: 10,
+        bandwidth: Bandwidth::Auto,
+        signal: SignalType::Auto,
     }
 }
 

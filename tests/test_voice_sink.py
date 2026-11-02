@@ -400,6 +400,8 @@ def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
             "fec": True,
             "packet_loss": 10,
             "complexity": 10,
+            "bandwidth": "auto",
+            "signal": "auto",
         },
         {
             "rate": 48_000,
@@ -410,5 +412,7 @@ def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
             "fec": False,
             "packet_loss": 29,
             "complexity": 0,
+            "bandwidth": "auto",
+            "signal": "auto",
         },
     ]

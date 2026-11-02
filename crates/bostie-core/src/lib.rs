@@ -270,7 +270,9 @@ mod tests {
     use std::thread;
 
     use super::*;
-    use crate::voice::types::{Application, ConnectRequest, EncoderSettings, SourceSpec};
+    use crate::voice::types::{
+        Application, Bandwidth, ConnectRequest, EncoderSettings, SignalType, SourceSpec,
+    };
 
     const TOKEN: &str = "token";
     const GLOBAL_LIMIT: NonZeroU16 = NonZeroU16::new(50).unwrap();
@@ -430,6 +432,8 @@ mod tests {
                 fec: true,
                 packet_loss: 10,
                 complexity: 10,
+                bandwidth: Bandwidth::Auto,
+                signal: SignalType::Auto,
             },
             speaking: 1,
         }

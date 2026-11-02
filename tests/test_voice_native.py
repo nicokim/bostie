@@ -62,6 +62,8 @@ def connect(
         packet_loss=10,
         complexity=10,
         speaking=speaking,
+        bandwidth="auto",
+        signal="auto",
     )
 
 

@@ -16,8 +16,8 @@ use crate::voice::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
 use crate::voice::types::{
-    Application, DaveOp, EncoderSettings, FRAME, Overflow, PcmFormat, ReceiveFormat,
-    ReceiveOptions, ReceiveStall, SampleFormat,
+    Application, Bandwidth, DaveOp, EncoderSettings, FRAME, Overflow, PcmFormat, ReceiveFormat,
+    ReceiveOptions, ReceiveStall, SampleFormat, SignalType,
 };
 
 mod decrypting;
@@ -61,6 +61,8 @@ fn opus(count: usize, amplitude: f32) -> Vec<Bytes> {
         fec: true,
         packet_loss: 10,
         complexity: 10,
+        bandwidth: Bandwidth::Auto,
+        signal: SignalType::Auto,
     };
     #[expect(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     let tone: Vec<u8> = (0..count * 960)

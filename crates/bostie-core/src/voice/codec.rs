@@ -7,7 +7,8 @@ use opus::{Bitrate, Channels};
 use crate::error::CoreError;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
-    Application, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, PcmFormat, SAMPLE_RATE, SampleFormat,
+    Application, Bandwidth, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, PcmFormat, SAMPLE_RATE,
+    SampleFormat, SignalType,
 };
 
 pub(crate) const MAX_PACKET: usize = 1_275;
@@ -149,7 +150,28 @@ fn configure(opus: &mut opus::Encoder, settings: EncoderSettings) -> Result<(), 
         .and_then(|()| opus.set_inband_fec(settings.fec))
         .and_then(|()| opus.set_packet_loss_perc(i32::from(settings.packet_loss)))
         .and_then(|()| opus.set_complexity(i32::from(settings.complexity)))
+        .and_then(|()| opus.set_bandwidth(bandwidth(settings.bandwidth)))
+        .and_then(|()| opus.set_signal(signal(settings.signal)))
         .map_err(|error| rejected(&error))
+}
+
+fn bandwidth(bandwidth: Bandwidth) -> opus::Bandwidth {
+    match bandwidth {
+        Bandwidth::Auto => opus::Bandwidth::Auto,
+        Bandwidth::Narrow => opus::Bandwidth::Narrowband,
+        Bandwidth::Medium => opus::Bandwidth::Mediumband,
+        Bandwidth::Wide => opus::Bandwidth::Wideband,
+        Bandwidth::SuperWide => opus::Bandwidth::Superwideband,
+        Bandwidth::Full => opus::Bandwidth::Fullband,
+    }
+}
+
+fn signal(signal: SignalType) -> opus::Signal {
+    match signal {
+        SignalType::Auto => opus::Signal::Auto,
+        SignalType::Voice => opus::Signal::Voice,
+        SignalType::Music => opus::Signal::Music,
+    }
 }
 
 fn rejected(error: &opus::Error) -> CoreError {
@@ -318,6 +340,8 @@ pub(crate) mod tests {
             fec: true,
             packet_loss: 10,
             complexity: 10,
+            bandwidth: Bandwidth::Auto,
+            signal: SignalType::Auto,
         }
     }
 
@@ -372,6 +396,8 @@ pub(crate) mod tests {
             fec: true,
             packet_loss: 15,
             complexity: 5,
+            bandwidth: Bandwidth::Wide,
+            signal: SignalType::Music,
         };
         let mut encoder = Encoder::new(settings).unwrap();
 
@@ -383,6 +409,12 @@ pub(crate) mod tests {
         assert!(encoder.opus.get_inband_fec().unwrap());
         assert_eq!(encoder.opus.get_packet_loss_perc().unwrap(), 15);
         assert_eq!(encoder.opus.get_complexity().unwrap(), 5);
+        assert_eq!(encoder.opus.get_signal().unwrap(), opus::Signal::Music);
+        let packet = encoder.encode(&[0.1; FRAME_LEN]).unwrap();
+        assert_eq!(
+            opus::packet::get_bandwidth(packet).unwrap(),
+            opus::Bandwidth::Wideband
+        );
     }
 
     #[test]

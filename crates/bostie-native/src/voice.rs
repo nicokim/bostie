@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
-    Application, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall, SampleFormat,
-    SinkFormat, SinkOptions, Speaking, StallPolicy,
+    Application, Bandwidth, EncoderSettings, Overflow, PcmFormat, ReceiveFormat, ReceiveStall,
+    SampleFormat, SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
     Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, Sink, SinkStats, Source,
@@ -194,7 +194,10 @@ pub(crate) struct NativeOpusEncoder(Mutex<FrameEncoder>);
 #[pymethods]
 impl NativeOpusEncoder {
     #[new]
-    #[pyo3(signature = (*, rate, channels, sample, bitrate, application, fec, packet_loss, complexity))]
+    #[pyo3(signature = (
+        *, rate, channels, sample, bitrate, application, fec, packet_loss, complexity,
+        bandwidth, signal,
+    ))]
     #[expect(clippy::too_many_arguments)]
     fn new(
         rate: u32,
@@ -205,13 +208,23 @@ impl NativeOpusEncoder {
         fec: bool,
         packet_loss: u8,
         complexity: u8,
+        bandwidth: Choice<Bandwidth>,
+        signal: Choice<SignalType>,
     ) -> Result<Self> {
         let format = PcmFormat {
             rate,
             channels,
             sample: sample.0,
         };
-        let settings = encoder_settings(bitrate, application, fec, packet_loss, complexity);
+        let settings = encoder_settings(
+            bitrate,
+            application,
+            fec,
+            packet_loss,
+            complexity,
+            bandwidth,
+            signal,
+        );
         let encoder = FrameEncoder::new(format, settings)?;
         Ok(Self(Mutex::new(encoder)))
     }
@@ -291,6 +304,27 @@ impl Choices for Application {
     ];
 }
 
+impl Choices for Bandwidth {
+    const OPTION: &'static str = "bandwidth";
+    const NAMES: &'static [(&'static str, Self)] = &[
+        ("auto", Self::Auto),
+        ("narrow", Self::Narrow),
+        ("medium", Self::Medium),
+        ("wide", Self::Wide),
+        ("superwide", Self::SuperWide),
+        ("full", Self::Full),
+    ];
+}
+
+impl Choices for SignalType {
+    const OPTION: &'static str = "signal_type";
+    const NAMES: &'static [(&'static str, Self)] = &[
+        ("auto", Self::Auto),
+        ("voice", Self::Voice),
+        ("music", Self::Music),
+    ];
+}
+
 impl Choices for SampleFormat {
     const OPTION: &'static str = "sample";
     const NAMES: &'static [(&'static str, Self)] =
@@ -348,6 +382,8 @@ pub(crate) fn encoder_settings(
     fec: bool,
     packet_loss: u8,
     complexity: u8,
+    bandwidth: Choice<Bandwidth>,
+    signal: Choice<SignalType>,
 ) -> EncoderSettings {
     EncoderSettings {
         bitrate,
@@ -355,6 +391,8 @@ pub(crate) fn encoder_settings(
         fec,
         packet_loss,
         complexity,
+        bandwidth: bandwidth.0,
+        signal: signal.0,
     }
 }
 

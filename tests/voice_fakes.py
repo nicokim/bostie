@@ -382,6 +382,8 @@ class FakeCore:
         fec: bool,
         packet_loss: int,
         complexity: int,
+        bandwidth: str,
+        signal: str,
     ) -> None:
         self._record(
             "voice_encoder",
@@ -391,6 +393,8 @@ class FakeCore:
             fec=fec,
             packet_loss=packet_loss,
             complexity=complexity,
+            bandwidth=bandwidth,
+            signal=signal,
         )
 
     def voice_speaking(self, guild_id: int, flags: int) -> None:

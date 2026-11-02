@@ -25,6 +25,8 @@ class OpusEncoder:
             fec=encoder.fec,
             packet_loss=percent(encoder.packet_loss),
             complexity=encoder.complexity,
+            bandwidth=encoder.bandwidth,
+            signal=encoder.signal_type,
         )
 
     def encode(self, data: Buffer) -> list[bytes]:

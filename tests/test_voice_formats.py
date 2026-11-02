@@ -51,6 +51,9 @@ def test_pcm_checks_its_rate_channels_and_sample(
         ({"complexity": -1}, invalid("complexity")),
         ({"complexity": 11}, invalid("complexity")),
         ({"application": "music"}, invalid("application")),
+        ({"bandwidth": "full", "signal_type": "music"}, VALID),
+        ({"bandwidth": "ultra"}, invalid("bandwidth")),
+        ({"signal_type": "noise"}, invalid("signal_type")),
     ],
 )
 def test_encoder_checks_its_bounds(
@@ -159,6 +162,8 @@ def test_enum_values_are_the_names_rust_sends(
     ("literal", "names"),
     [
         (voice.OpusApplication.__value__, _native.OPUS_APPLICATIONS),
+        (voice.OpusBandwidth.__value__, _native.OPUS_BANDWIDTHS),
+        (voice.OpusSignal.__value__, _native.OPUS_SIGNALS),
         (voice.Sample.__value__, _native.SAMPLES),
         (get_type_hints(VoiceCore.voice_sink)["kind"], _native.SINK_KINDS),
         (get_type_hints(VoiceCore.voice_receive)["kind"], _native.RECEIVE_KINDS),

@@ -51,6 +51,8 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
                 fec=False,
                 packet_loss=0.29,
                 complexity=0,
+                bandwidth="wide",
+                signal_type="voice",
             ),
             speaking_flags=SpeakingFlags.SOUNDSHARE,
             speech_activity=False,
@@ -72,6 +74,8 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
                     "packet_loss": 29,
                     "complexity": 0,
                     "speaking": 2,
+                    "bandwidth": "wide",
+                    "signal": "voice",
                 },
             )
         ]
@@ -271,6 +275,8 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
                         "fec": True,
                         "packet_loss": 10,
                         "complexity": 10,
+                        "bandwidth": "auto",
+                        "signal": "auto",
                     },
                 )
             ],
