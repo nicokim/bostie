@@ -1,5 +1,6 @@
 import asyncio
 import time
+import wave
 from collections import deque
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -157,6 +158,10 @@ def heard(user: int, *indexes: int | None, lost: int = 0) -> Utterance:
     return Utterance(
         user, data, first * STEP, len(indexes) * STEP / 48_000, lost * STEP / 48_000
     )
+
+
+def pcm(user: int | None, index: int, data: bytes) -> Frame:
+    return Frame(user, user, index * STEP, index * STEP, STEP, 0.0, data, False)
 
 
 def opus(index: int, data: bytes | None = None, *, lost: bool = False) -> Frame:
@@ -369,21 +374,64 @@ def test_a_recorder_pads_the_start_and_gaps_with_silence_only_when_aligned(
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("path", "mix"),
     [
-        "rec/{user_id}.wav",
-        "rec/everyone.ogg",
-        "rec/{channel_id}/{user_id}.ogg",
-        "rec/{}{user_id}.ogg",
+        ("rec/{user_id}.mp3", False),
+        ("rec/everyone.ogg", False),
+        ("rec/{channel_id}/{user_id}.ogg", False),
+        ("rec/{}{user_id}.ogg", False),
+        ("rec/{user_id}.wav", True),
     ],
 )
-def test_a_recorder_refuses_a_path_that_cannot_hold_one_ogg_file_per_user(
-    path: str,
+def test_a_recorder_refuses_a_path_that_does_not_fit_its_files(
+    path: str, mix: bool
 ) -> None:
     vc = RecordingConnection()
     with pytest.raises(ValueError, match="path"):
-        Recorder(cast("Any", vc), path)
+        Recorder(cast("Any", vc), path, mix=mix)
     assert vc.opened == []
+
+
+def test_a_wav_recorder_writes_pcm_and_pads_the_gaps_with_silence(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        vc = RecordingConnection()
+        format = PCM(8_000, 1)
+        async with Recorder(cast("Any", vc), tmp_path / "{user_id}.wav", format=format):
+            vc.rx.feed(pcm(42, 1, b"\x01\x00" * 160), pcm(42, 3, b"\x02\x00" * 160))
+        with wave.open(str(tmp_path / "42.wav")) as wav:
+            params = (wav.getnchannels(), wav.getsampwidth(), wav.getframerate())
+            data = wav.readframes(wav.getnframes())
+        assert params == (1, 2, 8_000)
+        silence = bytes(320)
+        assert data == silence + b"\x01\x00" * 160 + silence + b"\x02\x00" * 160
+        assert vc.opened[0][0] == format
+        assert vc.opened[0][1]["mix"] is False
+        with pytest.raises(ValueError, match="s16le"):
+            Recorder(cast("Any", vc), "{user_id}.wav", format=PCM(sample="f32le"))
+
+    run(scenario)
+
+
+@pytest.mark.parametrize("suffix", [".ogg", ".wav"])
+def test_a_mixed_recorder_writes_the_whole_call_to_one_file(
+    tmp_path: Path, suffix: str
+) -> None:
+    async def scenario() -> None:
+        vc = RecordingConnection()
+        path = tmp_path / f"{{guild_id}}{suffix}"
+        async with Recorder(cast("Any", vc), path, mix=True) as recorder:
+            vc.rx.feed(*(pcm(None, index, bytes(3_840)) for index in range(3)))
+        assert recorder.files == {None: tmp_path / f"7{suffix}"}
+        assert vc.opened[0][1]["mix"] is True
+        if suffix == ".ogg":
+            assert len(read_ogg(tmp_path / "7.ogg")[0]) == 3
+        else:
+            with wave.open(str(tmp_path / "7.wav")) as wav:
+                assert (wav.getnchannels(), wav.getnframes()) == (2, 3 * STEP)
+
+    run(scenario)
 
 
 def test_stop_waits_for_the_audio_still_in_the_jitter_buffer(tmp_path: Path) -> None:

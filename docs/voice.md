@@ -162,7 +162,7 @@ Here `speech_to_text` stands for your engine: it gets 16 kHz mono 16-bit audio. 
 
 ### Recording
 
-`voice.Recorder` writes one Ogg Opus file per user as the call goes, without decoding, and never keeps a recording in memory:
+`voice.Recorder` writes one file per user as the call goes, and never keeps a recording in memory:
 
 ```python
 recorders: dict[int, voice.Recorder] = {}
@@ -186,7 +186,9 @@ async def stop(ctx: Context) -> None:
     await ctx.respond(f"{len(files)} files")
 ```
 
-- The path must end in `.ogg` or `.opus` and contain `{user_id}`. `{guild_id}` is the only other field. Missing directories are created.
+- The path must contain `{user_id}`. `{guild_id}` is the only other field. Missing directories are created.
+- A path ending in `.ogg` or `.opus` gets Ogg Opus, the packets as they came. A path ending in `.wav` gets 16-bit PCM WAV, decoded in Rust, in the `format=voice.PCM(rate, channels)` you choose, 48 kHz stereo by default; that is what editors and speech-to-text tools take, at about 190 KB a second per user at the default format.
+- `mix=True` records the whole call to one file, everyone summed with silence in between, so the path takes no `{user_id}`. An Ogg Opus mix is encoded once in Rust. Its file is under `None` in `recorder.files` and in what `stop()` returns.
 - With `align=True`, the default, every file starts when the recording started and silence fills every gap, so the files line up when you play them together, to within about 10 ms plus the network's jitter. The bot's own file runs slightly ahead, by the time its packets take to reach Discord. `align=False` keeps only the speech.
 - A recorder's receiver waits longer than a live one: `buffer=30.0` so a slow disk loses nothing, and `jitter=0.3` so late packets still make it in. `users`, `exclude` and `include_self` work as they do for `vc.receive()`.
 - `recorder.stop()` first waits for the audio heard before the call, as `rx.mark()` does, then writes what is queued, finishes every file and returns them by user id. If that wait gives up, the files still finish, without the audio that had not come out. `async with voice.Recorder(...) as recorder:` stops it when the block ends. If writing failed, for example on a full disk, `stop()` raises that error. When the connection ends or the bot is moved, the recorder finishes its files on its own, and `stop()` still returns them. It keeps recording through a reconnect, whatever `receive_stall` says. `recorder.files` lists the files written so far, and `recorder.stats()` the receiver's counters.

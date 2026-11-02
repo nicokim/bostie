@@ -245,7 +245,7 @@ async def caption(ctx: Context) -> None:
 Here `speech_to_text(audio)` stands for your speech-to-text engine, which gets 16 kHz mono 16-bit audio.
 
 - `vc.receive(format)` opens a receiver, a bounded async iterator over the call's audio. Open one per consumer, as many as you like. It yields decoded PCM at 8 to 48 kHz, Opus packets, or the raw packets, per user or mixed into one stream, and `users=` or `exclude=` limit whom it hears. Audio nobody asked for is never decrypted or decoded.
-- `voice.utterances(rx)` groups frames into one utterance per stretch of speech. `voice.Recorder(vc, "recordings/{guild_id}/{user_id}.ogg")` records each person to an Ogg Opus file.
+- `voice.utterances(rx)` groups frames into one utterance per stretch of speech. `voice.Recorder(vc, "recordings/{guild_id}/{user_id}.ogg")` records each person to an Ogg Opus file, or a WAV file for a `.wav` path, and `mix=True` records the whole call to one file.
 - `voice.SpeechStart` and `voice.SpeechStop` fire for everyone in the call, and `vc.speaking` says who is talking now.
 - A receiver ends when the bot leaves or is moved to another channel, which ends `captions` above.
 - Tell people before you record or transcribe them. [docs/voice.md](docs/voice.md#receiving-audio) covers every option, and privacy and consent.

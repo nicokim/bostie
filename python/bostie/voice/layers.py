@@ -7,6 +7,7 @@ import random
 import string
 import struct
 import time
+import wave
 import zlib
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ from bostie.models.base import check_keys
 from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.events import SpeechStart, SpeechStop
 from bostie.voice.formats import (
+    DEFAULT_PCM,
     PCM,
     SAMPLE_BYTES,
     SAMPLE_RATE,
@@ -1020,8 +1022,66 @@ class _OggStream:
         return pages
 
 
+class _OggFile:
+    def __init__(self, file: BinaryIO, serial: int, *, encode: bool) -> None:
+        self.file = file
+        self.stream = _OggStream(file, serial)
+        self.encoder = OpusEncoder() if encode else None
+
+    def add(self, frame: Frame, *, align: bool) -> bytes:
+        stream = self.stream
+        if self.encoder is not None:
+            for packet in self.encoder.encode(frame.data):
+                stream.add(packet, SILENCE_SAMPLES)
+        elif not frame.lost and len(frame.data) <= MAX_PACKET:
+            if align:
+                gap = round((frame.offset - stream.granule) / SILENCE_SAMPLES)
+                stream.add(SILENCE, SILENCE_SAMPLES, max(gap, 0))
+            stream.add(frame.data, frame.samples)
+        return stream.take()
+
+    def write(self, data: bytes) -> None:
+        self.file.write(data)
+        self.file.flush()
+
+    def close(self) -> None:
+        with self.file:
+            for packet in [] if self.encoder is None else self.encoder.flush():
+                self.stream.add(packet, SILENCE_SAMPLES)
+            self.stream.flush(END_OF_STREAM)
+            self.file.write(self.stream.take())
+
+
+class _WavFile:
+    def __init__(self, file: BinaryIO, format: PCM) -> None:
+        self.file = file
+        self.width = format.channels * SAMPLE_BYTES[format.sample]
+        self.rate = format.rate
+        self.end = 0
+        self.wav = wave.Wave_write(file)
+        self.wav.setnchannels(format.channels)
+        self.wav.setsampwidth(SAMPLE_BYTES[format.sample])
+        self.wav.setframerate(format.rate)
+
+    def add(self, frame: Frame, *, align: bool) -> bytes:
+        gap = max(frame.offset - self.end, 0) if align else 0
+        self.end = frame.offset + frame.samples
+        return bytes(gap * self.rate // SAMPLE_RATE * self.width) + frame.data
+
+    def write(self, data: bytes) -> None:
+        self.wav.writeframesraw(data)
+        self.file.flush()
+
+    def close(self) -> None:
+        with self.file:
+            self.wav.close()
+
+
 class Recorder:
-    """Record each user to an Ogg Opus file as the call goes."""
+    """Record each user, or with `mix=True` the whole call, to Ogg Opus or WAV.
+
+    The path's extension picks the container; `format` is the WAV sample format.
+    """
 
     def __init__(
         self,
@@ -1032,39 +1092,50 @@ class Recorder:
         exclude: Iterable[int] = (),
         include_self: bool = False,
         align: bool = True,
+        mix: bool = False,
+        format: PCM = DEFAULT_PCM,
         buffer: float = 30.0,
         jitter: float = 0.3,
     ) -> None:
-        self._template = _template(path)
+        self._template = _template(path, mix=mix)
+        self._wav = self._template.endswith(".wav")
+        if self._wav and format.sample != "s16le":
+            raise ValueError(f"a WAV recording takes s16le samples, got {format}")
+        self._format = format if self._wav else DEFAULT_PCM
         self._guild_id = vc.guild_id
         self._align = align
-        self._files: dict[int, Path] = {}
-        self._streams: dict[int, _OggStream] = {}
+        self._mix = mix
+        self._files: dict[int | None, Path] = {}
+        self._writers: dict[int | None, _OggFile | _WavFile] = {}
         self._error: Exception | None = None
         self._stopping: asyncio.Future[None] = (
             asyncio.get_running_loop().create_future()
         )
-        self._rx = vc.receive(
-            Opus(),
-            users=users,
-            exclude=exclude,
-            include_self=include_self,
-            buffer=buffer,
-            jitter=jitter,
-            stall="wait",
+        receiving: dict[str, Any] = {
+            "users": users,
+            "exclude": exclude,
+            "include_self": include_self,
+            "buffer": buffer,
+            "jitter": jitter,
+            "stall": "wait",
+        }
+        if self._wav or mix:
+            receiving["mix"] = mix
+        self._rx: Receiver[Frame] = vc.receive(
+            self._format if self._wav or mix else Opus(), **receiving
         )
         self._task = asyncio.create_task(self._record())
 
     @property
-    def files(self) -> Mapping[int, Path]:
-        """The files written so far, by user id."""
+    def files(self) -> Mapping[int | None, Path]:
+        """The files written so far, by user id; None keys a mixed recording."""
         return MappingProxyType(self._files)
 
     def stats(self) -> "ReceiverStats":
         """The receiver's counters; dropped means the disk fell behind for too long."""
         return self._rx.stats()
 
-    async def stop(self) -> dict[int, Path]:
+    async def stop(self) -> dict[int | None, Path]:
         """Stop once heard audio is queued or the wait gives up; return the files."""
         await self._rx.mark()
         if not self._stopping.done():
@@ -1118,26 +1189,27 @@ class Recorder:
 
     async def _write(self, frame: Frame) -> None:
         user = frame.user_id
-        if user is None or frame.lost or len(frame.data) > MAX_PACKET:
+        if user is None and not self._mix:
             return
-        stream = self._streams.get(user)
-        if stream is None:
-            path = Path(self._template.format(guild_id=self._guild_id, user_id=user))
+        writer = self._writers.get(user)
+        if writer is None:
+            fields = {"guild_id": self._guild_id, "user_id": user}
+            path = Path(self._template.format(**fields))
             file = await asyncio.to_thread(_create, path)
-            stream = self._streams[user] = _OggStream(file, user & 0xFFFFFFFF)
+            writer = self._writers[user] = (
+                _WavFile(file, self._format)
+                if self._wav
+                else _OggFile(file, (user or 0) & 0xFFFFFFFF, encode=self._mix)
+            )
             self._files[user] = path
-        if self._align:
-            gap = round((frame.offset - stream.granule) / SILENCE_SAMPLES)
-            stream.add(SILENCE, SILENCE_SAMPLES, max(gap, 0))
-        stream.add(frame.data, frame.samples)
-        if stream.pages:
-            await asyncio.to_thread(_append, stream.file, stream.take())
+        data = writer.add(frame, align=self._align)
+        if data:
+            await asyncio.to_thread(writer.write, data)
 
     async def _finish(self) -> None:
-        for stream in self._streams.values():
-            stream.flush(END_OF_STREAM)
+        for writer in self._writers.values():
             try:
-                await asyncio.to_thread(_close, stream.file, stream.take())
+                await asyncio.to_thread(writer.close)
             except Exception as error:
                 self._fail(error)
 
@@ -1147,14 +1219,19 @@ class Recorder:
             log.error("recording to %s failed", self._template, exc_info=error)
 
 
-def _template(path: str | os.PathLike[str]) -> str:
+def _template(path: str | os.PathLike[str], *, mix: bool) -> str:
     template = os.fspath(path)
-    if not template.endswith((".ogg", ".opus")):
-        raise ValueError(f"path must end in .ogg or .opus, got {template!r}")
+    if not template.endswith((".ogg", ".opus", ".wav")):
+        raise ValueError(f"path must end in .ogg, .opus or .wav, got {template!r}")
     fields = {
         name for _, name, _, _ in string.Formatter().parse(template) if name is not None
     }
-    if "user_id" not in fields:
+    if mix and "user_id" in fields:
+        raise ValueError(
+            f"path of a mixed recording names one file, without {{user_id}}, "
+            f"got {template!r}"
+        )
+    if not mix and "user_id" not in fields:
         raise ValueError(
             f"path must contain {{user_id}} to give each user a file, got {template!r}"
         )
@@ -1178,13 +1255,3 @@ def _ogg_crc32(page: bytearray) -> bytes:
 def _create(path: Path) -> BinaryIO:
     path.parent.mkdir(parents=True, exist_ok=True)
     return path.open("wb")
-
-
-def _append(file: BinaryIO, pages: bytes) -> None:
-    file.write(pages)
-    file.flush()
-
-
-def _close(file: BinaryIO, pages: bytes) -> None:
-    with file:
-        file.write(pages)
