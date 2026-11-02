@@ -93,6 +93,10 @@ Don't wait on the clock. Pass short timeouts and intervals through configuration
 
 Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending`. Python tests go in `tests/test_<module>.py`. Nothing in the suite touches the network or real Discord.
 
+## Docs
+
+The docs site is README.md between its `guide` markers, the pages in `docs/`, the examples and an API reference read from the docstrings. [Zensical](https://zensical.org) builds it without compiling the Rust core: `uv run --only-group docs zensical serve` previews it, and CI runs `zensical build --strict`. A relative link in the README's guide part is a reference link, defined once at the end of README.md and once in `docs/index.md`, so it works in both places.
+
 ## Style
 
 We don't write comments in code. If a block seems to need one, rename it or split it until it doesn't. Public Python API may have a docstring when the name and signature aren't enough, and one line is usually right.

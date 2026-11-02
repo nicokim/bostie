@@ -1,0 +1,29 @@
+[project]
+site_name = "bostie"
+site_description = "Discord library for Python with a Rust core, built around reliable voice"
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  { "Guide" = "index.md" },
+  { "Voice" = "voice.md" },
+  { "Running the bot" = "running.md" },
+  { "Examples" = "examples.md" },
+]
+
+[project.theme]
+features = ["content.code.copy", "navigation.sections", "search.highlight"]
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.highlight = {}
+pymdownx.superfences = {}
+pymdownx.snippets.check_paths = true
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["python"]
+
+[project.plugins.api-autonav]
+modules = ["python/bostie"]

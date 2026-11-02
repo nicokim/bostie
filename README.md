@@ -3,6 +3,7 @@
 # bostie
 
 <img src="assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
+<!-- --8<-- [start:guide] -->
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
@@ -358,6 +359,8 @@ A bad argument raises `ValueError` or `TypeError`. Every other error bostie rais
 - `CommandError` for commands and interactions, and `voice.VoiceError` for voice.
 
 `@bot.on_error` registers `async def hook(ctx: bostie.ErrorContext, error: Exception)` for what handlers raise, and `@router.on_error(NotFound, Forbidden)` one for those types only, typed `error: NotFound | Forbidden`. Each router from the failing handler's up to the bot offers the hook for the nearest exception class; the first one runs, and a hook that raises the error again passes it to the next. With no hook, the user gets an ephemeral "Something went wrong." The context is the handler's, so an autocomplete error comes with an `AutocompleteContext`, which has no `respond`.
+
+<!-- --8<-- [end:guide] -->
 
 ## License
 
