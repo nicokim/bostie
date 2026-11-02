@@ -56,7 +56,7 @@ Rust needs no change: the core forwards any dispatch name Python asks for.
 3. Add the class to the `EVENTS` registry in the same file.
 4. Save the `d` payload as `tests/fixtures/models/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.
-6. If the event changes cached state, add it to `Cache.NAMES` and `Cache.apply` in `python/bostie/cache.py`.
+6. If the event changes cached state, give it a handler in `Cache.__init__` in `python/bostie/cache.py`. An update handler returns the cached object as `old`, a delete handler the removed one.
 
 Models are typed as Discord's documentation describes each field. Discord also adds fields and enum values without notice, and a bot must not break when it does:
 

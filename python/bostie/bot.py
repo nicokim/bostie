@@ -140,6 +140,7 @@ class Bot(Router):
         auto_sync: bool = True,
         auto_defer: float | None = 2.5,
         cache: bool = True,
+        max_messages: int = 0,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
         status: Status = Status.ONLINE,
         activities: Iterable[ActivityDict] = (),
@@ -152,9 +153,11 @@ class Bot(Router):
         shard_ids: Iterable[int] | Literal["all"] = "all",
     ) -> None:
         super().__init__()
+        if max_messages and not cache:
+            raise ValueError("max_messages needs cache=True")
         self._shard_count = shard_count
         self._shard_ids = _shard_ids(shard_count, shard_ids)
-        self.cache = Cache()
+        self.cache = Cache(max_messages)
         self.voice = VoiceManager(self, voice)
         self.user: User | None = None
         self.application_id: int | None = None
@@ -428,7 +431,7 @@ class Bot(Router):
         if self._member_requests:
             names.add(MembersChunk.NAME)
         if self._caching:
-            names |= Cache.NAMES
+            names |= self.cache.names
         if (
             self.commands
             or self.context_menus
@@ -515,10 +518,11 @@ class Bot(Router):
         dispatch = _Dispatch(shard_id, seq, name, data)
         self._follow_session(dispatch)
         self._answer_member_request(dispatch)
-        if self._caching and name in Cache.NAMES:
-            cached = dispatch.event(EVENTS[name])
+        if self._caching and name in self.cache.names:
+            cls = EVENTS[name]
+            cached = dispatch.event(cls)
             if cached is not None:
-                self.cache.apply(cached)
+                dispatch.decoded[cls] = self.cache.apply(cached)
         for key in (name, RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
                 if not waiter.future.done():

@@ -93,12 +93,15 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 
 
 class Ready(Event, kw_only=True):
+    """A shard started a session; its guilds then arrive as GuildCreate events."""
+
     NAME = "READY"
 
     user: CurrentUser
     guilds: tuple[UnavailableGuild, ...]
     application: PartialApplication
     session_id: str
+    shard: tuple[int, int] | None = None
 
 
 class Resumed(Event, kw_only=True):
@@ -177,10 +180,13 @@ class GuildCreate(Event, kw_only=True):
 
 
 class GuildUpdate(Event, kw_only=True):
+    """A guild changed; `old` is the cached guild before the change."""
+
     NAME = "GUILD_UPDATE"
     INTENTS = Intents.GUILDS
 
     guild: Guild
+    old: Guild | None = None
 
     @classmethod
     @override
@@ -189,13 +195,14 @@ class GuildUpdate(Event, kw_only=True):
 
 
 class GuildDelete(Event, kw_only=True):
-    """The bot left a guild, or the guild went unavailable if `unavailable` is true."""
+    """The bot left a guild, or it went unavailable; `guild` is the cached one."""
 
     NAME = "GUILD_DELETE"
     INTENTS = Intents.GUILDS
 
     guild_id: int = msgspec.field(name="id")
     unavailable: bool = False
+    guild: Guild | None = None
 
 
 class _ChannelEvent(Event, kw_only=True):
@@ -214,7 +221,11 @@ class ChannelCreate(_ChannelEvent, kw_only=True):
 
 
 class ChannelUpdate(_ChannelEvent, kw_only=True):
+    """A channel changed; `old` is the cached channel before the change."""
+
     NAME = "CHANNEL_UPDATE"
+
+    old: Channel | None = None
 
 
 class ChannelDelete(_ChannelEvent, kw_only=True):
@@ -259,10 +270,16 @@ class ThreadCreate(_ChannelEvent, kw_only=True):
 
 
 class ThreadUpdate(_ChannelEvent, kw_only=True):
+    """A thread changed; `old` is the cached thread before the change."""
+
     NAME = "THREAD_UPDATE"
+
+    old: Channel | None = None
 
 
 class ThreadDelete(Event, kw_only=True):
+    """A thread was deleted; `thread` is the cached one."""
+
     NAME = "THREAD_DELETE"
     INTENTS = Intents.GUILDS
 
@@ -270,6 +287,7 @@ class ThreadDelete(Event, kw_only=True):
     guild_id: int
     parent_id: int | None
     type: ChannelType
+    thread: Channel | None = None
 
 
 class ThreadListSync(Event, kw_only=True):
@@ -296,15 +314,22 @@ class RoleCreate(_RoleEvent, kw_only=True):
 
 
 class RoleUpdate(_RoleEvent, kw_only=True):
+    """A role changed; `old` is the cached role before the change."""
+
     NAME = "GUILD_ROLE_UPDATE"
+
+    old: Role | None = None
 
 
 class RoleDelete(Event, kw_only=True):
+    """A role was deleted; `role` is the cached one."""
+
     NAME = "GUILD_ROLE_DELETE"
     INTENTS = Intents.GUILDS
 
     guild_id: int
     role_id: int
+    role: Role | None = None
 
 
 class _MessageEvent(Event, kw_only=True):
@@ -323,25 +348,73 @@ class MessageCreate(_MessageEvent, kw_only=True):
 
 
 class MessageUpdate(_MessageEvent, kw_only=True):
+    """A message was edited; `old` is the cached one, with Bot(max_messages=...)."""
+
     NAME = "MESSAGE_UPDATE"
+
+    old: Message | WebhookMessage | None = None
+
+
+class _MessageDeletePayload(msgspec.Struct):
+    id: int
+    channel_id: int
+    guild_id: int | None = None
 
 
 class MessageDelete(Event, kw_only=True):
+    """A message was deleted; `message` is the cached one if any."""
+
     NAME = "MESSAGE_DELETE"
     INTENTS = Intents.GUILD_MESSAGES | Intents.DIRECT_MESSAGES
 
     id: int
     channel_id: int
     guild_id: int | None = None
+    message: Message | WebhookMessage | None = None
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _MessageDeletePayload = decoder(_MessageDeletePayload).decode(data)
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            id=payload.id,
+            channel_id=payload.channel_id,
+            guild_id=payload.guild_id,
+        )
+
+
+class _MessageDeleteBulkPayload(msgspec.Struct):
+    ids: tuple[int, ...]
+    channel_id: int
+    guild_id: int | None = None
 
 
 class MessageDeleteBulk(Event, kw_only=True):
+    """Messages were deleted; `messages` are those the message cache held."""
+
     NAME = "MESSAGE_DELETE_BULK"
     INTENTS = Intents.GUILD_MESSAGES
 
     ids: tuple[int, ...]
     channel_id: int
     guild_id: int | None = None
+    messages: tuple[Message | WebhookMessage, ...] = ()
+
+    @classmethod
+    @override
+    def decode(cls, shard_id: int, data: bytes) -> Self:
+        payload: _MessageDeleteBulkPayload = decoder(_MessageDeleteBulkPayload).decode(
+            data
+        )
+        return cls(
+            shard_id=shard_id,
+            raw_json=data,
+            ids=payload.ids,
+            channel_id=payload.channel_id,
+            guild_id=payload.guild_id,
+        )
 
 
 class _ReactionEvent(Event, kw_only=True):
@@ -486,10 +559,13 @@ class InteractionCreate(Event, kw_only=True):
 
 
 class VoiceStateUpdate(Event, kw_only=True):
+    """A user joined, left or changed voice; `old` is their cached voice state."""
+
     NAME = "VOICE_STATE_UPDATE"
     INTENTS = Intents.GUILD_VOICE_STATES
 
     voice_state: VoiceState
+    old: VoiceState | None = None
 
     @classmethod
     @override
@@ -863,11 +939,12 @@ class PresenceUpdate(Event, kw_only=True):
 
 
 class UserUpdate(Event, kw_only=True):
-    """The bot's user changed."""
+    """The bot's user changed; `old` is the cached user before the change."""
 
     NAME = "USER_UPDATE"
 
     user: CurrentUser
+    old: CurrentUser | None = None
 
     @classmethod
     @override
