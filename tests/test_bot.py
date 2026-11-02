@@ -25,6 +25,7 @@ from bostie import (
     Forbidden,
     HTTPException,
     Intents,
+    InteractionContextType,
     InvalidToken,
     MemberRequestRateLimited,
     Message,
@@ -171,7 +172,7 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
         "role",
         "Manage roles",
         default_permissions=Permissions.MANAGE_ROLES,
-        guild_only=True,
+        contexts=[InteractionContextType.GUILD],
     )
     color = role.group("color", "Color roles")
 
@@ -196,6 +197,7 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
             afk=True,
             idle_since=datetime(2026, 11, 1, tzinfo=UTC),
             large_threshold=250,
+            contexts=[InteractionContextType.BOT_DM],
         )
         async with running(bot, fake):
             identify = await fake.next_identify()
@@ -211,6 +213,11 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
             "roll",
             "tag",
             "role",
+        ]
+        assert [command["contexts"] for command in fake.requests[3].json] == [
+            [1],
+            [1],
+            [0],
         ]
         assert bot.application_id == fake.application_id
         assert bot.user is not None

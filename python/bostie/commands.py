@@ -24,6 +24,7 @@ from typing import (
 )
 
 from bostie.enums import (
+    ApplicationIntegrationType,
     ChannelType,
     CommandType,
     InteractionContextType,
@@ -62,6 +63,7 @@ __all__ = [
     "ChoiceValue",
     "Command",
     "CommandCallback",
+    "CommandDefaults",
     "CommandSettings",
     "ContextMenuCommand",
     "ContextMenuSettings",
@@ -146,11 +148,20 @@ TARGET_MODELS: dict[CommandType, tuple[TargetModel, ...]] = {
 }
 
 
-class GroupSettings(TypedDict, total=False):
-    """Settings of a top-level command or group."""
+class CommandDefaults(TypedDict, total=False):
+    """Where global commands can be used, unless a command says otherwise."""
+
+    contexts: Iterable[InteractionContextType]
+    integration_types: Iterable[ApplicationIntegrationType]
+
+
+class GroupSettings(CommandDefaults, total=False):
+    """Settings of a top-level command or group.
+
+    `contexts` and `integration_types` apply to global commands only.
+    """
 
     default_permissions: Permissions
-    guild_only: bool
     nsfw: bool
     extra: Mapping[str, Any]
 
@@ -290,11 +301,17 @@ class _Registered:
         self.name = name
         self.router = router
         self.default_permissions = settings.get("default_permissions")
-        self.guild_only = settings.get("guild_only", False)
         self.nsfw = settings.get("nsfw", False)
+        self.places = CommandDefaults()
+        if "contexts" in settings:
+            self.places["contexts"] = tuple(settings["contexts"])
+        if "integration_types" in settings:
+            self.places["integration_types"] = tuple(settings["integration_types"])
         self.extra = dict(settings.get("extra", {}))
 
-    def payload(self, scope: Scope) -> dict[str, Any]:
+    def payload(
+        self, scope: Scope, defaults: CommandDefaults | None = None
+    ) -> dict[str, Any]:
         """The JSON that registers this top-level command in the given scope."""
         permissions = self.default_permissions
         payload: dict[str, Any] = {
@@ -307,11 +324,11 @@ class _Registered:
             "nsfw": self.nsfw,
         }
         if scope == "global":
-            payload["contexts"] = (
-                [InteractionContextType.GUILD]
-                if self.guild_only
-                else [InteractionContextType.GUILD, InteractionContextType.BOT_DM]
-            )
+            places = (defaults or CommandDefaults()) | self.places
+            if "contexts" in places:
+                payload["contexts"] = list(places["contexts"])
+            if "integration_types" in places:
+                payload["integration_types"] = list(places["integration_types"])
         return payload | self.extra
 
     def _fields(self) -> dict[str, Any]:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from bostie.commands import (
     Command,
+    CommandDefaults,
     ContextMenuCommand,
     Group,
     Scope,
@@ -70,6 +71,7 @@ async def sync_commands(
     commands: Sequence[Command | Group | ContextMenuCommand],
     guild_ids: Iterable[int],
     *,
+    defaults: CommandDefaults | None = None,
     always_put: bool = False,
 ) -> list[SyncResult]:
     """Make Discord's commands match `commands`, one PUT per differing scope.
@@ -86,7 +88,12 @@ async def sync_commands(
     scopes: list[int | None] = [*guild_ids] or [None]
     return [
         await _sync_scope(
-            http, application_id, commands, guild_id, always_put=always_put
+            http,
+            application_id,
+            commands,
+            guild_id,
+            defaults=defaults,
+            always_put=always_put,
         )
         for guild_id in scopes
     ]
@@ -98,6 +105,7 @@ async def _sync_scope(
     commands: Sequence[Command | Group | ContextMenuCommand],
     guild_id: int | None,
     *,
+    defaults: CommandDefaults | None,
     always_put: bool,
 ) -> SyncResult:
     scope: Scope
@@ -108,7 +116,7 @@ async def _sync_scope(
     else:
         scope, route, label = "guild", GUILD_ROUTE, f"guild {guild_id}"
         params = {"application_id": application_id, "guild_id": guild_id}
-    local = [command.payload(scope) for command in commands]
+    local = [command.payload(scope, defaults) for command in commands]
     remote = await http.request(
         "GET", route, query={"with_localizations": True}, **params
     )

@@ -1,13 +1,13 @@
 """Record everyone in a voice channel, one Ogg Opus file each, until /stop."""
 
 import bostie
-from bostie import Context, voice
+from bostie import Context, InteractionContextType, voice
 
 bot = bostie.Bot()
 recorders: dict[int, voice.Recorder] = {}
 
 
-@bot.command(guild_only=True)
+@bot.command(contexts=[InteractionContextType.GUILD])
 async def record(ctx: Context) -> None:
     """Record this voice channel. Tell everyone before you do."""
     vc = ctx.voice.current or await ctx.voice.connect()
@@ -18,7 +18,7 @@ async def record(ctx: Context) -> None:
     await ctx.respond("Recording. Everyone in this call can see the bot.")
 
 
-@bot.command(guild_only=True)
+@bot.command(contexts=[InteractionContextType.GUILD])
 async def stop(ctx: Context) -> None:
     """Stop recording and list the files."""
     recorder = recorders.pop(ctx.guild_id or 0, None)

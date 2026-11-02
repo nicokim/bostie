@@ -10,6 +10,7 @@ from bostie import (
     Context,
     ErrorContext,
     Forbidden,
+    InteractionContextType,
     Message,
     Option,
     Permissions,
@@ -63,7 +64,7 @@ roles = bot.group(
     "roles",
     "Manage roles",
     default_permissions=Permissions.MANAGE_ROLES,
-    guild_only=True,
+    contexts=[InteractionContextType.GUILD],
 )
 
 

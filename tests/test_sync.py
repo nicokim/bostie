@@ -9,7 +9,7 @@ import pytest
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.commands import Choice, Command, ContextMenuCommand, Group, Option, Range
-from bostie.enums import Permissions
+from bostie.enums import InteractionContextType, Permissions
 from bostie.errors import BadRequest, CommandSyncError
 from bostie.http import HTTPClient
 from bostie.models import Attachment, Message, PartialChannel, Role, User
@@ -38,7 +38,11 @@ async def suggest(ctx: object, value: object) -> list[str]:
 
 
 router = Router()
-kit = router.group("kit", "Exercise every option type")
+kit = router.group(
+    "kit",
+    "Exercise every option type",
+    contexts=[InteractionContextType.GUILD, InteractionContextType.BOT_DM],
+)
 inspect_group = kit.group("inspect", "Inspect things")
 
 
@@ -60,7 +64,10 @@ async def kit_all(
     pass
 
 
-@router.command(guild_only=True, default_permissions=Permissions.SEND_MESSAGES)
+@router.command(
+    contexts=[InteractionContextType.GUILD],
+    default_permissions=Permissions.SEND_MESSAGES,
+)
 async def search(
     ctx: object,
     query: Annotated[
@@ -76,7 +83,7 @@ async def search(
     """Search the bostie docs."""
 
 
-@router.user_command("User Info", guild_only=True)
+@router.user_command("User Info", contexts=[InteractionContextType.GUILD])
 async def user_info(ctx: object, user: User) -> None:
     pass
 

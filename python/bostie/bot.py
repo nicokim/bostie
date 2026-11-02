@@ -30,6 +30,7 @@ from bostie.cache import Cache
 from bostie.commands import (
     AutocompleteCallback,
     Command,
+    CommandDefaults,
     ContextMenuCommand,
     Group,
     _python_name,
@@ -44,7 +45,13 @@ from bostie.context import (
     _split_subcommands,
 )
 from bostie.custom_id import ComponentRoute
-from bostie.enums import CommandType, Intents, Status
+from bostie.enums import (
+    ApplicationIntegrationType,
+    CommandType,
+    Intents,
+    InteractionContextType,
+    Status,
+)
 from bostie.errors import (
     MemberRequestRateLimited,
     MissingIntent,
@@ -193,6 +200,8 @@ class Bot(Router):
         intents: Intents = Intents.DEFAULT,
         dev_guilds: Iterable[int] = (),
         auto_sync: bool = True,
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
         auto_defer: float | None = 2.5,
         cache: bool = True,
         max_messages: int = 0,
@@ -246,6 +255,7 @@ class Bot(Router):
         self.application_id: int | None = None
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
+        self._command_defaults = _command_defaults(contexts, integration_types)
         self._auto_sync = auto_sync
         self.auto_defer = auto_defer
         self._caching = cache
@@ -402,6 +412,7 @@ class Bot(Router):
                         self.application_id,
                         [*self.commands.values(), *self.context_menus.values()],
                         self._dev_guilds,
+                        defaults=self._command_defaults,
                     )
                 if resumed := gateway._load_sessions():
                     self._replaying |= resumed
@@ -584,6 +595,7 @@ class Bot(Router):
             self.application_id,
             [*self.commands.values(), *self.context_menus.values()],
             self._dev_guilds,
+            defaults=self._command_defaults,
             always_put=True,
         )
 
@@ -1116,6 +1128,18 @@ class Bot(Router):
             await _answer_failure(ctx)
         except Exception:
             log.exception("answering interaction %d failed", ctx.interaction.id)
+
+
+def _command_defaults(
+    contexts: Iterable[InteractionContextType] | None,
+    integration_types: Iterable[ApplicationIntegrationType] | None,
+) -> CommandDefaults:
+    defaults = CommandDefaults()
+    if contexts is not None:
+        defaults["contexts"] = tuple(contexts)
+    if integration_types is not None:
+        defaults["integration_types"] = tuple(integration_types)
+    return defaults
 
 
 def _resolve_token(token: str | None) -> str:

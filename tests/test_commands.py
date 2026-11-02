@@ -10,11 +10,19 @@ from bostie.commands import (
     Choice,
     Command,
     CommandCallback,
+    CommandDefaults,
     Option,
     Range,
     autocomplete_choices,
 )
-from bostie.enums import ChannelType, CommandType, OptionType, Permissions
+from bostie.enums import (
+    ApplicationIntegrationType,
+    ChannelType,
+    CommandType,
+    InteractionContextType,
+    OptionType,
+    Permissions,
+)
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.models import (
     Attachment,
@@ -416,26 +424,26 @@ def test_text_over_8000_characters_warns() -> None:
         Router().command(handler)
 
 
-def test_global_scope_always_sets_contexts() -> None:
+def test_contexts_and_install_types_reach_the_global_scope_only() -> None:
     router = Router()
+    defaults: CommandDefaults = {"contexts": [InteractionContextType.GUILD]}
 
     @router.command
     async def anywhere(ctx: object) -> None:
         pass
 
-    @router.command(guild_only=True)
-    async def guilds(ctx: object) -> None:
-        pass
-
-    @router.command(extra={"contexts": [0, 1, 2], "integration_types": [0, 1]})
+    @router.command(
+        contexts=[InteractionContextType.PRIVATE_CHANNEL],
+        integration_types=[ApplicationIntegrationType.USER_INSTALL],
+    )
     async def installed(ctx: object) -> None:
         pass
 
-    assert anywhere.payload("global")["contexts"] == [0, 1]
-    assert guilds.payload("global")["contexts"] == [0]
-    assert "contexts" not in guilds.payload("guild")
-    assert installed.payload("global")["contexts"] == [0, 1, 2]
-    assert installed.payload("guild")["integration_types"] == [0, 1]
+    assert not {"contexts", "integration_types"} & anywhere.payload("global").keys()
+    assert anywhere.payload("global", defaults)["contexts"] == [0]
+    assert installed.payload("global", defaults)["contexts"] == [2]
+    assert installed.payload("global")["integration_types"] == [1]
+    assert not {"contexts", "integration_types"} & installed.payload("guild").keys()
 
 
 def test_command_payload() -> None:
@@ -452,7 +460,6 @@ def test_command_payload() -> None:
         "options": [option(3, name="name")],
         "default_member_permissions": "268435456",
         "nsfw": True,
-        "contexts": [0, 1],
     }
 
 
@@ -462,7 +469,7 @@ def test_group_tree_payload_and_names() -> None:
         "role",
         "Manage roles",
         default_permissions=Permissions.MANAGE_ROLES,
-        guild_only=True,
+        contexts=[InteractionContextType.GUILD],
     )
     color = role.group("color", "Color roles")
 
@@ -522,7 +529,7 @@ def test_groups_nest_one_level_and_names_stay_unique() -> None:
         role.group("color", "Again")
 
 
-@pytest.mark.parametrize("setting", ["default_permissions", "guild_only", "nsfw"])
+@pytest.mark.parametrize("setting", ["default_permissions", "contexts", "nsfw"])
 def test_subcommands_cannot_set_top_level_settings(setting: str) -> None:
     group = Router().group("admin", "Admin tools")
     settings: dict[str, Any] = {setting: Permissions.ADMINISTRATOR}
@@ -769,14 +776,15 @@ def test_context_menu_payloads_carry_no_description_or_options() -> None:
     stats = router.user_command(
         "View Stats", default_permissions=Permissions.MANAGE_ROLES, nsfw=True
     )(on_member)
-    pin = router.message_command("Pin it", guild_only=True)(on_message)
+    pin = router.message_command("Pin it", contexts=[InteractionContextType.GUILD])(
+        on_message
+    )
 
     assert stats.payload("global") == {
         "type": 2,
         "name": "View Stats",
         "default_member_permissions": "268435456",
         "nsfw": True,
-        "contexts": [0, 1],
     }
     assert pin.payload("guild") == {
         "type": 3,
