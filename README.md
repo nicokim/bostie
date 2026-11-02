@@ -18,6 +18,8 @@ pip install path/to/bostie
 
 You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs)) and [CMake](https://cmake.org/download/). The install compiles the Rust core and libopus, which takes a few minutes.
 
+`bostie.__version__` is the installed version, and `python -m bostie` prints it with the Python and platform versions for a bug report.
+
 ## Goals
 
 - Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
