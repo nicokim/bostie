@@ -424,15 +424,7 @@ class Bot(Router):
                 self.application_id = int(application["id"])
                 await self._setup()
                 if self._auto_sync:
-                    self._remember_ids(
-                        await sync.sync_commands(
-                            http,
-                            self.application_id,
-                            [*self.commands.values(), *self.context_menus.values()],
-                            self._dev_guilds,
-                            defaults=self._command_defaults,
-                        )
-                    )
+                    await self._sync(always_put=False)
                 if resumed := gateway._load_sessions():
                     self._replaying |= resumed
                     user = await self.rest.users.fetch_current()
@@ -656,6 +648,9 @@ class Bot(Router):
 
     async def sync_commands(self) -> list[sync.SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""
+        return await self._sync(always_put=True)
+
+    async def _sync(self, *, always_put: bool) -> list[sync.SyncResult]:
         if self.application_id is None:
             raise StateError("sync_commands() needs a running bot")
         results = await sync.sync_commands(
@@ -664,7 +659,7 @@ class Bot(Router):
             [*self.commands.values(), *self.context_menus.values()],
             self._dev_guilds,
             defaults=self._command_defaults,
-            always_put=True,
+            always_put=always_put,
         )
         self._remember_ids(results)
         return results

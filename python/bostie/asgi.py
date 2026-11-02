@@ -4,7 +4,6 @@ from typing import Any
 
 import msgspec
 
-from bostie import sync
 from bostie._bridge import Bridge
 from bostie.bot import Bot, _resolve_token
 from bostie.client import _on_delivery
@@ -94,12 +93,7 @@ class ASGIApp:
         bot.user = bot.cache._current = await bot.rest.users.fetch_current()
         await bot._setup()
         if bot._auto_sync:
-            await sync.sync_commands(
-                bot.http,
-                application.id,
-                [*bot.commands.values(), *bot.context_menus.values()],
-                bot._dev_guilds,
-            )
+            await bot._sync(always_put=False)
 
     async def _lifespan(self, receive: Receive, send: Send) -> None:
         while True:
