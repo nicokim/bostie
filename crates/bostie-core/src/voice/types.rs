@@ -7,6 +7,7 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::error::CoreError;
+pub use crate::ids::Handle;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 
 pub const SAMPLE_RATE: u32 = 48_000;
@@ -205,6 +206,7 @@ pub struct SinkOptions {
     pub buffer: Duration,
     pub volume: f32,
     pub stall: StallPolicy,
+    pub after: Option<Handle>,
 }
 
 impl SinkOptions {
@@ -466,6 +468,7 @@ mod tests {
             buffer,
             volume,
             stall: StallPolicy::Hold,
+            after: None,
         }
     }
 

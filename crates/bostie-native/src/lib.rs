@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{
-    Application, ConnectRequest, DisconnectReason, Overflow, ReceiveOptions, ReceiveStall,
+    Application, ConnectRequest, DisconnectReason, Handle, Overflow, ReceiveOptions, ReceiveStall,
     SampleFormat, SourceSpec, StallPolicy,
 };
 use bostie_core::{
@@ -251,7 +251,9 @@ impl NativeCore {
         Ok(py.detach(|| voice.verification_code(GuildId::from(guild_id), UserId::from(user_id)))?)
     }
 
-    #[pyo3(signature = (guild_id, *, kind, rate, channels, sample, buffer, volume, stall))]
+    #[pyo3(signature = (
+        guild_id, *, kind, rate, channels, sample, buffer, volume, stall, after=None,
+    ))]
     #[expect(clippy::too_many_arguments)]
     fn voice_sink(
         &self,
@@ -263,8 +265,10 @@ impl NativeCore {
         buffer: f64,
         volume: f32,
         stall: Choice<StallPolicy>,
+        after: Option<u64>,
     ) -> Result<NativeSink> {
-        let options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
+        let mut options = voice::sink_options(kind, rate, channels, sample, buffer, volume, stall)?;
+        options.after = after.map(Handle::from);
         Ok(self
             .voice()?
             .open_sink(GuildId::from(guild_id), options)

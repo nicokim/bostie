@@ -132,6 +132,7 @@ impl Rig {
             buffer: Duration::from_secs(10),
             volume: 1.0,
             stall,
+            after: None,
         };
         let sink = Arc::new(
             Sink::new(

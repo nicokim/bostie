@@ -154,6 +154,7 @@ class VoiceCore(Protocol):
         buffer: float,
         volume: float,
         stall: SinkStall,
+        after: int | None,
     ) -> NativeSink: ...
     def voice_file(self, path: str) -> NativeSource: ...
     def voice_bytes(self, data: bytes, hint: str | None) -> NativeSource: ...
@@ -620,11 +621,18 @@ class VoiceConnection:
         format: Format = DEFAULT_PCM,
         *,
         volume: float = 1.0,
+        after: Sink | None = None,
         **options: Unpack[SinkOptions],
     ) -> Sink:
-        """Open a bounded writer whose audio is mixed into this connection."""
+        """Open a bounded writer whose audio is mixed into this connection.
+
+        With `after`, it stays silent until `after` closes, or plays out what was
+        written before its last drain().
+        """
         check_keys(options, SINK_OPTIONS, "options")
         self._check_live()
+        if after is not None and after._connection is not self:
+            raise ValueError("after must be a sink of this connection")
         buffer = options.get("buffer", self._settings.sink_buffer)
         stall = options.get("stall", self._settings.stall)
         pcm = DEFAULT_PCM if isinstance(format, Opus) else format
@@ -637,6 +645,7 @@ class VoiceConnection:
             buffer=buffer,
             volume=volume,
             stall=stall,
+            after=None if after is None or after.closed else after._handle,
         )
         sink = Sink(self, native, format, buffer=buffer, stall=stall, volume=volume)
         self._sinks[sink] = None

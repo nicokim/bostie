@@ -54,6 +54,7 @@ struct Queue {
     passthrough: bool,
     playing: bool,
     flushed: bool,
+    waiting: bool,
     stats: SinkStats,
 }
 
@@ -101,6 +102,7 @@ impl Sink {
             producer: Mutex::new(producer),
             queue: Mutex::new(Queue {
                 volume: options.volume,
+                waiting: options.after.is_some(),
                 ..Queue::default()
             }),
         })
@@ -319,6 +321,27 @@ impl Sink {
         }
     }
 
+    pub(crate) fn waits_for(&self) -> Option<Handle> {
+        self.options.after.filter(|_| self.queue.lock().waiting)
+    }
+
+    pub(crate) fn played_out(&self) -> bool {
+        let queue = self.queue.lock();
+        !queue.waiting && queue.flushed && queue.queued == 0
+    }
+
+    pub(crate) fn release(&self) {
+        let mut queue = self.queue.lock();
+        queue.waiting = false;
+        let consumed = queue.stats.consumed;
+        while let Some(marker) = queue.markers.front().copied()
+            && marker.position <= consumed
+        {
+            queue.markers.pop_front();
+            self.resolve(marker.id, true);
+        }
+    }
+
     pub fn note_passthrough(&self, passing: bool) {
         let mut queue = self.queue.lock();
         queue.passthrough = passing;
@@ -339,7 +362,7 @@ impl Sink {
         let id = queue.next_marker;
         queue.next_marker += 1;
         let position = queue.written;
-        if position <= queue.stats.consumed {
+        if position <= queue.stats.consumed && !queue.waiting {
             let played = !mem::take(&mut queue.tainted);
             self.resolve(id, played);
         } else {
@@ -471,14 +494,18 @@ pub(crate) mod tests {
             buffer_ms: u64,
             stall: StallPolicy,
         ) -> Sink {
-            let id = Handle::from(self.next);
-            self.next += 1;
-            let options = SinkOptions {
+            self.sink_with(SinkOptions {
                 format,
                 buffer: Duration::from_millis(buffer_ms),
                 volume: 1.0,
                 stall,
-            };
+                after: None,
+            })
+        }
+
+        pub(crate) fn sink_with(&mut self, options: SinkOptions) -> Sink {
+            let id = Handle::from(self.next);
+            self.next += 1;
             Sink::new(id, options, Arc::clone(&self.inbox)).unwrap()
         }
 

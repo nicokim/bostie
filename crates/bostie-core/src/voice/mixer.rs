@@ -68,6 +68,9 @@ impl Mixer {
 
     pub(crate) fn hold(&mut self, sinks: &[Arc<Sink>]) {
         for sink in sinks {
+            if sink.waits_for().is_some() {
+                continue;
+            }
             if sink.options().stall == StallPolicy::Drop
                 && let Some(strip) = self.strips.get_mut(&sink.id())
             {
@@ -80,6 +83,9 @@ impl Mixer {
 
     pub(crate) fn discard(&mut self, sinks: &[Arc<Sink>]) {
         for sink in sinks {
+            if self.waiting(sink, sinks) {
+                continue;
+            }
             let strip = self.strip(sink);
             if strip.gather(sink) && sink.options().format == SinkFormat::Opus {
                 strip.fill(sink, false);
@@ -92,6 +98,9 @@ impl Mixer {
         let mut live = 0;
         let mut solo = None;
         for sink in sinks {
+            if self.waiting(sink, sinks) {
+                continue;
+            }
             if self.strip(sink).gather(sink) {
                 live += 1;
                 solo = Some(sink);
@@ -131,6 +140,22 @@ impl Mixer {
     pub(crate) fn silence(&mut self) -> Option<&[u8]> {
         self.sum.fill(0.0);
         self.encode()
+    }
+
+    fn waiting(&self, sink: &Sink, sinks: &[Arc<Sink>]) -> bool {
+        let Some(after) = sink.waits_for() else {
+            return false;
+        };
+        let done = sinks
+            .iter()
+            .find(|previous| previous.id() == after)
+            .is_none_or(|previous| {
+                previous.played_out() && !self.strips.get(&after).is_some_and(|strip| strip.live)
+            });
+        if done {
+            sink.release();
+        }
+        !done
     }
 
     fn strip(&mut self, sink: &Sink) -> &mut Strip {
@@ -282,7 +307,10 @@ mod tests {
     use super::*;
     use crate::voice::codec::tests::{packet, settings};
     use crate::voice::sink::tests::{Fixture, frames_of, stereo_48k};
-    use crate::voice::types::SILENCE_FRAME;
+    use std::time::Duration;
+
+    use crate::inbox::Delivery;
+    use crate::voice::types::{SILENCE_FRAME, SinkOptions};
 
     fn opus_sink(fixture: &mut Fixture) -> Arc<Sink> {
         Arc::new(fixture.sink(SinkFormat::Opus, 1_000, StallPolicy::Hold))
@@ -292,6 +320,16 @@ mod tests {
         let sink = Arc::new(fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold));
         sink.write(&frames_of(value, frames)).unwrap();
         sink
+    }
+
+    fn pcm_after(fixture: &mut Fixture, previous: &Sink) -> Arc<Sink> {
+        Arc::new(fixture.sink_with(SinkOptions {
+            format: stereo_48k(),
+            buffer: Duration::from_secs(1),
+            volume: 1.0,
+            stall: StallPolicy::Hold,
+            after: Some(previous.id()),
+        }))
     }
 
     fn consumed(sink: &Sink) -> u64 {
@@ -423,6 +461,53 @@ mod tests {
     }
 
     #[test]
+    fn a_sink_after_another_starts_on_the_tick_after_it_played_out() {
+        let mut fixture = Fixture::new();
+        let first = pcm_sink(&mut fixture, 0.25, 1_920);
+        first.flush().unwrap();
+        let second = pcm_after(&mut fixture, &first);
+        let (start, _) = second.mark().unwrap();
+        second.write(&frames_of(0.5, 1_920)).unwrap();
+        let sinks = [Arc::clone(&first), Arc::clone(&second)];
+        let mut mixer = Mixer::new(settings()).unwrap();
+
+        let mut heard = Vec::new();
+        let mut started = Vec::new();
+        for _ in 0..4 {
+            mixer.mix(&sinks).unwrap();
+            heard.push(mixer.sum[0]);
+            started.push(fixture.inbox.drain().iter().any(|delivery| {
+                matches!(delivery, Delivery::VoiceMarker { handle, marker, played: true }
+                    if *handle == second.id() && *marker == start)
+            }));
+        }
+
+        assert_eq!(heard, [0.25, 0.25, 0.5, 0.5]);
+        assert_eq!(started, [false, false, true, false]);
+    }
+
+    #[test]
+    fn a_sink_after_an_open_unflushed_one_waits_until_it_closes() {
+        let mut fixture = Fixture::new();
+        let first = pcm_sink(&mut fixture, 0.25, 960);
+        let second = pcm_after(&mut fixture, &first);
+        second.write(&frames_of(0.5, 960)).unwrap();
+        let mut mixer = Mixer::new(settings()).unwrap();
+        mixer
+            .mix(&[Arc::clone(&first), Arc::clone(&second)])
+            .unwrap();
+
+        let dry = mixer
+            .mix(&[Arc::clone(&first), Arc::clone(&second)])
+            .is_none();
+        first.close();
+        mixer.mix(std::slice::from_ref(&second)).unwrap();
+
+        assert!(dry);
+        assert_eq!(mixer.sum[0], 0.5);
+    }
+
+    #[test]
     fn a_volume_change_ramps_linearly_over_one_frame() {
         let mut fixture = Fixture::new();
         let sinks = [pcm_sink(&mut fixture, 0.5, 1_920)];
@@ -525,7 +610,7 @@ mod tests {
         assert_eq!(consumed(&pcm), 1_920);
         assert!(fixture.inbox.drain().iter().any(|delivery| matches!(
             delivery,
-            crate::inbox::Delivery::VoiceMarker { marker: id, played: true, .. } if *id == marker
+            Delivery::VoiceMarker { marker: id, played: true, .. } if *id == marker
         )));
         assert!(mixer.mix(&sinks).is_none());
     }

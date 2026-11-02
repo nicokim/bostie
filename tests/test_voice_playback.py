@@ -101,8 +101,12 @@ class FakeSink:
         buffer: float,
         volume: float,
         stall: str,
+        after: "FakeSink | None" = None,
     ) -> None:
         self.vc = vc
+        self.born = vc.clock.ticks + 1
+        self.after = after
+        self.flushed = False
         self.format = format
         self.buffer = buffer
         self.volume = volume
@@ -136,6 +140,7 @@ class FakeSink:
             await asyncio.shield(self.room)
         self.queue.append((self.written, bytes(data)))
         self.written += 1
+        self.flushed = False
 
     def mark(self) -> FakeMarker:
         if self.closed:
@@ -151,6 +156,7 @@ class FakeSink:
         self.drains += 1
         if self.closed:
             return False
+        self.flushed = True
         return await self.mark()
 
     def clear(
@@ -191,8 +197,19 @@ class FakeSink:
     def stats(self) -> FakeStats:
         return FakeStats(self.playhead * FRAME)
 
+    def waiting(self) -> bool:
+        after = self.after
+        if after is None:
+            return False
+        playing = bool(after.ticks) and after.ticks[-1] is not None
+        if after.closed or (after.flushed and not after.queue and not playing):
+            self.after = None
+            self.resolve()
+            return False
+        return True
+
     def pull(self) -> None:
-        if not self.queue or (self.vc.held and self.stall == "hold"):
+        if self.waiting() or not self.queue or (self.vc.held and self.stall == "hold"):
             self.ticks.append(None)
             return
         index, data = self.queue.popleft()
@@ -212,6 +229,8 @@ class FakeSink:
                 marker.played = False
 
     def resolve(self) -> None:
+        if self.after is not None:
+            return
         for marker in [m for m in self.markers if m.index <= self.playhead]:
             self.markers.remove(marker)
             if not marker.future.done():
@@ -241,12 +260,14 @@ class FakeConnection:
         format: Format = DEFAULT_PCM,
         *,
         volume: float = 1.0,
+        after: FakeSink | None = None,
         **options: Unpack[SinkOptions],
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
             raise VoiceNotConnected("the voice connection has ended")
         buffer = options.get("buffer", 0.2)
-        sink = FakeSink(self, format, buffer, volume, options.get("stall", "hold"))
+        stall = options.get("stall", "hold")
+        sink = FakeSink(self, format, buffer, volume, stall, after)
         self.sinks.append(sink)
         self.clock.sinks.append(sink)
         return sink
@@ -644,17 +665,47 @@ def test_seek_after_the_feeder_moved_on_rewrites_the_next_head() -> None:
     run(scenario)
 
 
-def test_a_format_change_drains_the_sink_and_opens_a_new_one() -> None:
+def test_a_format_change_opens_a_sink_that_starts_as_the_last_one_ends() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
         q = queue(vc)
         add(q, FakeSource(clock, "a", 10))
         packets = add(q, FakeSource(clock, "b", 10, format=Opus()))
+        add(q, FakeSource(clock, "c", 10))
         await clock.until(lambda: q.now is packets)
         assert packets.passthrough
         await q.join()
-        assert [sink.format for sink in vc.sinks] == [PCM(), Opus()]
-        assert [sink.sent for sink in vc.sinks] == [frames("a", 10), frames("b", 10)]
+        assert [sink.format for sink in vc.sinks] == [PCM(), Opus(), PCM()]
+        assert [sink.after for sink in vc.sinks] == [None] * 3
+        heard: dict[int, list[bytes]] = {}
+        for sink in vc.sinks:
+            for tick, data in enumerate(sink.ticks, sink.born):
+                if data is not None:
+                    heard.setdefault(tick, []).append(data)
+        ticks = sorted(heard)
+        assert ticks == list(range(ticks[0], ticks[0] + 30))
+        assert vc.sinks[1].born < ticks[0] + 10
+        assert [heard[tick] for tick in ticks] == [
+            [chunk] for chunk in frames("a", 10) + frames("b", 10) + frames("c", 10)
+        ]
+        assert [sink.closed for sink in vc.sinks] == [True, True, True]
+
+    run(scenario)
+
+
+def test_skip_and_stop_reach_a_track_still_playing_on_the_last_sink() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        first = add(q, FakeSource(clock, "a", 10))
+        second = add(q, FakeSource(clock, "b", 50, format=Opus()))
+        await clock.until(lambda: len(vc.sinks) == 2 and clock.ticks == 3)
+        q.skip()
+        assert await second.started()
+        q.stop()
+        assert [reason(first), reason(second)] == [EndReason.STOPPED] * 2
+        assert names(vc.sinks[0].sent) == "aaa"
+        assert names(vc.sinks[1].sent) == "b"
         assert [sink.closed for sink in vc.sinks] == [True, True]
 
     run(scenario)

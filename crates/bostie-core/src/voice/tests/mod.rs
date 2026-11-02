@@ -617,6 +617,7 @@ impl Harness {
                     buffer: Duration::from_secs(10),
                     volume: 1.0,
                     stall,
+                    after: None,
                 },
             )
             .unwrap()

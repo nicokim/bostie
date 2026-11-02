@@ -318,6 +318,7 @@ async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
                 buffer: Duration::from_secs(10),
                 volume: 1.0,
                 stall: StallPolicy::Hold,
+                after: None,
             },
         )
         .unwrap();

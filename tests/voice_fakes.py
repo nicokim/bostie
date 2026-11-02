@@ -416,6 +416,7 @@ class FakeCore:
         buffer: float,
         volume: float,
         stall: SinkStall,
+        after: int | None,
     ) -> FakeSink:
         self._record(
             "voice_sink",
@@ -427,6 +428,7 @@ class FakeCore:
             buffer=buffer,
             volume=volume,
             stall=stall,
+            after=after,
         )
         sink = FakeSink(
             self,

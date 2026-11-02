@@ -153,6 +153,7 @@ async fn a_stopped_lane_ends_its_connection_and_spares_the_others() {
                 buffer: Duration::from_secs(10),
                 volume: 1.0,
                 stall: StallPolicy::Hold,
+                after: None,
             },
         )
         .unwrap();

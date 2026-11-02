@@ -368,6 +368,7 @@ pub(crate) fn sink_options(
         buffer: seconds("buffer", buffer)?,
         volume,
         stall: stall.0,
+        after: None,
     })
 }
 

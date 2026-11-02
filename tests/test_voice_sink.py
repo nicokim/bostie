@@ -5,7 +5,15 @@ from typing import Any
 
 import pytest
 from fakediscord import settle
-from voice_fakes import FakeBot, FakeSink, connected, disconnected, run
+from voice_fakes import (
+    ELSEWHERE,
+    OTHER_GUILD_ID,
+    FakeBot,
+    FakeSink,
+    connected,
+    disconnected,
+    run,
+)
 
 from bostie import voice
 from bostie.errors import BufferFull, SinkClosed
@@ -42,6 +50,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "buffer": 0.4,
                 "volume": 1.0,
                 "stall": "drop",
+                "after": None,
             },
             {
                 "kind": "pcm",
@@ -51,6 +60,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "buffer": 0.5,
                 "volume": 0.3,
                 "stall": "hold",
+                "after": None,
             },
             {
                 "kind": "opus",
@@ -60,6 +70,7 @@ def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
                 "buffer": 0.4,
                 "volume": 1.0,
                 "stall": "drop",
+                "after": None,
             },
         ]
 
@@ -195,6 +206,25 @@ def test_ending_the_connection_closes_its_sinks_and_frees_their_waiters() -> Non
         assert await marker is False
         assert sink.closed
         assert bot.voice._handles == {}
+
+    run(scenario)
+
+
+def test_a_sink_after_another_passes_its_handle_unless_that_one_closed() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot)
+        first = vc.sink()
+        vc.sink(after=first)
+        first.close()
+        vc.sink(after=first)
+        assert [call[2]["after"] for call in bot.calls("voice_sink")] == [
+            None,
+            bot.core.sinks[0].id,
+            None,
+        ]
+        other = await connected(bot, ELSEWHERE, OTHER_GUILD_ID)
+        with pytest.raises(ValueError, match="this connection"):
+            other.sink(after=vc.sink())
 
     run(scenario)
 

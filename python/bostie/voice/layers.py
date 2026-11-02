@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import math
 import os
@@ -184,6 +185,7 @@ class _Player:
         self._options = options
         self._entries: list[_Entry] = []
         self._sink: Sink | None = None
+        self._retiring: set[Sink] = set()
         self._format: Format | None = None
         self._gate = asyncio.Event()
         self._gate.set()
@@ -214,8 +216,9 @@ class _Player:
     @volume.setter
     def volume(self, volume: float) -> None:
         self._volume = volume
-        if self._sink is not None:
-            self._sink.volume = volume
+        for sink in (*self._retiring, self._sink):
+            if sink is not None:
+                sink.volume = volume
 
     def is_current(self, entry: _Entry) -> bool:
         return bool(self._entries) and self._entries[0] is entry
@@ -311,6 +314,8 @@ class _Player:
             self._end(entry, EndReason.STOPPED)
         if sink is not None:
             sink.clear()
+        for retiring in tuple(self._retiring):
+            retiring.close()
         self._settle()
 
     async def join(self) -> None:
@@ -330,8 +335,9 @@ class _Player:
             other.start = other.end = None
         entry.base = position
         entry.exhausted = False
-        if entry.sink is not None:
-            entry.sink.clear()
+        for sink in {entry.sink, self._sink}:
+            if sink is not None:
+                sink.clear()
         try:
             await asyncio.shield(moving)
         except Exception as error:
@@ -470,7 +476,7 @@ class _Player:
             if error is not None:
                 raise error
             entry.opened = True
-        sink = await self._sink_for(entry.source.format)
+        sink = self._sink_for(entry.source.format)
         entry.sink = sink
         entry.start = sink.mark()
         spawn(self._tasks, self._begin(entry, sink, entry.start))
@@ -492,17 +498,26 @@ class _Player:
         entry.end = sink.mark()
         spawn(self._tasks, self._finish(entry, entry.end))
 
-    async def _sink_for(self, format: Format) -> "Sink":
+    def _sink_for(self, format: Format) -> "Sink":
         if self._sink is not None and format == self._format:
             return self._sink
-        if self._sink is not None:
-            previous = self._sink
-            await self._drain(previous)
-            self._sink = None
-            previous.close()
-        self._sink = self.vc.sink(format, volume=self._volume, **self._options)
+        previous = self._sink
+        self._sink = self.vc.sink(
+            format, volume=self._volume, after=previous, **self._options
+        )
         self._format = format
+        if previous is not None:
+            self._retiring.add(previous)
+            spawn(self._tasks, self._retire(previous))
         return self._sink
+
+    async def _retire(self, sink: "Sink") -> None:
+        try:
+            with contextlib.suppress(SinkClosed):
+                await sink.drain()
+        finally:
+            sink.close()
+            self._retiring.discard(sink)
 
     async def _drain(self, sink: "Sink") -> None:
         if not await sink.drain() and sink.closed:
@@ -514,11 +529,11 @@ class _Player:
             entry.began.set_result(True)
 
     async def _finish(self, entry: _Entry, marker: "Marker") -> None:
-        await marker
+        played = await marker
         if entry.end is not marker or entry.done.done():
             return
         sink = entry.sink
-        if sink is not None and sink is self._sink and sink.closed:
+        if not played and sink is not None and sink.closed:
             self._lost()
             return
         self._end(entry, EndReason.FINISHED)
@@ -573,7 +588,7 @@ class _Player:
 
 
 class Queue:
-    """Plays tracks back to back, gapless while consecutive formats match."""
+    """Plays tracks back to back without gaps."""
 
     def __init__(
         self,
