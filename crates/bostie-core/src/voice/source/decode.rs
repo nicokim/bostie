@@ -21,6 +21,7 @@ use symphonia::core::units::{Time, TimeBase, Timestamp};
 
 use crate::voice::codec;
 use crate::voice::convert::Converter;
+use crate::voice::source::hls::HlsMedia;
 use crate::voice::source::http::HttpMedia;
 use crate::voice::source::{SourceInfo, SourceKind, Tags};
 use crate::voice::types::{CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, SampleFormat};
@@ -112,16 +113,21 @@ impl Decoder {
             }
             Input::Url(mut media) => {
                 media.connect()?;
-                if let Some(extension) = media.extension() {
-                    hint.with_extension(extension);
-                    described = Some(extension.to_owned());
+                if media.is_playlist() {
+                    let stream: Box<dyn MediaSource> = Box::new(HlsMedia::open(*media)?);
+                    (stream, false)
+                } else {
+                    if let Some(extension) = media.extension() {
+                        hint.with_extension(extension);
+                        described = Some(extension.to_owned());
+                    }
+                    if let Some(mime) = media.content_type() {
+                        hint.mime_type(mime);
+                        described = Some(mime.to_owned());
+                    }
+                    let seekable = media.is_seekable();
+                    (media, seekable)
                 }
-                if let Some(mime) = media.content_type() {
-                    hint.mime_type(mime);
-                    described = Some(mime.to_owned());
-                }
-                let seekable = media.is_seekable();
-                (media, seekable)
             }
         };
         let stream = MediaSourceStream::new(media, MediaSourceStreamOptions::default());

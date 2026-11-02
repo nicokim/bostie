@@ -28,6 +28,8 @@ The wait applies only to a server change. A first connect and a move to another 
 
 `voice.Url(url, headers={...})` streams a direct media URL over HTTP and decodes it in Rust. When the connection drops, it reconnects up to three times in a row, after 0.5, 1 and 2 s. A server that takes range requests continues from the byte where it broke; a stream with no length, such as a radio station, continues from its live edge. A sized file on a server without range requests cannot continue, so its track ends with `EndReason.ERROR`, as it does once the three tries fail. A server that sends no length and ends its response by closing the connection looks the same whether it finished or dropped, so that track ends `FINISHED`.
 
+A URL ending in `.m3u8`, or served as an HLS playlist, plays as HLS. A master playlist plays its audio rendition, or its best audio-only variant, or else its smallest one. Segments may be MPEG-TS carrying AAC or MP3, packed AAC or MP3, or fragmented MP4. A live playlist starts three segments from its end and reloads every half target duration until it ends. Encrypted streams and byte ranges are refused with `EndReason.ERROR`, and an HLS track cannot seek.
+
 bostie does not extract media from web pages. A tool such as yt-dlp can: pass the direct URL it finds, with the HTTP headers it says that URL needs, to `voice.Url`.
 
 ## Voice messages

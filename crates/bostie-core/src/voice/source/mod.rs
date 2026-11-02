@@ -1,4 +1,5 @@
 pub(crate) mod decode;
+pub(crate) mod hls;
 pub(crate) mod http;
 pub(crate) mod waveform;
 

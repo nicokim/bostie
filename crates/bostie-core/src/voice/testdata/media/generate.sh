@@ -22,4 +22,5 @@ render "$tone:s=24000" -c:a libmp3lame -b:a 32k -id3v2_version 3 -metadata title
 render "0|0|$tone|$hum|0|0:c=5.1:s=8000" -c:a flac -sample_fmt s16 tone-5.1.flac
 render "0|0|$tone|$hum|0|0:c=5.1:s=48000" -c:a libopus -b:a 24k tone-5.1.opus
 render "$tone|$tone:s=44100" -c:a aac -b:a 32k tone.m4a
+render "$tone|$tone:s=48000" -c:a aac -b:a 32k -f mpegts tone.ts
 render "$tone:s=48000" -c:a ac3 -b:a 64k tone-ac3.mka

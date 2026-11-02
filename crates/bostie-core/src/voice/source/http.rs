@@ -72,6 +72,23 @@ struct Body {
     current: Bytes,
 }
 
+pub(crate) struct Fetcher {
+    runtime: Handle,
+    client: reqwest::Client,
+    headers: HeaderMap,
+}
+
+impl Fetcher {
+    pub(crate) fn get(&self, url: &Url) -> io::Result<Bytes> {
+        let host = url.host_str().unwrap_or_default().to_owned();
+        let request = self.client.get(url.clone()).headers(self.headers.clone());
+        self.runtime.block_on(async {
+            let response = respond(request, false, &host).await?;
+            response.bytes().await.map_err(failure)
+        })
+    }
+}
+
 struct Head {
     length: Option<u64>,
     ranges: bool,
@@ -136,6 +153,29 @@ impl HttpMedia {
     pub(crate) fn extension(&self) -> Option<&str> {
         let name = self.url.path_segments()?.next_back()?;
         name.rsplit_once('.').map(|(_, extension)| extension)
+    }
+
+    pub(crate) fn is_playlist(&self) -> bool {
+        self.extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("m3u8"))
+            || self.content_type().is_some_and(|mime| {
+                matches!(
+                    mime,
+                    "application/vnd.apple.mpegurl"
+                        | "application/x-mpegurl"
+                        | "audio/mpegurl"
+                        | "audio/x-mpegurl"
+                )
+            })
+    }
+
+    pub(crate) fn into_fetcher(self) -> (Fetcher, Url) {
+        let fetcher = Fetcher {
+            runtime: self.runtime,
+            client: self.client,
+            headers: self.headers,
+        };
+        (fetcher, self.url)
     }
 
     fn request(&mut self) -> io::Result<Head> {
