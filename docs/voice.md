@@ -221,10 +221,5 @@ A bot that a moderator deafened hears nothing: Discord stops sending it audio un
 Setting the voice channel status is one request. The bot needs the Set Voice Channel Status permission:
 
 ```python
-await bot.http.request(
-    "PUT",
-    "/channels/{channel_id}/voice-status",
-    channel_id=vc.channel_id,
-    json={"status": "Recording"},
-)
+await bot.rest.channels.set_voice_status(vc.channel_id, status="Recording")
 ```
