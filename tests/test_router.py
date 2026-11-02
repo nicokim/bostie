@@ -4,7 +4,14 @@ from typing import Any
 
 import pytest
 
-from bostie import Bot, CommandType, Message, User
+from bostie import (
+    Bot,
+    CommandType,
+    InteractionContextType,
+    Message,
+    Permissions,
+    User,
+)
 from bostie.errors import CommandDefinitionError, StateError
 from bostie.events import MessageCreate, MessageUpdate, RawEvent
 from bostie.router import Listener, Router
@@ -291,3 +298,29 @@ def test_walk_commands_yields_leaves_in_order() -> None:
     remove = role.command(name="remove")(command)
 
     assert list(router.walk_commands()) == [first, color_set, remove]
+
+
+def test_router_defaults_apply_where_a_command_or_route_sets_nothing() -> None:
+    bot = Bot(auto_defer=2.5)
+    admin = Router(
+        ephemeral=True,
+        auto_defer=None,
+        default_permissions=Permissions.ADMINISTRATOR,
+        contexts=[InteractionContextType.GUILD],
+    )
+    inner = Router(nsfw=True)
+    admin.include(inner)
+    bot.include(admin)
+    purge = inner.command(name="purge")(command)
+    ping = inner.command(name="ping", ephemeral=False, auto_defer=1.0)(command)
+    route = inner.on_component("confirm")(component)
+
+    assert (purge.ephemeral, purge.auto_defer) == (True, None)
+    assert (ping.ephemeral, ping.auto_defer) == (False, 1.0)
+    assert (route.ephemeral, route.auto_defer) == (True, None)
+    payload = purge.payload("global")
+    assert (payload["default_member_permissions"], payload["nsfw"]) == ("8", True)
+    assert payload["contexts"] == [0]
+    unknown: dict[str, Any] = {"checks": []}
+    with pytest.raises(TypeError, match="checks"):
+        Router(**unknown)

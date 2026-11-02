@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     TypeAliasType,
+    TypedDict,
     Union,
     Unpack,
     get_args,
@@ -32,10 +33,16 @@ from bostie.commands import (
     _python_name,
 )
 from bostie.custom_id import ComponentRoute, RouteSettings
-from bostie.enums import CommandType
+from bostie.enums import (
+    ApplicationIntegrationType,
+    CommandType,
+    InteractionContextType,
+    Permissions,
+)
 from bostie.errors import CommandDefinitionError, ErrorHook, StateError
 from bostie.events import BotEvent, Event, RawEvent
 from bostie.hooks import ErrorHooks
+from bostie.models.base import check_keys
 from bostie.tasks import Task, TaskCallback
 from bostie.voice.events import VoiceEvent
 
@@ -64,11 +71,31 @@ class _Registry[K, V]:
     taken: Callable[[K], Exception]
 
 
+class RouterDefaults(TypedDict, total=False):
+    """What a router's commands and routes use where they set nothing themselves.
+
+    A command or route looks at its own settings, then its routers' from the
+    nearest out, then the bot's.
+    """
+
+    ephemeral: bool
+    auto_defer: float | None
+    default_permissions: Permissions
+    nsfw: bool
+    contexts: Iterable[InteractionContextType]
+    integration_types: Iterable[ApplicationIntegrationType]
+
+
+ROUTER_DEFAULTS = RouterDefaults.__optional_keys__
+
+
 class Router(ErrorHooks):
     """Commands, listeners, routes and error hooks; a bot is a router."""
 
-    def __init__(self) -> None:
+    def __init__(self, **defaults: Unpack[RouterDefaults]) -> None:
         super().__init__()
+        check_keys(defaults, ROUTER_DEFAULTS, "defaults")
+        self.defaults = defaults
         self.parent: Router | None = None
         self.commands: dict[str, Command | Group] = {}
         self.context_menus: dict[

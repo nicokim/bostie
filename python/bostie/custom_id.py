@@ -3,7 +3,7 @@ from collections.abc import Callable, Coroutine, Iterable
 from functools import cache
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
-from bostie.commands import Check
+from bostie.commands import Check, _auto_defer, _inherited
 from bostie.hooks import ErrorHooks
 from bostie.models.base import check_keys
 
@@ -58,7 +58,6 @@ class ComponentRoute[**P](ErrorHooks):
         self.template = template
         self.handler = handler
         self.router = router
-        self.ephemeral = settings.get("ephemeral", False)
         self.checks = tuple(settings.get("checks", ()))
         self._settings = settings
         self.names = names
@@ -69,9 +68,14 @@ class ComponentRoute[**P](ErrorHooks):
         return self.handler(*args, **kwargs)
 
     @property
+    def ephemeral(self) -> bool:
+        """Whether answers are ephemeral unless a call says; set here or on a router."""
+        return bool(_inherited(self._settings, "ephemeral", self.router, False))
+
+    @property
     def auto_defer(self) -> float | None:
         """Seconds before an unanswered use is deferred; the bot's unless set here."""
-        return self._settings.get("auto_defer", self.router.bot.auto_defer)
+        return _auto_defer(self._settings, self.router)
 
     def id(self, **params: str | int) -> str:
         """Build a custom_id that fits in 100 characters and parses back to `params`."""

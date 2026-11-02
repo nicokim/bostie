@@ -372,26 +372,26 @@ class _Registered(ErrorHooks):
         self.type = type
         self.name = name
         self.router = router
+        self._settings = settings
         self.checks = tuple(settings.get("checks", ()))
         self.name_localizations = dict(settings.get("name_localizations", {}))
         for localized in self.name_localizations.values():
             _check_name(localized, spaced=type is not CommandType.CHAT_INPUT)
-        top: _TopLevelSettings = cast("_TopLevelSettings", settings)
-        self.default_permissions = top.get("default_permissions")
-        self.nsfw = top.get("nsfw", False)
-        self.guilds = tuple(top.get("guilds", ()))
-        self.places = CommandDefaults()
-        if "contexts" in top:
-            self.places["contexts"] = tuple(top["contexts"])
-        if "integration_types" in top:
-            self.places["integration_types"] = tuple(top["integration_types"])
+        self.guilds = tuple(cast("_TopLevelSettings", settings).get("guilds", ()))
         self.extra = dict(settings.get("extra", {}))
+
+    @property
+    def ephemeral(self) -> bool:
+        """Whether answers are ephemeral unless a call says; set here or on a router."""
+        return bool(_inherited(self._settings, "ephemeral", self.router, False))
 
     def payload(
         self, scope: Scope, defaults: CommandDefaults | None = None
     ) -> dict[str, Any]:
         """The JSON that registers this top-level command in the given scope."""
-        permissions = self.default_permissions
+        permissions = _inherited(
+            self._settings, "default_permissions", self.router, None
+        )
         payload: dict[str, Any] = {
             "type": self.type,
             "name": self.name,
@@ -400,14 +400,15 @@ class _Registered(ErrorHooks):
             "default_member_permissions": None
             if permissions is None
             else str(permissions.value),
-            "nsfw": self.nsfw,
+            "nsfw": _inherited(self._settings, "nsfw", self.router, False),
         }
         if scope == "global":
-            places = (defaults or CommandDefaults()) | self.places
-            if "contexts" in places:
-                payload["contexts"] = list(places["contexts"])
-            if "integration_types" in places:
-                payload["integration_types"] = list(places["integration_types"])
+            for key in ("contexts", "integration_types"):
+                found = _inherited(self._settings, key, self.router, None)
+                if found is None and defaults is not None:
+                    found = cast("Mapping[str, Any]", defaults).get(key)
+                if found is not None:
+                    payload[key] = list(found)
         return payload | self.extra
 
     def _fields(self) -> dict[str, Any]:
@@ -494,8 +495,6 @@ class Command(_Node):
         except CommandDefinitionError as error:
             raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
         self.callback = callback
-        self.ephemeral = settings.get("ephemeral", False)
-        self._settings = settings
         self.autocompletes: dict[str, AutocompleteCallback] = {
             parameter.name: parameter.autocomplete
             for parameter in self._parameters
@@ -675,8 +674,6 @@ class ContextMenuCommand(_Registered):
             raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
         super().__init__(type, name, router=router, settings=settings)
         self.callback = callback
-        self.ephemeral = settings.get("ephemeral", False)
-        self._settings = settings
 
     @property
     def auto_defer(self) -> float | None:
@@ -729,8 +726,6 @@ class EntryPointCommand(_Registered):
             settings.get("description_localizations", {})
         )
         self.callback = callback
-        self.ephemeral = settings.get("ephemeral", False)
-        self._settings = settings
 
     @property
     def auto_defer(self) -> float | None:
@@ -829,13 +824,26 @@ def _check_takes_only_the_context(callback: CommandCallback) -> None:
             raise CommandDefinitionError("the function must take only the context")
 
 
-def _auto_defer(
-    settings: SubcommandSettings | ContextMenuSettings | EntryPointSettings,
-    router: "Router",
-) -> float | None:
-    if "auto_defer" in settings:
-        return settings["auto_defer"]
+def _auto_defer(settings: Mapping[str, object], router: "Router") -> float | None:
+    for scope in _scopes(settings, router):
+        if "auto_defer" in scope:
+            return cast("float | None", scope["auto_defer"])
     return router.bot.auto_defer
+
+
+def _inherited(
+    settings: Mapping[str, object], key: str, router: "Router", fallback: object
+) -> Any:
+    for scope in _scopes(settings, router):
+        if key in scope:
+            return scope[key]
+    return fallback
+
+
+def _scopes(
+    settings: Mapping[str, object], router: "Router"
+) -> list[Mapping[str, object]]:
+    return [settings, *(router.defaults for router in router._chain())]
 
 
 def _parameter(parameter: inspect.Parameter, hints: Mapping[str, object]) -> _Parameter:
