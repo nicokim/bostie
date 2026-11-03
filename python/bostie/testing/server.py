@@ -130,10 +130,10 @@ class FakeDiscord(VoiceGateway):
         self,
         *,
         token: str = FAKE_TOKEN,
-        heartbeat_interval: int = 500,
+        heartbeat_interval: int = 41_250,
         compress: bool = False,
         voice: bool = False,
-        voice_heartbeat_interval: float = 500.0,
+        voice_heartbeat_interval: float = 13_750.0,
         voice_order: Order = "state_first",
     ) -> None:
         self._zstd_stream = _zstd_streams() if compress else None

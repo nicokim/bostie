@@ -89,7 +89,7 @@ def test_handshake_sends_wire_ordered_frames_and_acks_until_held() -> None:
             after_held_beat = await receive(ws)
 
         assert hello.startswith(
-            '{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":500,'
+            '{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":41250,'
         )
         assert (ready["t"], ready["s"], ready["op"]) == ("READY", 1, 0)
         assert ready["d"]["user"] == fake.bot_user
