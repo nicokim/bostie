@@ -154,7 +154,7 @@ async def _sync_scope(
     if not (result.added or result.removed or result.changed or always_put):
         log.info("commands up to date (%s)", label)
         return replace(result, ids=slash_ids(remote))
-    body = local + passthrough
+    body = _keeping_entry_point(local, ours.values()) + passthrough
     try:
         stored = await http.request("PUT", route, json=body, **params)
     except BadRequest as error:
@@ -253,6 +253,16 @@ def _passthrough(command: Mapping[str, Any]) -> dict[str, Any]:
     ):
         kept["contexts"] = [InteractionContextType.GUILD]
     return kept
+
+
+def _keeping_entry_point(
+    local: list[dict[str, Any]], remote: Iterable[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    entry = CommandType.PRIMARY_ENTRY_POINT
+    existing = next((c["id"] for c in remote if _key(c)[0] == entry), None)
+    if existing is None:
+        return local
+    return [c | {"id": existing} if _key(c)[0] == entry else c for c in local]
 
 
 def _key(command: Mapping[str, Any]) -> tuple[int, str]:

@@ -321,7 +321,7 @@ def test_a_command_with_guilds_syncs_there_and_the_others_as_before(
     run(scenario)
 
 
-def test_an_entry_point_replaces_the_remote_one_and_stays_global() -> None:
+def test_an_entry_point_takes_over_the_remote_one_by_id_and_stays_global() -> None:
     @Router().entry_point("Launch", description="Start the race")
     async def launch(ctx: object) -> None:
         pass
@@ -340,6 +340,7 @@ def test_an_entry_point_replaces_the_remote_one_and_stays_global() -> None:
         assert (result.added, result.removed) == (("Launch",), ("launch",))
         global_put = next(r.json for r in fake.requests if r.method == "PUT")
         assert global_put[-1] == {
+            "id": "1329027302293635073",
             "type": 4,
             "name": "Launch",
             "description": "Start the race",
