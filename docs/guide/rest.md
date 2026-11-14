@@ -31,7 +31,7 @@ The Rust client tracks every route's rate limit bucket and Discord's global limi
 |---|---|---|
 | `global_rate_limit` | 50 | requests per second across all routes; raise it if Discord gave the bot a higher limit |
 | `max_rate_limit_wait` | 30.0 | the longest wait for a rate limit; a request that would wait longer raises `RateLimited` without being sent |
-| `retries` | 2 | how often a failed request is retried, with exponential backoff |
+| `retries` | 2 | how often a failed request is retried, with exponential backoff that waits at most `max_rate_limit_wait` |
 | `connect_timeout` | 10.0 | seconds to open a connection |
 | `read_timeout` | 60.0 | seconds to wait for an answer |
 | `rate_limiter` | `True` | `False` sends at once and only waits out the 429s that come back, for use behind a rate-limit proxy |

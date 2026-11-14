@@ -26,7 +26,7 @@ A join that is not ready within `timeout` seconds raises `VoiceConnectError` wit
 | `timeout` | 10.0 | seconds to wait for a join, a move or an edit |
 | `server_change_delay` | 0.0 | seconds to wait before following Discord to a new voice server |
 | `encoder` | `EncoderSettings()` | the Opus encoder; see [Playing audio](playback.md#encoder) |
-| `speaking_flags` | `MICROPHONE` | the `SpeakingFlags` the bot announces when it plays |
+| `speaking_flags` | `MICROPHONE` | the `voice.SpeakingFlags` the bot announces when it plays |
 | `stage` | `"listen"` | on a stage: `"listen"`, `"request"` to ask to speak, or `"speak"` |
 | `speech_hangover` | 0.2 | seconds of silence before a speaker counts as stopped, 0.02 to 10 |
 | `speech_activity` | `True` | whether speech start and stop events fire |

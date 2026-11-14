@@ -60,7 +60,7 @@ The first install compiles the Rust core and libopus, which takes a few minutes.
 - Guides: [slash commands](docs/guide/commands.md), [answering interactions](docs/guide/responses.md), [components](docs/guide/components.md), [events](docs/guide/events.md), [REST](docs/guide/rest.md), [testing](docs/guide/testing.md) and more.
 - [Voice](docs/voice/index.md): connections and DAVE, playback, raw audio, receiving and recording.
 - [Reference](docs/reference/bot-options.md): every `Bot` option, every event, and the API.
-- [Examples](examples/): complete bots, each tested in CI.
+- [Examples](examples/): complete bots, each type-checked in CI.
 
 ## Contributing
 

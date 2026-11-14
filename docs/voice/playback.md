@@ -100,4 +100,4 @@ A queue on a connection that ended is `closed` and takes no more tracks; make a 
 | `bandwidth` | `"auto"` | the highest audio band: `"narrow"`, `"medium"`, `"wide"`, `"superwide"` or `"full"` |
 | `signal_type` | `"auto"` | tunes for `"voice"` or `"music"` |
 
-`vc.speaking_flags` sets the speaking flags the bot announces, `SpeakingFlags.MICROPHONE` by default, `SOUNDSHARE` for shared audio, `PRIORITY` for priority speaker.
+`vc.speaking_flags` sets the speaking flags the bot announces, `voice.SpeakingFlags.MICROPHONE` by default, `SOUNDSHARE` for shared audio, `PRIORITY` for priority speaker.
