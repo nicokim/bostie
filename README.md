@@ -1,8 +1,8 @@
-<img src="assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
+<img src="docs/assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
 
 # bostie
 
-<img src="assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
+<img src="docs/assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
