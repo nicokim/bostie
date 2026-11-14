@@ -112,7 +112,15 @@ impl RestRequest {
             RouteClass::Interaction
         } else if placeholders.contains(&"webhook_token") {
             RouteClass::Webhook
-        } else if matches!(route, "/gateway" | "/oauth2/token" | "/oauth2/token/revoke") {
+        } else if matches!(
+            route,
+            "/gateway"
+                | "/oauth2/token"
+                | "/oauth2/token/revoke"
+                | "/partner-sdk/token"
+                | "/partner-sdk/child-token"
+                | "/partner-sdk/provisional-accounts/unmerge"
+        ) {
             RouteClass::Anonymous
         } else {
             RouteClass::Bot
@@ -400,6 +408,8 @@ mod tests {
             ),
             ("/gateway", &[], RouteClass::Anonymous, true),
             ("/gateway/bot", &[], RouteClass::Bot, true),
+            ("/partner-sdk/token", &[], RouteClass::Anonymous, true),
+            ("/partner-sdk/token/bot", &[], RouteClass::Bot, true),
             (
                 "/channels/{channel_id}",
                 &[("channel_id", "1")],

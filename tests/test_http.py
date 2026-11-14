@@ -147,15 +147,18 @@ def test_a_rate_limit_longer_than_bostie_waits_raises_rate_limited(
             "/webhooks/{webhook_id}/{webhook_token}",
             {"webhook_id": 1, "webhook_token": "dead"},
         ),
+        ("/partner-sdk/token", {}),
+        ("/partner-sdk/child-token", {}),
+        ("/partner-sdk/provisional-accounts/unmerge", {}),
     ],
 )
-def test_a_rejected_interaction_or_webhook_token_keeps_the_status_and_code(
+def test_a_rejected_token_or_secret_of_another_party_keeps_the_status_and_code(
     route: str, params: dict[str, Any]
 ) -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.fail(
             "POST",
-            "/webhooks/1/dead",
+            route.format(**params),
             401,
             {"message": "Invalid Webhook Token", "code": 50027},
         )

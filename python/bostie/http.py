@@ -28,7 +28,13 @@ if TYPE_CHECKING:
     from bostie._bridge import Bridge
 
 TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
-OAUTH2_TOKEN_ROUTES = ("/oauth2/token", "/oauth2/token/revoke")
+CLIENT_SECRET_ROUTES = (
+    "/oauth2/token",
+    "/oauth2/token/revoke",
+    "/partner-sdk/token",
+    "/partner-sdk/child-token",
+    "/partner-sdk/provisional-accounts/unmerge",
+)
 MAX_REASON = 512
 
 type QueryValue = str | int | float | bool | datetime
@@ -175,7 +181,7 @@ class HTTPClient:
             reason=reason,
         )
         if status >= HTTPStatus.BAD_REQUEST:
-            bot_route = route not in OAUTH2_TOKEN_ROUTES and not any(
+            bot_route = route not in CLIENT_SECRET_ROUTES and not any(
                 token in route for token in TOKEN_PLACEHOLDERS
             )
             raise _status_error(status, data, bot_route=bot_route)
