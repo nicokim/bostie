@@ -3,7 +3,6 @@
 # bostie
 
 <img src="assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
-<!-- --8<-- [start:intro] -->
 
 A Discord library for Python with a Rust core, designed around reliable voice.
 
@@ -27,8 +26,6 @@ You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs
 - Bots keep working when Discord adds things. Unknown fields, enum values, components and interaction types never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
 - Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as an option's member is a `ResolvedMember`, which has no `deaf` or `mute`, not a `Member` with holes. A message a webhook sent, interaction responses included, is a `WebhookMessage` whose `author` is a `PartialUser`; any other is a `Message` with a full `User`.
 - The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
-
-<!-- --8<-- [end:intro] -->
 
 ## Example
 
@@ -66,21 +63,6 @@ bot.run()
 ```
 
 `bot.run()` reads the token from `BOSTIE_TOKEN`, and commands sync on startup when they changed.
-
-## Documentation
-
-The [guide](docs/index.md) starts with a first bot. Then, by topic:
-
-- [Commands and components](docs/commands.md): options, checks, context menus, modals, selects, Components V2 and waiting for a click.
-- [Events](docs/events.md): typed gateway events, waiting for them, and asking the gateway for members.
-- [REST](docs/rest.md): every documented operation on `bot.rest`, REST without a gateway, webhooks, OAuth2, and raw requests for what bostie does not model yet.
-- [Interactions over HTTP](docs/http.md): an ASGI app for the Interactions Endpoint URL and the Webhook Events URL.
-- [Voice](docs/voice.md): playing, queues, filters, text to speech, receiving and recording.
-- [Helpers](docs/helpers.md): CDN URLs, message formatting, snowflakes, locales, permissions and colors.
-- [Testing](docs/testing.md): a fake Discord to test a bot against.
-- [Bot parameters](docs/bot.md), [Errors](docs/errors.md), and [Running the bot](docs/running.md) inside a web app.
-
-[examples/](examples) holds runnable bots for commands, components, modals, an Activity, events, background tasks, modules, a web app, interactions over HTTP, music and recording, and scripts for REST without a gateway, webhooks and linked roles.
 
 ## License
 

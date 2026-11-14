@@ -95,8 +95,6 @@ Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_s
 
 ## Docs
 
-The docs site is the pages in `docs/`, whose first page takes README.md's introduction between its `intro` markers, the examples and an API reference read from the docstrings. [Zensical](https://zensical.org) builds it without compiling the Rust core: `uv run --only-group docs zensical serve` previews it, and CI runs `zensical build --strict`. The introduction has no relative links, since they would resolve differently in the two places.
-
 ## Style
 
 We don't write comments in code. If a block seems to need one, rename it or split it until it doesn't. Public Python API may have a docstring when the name and signature aren't enough, and one line is usually right.
