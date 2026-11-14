@@ -95,6 +95,12 @@ Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_s
 
 ## Docs
 
+The documentation site is the Markdown pages in `docs/`, built by [Zensical](https://zensical.org) from `zensical.toml`. `uv run --only-group docs zensical serve` previews it while you edit, and `uv run --only-group docs zensical build --strict` builds it as CI does, failing on a broken link, anchor or reference. The API reference pages hold `::: bostie.name` lines that the build fills from the docstrings and type hints. It reads the source and `_native.pyi` without importing bostie, so the docs build never compiles the Rust core.
+
+Every Python block on a page includes a whole module from `docs/snippets` with `--8<-- "docs/snippets/<topic>/<name>.py"`; there is no inline Python. ruff and mypy check the snippets like the library, and `tests/test_docs.py` runs each one, which builds its bot and checks every command definition. It also fails on a Python block that is not an include and on a snippet that no page shows. mypy needs unique module names, so a snippet's file name must not repeat one used by another snippet, an example or a test. The README's example is a copy of `docs/snippets/home/readme_example.py`, and a test keeps the two equal. The event table in `docs/reference/event-list.md` and the group table in `docs/guide/rest.md` are checked against the code too: a new event or REST operation fails the tests until it is listed there, and gets its explanation in the guide it belongs to.
+
+Write a page for a reader who wants to use the feature: show the code, then say what it does, with exact names, defaults and limits, each checked against the code.
+
 ## Style
 
 We don't write comments in code. If a block seems to need one, rename it or split it until it doesn't. Public Python API may have a docstring when the name and signature aren't enough, and one line is usually right.
