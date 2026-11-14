@@ -121,7 +121,6 @@ class FakeDiscord(VoiceGateway):
     """A local Discord gateway and REST API for tests, served inside `async with`.
 
     `voice=True` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
-    `full=True` leaves op 4 joins unanswered, as Discord does for a full channel.
     `mute`, `deaf` and `suppress` go into every voice state the fake sends for
     the bot. `ready_guilds` are the guild ids READY lists, each on its own shard.
     """

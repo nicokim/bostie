@@ -1,4 +1,10 @@
-from bostie.enums import ClosedReason, Direction, DisconnectReason, State
+from bostie.enums import (
+    ClosedReason,
+    Direction,
+    DisconnectReason,
+    SpeakingFlags,
+    State,
+)
 from bostie.errors import (
     AlreadyConnected,
     BufferFull,
@@ -142,6 +148,7 @@ __all__ = [
     "SinkStats",
     "Source",
     "SourceError",
+    "SpeakingFlags",
     "SpeakingUpdate",
     "SpeechStart",
     "SpeechStop",
