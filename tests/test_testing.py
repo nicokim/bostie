@@ -240,6 +240,36 @@ def test_injected_failure_stubs_a_route_the_fake_does_not_model() -> None:
     run(scenario)
 
 
+def test_a_bulk_overwrite_with_an_unknown_command_id_is_rejected_whole() -> None:
+    async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
+        url = f"{fake.api_url}/applications/{fake.application_id}/commands"
+        ping = {"name": "ping", "description": "Ping."}
+        async with session.put(url, json=[ping], headers=auth(fake)) as response:
+            stored = await response.json()
+        made_up = {"id": "1", "name": "x", "description": "X."}
+        sent = [ping | {"id": stored[0]["id"]}, made_up]
+        async with session.put(url, json=sent, headers=auth(fake)) as response:
+            status, body = response.status, await response.json()
+        async with session.get(url, headers=auth(fake)) as response:
+            after = await response.json()
+
+        error = {
+            "code": "APPLICATION_COMMANDS_INVALID_ID",
+            "message": "Invalid application command id provided",
+        }
+        assert (status, body) == (
+            400,
+            {
+                "message": "Invalid Form Body",
+                "code": 50035,
+                "errors": {"1": {"_errors": [error]}},
+            },
+        )
+        assert [command["id"] for command in after] == [stored[0]["id"]]
+
+    run(scenario)
+
+
 def test_zstd_frames_form_one_stream_per_connection() -> None:
     zstd = pytest.importorskip("compression.zstd")
 

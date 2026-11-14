@@ -694,13 +694,20 @@ class FakeDiscord(VoiceGateway):
             else self.guild_commands.setdefault(guild_id, [])
         )
         if request.method == "PUT":
+            body = request[RECORD].json
             known = {
                 (command["type"], command["name"]): command["id"]
                 for command in commands
             }
-            commands[:] = [
-                self._stored_command(command, known) for command in request[RECORD].json
+            ids = set(known.values())
+            unknown = [
+                index
+                for index, command in enumerate(body)
+                if command.get("id") is not None and str(command["id"]) not in ids
             ]
+            if unknown:
+                return _unknown_command_ids(unknown)
+            commands[:] = [self._stored_command(command, known) for command in body]
             self.put_count += 1
         if request.method == "PUT" or _query_flag(request, "with_localizations"):
             return _json(commands)
@@ -972,6 +979,16 @@ def _found(entity: Json | None, code: int, message: str) -> web.Response:
 
 def _error(status: int, code: int, message: str) -> web.Response:
     return _json({"message": message, "code": code}, status)
+
+
+def _unknown_command_ids(indices: list[int]) -> web.Response:
+    error = {
+        "code": "APPLICATION_COMMANDS_INVALID_ID",
+        "message": "Invalid application command id provided",
+    }
+    errors = {str(index): {"_errors": [error]} for index in indices}
+    body = {"message": "Invalid Form Body", "code": 50035, "errors": errors}
+    return _json(body, 400)
 
 
 def _json(
