@@ -1,7 +1,10 @@
 [project]
 site_name = "bostie"
 site_description = "A Discord library for Python with a Rust core, built around reliable voice."
-exclude_docs = "snippets/"
+exclude_docs = """
+snippets/
+skills/
+"""
 nav = [
   { "Home" = "index.md" },
   { "Get started" = [

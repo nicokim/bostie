@@ -1,19 +1,53 @@
+import builtins
+import inspect
+import json
 import re
 import runpy
+import typing
+from enum import Enum
 from pathlib import Path
+from types import NoneType, UnionType
 
 import pytest
 
-from bostie import Bot, events
+import bostie
+from bostie import (
+    Bot,
+    ComponentContext,
+    Context,
+    Message,
+    ModalContext,
+    RESTClient,
+    checks,
+    events,
+    testing,
+    ui,
+    voice,
+)
 from bostie.testing import FakeDiscord, payloads, run, running
 
 ROOT = Path(__file__).parent.parent
 DOCS = ROOT / "docs"
+SKILL = DOCS / "skills" / "bostie"
 SNIPPETS = sorted((DOCS / "snippets").rglob("*.py"))
 FENCE = re.compile(r"^```python\n(.*?)^```", re.MULTILINE | re.DOTALL)
+ANY_FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 INCLUDE = re.compile(r'--8<-- "([^"]+)"\n')
 GROUP_ROW = re.compile(r"^\| `(\w+)` \| (.+) \|$", re.MULTILINE)
 CODE = re.compile(r"`(\w+)`")
+INLINE_CODE = re.compile(r"`([^`\n]+)`")
+QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
+DOTTED = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+PUBLIC = {
+    **vars(builtins),
+    **vars(typing),
+    "Enum": Enum,
+    **vars(testing),
+    **vars(checks),
+    **vars(events),
+    **vars(bostie),
+}
+ABSENT = {"ctx.send", "ctx.reply"}
 
 
 def no_run(bot: Bot, token: str | None = None, **options: object) -> None:
@@ -32,15 +66,107 @@ def test_every_snippet_defines_its_bot_without_errors(
     runpy.run_path(str(path), run_name="snippet")
 
 
-def test_python_blocks_include_snippets_and_every_snippet_is_shown() -> None:
-    blocks = [
-        block for page in DOCS.rglob("*.md") for block in FENCE.findall(text(page))
+def skill_blocks() -> list[str]:
+    return [
+        block for page in SKILL.rglob("*.md") for block in FENCE.findall(text(page))
     ]
+
+
+def skill_names() -> set[str]:
+    prose = [ANY_FENCE.sub("", text(page)) for page in SKILL.rglob("*.md")]
+    spans = [
+        QUOTED.sub("", span) for page in prose for span in INLINE_CODE.findall(page)
+    ]
+    return {name for span in spans for name in DOTTED.findall(span)}
+
+
+def hinted(hint: object) -> list[object]:
+    if isinstance(hint, UnionType) or typing.get_origin(hint) is typing.Union:
+        return [arg for arg in typing.get_args(hint) if arg is not NoneType]
+    return [typing.get_origin(hint) or hint]
+
+
+def members(owner: object, name: str) -> list[object]:
+    if not isinstance(owner, type):
+        found = getattr(owner, name, None)
+        return [] if found is None else [found]
+    static = inspect.getattr_static(owner, name, None)
+    if isinstance(static, property):
+        return hinted(typing.get_type_hints(static.fget, localns=PUBLIC)["return"])
+    hints = typing.get_type_hints(owner, localns=PUBLIC)
+    if name in hints:
+        return hinted(hints[name])
+    return [] if static is None else [static]
+
+
+def resolve(name: str, roots: dict[str, list[object]]) -> list[object]:
+    first, *parts = name.split(".")
+    owners = roots.get(first, [PUBLIC[first]] if first in PUBLIC else [])
+    for part in parts:
+        owners = [found for owner in owners for found in members(owner, part)]
+    return owners
+
+
+def test_python_blocks_include_snippets_and_every_snippet_is_shown() -> None:
+    pages = [page for page in DOCS.rglob("*.md") if SKILL not in page.parents]
+    blocks = [block for page in pages for block in FENCE.findall(text(page))]
     included = {ROOT / path for block in blocks for path in INCLUDE.findall(block)}
+    copied = {path for path in SNIPPETS if text(path) in skill_blocks()}
 
     assert [block for block in blocks if not INCLUDE.fullmatch(block)] == []
-    assert set(SNIPPETS) <= included
+    assert set(SNIPPETS) <= included | copied
     assert all(path.is_file() for path in included)
+
+
+def test_every_python_block_of_the_skill_is_a_snippet() -> None:
+    snippets = {text(path) for path in SNIPPETS}
+
+    assert skill_blocks()
+    assert [block for block in skill_blocks() if block not in snippets] == []
+
+
+def test_every_bostie_name_the_skill_mentions_exists() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            roots: dict[str, list[object]] = {
+                "bostie": [bostie],
+                "bot": [bot],
+                "ctx": [Context, ComponentContext, ModalContext],
+                "client": [RESTClient],
+                "message": [Message],
+                "fake": [fake],
+                "payloads": [payloads],
+                "ui": [ui],
+                "voice": [voice],
+                "vc": [voice.VoiceConnection],
+                "source": [voice.Source],
+                "track": [voice.Track],
+                "queue": [voice.Queue],
+                "recorder": [voice.Recorder],
+            }
+            names = {
+                name
+                for name in skill_names()
+                if name.split(".")[0] in roots
+                or (name[0].isupper() and not name.split(".")[0].isupper())
+            }
+
+            assert len(names) > 100
+            assert [
+                name for name in sorted(names - ABSENT) if not resolve(name, roots)
+            ] == []
+            assert [name for name in sorted(ABSENT) if resolve(name, roots)] == []
+
+    run(scenario)
+
+
+def test_the_plugin_manifest_points_at_the_skill() -> None:
+    manifest = json.loads(text(ROOT / ".claude-plugin" / "marketplace.json"))
+    [plugin] = manifest["plugins"]
+
+    assert ROOT / plugin["source"] / "skills" / "bostie" == SKILL
+    assert text(SKILL / "SKILL.md").startswith("---\nname: bostie\n")
 
 
 def test_the_readme_example_is_the_file_the_docs_include() -> None:

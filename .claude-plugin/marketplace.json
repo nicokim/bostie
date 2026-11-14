@@ -1,0 +1,14 @@
+{
+  "name": "bostie",
+  "description": "The bostie skill for coding assistants",
+  "owner": {
+    "name": "The bostie contributors"
+  },
+  "plugins": [
+    {
+      "name": "bostie",
+      "source": "./docs",
+      "description": "How to write Discord bots with bostie: commands, components, events, REST, voice and tests"
+    }
+  ]
+}
