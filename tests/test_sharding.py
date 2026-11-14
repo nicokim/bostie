@@ -147,6 +147,8 @@ def test_a_cluster_process_identifies_only_its_shards() -> None:
             assert bot.gateway.shard_ids == (1, 3)
             with pytest.raises(ValueError, match="shard 0 does not run here"):
                 bot.gateway.send(43, {"channel_id": "1"})
+            with pytest.raises(ValueError, match="shard 0 does not run here"):
+                await bot.request_members(4 << 22, query="a")
 
     run(scenario)
 

@@ -457,7 +457,8 @@ class Readiness:
 
     def renewing(self, shard_id: int) -> bool:
         """Whether the shard lost its session and has no READY for a new one yet."""
-        return self._shards[shard_id].renewing
+        shard = self._shards.get(shard_id)
+        return shard is not None and shard.renewing
 
     def ready(self, shard_id: int, data: bytes) -> bool:
         """Start following a READY; True when it leaves no guild to wait for."""
