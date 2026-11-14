@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -619,7 +620,7 @@ class ComponentContext(_UpdatingContext[ComponentInteraction]):
 
     @property
     def custom_id(self) -> str:
-        return self.interaction.data.custom_id
+        return self._decoded.custom_id
 
     @property
     def values(self) -> tuple[str, ...]:
@@ -659,8 +660,12 @@ class ComponentContext(_UpdatingContext[ComponentInteraction]):
         """Answer with a modal built by `ui.modal`; nothing can answer after it."""
         await self._open_modal(modal)
 
+    @functools.cached_property
+    def _decoded(self) -> ComponentData:
+        return self.interaction.data
+
     def _data[D: ComponentData](self, kind: type[D]) -> D:
-        data = self.interaction.data
+        data = self._decoded
         if not isinstance(data, kind):
             raise TypeError(
                 f"{self.custom_id!r} is a {data.component_type.name}, "
