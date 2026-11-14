@@ -16,7 +16,17 @@
 
             npx skills add {{ owner }}/{{ name }} --skill bostie --yes --global
 
-        Detect which agent or editor I am using. If I use Claude Code and prefer the plugin path, follow the plugin install on {{ site }}assistants/ (`/plugin marketplace add` then `/plugin install`). Do not invent other skill names or install URLs.
+        Detect which agent or editor I am using. If it is one of these and I prefer the plugin path, install the bostie plugin instead, as {{ site }}assistants/ shows:
+
+            Claude Code: /plugin marketplace add {{ owner }}/{{ name }}, then /plugin install bostie@bostie
+            Codex CLI: codex plugin marketplace add {{ owner }}/{{ name }}, then codex plugin add bostie@bostie
+            GitHub Copilot CLI: copilot plugin marketplace add {{ owner }}/{{ name }}, then copilot plugin install bostie@bostie
+            VS Code with GitHub Copilot: run "Chat: Install Plugin from Source" and enter {{ owner }}/{{ name }}
+            Devin: devin plugins install {{ owner }}/{{ name }}#docs
+            Factory Droid: droid plugin marketplace add {{ owner }}/{{ name }}, then droid plugin install bostie@bostie --scope user
+            Qwen Code: qwen extensions install {{ owner }}/{{ name }}:bostie
+
+        Do not invent other skill names or install URLs.
 
         Then add this line to the instructions file you read at the start of every session (AGENTS.md at the project root, or your global one for a global install), and create the file if needed:
 

@@ -38,6 +38,20 @@ CODE = re.compile(r"`(\w+)`")
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
 DOTTED = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+PLUGIN_NAME = re.compile(r"(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
+AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+AGENT_PLUGIN_FIELDS = {
+    "$schema",
+    "name",
+    "version",
+    "description",
+    "author",
+    "homepage",
+    "repository",
+    "license",
+    "keywords",
+    "extensions",
+}
 PUBLIC = {
     **vars(builtins),
     **vars(typing),
@@ -161,11 +175,20 @@ def test_every_bostie_name_the_skill_mentions_exists() -> None:
     run(scenario)
 
 
-def test_the_plugin_manifest_points_at_the_skill() -> None:
-    manifest = json.loads(text(ROOT / ".claude-plugin" / "marketplace.json"))
-    [plugin] = manifest["plugins"]
+def test_the_plugin_manifests_point_at_the_skill() -> None:
+    marketplace = json.loads(text(ROOT / ".claude-plugin" / "marketplace.json"))
+    [entry] = marketplace["plugins"]
+    plugin = ROOT / entry["source"]
+    manifest = json.loads(text(plugin / "plugin.json"))
 
-    assert ROOT / plugin["source"] / "skills" / "bostie" == SKILL
+    assert marketplace["name"]
+    assert marketplace["owner"]["name"]
+    assert entry["source"].startswith("./")
+    assert plugin / "skills" / "bostie" == SKILL
+    assert manifest["$schema"] == AGENT_PLUGIN_SCHEMA
+    assert manifest.keys() <= AGENT_PLUGIN_FIELDS
+    assert PLUGIN_NAME.fullmatch(manifest["name"])
+    assert manifest["name"] == entry["name"]
     assert text(SKILL / "SKILL.md").startswith("---\nname: bostie\n")
 
 

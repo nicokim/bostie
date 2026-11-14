@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bostie",
+  "description": "How to write Discord bots with bostie: commands, components, events, REST, voice and tests"
+}

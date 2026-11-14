@@ -18,14 +18,19 @@ npx skills add {{ owner }}/{{ name }} --skill bostie --yes
 
 installs the skill in the current project for the coding assistants it finds there; `--global` installs it for all your projects, and `--agent claude-code`, `--agent codex` or `--agent github-copilot` for one assistant only. `npx skills update` updates it.
 
-### Claude Code plugin
+### As a plugin
 
-In Claude Code, the skill also installs as a plugin:
+Some assistants also install the skill as a plugin, for all your projects, and update it with their other plugins:
 
-```text
-/plugin marketplace add {{ owner }}/{{ name }}
-/plugin install bostie@bostie
-```
+| Assistant | Install |
+|---|---|
+| Claude Code | `/plugin marketplace add {{ owner }}/{{ name }}`, then `/plugin install bostie@bostie` |
+| Codex CLI | `codex plugin marketplace add {{ owner }}/{{ name }}`, then `codex plugin add bostie@bostie` |
+| GitHub Copilot CLI | `copilot plugin marketplace add {{ owner }}/{{ name }}`, then `copilot plugin install bostie@bostie` |
+| VS Code with GitHub Copilot | **Chat: Install Plugin from Source** in the Command Palette, with `{{ owner }}/{{ name }}` |
+| Devin | `devin plugins install {{ owner }}/{{ name }}#docs` |
+| Factory Droid | `droid plugin marketplace add {{ owner }}/{{ name }}`, then `droid plugin install bostie@bostie --scope user` |
+| Qwen Code | `qwen extensions install {{ owner }}/{{ name }}:bostie` |
 
 ### By hand
 

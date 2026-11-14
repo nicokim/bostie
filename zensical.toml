@@ -4,6 +4,7 @@ site_description = "A Discord library for Python with a Rust core, built around 
 exclude_docs = """
 snippets/
 skills/
+/plugin.json
 """
 nav = [
   { "Home" = "index.md" },
