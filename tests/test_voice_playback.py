@@ -766,6 +766,23 @@ def test_loop_queue_repeats_every_track_and_once_only_sources_drop_out() -> None
     run(scenario)
 
 
+def test_loop_queue_turned_on_mid_track_repeats_a_track_written_ahead() -> None:
+    async def scenario(clock: Clock) -> None:
+        vc = FakeConnection(clock)
+        q = queue(vc)
+        add(q, FakeSource(clock, "a", 3))
+        written_ahead = FakeSource(clock, "b", 3)
+        add(q, written_ahead)
+        await clock.until(lambda: clock.ticks == 1)
+        assert written_ahead.index > 0
+        q.loop = "queue"
+        await clock.until(lambda: clock.ticks == 12)
+        q.stop()
+        assert names(vc.sinks[0].sent) == "aaabbbaaabbb"
+
+    run(scenario)
+
+
 def test_back_replays_the_last_played_track_then_the_current_one() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)

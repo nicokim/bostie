@@ -318,8 +318,11 @@ class _Player:
         for entry in self._entries:
             entry.repeated = False
         self._drop([entry for entry in self._upcoming() if entry.origin is not None])
-        if mode is not None and self.now is not None:
+        if mode == "track" and self.now is not None:
             self._repeat(self._entries[0])
+        elif mode == "queue":
+            for entry in [entry for entry in self._entries if entry.start is not None]:
+                self._repeat(entry)
 
     def skip(self) -> None:
         if not self._entries:
