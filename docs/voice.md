@@ -1,5 +1,78 @@
 # Voice
 
+```python
+from bostie import Bot, Context, voice
+
+bot = Bot(voice=voice.Defaults(timeout=15.0))
+queues: dict[int, voice.Queue] = {}
+
+
+@bot.command
+async def play(ctx: Context, url: str) -> None:
+    """Queue a direct media URL."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    queue = queues.get(vc.guild_id)
+    if queue is None or queue.vc is not vc:
+        queue = queues[vc.guild_id] = voice.Queue(vc)
+    queue.add(voice.Url(url))
+    await ctx.respond(f"{len(queue.upcoming)} queued")
+
+
+@bot.command
+async def skip(ctx: Context) -> None:
+    """Skip the current track."""
+    if ctx.guild_id in queues:
+        queues[ctx.guild_id].skip()
+    await ctx.respond("skipped")
+
+
+@bot.listen
+async def on_voice_state(event: voice.StateChange) -> None:
+    if event.new is voice.State.DISCONNECTED:
+        print(f"voice in {event.guild_id} ended: {event.reason} ({event.detail})")
+
+
+bot.run()
+```
+
+- `ctx.voice.connect()` joins the voice channel of the user who ran the command, which it reads from `bot.cache`, or asks Discord for when the guild is not cached. `bot.voice.connect(channel_id)` joins any voice or stage channel. In a guild where the bot is already connected, both move it, so `ctx.voice.current or ...` keeps a bot that is playing where it is.
+- `connect()` returns once audio can flow, or raises `voice.VoiceConnectError` with the reason. Dropped connections, voice server changes, moves and DAVE transitions are handled for you. `voice.StateChange`, `voice.Moved`, `voice.UserJoin` and the other voice events reach `@bot.listen` and `bot.wait_for`.
+- `await bot.voice.connect_external(guild_id, channel_id)` joins for an external voice engine and returns the voice state and server it connects with; bostie then plays nothing in that guild. `async with external.updates() as updates:` hands on the later voice servers and the bot's voice states there.
+- `voice.File`, `voice.Bytes` and `voice.Url` decode Ogg Opus and Vorbis, WebM, FLAC, WAV, MP3 and AAC in M4A in Rust, and `voice.Url` also plays HLS (`.m3u8`) playlists, live or not. Once a source is open, `source.tags` holds the title, artist and album its tags name. `voice.FFmpeg(args)` plays anything ffmpeg reads, and `voice.Stream(chunks, format)` plays an async iterator.
+- When the connection of a `voice.Url` drops, it reconnects up to three times in a row: from where it broke when the server takes range requests, or from the live edge for a stream with no length. Otherwise the track ends with `EndReason.ERROR`.
+- `vc.play(source)` plays a source on its own, mixed with whatever else plays, and returns its `voice.Track`: `await track.started()` waits until its audio starts, for a "now playing" message, and `await track.wait()` until it ends.
+- `voice.Queue` plays tracks back to back without gaps. `queue.add(source, index=0)` plays a source next, and `queue.move()`, `queue.shuffle()`, `queue.remove()` and `queue.skip()` change what comes after the current track. `voice.Queue(vc, crossfade=3.0)` fades each track into the next over 3 s, which keeps 3 s more audio buffered. `queue.loop = "track"` plays the current track again and again, and `"queue"` plays every track again at the end; a skip with `"track"` moves on to the next track. A source plays again through `source.again()`, so a `voice.Stream`, which cannot, plays once. `voice.Queue(vc, history=20)` keeps the last 20 tracks that played in `queue.history`, and `queue.back()` plays the last of them again.
+- `voice.Filters(equalizer=..., bass=..., speed=..., pitch=...)` applies an equalizer, a bass boost and speed and pitch changes in Rust, on a sink, a track or a queue, and can change while it plays.
+- `vc.sink(format)` is what they all build on: a bounded writer of PCM (16-bit or float, 8 to 192 kHz, mono or stereo) or Opus packets. `await sink.write(data)` waits while `buffer` seconds are queued. A sink that runs dry sends silence; the stream goes on. `vc.sink(format, after=other)` stays silent until `other` closes or plays out what was written before its last `drain()`, then starts on the next 20 ms tick: that is how a queue stays gapless when an Opus track follows a PCM one.
+- `vc.sinks` lists what plays on a connection, and `vc.stop()` closes every sink so nothing does. Their tracks end `STOPPED`, and a queue takes new tracks afterwards.
+- `Bot(voice=voice.Defaults(...))` sets what every connection, sink and receiver starts from: self mute and deafen, timeout, server change delay, encoder, speaking flags, sink buffer, stall policy, stage role, speech detection, receive buffer, jitter and overflow, and a queue's crossfade and history. Each call can override them. `voice.EncoderSettings` holds the Opus bitrate, application, error correction, complexity, bandwidth and signal type.
+- Stage channels are listen-only unless you pass `stage="request"` (ask to speak) or `stage="speak"`. A connection asks for its role each time it enters a stage channel.
+- `await voice.message("hello.ogg")` reads an audio file, or takes its bytes, into a `bostie.File` for a voice message: Rust decodes it to measure its duration and waveform. A message with that file is sent with `IS_VOICE_MESSAGE` set, and may hold nothing else. Discord clients send 48 kHz mono Ogg Opus.
+- `voice.RtcpPacket` brings the RTCP reports Discord's voice server sends, such as how much of the bot's audio it lost.
+- Voice needs the `GUILD_VOICE_STATES` intent, which `Intents.DEFAULT` includes.
+- What the Rust core logs, such as a DAVE session reset or a dropped frame, goes to Python `logging` under `bostie.voice`, `bostie.gateway` and `bostie.rest`. The core reads those loggers' levels when the bot starts, and levels that are off cost nothing.
+
+## Text to speech
+
+Most streaming text-to-speech APIs can return raw PCM. Hand the chunks to `voice.Stream` with their format, and playback starts with the first chunk:
+
+```python
+speaking: dict[int, voice.Track] = {}
+
+
+@bot.command
+async def say(ctx: Context, text: str) -> None:
+    """Speak; a new /say interrupts the last one."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    if (previous := speaking.get(vc.guild_id)) is not None:
+        previous.stop()
+    chunks = speech(text)
+    speaking[vc.guild_id] = await vc.play(voice.Stream(chunks, voice.PCM(24_000, 1)))
+    await ctx.respond("speaking")
+```
+
+Here `speech(text)` stands for your engine's streaming call: an async iterator of 24 kHz mono 16-bit chunks. The Rust core resamples them to 48 kHz stereo.
+
 ## Connecting again
 
 In a guild where the bot is already connected, `bot.voice.connect()` and `ctx.voice.connect()` move that connection, as `vc.move()` does, and return it. The connection keeps its mute, deafen, encoder, speaking flags, speech settings and `server_change_delay`, and the call changes only the options you pass. `timeout` bounds this call alone. The connection asks for its stage role each time it enters a stage channel, through `connect()` or `vc.move()`; a `stage` you pass replaces that role and is requested even when the bot is already there.

@@ -81,7 +81,7 @@ If a payload still doesn't fit, for example because it lacks a required field, `
 
 ## Tests
 
-bostie's own tests run on `bostie.testing`, the fake Discord the README offers bot authors. Its payloads come from `python/bostie/testing/fixtures`, Discord's documented examples, which the model tests decode too. It imports nothing from the rest of bostie, so it checks the library rather than agreeing with it; `test_the_fake_imports_nothing_from_the_library_it_checks` holds it to that. It doesn't speak DAVE; the Rust tests cover that. Use it rather than `unittest.mock`.
+bostie's own tests run on `bostie.testing`, the fake Discord the docs offer bot authors. Its payloads come from `python/bostie/testing/fixtures`, Discord's documented examples, which the model tests decode too. It imports nothing from the rest of bostie, so it checks the library rather than agreeing with it; `test_the_fake_imports_nothing_from_the_library_it_checks` holds it to that. It doesn't speak DAVE; the Rust tests cover that. Use it rather than `unittest.mock`.
 
 Test what a user could notice: a return value, an event, a packet sent, an error raised. Log text and call order count only when they are the feature. Anything mypy, stubtest or clippy already catches needs no test.
 
@@ -95,7 +95,7 @@ Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_s
 
 ## Docs
 
-The docs site is README.md between its `guide` markers, the pages in `docs/`, the examples and an API reference read from the docstrings. [Zensical](https://zensical.org) builds it without compiling the Rust core: `uv run --only-group docs zensical serve` previews it, and CI runs `zensical build --strict`. A relative link in the README's guide part is a reference link, defined once at the end of README.md and once in `docs/index.md`, so it works in both places.
+The docs site is the pages in `docs/`, whose first page takes README.md's introduction between its `intro` markers, the examples and an API reference read from the docstrings. [Zensical](https://zensical.org) builds it without compiling the Rust core: `uv run --only-group docs zensical serve` previews it, and CI runs `zensical build --strict`. The introduction has no relative links, since they would resolve differently in the two places.
 
 ## Style
 
