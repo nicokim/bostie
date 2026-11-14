@@ -32,10 +32,10 @@ thread_local! {
 }
 
 pub(crate) fn register(sink: LogSink) {
-    SINKS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push(sink);
+    let mut sinks = SINKS.lock().unwrap_or_else(PoisonError::into_inner);
+    sinks.retain(LogSink::is_open);
+    sinks.push(sink);
+    drop(sinks);
     INSTALL.call_once(|| drop(tracing::subscriber::set_global_default(Forward)));
 }
 

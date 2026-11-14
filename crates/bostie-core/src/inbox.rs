@@ -1,6 +1,7 @@
 use std::mem;
 use std::pin::pin;
-use std::sync::Weak;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -163,8 +164,12 @@ impl LogSink {
         Self(inbox)
     }
 
+    pub fn is_open(&self) -> bool {
+        self.open().is_some()
+    }
+
     pub fn push(&self, level: Level, logger: &'static str, message: String) -> Result<(), String> {
-        let Some(inbox) = self.0.upgrade() else {
+        let Some(inbox) = self.open() else {
             return Err(message);
         };
         inbox.push(Delivery::Log {
@@ -174,6 +179,12 @@ impl LogSink {
         });
         Ok(())
     }
+
+    fn open(&self) -> Option<Arc<Inbox>> {
+        self.0
+            .upgrade()
+            .filter(|inbox| !inbox.logs_closed.load(Ordering::Relaxed))
+    }
 }
 
 pub struct Inbox {
@@ -181,6 +192,7 @@ pub struct Inbox {
     room: Notify,
     bell: Bell,
     dispatch_bytes_limit: usize,
+    logs_closed: AtomicBool,
 }
 
 #[derive(Default)]
@@ -201,7 +213,12 @@ impl Inbox {
             room: Notify::new(),
             bell,
             dispatch_bytes_limit,
+            logs_closed: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn close_logs(&self) {
+        self.logs_closed.store(true, Ordering::Relaxed);
     }
 
     pub fn push(&self, delivery: Delivery) {
@@ -250,7 +267,6 @@ impl Inbox {
 #[cfg(test)]
 mod tests {
     use std::io::{ErrorKind, Read};
-    use std::sync::Arc;
     use std::task::{Context, Waker};
 
     use super::*;
@@ -295,6 +311,22 @@ mod tests {
             Err(error) if error.kind() == ErrorKind::WouldBlock => 0,
             Err(error) => panic!("{error}"),
         }
+    }
+
+    #[test]
+    fn a_log_sink_hands_the_record_back_once_its_core_closes() {
+        let (inbox, _receiver) = inbox();
+        let inbox = Arc::new(inbox);
+        let sink = LogSink::new(Arc::downgrade(&inbox));
+
+        let open = sink.push(Level::WARN, "bostie", "kept".to_owned());
+        inbox.close_logs();
+        let closed = sink.push(Level::WARN, "bostie", "returned".to_owned());
+
+        assert_eq!(open, Ok(()));
+        assert_eq!(closed, Err("returned".to_owned()));
+        assert!(!sink.is_open());
+        assert_eq!(inbox.drain().len(), 1);
     }
 
     #[test]

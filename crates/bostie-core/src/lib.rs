@@ -232,6 +232,7 @@ impl Core {
     }
 
     fn shut_down(&self) {
+        self.inbox.close_logs();
         let mut table = self.tasks.lock();
         table.rest = None;
         for (_, task) in table.running.drain() {
