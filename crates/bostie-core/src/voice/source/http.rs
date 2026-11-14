@@ -58,6 +58,7 @@ pub(crate) struct HttpMedia {
     piece: usize,
     retry: Duration,
     url: Url,
+    location: Url,
     headers: HeaderMap,
     length: Option<u64>,
     ranges: bool,
@@ -79,17 +80,19 @@ pub(crate) struct Fetcher {
 }
 
 impl Fetcher {
-    pub(crate) fn get(&self, url: &Url) -> io::Result<Bytes> {
+    pub(crate) fn get(&self, url: &Url) -> io::Result<(Bytes, Url)> {
         let host = url.host_str().unwrap_or_default().to_owned();
         let request = self.client.get(url.clone()).headers(self.headers.clone());
         self.runtime.block_on(async {
             let response = respond(request, false, &host).await?;
-            response.bytes().await.map_err(failure)
+            let location = response.url().clone();
+            Ok((response.bytes().await.map_err(failure)?, location))
         })
     }
 }
 
 struct Head {
+    location: Url,
     length: Option<u64>,
     ranges: bool,
     content_type: Option<String>,
@@ -127,6 +130,7 @@ impl HttpMedia {
             client: http.client()?,
             piece: http.piece,
             retry: http.retry,
+            location: url.clone(),
             url,
             headers: map,
             length: None,
@@ -140,6 +144,7 @@ impl HttpMedia {
 
     pub(crate) fn connect(&mut self) -> io::Result<()> {
         let head = self.request()?;
+        self.location = head.location;
         self.length = head.length;
         self.ranges = head.ranges;
         self.content_type = head.content_type;
@@ -151,7 +156,7 @@ impl HttpMedia {
     }
 
     pub(crate) fn extension(&self) -> Option<&str> {
-        let name = self.url.path_segments()?.next_back()?;
+        let name = self.location.path_segments()?.next_back()?;
         name.rsplit_once('.').map(|(_, extension)| extension)
     }
 
@@ -175,11 +180,11 @@ impl HttpMedia {
             client: self.client,
             headers: self.headers,
         };
-        (fetcher, self.url)
+        (fetcher, self.location)
     }
 
     fn request(&mut self) -> io::Result<Head> {
-        let ranged = self.position > 0 && self.length.is_some();
+        let ranged = self.position > 0 && self.ranges;
         let mut request = self
             .client
             .get(self.url.clone())
@@ -313,6 +318,7 @@ async fn stream(
         }
     };
     let opened = Head {
+        location: response.url().clone(),
         length: response.content_length(),
         ranges: accepts_ranges(response.headers()),
         content_type: content_type(response.headers()),
@@ -442,16 +448,19 @@ mod tests {
             ));
             return;
         }
-        if head.starts_with("get /live ") {
-            return stream_live(stream, body, attempt == 0);
-        }
-        let cut = head.starts_with("get /cut-always ")
-            || (head.starts_with("get /cut-once ") && attempt == 0);
         let start = head
             .lines()
             .find_map(|line| line.strip_prefix("range: bytes="))
             .and_then(|range| range.trim().trim_end_matches('-').parse::<usize>().ok())
             .filter(|_| ranges && !head.starts_with("get /liar "));
+        if head.starts_with("get /live ") {
+            return stream_chunked(stream, body, None, attempt == 0);
+        }
+        if head.starts_with("get /chunked ") {
+            return stream_chunked(stream, body, Some(start.unwrap_or(0)), attempt == 0);
+        }
+        let cut = head.starts_with("get /cut-always ")
+            || (head.starts_with("get /cut-once ") && attempt == 0);
         let accept = if ranges {
             "accept-ranges: bytes\r\n"
         } else {
@@ -485,10 +494,20 @@ mod tests {
         }
     }
 
-    fn stream_live(stream: &mut TcpStream, body: &[u8], cut: bool) {
-        let head = "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n";
+    fn stream_chunked(stream: &mut TcpStream, body: &[u8], ranges: Option<usize>, cut: bool) {
+        let status = match ranges {
+            None => "HTTP/1.1 200 OK\r\n".to_owned(),
+            Some(0) => "HTTP/1.1 200 OK\r\naccept-ranges: bytes\r\n".to_owned(),
+            Some(start) => format!(
+                "HTTP/1.1 206 Partial Content\r\naccept-ranges: bytes\r\n\
+                 content-range: bytes {start}-{}/*\r\n",
+                body.len() - 1
+            ),
+        };
+        let head = format!("{status}transfer-encoding: chunked\r\nconnection: close\r\n\r\n");
         drop(stream.write_all(head.as_bytes()));
-        let sent = if cut { &body[..body.len() / 2] } else { body };
+        let rest = &body[ranges.unwrap_or(0)..];
+        let sent = if cut { &rest[..rest.len() / 2] } else { rest };
         for piece in sent.chunks(1_000) {
             let chunk = [format!("{:x}\r\n", piece.len()).as_bytes(), piece, b"\r\n"].concat();
             if stream.write_all(&chunk).is_err() {
@@ -564,6 +583,23 @@ mod tests {
         let requests = server.received();
         assert_eq!(requests.len(), 2);
         assert!(requests[1].contains("range: bytes=50000-\r\n"));
+    }
+
+    #[test]
+    fn a_dropped_body_of_unknown_length_resumes_with_a_range_when_the_server_takes_ranges() {
+        let harness = Harness::new();
+        let body = body_of(10_000);
+        let server = Server::start(body.clone(), true);
+        let mut media = HttpMedia::new(&harness.http, &server.url("/chunked"), &[]).unwrap();
+        media.connect().unwrap();
+        let mut read = Vec::new();
+
+        media.read_to_end(&mut read).unwrap();
+
+        assert_eq!(read, body);
+        let requests = server.received();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].contains("range: bytes=5000-\r\n"));
     }
 
     #[test]

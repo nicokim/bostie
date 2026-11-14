@@ -39,8 +39,7 @@ impl HlsMedia {
         media.read_to_string(&mut text)?;
         let (fetcher, mut playlist) = media.into_fetcher();
         if let Some(chosen) = choose_variant(&text, &playlist)? {
-            playlist = chosen;
-            text = fetch_text(&fetcher, &playlist)?;
+            (text, playlist) = fetch_text(&fetcher, &chosen)?;
         }
         let parsed = parse_media(&text, &playlist)?;
         let skip = if parsed.ended {
@@ -64,13 +63,13 @@ impl HlsMedia {
 
     fn refill(&mut self) -> io::Result<bool> {
         if let Some(map) = self.map.take() {
-            self.current = self.fetcher.get(&map)?;
+            self.current = self.fetcher.get(&map)?.0;
             return Ok(true);
         }
         loop {
             if let Some((sequence, url)) = self.segments.pop_front() {
                 self.next = sequence + 1;
-                let segment = self.fetcher.get(&url)?;
+                let (segment, _) = self.fetcher.get(&url)?;
                 self.current = self.demux.elementary(segment);
                 return Ok(true);
             }
@@ -78,7 +77,9 @@ impl HlsMedia {
                 return Ok(false);
             }
             thread::sleep(self.target / 2);
-            let parsed = parse_media(&fetch_text(&self.fetcher, &self.playlist)?, &self.playlist)?;
+            let (text, location) = fetch_text(&self.fetcher, &self.playlist)?;
+            let parsed = parse_media(&text, &location)?;
+            self.playlist = location;
             self.target = parsed.target;
             self.ended = parsed.ended;
             let next = self.next;
@@ -125,9 +126,11 @@ impl MediaSource for HlsMedia {
     }
 }
 
-fn fetch_text(fetcher: &Fetcher, url: &Url) -> io::Result<String> {
-    let body = fetcher.get(url)?;
-    String::from_utf8(body.to_vec()).map_err(|error| io::Error::new(ErrorKind::InvalidData, error))
+fn fetch_text(fetcher: &Fetcher, url: &Url) -> io::Result<(String, Url)> {
+    let (body, location) = fetcher.get(url)?;
+    let text = String::from_utf8(body.to_vec())
+        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+    Ok((text, location))
 }
 
 fn invalid(message: &str) -> io::Error {
@@ -354,10 +357,12 @@ mod tests {
     use crate::voice::types::SourceSpec;
 
     type Pages = Arc<Mutex<HashMap<String, VecDeque<Vec<u8>>>>>;
+    type Moved = Arc<Mutex<HashMap<String, String>>>;
 
     struct Site {
         base: String,
         pages: Pages,
+        moved: Moved,
     }
 
     impl Site {
@@ -365,15 +370,25 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
             let pages = Pages::default();
+            let moved = Moved::default();
             let served = Arc::clone(&pages);
+            let redirects = Arc::clone(&moved);
             thread::spawn(move || {
                 for stream in listener.incoming() {
                     let Ok(stream) = stream else { return };
                     let pages = Arc::clone(&served);
-                    thread::spawn(move || answer(stream, &pages));
+                    let moved = Arc::clone(&redirects);
+                    thread::spawn(move || answer(stream, &pages, &moved));
                 }
             });
-            Self { base, pages }
+            Self { base, pages, moved }
+        }
+
+        fn redirect(&self, from: &str, to: &str) {
+            self.moved
+                .lock()
+                .unwrap()
+                .insert(from.to_owned(), to.to_owned());
         }
 
         fn page(&self, path: &str, bodies: &[&[u8]]) {
@@ -391,7 +406,7 @@ mod tests {
         }
     }
 
-    fn answer(mut stream: TcpStream, pages: &Pages) {
+    fn answer(mut stream: TcpStream, pages: &Pages, moved: &Moved) {
         let mut head = Vec::new();
         let mut byte = [0; 1];
         while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
@@ -403,6 +418,13 @@ mod tests {
             .nth(1)
             .unwrap_or_default()
             .to_owned();
+        if let Some(to) = moved.lock().unwrap().get(&path) {
+            let response = format!(
+                "HTTP/1.1 302 Found\r\nlocation: {to}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+            drop(stream.write_all(response.as_bytes()));
+            return;
+        }
         let body = pages.lock().unwrap().get_mut(&path).map(|bodies| {
             if bodies.len() > 1 {
                 bodies.pop_front().unwrap()
@@ -454,6 +476,24 @@ mod tests {
 
         assert_eq!(error, None);
         assert!((seconds(&chunks) - 2.0).abs() < 0.1, "{}", seconds(&chunks));
+    }
+
+    #[test]
+    fn playlists_resolve_their_uris_from_where_a_redirect_took_them() {
+        let site = Site::start();
+        let master =
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=48000,CODECS=\"mp4a.40.2\"\naudio.m3u8\n";
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.0,\na.ts\n#EXT-X-ENDLIST\n";
+        site.redirect("/radio", "/hls/master.m3u8");
+        site.page("/hls/master.m3u8", &[master.as_bytes()]);
+        site.redirect("/hls/audio.m3u8", "/cdn/audio.m3u8");
+        site.page("/cdn/audio.m3u8", &[media.as_bytes()]);
+        site.page("/cdn/a.ts", &[&tone_ts()]);
+
+        let (chunks, error) = site.play("/radio");
+
+        assert_eq!(error, None);
+        assert!((seconds(&chunks) - 1.0).abs() < 0.1, "{}", seconds(&chunks));
     }
 
     #[test]
