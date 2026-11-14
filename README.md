@@ -4,51 +4,15 @@
 
 <img src="docs/assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
 
-A Discord library for Python with a Rust core, designed around reliable voice.
+A Discord library for Python with a Rust core, built around reliable voice.
 
-> **Status:** pre-alpha. Text bots work: slash, user and message commands, buttons, selects and modals, gateway events, the cache and REST. Voice joins channels, plays audio and receives it.
-
-## Install
-
-bostie is not on PyPI yet. Clone this repository and install the clone into your bot's environment:
-
-```sh
-pip install path/to/bostie
-```
-
-You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs)) and [CMake](https://cmake.org/download/). The install compiles the Rust core and libopus, which takes a few minutes.
-
-`bostie.__version__` is the installed version, and `python -m bostie` prints it with the Python and platform versions for a bug report.
-
-## Goals
-
-- Voice comes first. Discord has required end-to-end encrypted voice ([DAVE](https://docs.discord.com/developers/topics/voice-connections)) since March 2026. The voice path runs in Rust, outside the GIL: the 20 ms clock, mixing, Opus, encryption and DAVE. Audio timing does not depend on what your Python code is doing.
-- Bots keep working when Discord adds things. Unknown fields, enum values, components and interaction types never break decoding. Every event keeps its raw payload, and raw escape hatches reach events and endpoints bostie does not model yet.
-- Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as an option's member is a `ResolvedMember`, which has no `deaf` or `mute`, not a `Member` with holes. A message a webhook sent, interaction responses included, is a `WebhookMessage` whose `author` is a `PartialUser`; any other is a `Message` with a full `User`.
-- The busy paths run in Rust: the gateway, compression, HTTP and rate limiting. Python decodes raw JSON into compact `msgspec` models.
-
-## Example
+> **Status:** pre-alpha, not on PyPI yet, and the API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
 
 ```python
-import random
-
 import bostie
-from bostie import ComponentContext, Context, Range, ui, voice
+from bostie import ComponentContext, Context, ui, voice
 
 bot = bostie.Bot()
-
-
-@bot.command
-async def roll(ctx: Context, sides: Range[int, 2, 100] = 6) -> None:
-    """Roll a die."""
-    again = ui.button("Again", custom_id=reroll.id(sides=sides))
-    rolled = ui.text(f"d{sides}: {random.randint(1, sides)}")
-    await ctx.respond(components=[rolled, ui.row(again)])
-
-
-@bot.on_component("reroll:{sides:int}")
-async def reroll(ctx: ComponentContext, sides: int) -> None:
-    await ctx.update(components=[ui.text(f"d{sides}: {random.randint(1, sides)}")])
 
 
 @bot.command
@@ -56,13 +20,51 @@ async def play(ctx: Context, url: str) -> None:
     """Play a direct media URL in your voice channel."""
     vc = ctx.voice.current or await ctx.voice.connect()
     await vc.play(voice.Url(url))
-    await ctx.respond("Playing")
+    stop = ui.button("Stop", custom_id=stop_playing.id(guild_id=vc.guild_id))
+    await ctx.respond(components=[ui.text(f"Playing <{url}>"), ui.row(stop)])
+
+
+@bot.on_component("stop:{guild_id:int}")
+async def stop_playing(ctx: ComponentContext, guild_id: int) -> None:
+    if (vc := bot.voice.get(guild_id)) is not None:
+        vc.stop()
+    await ctx.update(components=[ui.text("Stopped.")])
 
 
 bot.run()
 ```
 
-`bot.run()` reads the token from `BOSTIE_TOKEN`, and commands sync on startup when they changed.
+`/play` joins the caller's voice channel, streams the URL and answers with a Stop button whose custom id carries the guild id, so it keeps working after a restart. `bot.run()` reads the token from `BOSTIE_TOKEN` and registers the command when it changed.
+
+## What sets it apart
+
+- The voice engine runs on Rust threads, outside the GIL: the 20 ms clock, decoding, mixing, Opus, encryption and [DAVE](https://docs.discord.com/developers/topics/voice-connections), the end-to-end encryption Discord has required since March 2026. It plays files, URLs and HLS streams, receives each speaker on their own, and records calls.
+- Unknown fields, enum values, components and interaction types never break decoding, and every payload stays reachable raw, so a bot keeps working when Discord adds something.
+- Models are typed as Discord documents them: a field Discord always sends is never `None`, and a partial object such as a member resolved from an option has its own class.
+- Command options, choices, ranges and autocomplete come from type hints, and Discord's limits are checked when the decorator runs.
+- `bostie.testing` is a fake Discord on localhost that tests run the real bot against.
+
+## Install
+
+You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs)) and [CMake](https://cmake.org/download/). Clone the repository and install the clone into your bot's environment:
+
+```sh
+pip install path/to/bostie
+```
+
+The first install compiles the Rust core and libopus, which takes a few minutes. `python -m bostie` prints the installed version.
+
+## Documentation
+
+- [Quickstart](docs/quickstart.md): create the application and run a first bot.
+- Guides: [slash commands](docs/guide/commands.md), [answering interactions](docs/guide/responses.md), [components](docs/guide/components.md), [events](docs/guide/events.md), [REST](docs/guide/rest.md), [testing](docs/guide/testing.md) and more.
+- [Voice](docs/voice/index.md): connections and DAVE, playback, raw audio, receiving and recording.
+- [Reference](docs/reference/bot-options.md): every `Bot` option, every event, and the API.
+- [Examples](examples/): complete bots, each tested in CI.
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains the setup and the checks a pull request must pass. Report security problems as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 

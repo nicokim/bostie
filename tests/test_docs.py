@@ -43,6 +43,14 @@ def test_python_blocks_include_snippets_and_every_snippet_is_shown() -> None:
     assert all(path.is_file() for path in included)
 
 
+def test_the_readme_example_is_the_file_the_docs_include() -> None:
+    readme = text(ROOT / "README.md")
+
+    assert FENCE.findall(readme) == [
+        text(DOCS / "snippets" / "home" / "readme_example.py")
+    ]
+
+
 def test_the_quickstart_bot_answers_its_command_on_the_fake(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
