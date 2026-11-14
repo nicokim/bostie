@@ -1,3 +1,7 @@
+---
+render_macros: true
+---
+
 # bostie
 
 bostie is a Discord library for Python whose gateway, HTTP client and voice engine run in Rust. You write the bot in typed, async Python.
@@ -10,6 +14,8 @@ bostie is a Discord library for Python whose gateway, HTTP client and voice engi
 ```
 
 `/play` joins the voice channel of the user who ran it, streams the URL and answers with a Stop button. The button's custom id carries the guild id, and `@bot.on_component` parses it back into an `int`, so the button still works after the bot restarts. `bot.run()` reads the token from the `BOSTIE_TOKEN` environment variable and sends the command to Discord when it changed.
+
+{% include "callout.md" %}
 
 ## What it is built for
 

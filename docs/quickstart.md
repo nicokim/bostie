@@ -1,6 +1,12 @@
+---
+render_macros: true
+---
+
 # Quickstart
 
 This page creates a Discord application, adds it to a server and runs a bot with one slash command. It assumes bostie is [installed](install.md).
+
+{% include "callout.md" %}
 
 ## Create the application
 
