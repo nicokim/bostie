@@ -979,6 +979,10 @@ def test_a_session_file_resumes_the_sessions_of_the_last_run(
             resume = await fake.next_resume()
             assert (await missed).id == 5
             user = second.user
+            back = asyncio.ensure_future(second.wait_for(GuildCreate))
+            await fake.dispatch("GUILD_DELETE", {"id": str(GUILD), "unavailable": True})
+            await fake.dispatch("GUILD_CREATE", payloads.guild())
+            returned = await back
         later = [payload["op"] for payload in fake.connections[1].received]
 
         assert fake.connections[0].close_code == 4000
@@ -987,6 +991,7 @@ def test_a_session_file_resumes_the_sessions_of_the_last_run(
         assert user is not None
         assert user.id == int(fake.bot_user["id"])
         assert 2 not in later
+        assert (returned.guild.id, returned.joined) == (GUILD, False)
 
     run(scenario)
 

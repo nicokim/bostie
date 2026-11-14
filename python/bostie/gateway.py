@@ -506,7 +506,9 @@ class Readiness:
         shard = self._shards[shard_id]
         if guild is None:
             return False
-        if not guild.unavailable:
+        if guild.unavailable:
+            shard.known.add(guild.id)
+        else:
             shard.known.discard(guild.id)
         return self._arrived(shard, guild.id)
 
