@@ -43,6 +43,7 @@ from bostie.voice.formats import (
     Opus,
     SinkOptions,
     SinkStall,
+    check_crossfade,
 )
 from bostie.voice.frames import Frame
 
@@ -720,7 +721,9 @@ class Queue:
         check_keys(options, SINK_OPTIONS, "options")
         defaults = vc.manager.defaults
         self.vc = vc
-        self.crossfade = defaults.crossfade if crossfade is None else crossfade
+        self.crossfade = check_crossfade(
+            defaults.crossfade if crossfade is None else crossfade
+        )
         if history is not None and history < 0:
             raise ValueError(f"history must be at least 0, got {history}")
         self._player = _Player(

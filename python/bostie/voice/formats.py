@@ -39,6 +39,14 @@ type StageRole = Literal["listen", "request", "speak"]
 SAMPLE_BYTES: dict[Sample, int] = {"s16le": 2, "f32le": 4}
 
 
+def check_crossfade(seconds: float) -> float:
+    if not 0.0 <= seconds <= MAX_BUFFER:
+        raise ValueError(
+            f"crossfade must be from 0 to {MAX_BUFFER} seconds, got {seconds}"
+        )
+    return seconds
+
+
 @dataclass(frozen=True, slots=True)
 class PCM:
     """Raw audio samples, interleaved, little endian."""
@@ -242,11 +250,7 @@ class Defaults:
                 "overflow must be 'drop_oldest' or 'drop_newest', "
                 f"got {self.overflow!r}"
             )
-        if not 0.0 <= self.crossfade <= MAX_BUFFER:
-            raise ValueError(
-                f"crossfade must be from 0 to {MAX_BUFFER} seconds, "
-                f"got {self.crossfade}"
-            )
+        check_crossfade(self.crossfade)
         if self.history < 0:
             raise ValueError(f"history must be at least 0, got {self.history}")
         if self.receive_stall not in ("wait", "end"):

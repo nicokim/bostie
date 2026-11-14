@@ -839,6 +839,8 @@ def test_a_crossfading_queue_chains_one_sink_per_track() -> None:
         assert [sink.crossfade for sink in vc.sinks] == [2.0, 2.0]
         vc.manager.defaults = Defaults(crossfade=1.5)
         assert (queue(vc).crossfade, queue(vc, crossfade=0.0).crossfade) == (1.5, 0.0)
+        with pytest.raises(ValueError, match="crossfade"):
+            queue(vc, crossfade=-1.0)
 
     run(scenario)
 
