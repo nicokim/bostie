@@ -312,13 +312,20 @@ def test_http_settings_bound_the_retries_and_the_rate_limit_wait() -> None:
         lambda: HTTPSettings(retries=-1),
         lambda: HTTPSettings(max_rate_limit_wait=-1.0),
         lambda: HTTPSettings(read_timeout=float("inf")),
+        lambda: HTTPSettings(connect_timeout=0.0),
     ],
-    ids=["global rate limit", "retries", "rate limit wait", "read timeout"],
+    ids=[
+        "global rate limit",
+        "retries",
+        "rate limit wait",
+        "read timeout",
+        "connect timeout",
+    ],
 )
 def test_http_settings_refuse_values_bostie_cannot_use(
     settings: Callable[[], HTTPSettings],
 ) -> None:
-    with pytest.raises(ValueError, match="at least"):
+    with pytest.raises(ValueError, match="must be"):
         settings()
 
 

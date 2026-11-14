@@ -66,11 +66,17 @@ class HTTPSettings:
             )
         if self.retries < 0:
             raise ValueError(f"retries must be at least 0, got {self.retries}")
-        for name in ("max_rate_limit_wait", "connect_timeout", "read_timeout"):
+        wait = self.max_rate_limit_wait
+        if not (math.isfinite(wait) and wait >= 0):
+            raise ValueError(
+                f"max_rate_limit_wait must be a number of seconds of at least 0, "
+                f"got {wait}"
+            )
+        for name in ("connect_timeout", "read_timeout"):
             seconds: float = getattr(self, name)
-            if not (math.isfinite(seconds) and seconds >= 0):
+            if not (math.isfinite(seconds) and seconds > 0):
                 raise ValueError(
-                    f"{name} must be a number of seconds of at least 0, got {seconds}"
+                    f"{name} must be a number of seconds above 0, got {seconds}"
                 )
 
 

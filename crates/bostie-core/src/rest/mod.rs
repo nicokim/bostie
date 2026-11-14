@@ -476,7 +476,8 @@ impl Retries {
         let wait = self
             .limits
             .backoff_base
-            .saturating_mul(1 << self.failed)
+            .saturating_mul(2_u32.saturating_pow(self.failed))
+            .min(self.limits.max_retry_wait)
             .mul_f64(1.0 + fastrand::f64() / 2.0);
         self.failed += 1;
         Some(wait)
@@ -747,6 +748,23 @@ pub(crate) mod tests {
         assert_eq!(
             Retries::new(LIMITS).after_response(&Method::GET, StatusCode::TOO_MANY_REQUESTS, long),
             None
+        );
+    }
+
+    #[test]
+    fn backoff_stops_doubling_at_the_longest_wait_however_many_retries() {
+        let mut retries = Retries::new(HttpSettings {
+            retries: 64,
+            ..LIMITS
+        });
+
+        let waits: Vec<_> = iter::from_fn(|| retries.backoff()).collect();
+
+        assert_eq!(waits.len(), 64);
+        assert!(
+            waits
+                .iter()
+                .all(|wait| *wait <= LIMITS.max_retry_wait * 3 / 2)
         );
     }
 
