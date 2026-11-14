@@ -1,0 +1,96 @@
+import re
+import runpy
+from pathlib import Path
+
+import pytest
+
+from bostie import Bot, events
+from bostie.testing import FakeDiscord, payloads, run, running
+
+ROOT = Path(__file__).parent.parent
+DOCS = ROOT / "docs"
+SNIPPETS = sorted((DOCS / "snippets").rglob("*.py"))
+FENCE = re.compile(r"^```python\n(.*?)^```", re.MULTILINE | re.DOTALL)
+INCLUDE = re.compile(r'--8<-- "([^"]+)"\n')
+GROUP_ROW = re.compile(r"^\| `(\w+)` \| (.+) \|$", re.MULTILINE)
+CODE = re.compile(r"`(\w+)`")
+
+
+def no_run(bot: Bot, token: str | None = None, **options: object) -> None:
+    pass
+
+
+def text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("path", SNIPPETS, ids=lambda path: path.stem)
+def test_every_snippet_defines_its_bot_without_errors(
+    path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Bot, "run", no_run)
+    runpy.run_path(str(path), run_name="snippet")
+
+
+def test_python_blocks_include_snippets_and_every_snippet_is_shown() -> None:
+    blocks = [
+        block for page in DOCS.rglob("*.md") for block in FENCE.findall(text(page))
+    ]
+    included = {ROOT / path for block in blocks for path in INCLUDE.findall(block)}
+
+    assert [block for block in blocks if not INCLUDE.fullmatch(block)] == []
+    assert set(SNIPPETS) <= included
+    assert all(path.is_file() for path in included)
+
+
+def test_the_quickstart_bot_answers_its_command_on_the_fake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Bot, "run", no_run)
+    path = DOCS / "snippets" / "quickstart" / "hello_bot.py"
+    bot = runpy.run_path(str(path), run_name="snippet")["bot"]
+
+    async def scenario(fake: FakeDiscord) -> None:
+        monkeypatch.setenv("BOSTIE_API_URL", fake.api_url)
+        async with running(bot, fake):
+            reply = await fake.interaction(2, payloads.command("hello"))
+
+        assert reply.json["data"]["content"].startswith("Hello, ")
+
+    run(scenario)
+
+
+def test_the_tests_of_the_testing_guide_pass() -> None:
+    path = DOCS / "snippets" / "testing" / "test_greeter.py"
+    tests = runpy.run_path(str(path), run_name="snippet")
+
+    for name, test in tests.items():
+        if name.startswith("test_"):
+            test()
+
+
+def test_the_event_list_names_every_event_class() -> None:
+    page = text(DOCS / "reference" / "event-list.md")
+    named = [
+        value.__name__
+        for value in vars(events).values()
+        if isinstance(value, type)
+        and issubclass(value, (events.Event, events.BotEvent))
+        and "NAME" in vars(value)
+    ]
+
+    assert [name for name in named if f"| `{name}` |" not in page] == []
+
+
+def test_the_rest_guide_lists_every_method_of_every_bot_group() -> None:
+    groups = text(DOCS / "guide" / "rest.md").split("## The groups")[1]
+    rows = GROUP_ROW.findall(groups)
+    operations = text(ROOT / "tests" / "fixtures" / "rest" / "operations.txt")
+    expected: dict[str, set[str]] = {}
+    for line in operations.splitlines():
+        name, *flags = line.split()[2:]
+        if "bearer" not in flags:
+            group, method = name.split(".")
+            expected.setdefault(group, set()).add(method)
+
+    assert {group: set(CODE.findall(methods)) for group, methods in rows} == expected

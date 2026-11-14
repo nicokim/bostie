@@ -35,6 +35,7 @@ dev = [
     "typos>=1.51.1",
     "zizmor>=1.31.1",
 ]
+docs = ["mkdocstrings-python>=2.0.11", "zensical>=0.1.1"]
 
 [tool.maturin]
 python-source = "python"
@@ -52,6 +53,9 @@ cache-keys = [
 
 [tool.ruff]
 src = ["python"]
+
+[tool.ruff.format]
+exclude = ["docs/**/*.md"]  # their code blocks only include files from docs/snippets
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -100,13 +104,14 @@ banned-module-level-imports = [
 "python/bostie/models/**" = ["RUF012"]  # msgspec copies an empty mutable default for each instance
 "crates/**/vectors.py" = ["T201"]  # the script prints the vectors
 "examples/**" = ["ARG"]  # listeners and hooks take their event, context or error even when unused
+"docs/**" = ["ARG", "FBT001", "FBT002", "PLR0917", "S101"]  # command options are parameters; tests assert
 "tests/**" = ["ARG", "FBT", "PLR0917", "PLR2004", "S101", "S106", "S107", "S603"]
 "tests/{test_context,test_mutations}.py" = ["BLE001"]  # they hand back whatever the code under test raises
 "tests/{test_voice_recording,test_voice_receive}.py" = ["PERF401"]  # a concurrent check watches the list grow item by item
 
 [tool.mypy]
 strict = true
-files = ["examples", "python/bostie", "tests"]
+files = ["docs", "examples", "python/bostie", "tests"]
 warn_unreachable = true
 strict_equality_for_none = true
 enable_error_code = [
