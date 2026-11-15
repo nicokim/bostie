@@ -45,7 +45,7 @@ Another workflow checks the dependencies on every pull request and each week: `c
 
 CI runs the tests on Linux, macOS and Windows, with Python 3.12 to 3.15 and the free-threaded 3.14t and 3.15t.
 
-Keep a pull request to one change. Its title goes into the release notes as it is, so say what changes for someone using bostie. A pull request that changes nothing for them gets the `skip-changelog` label. A commit message is one [Conventional Commits](https://www.conventionalcommits.org) line of 100 characters at most, like `feat(events): add the GUILD_EMOJIS_UPDATE event`; the why goes in the pull request. A bug fix comes with the test that failed before it.
+Keep a pull request to one change. It is squashed into one commit named after its title, and the changelog lists the `feat`, `fix` and `perf` titles as they are, so say what changes for someone using bostie. A commit message is one [Conventional Commits](https://www.conventionalcommits.org) line of 100 characters at most, like `feat(events): add the GUILD_EMOJIS_UPDATE event`; the why goes in the pull request. A bug fix comes with the test that failed before it.
 
 ## Adding a gateway event
 
