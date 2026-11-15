@@ -59,7 +59,7 @@ from bostie.models.message import decode_message
 from bostie.models.monetization import decode_entitlement
 from bostie.tasks import Task
 
-logger = logging.getLogger("bostie.events")
+log = logging.getLogger("bostie.events")
 
 REQUEST_GUILD_MEMBERS = 8
 
@@ -1456,7 +1456,7 @@ def decode_event[E: Event](event: type[E], shard_id: int, data: bytes) -> E | No
     except msgspec.ValidationError as error:
         level = logging.DEBUG if event.NAME in _undecodable else logging.WARNING
         _undecodable.add(event.NAME)
-        logger.log(
+        log.log(
             level,
             "%s has an unexpected shape (%s); typed listeners skip it",
             event.NAME,

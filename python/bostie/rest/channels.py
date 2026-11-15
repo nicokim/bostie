@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from functools import partial
+from types import TracebackType
 from typing import Any, Required, TypedDict, Unpack
 
 from bostie.enums import (
@@ -368,7 +369,12 @@ class Typing:
             self._renew(), loop=asyncio.get_running_loop(), eager_start=True
         )
 
-    async def __aexit__(self, *exc: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         renewing, self._renewing = self._renewing, None
         if renewing is not None:
             renewing.cancel()

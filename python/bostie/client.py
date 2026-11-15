@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
@@ -23,8 +22,6 @@ from bostie.rest.webhooks import (
     WebhookMessageIn,
     Webhooks,
 )
-
-log = logging.getLogger("bostie.rest")
 
 WEBHOOK_PATH = re.compile(r"/webhooks/(?P<id>\d+)/(?P<token>[^/]+)/?")
 

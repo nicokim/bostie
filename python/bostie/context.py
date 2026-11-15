@@ -69,7 +69,7 @@ if TYPE_CHECKING:
     from bostie.bot import Bot
     from bostie.rest.channels import Typing
 
-logger = logging.getLogger("bostie.context")
+log = logging.getLogger("bostie.context")
 
 TOKEN_LIFETIME = 15 * 60
 CALLBACK_ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
@@ -456,7 +456,7 @@ class _ReplyingContext[
         if self._followups == USER_INSTALL_FOLLOWUPS + 1 and owners.keys() == {
             ApplicationIntegrationType.USER_INSTALL
         }:
-            logger.warning(
+            log.warning(
                 "%s: Discord allows 5 follow-ups to an interaction of an app "
                 "installed only to the user",
                 self._label,
@@ -478,7 +478,7 @@ class _ReplyingContext[
             return
         if not self._warned_ephemeral:
             self._warned_ephemeral = True
-            logger.warning(
+            log.warning(
                 "%s: ephemeral=%s is ignored because the message being edited is %s",
                 self._label,
                 ephemeral,
