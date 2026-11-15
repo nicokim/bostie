@@ -1,10 +1,9 @@
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.file import File
-from bostie.models import Sticker, StickerPack, decode
+from bostie.models import Sticker, StickerPack
 from bostie.models.base import check_keys
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class StickerCreate(TypedDict, total=False):
@@ -20,7 +19,7 @@ class StickerEdit(TypedDict, total=False):
     tags: str
 
 
-class Stickers(Group):
+class Stickers(ResourceGroup):
     async def create(
         self,
         guild_id: int,
@@ -32,8 +31,8 @@ class Stickers(Group):
         """Upload a PNG, APNG, GIF or Lottie JSON `file` as a guild sticker."""
         keys = StickerCreate.__required_keys__ | StickerCreate.__optional_keys__
         check_keys(options, keys, "options")
-        return await self._http._decoded(
-            partial(decode, Sticker),
+        return await self._call(
+            Sticker,
             "POST",
             "/guilds/{guild_id}/stickers",
             form=options,
@@ -44,7 +43,7 @@ class Stickers(Group):
     async def delete(
         self, guild_id: int, sticker_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/guilds/{guild_id}/stickers/{sticker_id}",
             reason=reason,
@@ -61,8 +60,8 @@ class Stickers(Group):
         reason: str | None = None,
         **options: Unpack[StickerEdit],
     ) -> Sticker:
-        return await self._http._decoded(
-            partial(decode, Sticker),
+        return await self._call(
+            Sticker,
             "PATCH",
             "/guilds/{guild_id}/stickers/{sticker_id}",
             json=wire(options, StickerEdit),
@@ -72,16 +71,16 @@ class Stickers(Group):
         )
 
     async def fetch(self, sticker_id: int, /) -> Sticker:
-        return await self._http._decoded(
-            partial(decode, Sticker),
+        return await self._call(
+            Sticker,
             "GET",
             "/stickers/{sticker_id}",
             sticker_id=sticker_id,
         )
 
     async def fetch_guild(self, guild_id: int, sticker_id: int, /) -> Sticker:
-        return await self._http._decoded(
-            partial(decode, Sticker),
+        return await self._call(
+            Sticker,
             "GET",
             "/guilds/{guild_id}/stickers/{sticker_id}",
             guild_id=guild_id,
@@ -89,24 +88,24 @@ class Stickers(Group):
         )
 
     async def fetch_pack(self, pack_id: int, /) -> StickerPack:
-        return await self._http._decoded(
-            partial(decode, StickerPack),
+        return await self._call(
+            StickerPack,
             "GET",
             "/sticker-packs/{pack_id}",
             pack_id=pack_id,
         )
 
     async def list(self, guild_id: int, /) -> tuple[Sticker, ...]:
-        return await self._http._decoded(
-            each(partial(decode, Sticker)),
+        return await self._call(
+            each(Sticker),
             "GET",
             "/guilds/{guild_id}/stickers",
             guild_id=guild_id,
         )
 
     async def list_packs(self) -> tuple[StickerPack, ...]:
-        return await self._http._decoded(
-            each(partial(decode, StickerPack), "sticker_packs"),
+        return await self._call(
+            each(StickerPack, "sticker_packs"),
             "GET",
             "/sticker-packs",
         )

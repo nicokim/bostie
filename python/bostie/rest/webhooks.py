@@ -1,5 +1,4 @@
 from collections.abc import Mapping, Sequence
-from functools import partial
 from typing import Any, Required, TypedDict, Unpack
 
 from bostie.file import File
@@ -9,11 +8,10 @@ from bostie.models import (
     PollCreateRequest,
     Webhook,
     WebhookMessage,
-    decode,
 )
 from bostie.models.base import check_keys
 from bostie.models.message import message_body
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class WebhookCreate(TypedDict, total=False):
@@ -66,7 +64,7 @@ WEBHOOK_EXECUTE = WebhookExecute.__optional_keys__
 WEBHOOK_EDIT_MESSAGE = WebhookEditMessage.__optional_keys__
 
 
-class Webhooks(Group):
+class Webhooks(ResourceGroup):
     async def create(
         self,
         channel_id: int,
@@ -75,8 +73,8 @@ class Webhooks(Group):
         reason: str | None = None,
         **options: Unpack[WebhookCreate],
     ) -> Webhook:
-        return await self._http._decoded(
-            partial(decode, Webhook),
+        return await self._call(
+            Webhook,
             "POST",
             "/channels/{channel_id}/webhooks",
             json=wire(options, WebhookCreate),
@@ -85,7 +83,7 @@ class Webhooks(Group):
         )
 
     async def delete(self, webhook_id: int, /, *, reason: str | None = None) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE", "/webhooks/{webhook_id}", reason=reason, webhook_id=webhook_id
         )
 
@@ -98,7 +96,7 @@ class Webhooks(Group):
         **options: Unpack[WebhookMessageIn],
     ) -> None:
         check_keys(options, WEBHOOK_MESSAGE_IN, "options")
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}",
             query={"thread_id": options.get("thread_id")},
@@ -108,7 +106,7 @@ class Webhooks(Group):
         )
 
     async def delete_with_token(self, webhook_id: int, webhook_token: str, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/webhooks/{webhook_id}/{webhook_token}",
             webhook_id=webhook_id,
@@ -123,8 +121,8 @@ class Webhooks(Group):
         reason: str | None = None,
         **options: Unpack[WebhookEdit],
     ) -> Webhook:
-        return await self._http._decoded(
-            partial(decode, Webhook),
+        return await self._call(
+            Webhook,
             "PATCH",
             "/webhooks/{webhook_id}",
             json=wire(options, WebhookEdit),
@@ -150,8 +148,8 @@ class Webhooks(Group):
             "with_components": parts.pop("with_components", None),
         }
         body, files = message_body(None, parts, mentions=self._allowed_mentions)
-        message = await self._http._decoded(
-            partial(decode, WebhookMessage),
+        message = await self._call(
+            WebhookMessage,
             "PATCH",
             "/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}",
             json=body,
@@ -170,8 +168,8 @@ class Webhooks(Group):
         /,
         **options: Unpack[WebhookEditWithToken],
     ) -> Webhook:
-        return await self._http._decoded(
-            partial(decode, Webhook),
+        return await self._call(
+            Webhook,
             "PATCH",
             "/webhooks/{webhook_id}/{webhook_token}",
             json=wire(options, WebhookEditWithToken),
@@ -195,8 +193,8 @@ class Webhooks(Group):
             "with_components": parts.pop("with_components", None),
         }
         body, files = message_body(content, parts, mentions=self._allowed_mentions)
-        message = await self._http._decoded(
-            partial(decode, WebhookMessage),
+        message = await self._call(
+            WebhookMessage,
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}",
             json=body,
@@ -217,7 +215,7 @@ class Webhooks(Group):
     ) -> None:
         """Post a GitHub webhook event payload, as GitHub would."""
         check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}/github",
             json=payload,
@@ -236,7 +234,7 @@ class Webhooks(Group):
     ) -> None:
         """Post a message in Slack's incoming webhook format."""
         check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}/slack",
             json=payload,
@@ -246,8 +244,8 @@ class Webhooks(Group):
         )
 
     async def fetch(self, webhook_id: int, /) -> Webhook:
-        return await self._http._decoded(
-            partial(decode, Webhook),
+        return await self._call(
+            Webhook,
             "GET",
             "/webhooks/{webhook_id}",
             webhook_id=webhook_id,
@@ -261,8 +259,8 @@ class Webhooks(Group):
         /,
         **options: Unpack[WebhookMessageIn],
     ) -> WebhookMessage:
-        message = await self._http._decoded(
-            partial(decode, WebhookMessage),
+        message = await self._call(
+            WebhookMessage,
             "GET",
             "/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}",
             query=wire(options, WebhookMessageIn),
@@ -273,8 +271,8 @@ class Webhooks(Group):
         return self._in_guild(message)
 
     async def fetch_with_token(self, webhook_id: int, webhook_token: str, /) -> Webhook:
-        return await self._http._decoded(
-            partial(decode, Webhook),
+        return await self._call(
+            Webhook,
             "GET",
             "/webhooks/{webhook_id}/{webhook_token}",
             webhook_id=webhook_id,
@@ -282,16 +280,16 @@ class Webhooks(Group):
         )
 
     async def list(self, channel_id: int, /) -> tuple[Webhook, ...]:
-        return await self._http._decoded(
-            each(partial(decode, Webhook)),
+        return await self._call(
+            each(Webhook),
             "GET",
             "/channels/{channel_id}/webhooks",
             channel_id=channel_id,
         )
 
     async def list_guild(self, guild_id: int, /) -> tuple[Webhook, ...]:
-        return await self._http._decoded(
-            each(partial(decode, Webhook)),
+        return await self._call(
+            each(Webhook),
             "GET",
             "/guilds/{guild_id}/webhooks",
             guild_id=guild_id,

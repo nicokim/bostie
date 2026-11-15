@@ -1,6 +1,5 @@
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import datetime
-from functools import partial
 from typing import Any, Required, TypedDict, Unpack
 
 from bostie.enums import ChannelType, MessageFlags
@@ -13,11 +12,10 @@ from bostie.models import (
     Component,
     Embed,
     ThreadMember,
-    decode,
 )
 from bostie.models.base import Model, check_keys
 from bostie.models.message import message_body
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 ARCHIVED_PAGE = 100
 
@@ -78,9 +76,9 @@ class ThreadListJoinedPrivateArchived(TypedDict, total=False):
 FORUM_THREAD_MESSAGE = ForumThreadMessage.__optional_keys__
 
 
-class Threads(Group):
+class Threads(ResourceGroup):
     async def add_member(self, channel_id: int, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/thread-members/{user_id}",
             channel_id=channel_id,
@@ -90,8 +88,8 @@ class Threads(Group):
     async def fetch_member(
         self, channel_id: int, user_id: int, /, **options: Unpack[ThreadFetchMember]
     ) -> ThreadMember:
-        return await self._http._decoded(
-            partial(decode, ThreadMember),
+        return await self._call(
+            ThreadMember,
             "GET",
             "/channels/{channel_id}/thread-members/{user_id}",
             query=wire(options, ThreadFetchMember),
@@ -100,20 +98,20 @@ class Threads(Group):
         )
 
     async def join(self, channel_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT", "/channels/{channel_id}/thread-members/@me", channel_id=channel_id
         )
 
     async def leave(self, channel_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/thread-members/@me",
             channel_id=channel_id,
         )
 
     async def list_active(self, guild_id: int, /) -> ActiveThreads:
-        return await self._http._decoded(
-            partial(decode, ActiveThreads),
+        return await self._call(
+            ActiveThreads,
             "GET",
             "/guilds/{guild_id}/threads/active",
             guild_id=guild_id,
@@ -135,11 +133,10 @@ class Threads(Group):
         self, channel_id: int, /, **options: Unpack[ThreadListMembers]
     ) -> AsyncIterator[ThreadMember]:
         """Walk a thread's members, each with its guild member."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/channels/{channel_id}/thread-members",
             wire(options, ThreadListMembers) | {"with_member": True},
-            decode=each(partial(decode, ThreadMember)),
+            decodes=each(ThreadMember),
             items=tuple,
             cursor=_user_id,
             page_size=100,
@@ -173,7 +170,7 @@ class Threads(Group):
         )
 
     async def remove_member(self, channel_id: int, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/thread-members/{user_id}",
             channel_id=channel_id,
@@ -189,8 +186,8 @@ class Threads(Group):
         **options: Unpack[ThreadStart],
     ) -> Channel:
         """Start a thread without a message; it is private unless `type` says not."""
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "POST",
             "/channels/{channel_id}/threads",
             json=wire(options, ThreadStart),
@@ -207,8 +204,8 @@ class Threads(Group):
         reason: str | None = None,
         **options: Unpack[ThreadStartFromMessage],
     ) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "POST",
             "/channels/{channel_id}/messages/{message_id}/threads",
             json=wire(options, ThreadStartFromMessage),
@@ -232,8 +229,8 @@ class Threads(Group):
         body["message"], files = message_body(
             None, parts, mentions=self._allowed_mentions
         )
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "POST",
             "/channels/{channel_id}/threads",
             json=body,
@@ -254,11 +251,10 @@ class Threads(Group):
         limit: int | None = options.get("limit")
         if limit is not None and limit % ARCHIVED_PAGE == 1:
             options["limit"] = limit + 1
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             route,
             options,
-            decode=each(partial(decode, Channel), "threads"),
+            decodes=each(Channel, "threads"),
             items=tuple,
             cursor=cursor,
             page_size=ARCHIVED_PAGE,

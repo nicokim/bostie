@@ -1,8 +1,7 @@
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
-from bostie.models import GuildTemplate, decode
-from bostie.rest.base import Group, each, wire
+from bostie.models import GuildTemplate
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class TemplateCreate(TypedDict, total=False):
@@ -15,12 +14,12 @@ class TemplateEdit(TypedDict, total=False):
     description: str | None
 
 
-class Templates(Group):
+class Templates(ResourceGroup):
     async def create(
         self, guild_id: int, /, **options: Unpack[TemplateCreate]
     ) -> GuildTemplate:
-        return await self._http._decoded(
-            partial(decode, GuildTemplate),
+        return await self._call(
+            GuildTemplate,
             "POST",
             "/guilds/{guild_id}/templates",
             json=wire(options, TemplateCreate),
@@ -28,8 +27,8 @@ class Templates(Group):
         )
 
     async def delete(self, guild_id: int, code: str, /) -> GuildTemplate:
-        return await self._http._decoded(
-            partial(decode, GuildTemplate),
+        return await self._call(
+            GuildTemplate,
             "DELETE",
             "/guilds/{guild_id}/templates/{code}",
             guild_id=guild_id,
@@ -39,8 +38,8 @@ class Templates(Group):
     async def edit(
         self, guild_id: int, code: str, /, **options: Unpack[TemplateEdit]
     ) -> GuildTemplate:
-        return await self._http._decoded(
-            partial(decode, GuildTemplate),
+        return await self._call(
+            GuildTemplate,
             "PATCH",
             "/guilds/{guild_id}/templates/{code}",
             json=wire(options, TemplateEdit),
@@ -49,16 +48,16 @@ class Templates(Group):
         )
 
     async def fetch(self, code: str, /) -> GuildTemplate:
-        return await self._http._decoded(
-            partial(decode, GuildTemplate),
+        return await self._call(
+            GuildTemplate,
             "GET",
             "/guilds/templates/{code}",
             code=code,
         )
 
     async def list(self, guild_id: int, /) -> tuple[GuildTemplate, ...]:
-        return await self._http._decoded(
-            each(partial(decode, GuildTemplate)),
+        return await self._call(
+            each(GuildTemplate),
             "GET",
             "/guilds/{guild_id}/templates",
             guild_id=guild_id,
@@ -66,8 +65,8 @@ class Templates(Group):
 
     async def sync(self, guild_id: int, code: str, /) -> GuildTemplate:
         """Update the template to the guild's current state."""
-        return await self._http._decoded(
-            partial(decode, GuildTemplate),
+        return await self._call(
+            GuildTemplate,
             "PUT",
             "/guilds/{guild_id}/templates/{code}",
             guild_id=guild_id,

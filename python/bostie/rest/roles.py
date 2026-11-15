@@ -1,12 +1,11 @@
 from collections.abc import Mapping
-from functools import partial
 from typing import TypedDict, Unpack
 
 from bostie.enums import Permissions
 from bostie.file import File
-from bostie.models import Role, RoleColors, decode
+from bostie.models import Role, RoleColors
 from bostie.models.base import decoder
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 from bostie.rest.members import decode_permissions
 
 
@@ -35,7 +34,7 @@ def _member_counts(data: bytes) -> dict[int, int]:
     return counts
 
 
-class Roles(Group):
+class Roles(ResourceGroup):
     async def create(
         self,
         guild_id: int,
@@ -44,8 +43,8 @@ class Roles(Group):
         reason: str | None = None,
         **options: Unpack[RoleCreate],
     ) -> Role:
-        return await self._http._decoded(
-            partial(decode, Role),
+        return await self._call(
+            Role,
             "POST",
             "/guilds/{guild_id}/roles",
             json=wire(options, RoleCreate),
@@ -56,7 +55,7 @@ class Roles(Group):
     async def delete(
         self, guild_id: int, role_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/guilds/{guild_id}/roles/{role_id}",
             reason=reason,
@@ -73,8 +72,8 @@ class Roles(Group):
         reason: str | None = None,
         **options: Unpack[RoleEdit],
     ) -> Role:
-        return await self._http._decoded(
-            partial(decode, Role),
+        return await self._call(
+            Role,
             "PATCH",
             "/guilds/{guild_id}/roles/{role_id}",
             json=wire(options, RoleEdit),
@@ -92,8 +91,8 @@ class Roles(Group):
         reason: str | None = None,
     ) -> tuple[Role, ...]:
         """Move roles, given as role id to position; returns every role of the guild."""
-        return await self._http._decoded(
-            each(partial(decode, Role)),
+        return await self._call(
+            each(Role),
             "PATCH",
             "/guilds/{guild_id}/roles",
             json=[
@@ -104,8 +103,8 @@ class Roles(Group):
         )
 
     async def fetch(self, guild_id: int, role_id: int, /) -> Role:
-        return await self._http._decoded(
-            partial(decode, Role),
+        return await self._call(
+            Role,
             "GET",
             "/guilds/{guild_id}/roles/{role_id}",
             guild_id=guild_id,
@@ -114,7 +113,7 @@ class Roles(Group):
 
     async def fetch_member_counts(self, guild_id: int, /) -> dict[int, int]:
         """How many members hold each role, by role id, `@everyone` left out."""
-        return await self._http._decoded(
+        return await self._call(
             _member_counts,
             "GET",
             "/guilds/{guild_id}/roles/member-counts",
@@ -123,7 +122,7 @@ class Roles(Group):
 
     async def fetch_permissions(self, guild_id: int, role_id: int, /) -> Permissions:
         """The role's guild permissions combined with those of `@everyone`."""
-        return await self._http._decoded(
+        return await self._call(
             decode_permissions,
             "GET",
             "/guilds/{guild_id}/permissions/role/{role_id}",
@@ -132,8 +131,8 @@ class Roles(Group):
         )
 
     async def list(self, guild_id: int, /) -> tuple[Role, ...]:
-        return await self._http._decoded(
-            each(partial(decode, Role)),
+        return await self._call(
+            each(Role),
             "GET",
             "/guilds/{guild_id}/roles",
             guild_id=guild_id,

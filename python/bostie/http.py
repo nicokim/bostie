@@ -127,7 +127,7 @@ class HTTPClient:
         multipart body; `urlencoded` sends fields as a form-urlencoded body. An empty
         body returns None; an error status raises the matching bostie error.
         """
-        body = await self._request(
+        body = await self.send(
             method,
             route,
             json=json,
@@ -170,18 +170,7 @@ class HTTPClient:
             waveform=source.waveform,
         )
 
-    async def _decoded[T](
-        self,
-        decode: Callable[[bytes], T],
-        method: str,
-        route: str,
-        /,
-        **request: Any,
-    ) -> T:
-        data = await self._request(method, route, **request)
-        return decode_answer(decode, data, took_effect=method != "GET")
-
-    async def _request(
+    async def send(
         self,
         method: str,
         route: str,
@@ -195,6 +184,7 @@ class HTTPClient:
         reason: str | None = None,
         **params: object,
     ) -> bytes:
+        """Send a request like `request`; return the raw body of the answer."""
         if reason is not None and not 1 <= len(reason) <= MAX_REASON:
             raise ValueError(
                 f"reason must be 1 to {MAX_REASON} characters, got {len(reason)}"

@@ -1,11 +1,10 @@
 from collections.abc import AsyncIterator
-from functools import partial
 from typing import TypedDict, Unpack
 
 from bostie.enums import ReactionType
-from bostie.models import User, decode
+from bostie.models import User
 from bostie.models.components import AnyEmoji, partial_emoji
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class ReactionList(TypedDict, total=False):
@@ -14,13 +13,13 @@ class ReactionList(TypedDict, total=False):
     limit: int
 
 
-class Reactions(Group):
+class Reactions(ResourceGroup):
     """Reactions on a message; `emoji_name` is an emoji str, Emoji or PartialEmoji."""
 
     async def create(
         self, channel_id: int, message_id: int, emoji_name: AnyEmoji, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me",
             channel_id=channel_id,
@@ -31,7 +30,7 @@ class Reactions(Group):
     async def delete(
         self, channel_id: int, message_id: int, emoji_name: AnyEmoji, user_id: int, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/{user_id}",
             channel_id=channel_id,
@@ -41,7 +40,7 @@ class Reactions(Group):
         )
 
     async def delete_all(self, channel_id: int, message_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/{message_id}/reactions",
             channel_id=channel_id,
@@ -51,7 +50,7 @@ class Reactions(Group):
     async def delete_all_for_emoji(
         self, channel_id: int, message_id: int, emoji_name: AnyEmoji, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}",
             channel_id=channel_id,
@@ -62,7 +61,7 @@ class Reactions(Group):
     async def delete_own(
         self, channel_id: int, message_id: int, emoji_name: AnyEmoji, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me",
             channel_id=channel_id,
@@ -79,11 +78,10 @@ class Reactions(Group):
         **options: Unpack[ReactionList],
     ) -> AsyncIterator[User]:
         """Walk the users who reacted with an emoji."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}",
             wire(options, ReactionList),
-            decode=each(partial(decode, User)),
+            decodes=each(User),
             items=tuple,
             cursor=lambda user: user.id,
             page_size=100,

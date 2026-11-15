@@ -1,6 +1,5 @@
 from collections.abc import AsyncIterator
 from datetime import datetime
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.enums import (
@@ -14,9 +13,8 @@ from bostie.models import (
     ScheduledEvent,
     ScheduledEventEntityMetadata,
     ScheduledEventUser,
-    decode,
 )
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class ScheduledEventCreate(TypedDict, total=False):
@@ -61,7 +59,7 @@ class ScheduledEventListUsers(TypedDict, total=False):
     with_member: bool
 
 
-class ScheduledEvents(Group):
+class ScheduledEvents(ResourceGroup):
     async def create(
         self,
         guild_id: int,
@@ -70,8 +68,8 @@ class ScheduledEvents(Group):
         reason: str | None = None,
         **options: Unpack[ScheduledEventCreate],
     ) -> ScheduledEvent:
-        return await self._http._decoded(
-            partial(decode, ScheduledEvent),
+        return await self._call(
+            ScheduledEvent,
             "POST",
             "/guilds/{guild_id}/scheduled-events",
             json=wire(options, ScheduledEventCreate),
@@ -80,7 +78,7 @@ class ScheduledEvents(Group):
         )
 
     async def delete(self, guild_id: int, guild_scheduled_event_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}",
             guild_id=guild_id,
@@ -97,8 +95,8 @@ class ScheduledEvents(Group):
         **options: Unpack[ScheduledEventEdit],
     ) -> ScheduledEvent:
         """Change an event; start or end it by setting its `status`."""
-        return await self._http._decoded(
-            partial(decode, ScheduledEvent),
+        return await self._call(
+            ScheduledEvent,
             "PATCH",
             "/guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}",
             json=wire(options, ScheduledEventEdit),
@@ -114,8 +112,8 @@ class ScheduledEvents(Group):
         /,
         **options: Unpack[ScheduledEventFetch],
     ) -> ScheduledEvent:
-        return await self._http._decoded(
-            partial(decode, ScheduledEvent),
+        return await self._call(
+            ScheduledEvent,
             "GET",
             "/guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}",
             query=wire(options, ScheduledEventFetch),
@@ -126,8 +124,8 @@ class ScheduledEvents(Group):
     async def list(
         self, guild_id: int, /, **options: Unpack[ScheduledEventList]
     ) -> tuple[ScheduledEvent, ...]:
-        return await self._http._decoded(
-            each(partial(decode, ScheduledEvent)),
+        return await self._call(
+            each(ScheduledEvent),
             "GET",
             "/guilds/{guild_id}/scheduled-events",
             query=wire(options, ScheduledEventList),
@@ -142,11 +140,10 @@ class ScheduledEvents(Group):
         **options: Unpack[ScheduledEventListUsers],
     ) -> AsyncIterator[ScheduledEventUser]:
         """Walk an event's subscribers by user id."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/users",
             wire(options, ScheduledEventListUsers),
-            decode=each(partial(decode, ScheduledEventUser)),
+            decodes=each(ScheduledEventUser),
             items=tuple,
             cursor=lambda subscriber: subscriber.user.id,
             page_size=100,

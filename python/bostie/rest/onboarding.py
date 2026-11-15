@@ -1,10 +1,9 @@
 from collections.abc import Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.enums import OnboardingMode, OnboardingPromptType
-from bostie.models import GuildOnboarding, decode
-from bostie.rest.base import Group, wire
+from bostie.models import GuildOnboarding
+from bostie.rest.base import ResourceGroup, wire
 
 
 class OnboardingPromptOptionData(TypedDict, total=False):
@@ -37,7 +36,7 @@ class OnboardingEdit(TypedDict, total=False):
     mode: OnboardingMode
 
 
-class Onboarding(Group):
+class Onboarding(ResourceGroup):
     async def edit(
         self,
         guild_id: int,
@@ -46,8 +45,8 @@ class Onboarding(Group):
         reason: str | None = None,
         **options: Unpack[OnboardingEdit],
     ) -> GuildOnboarding:
-        return await self._http._decoded(
-            partial(decode, GuildOnboarding),
+        return await self._call(
+            GuildOnboarding,
             "PUT",
             "/guilds/{guild_id}/onboarding",
             json=wire(options, OnboardingEdit),
@@ -56,8 +55,8 @@ class Onboarding(Group):
         )
 
     async def fetch(self, guild_id: int, /) -> GuildOnboarding:
-        return await self._http._decoded(
-            partial(decode, GuildOnboarding),
+        return await self._call(
+            GuildOnboarding,
             "GET",
             "/guilds/{guild_id}/onboarding",
             guild_id=guild_id,

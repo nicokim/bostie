@@ -24,12 +24,11 @@ from bostie.models import (
     SharedClientTheme,
     ThreadMember,
     WebhookMessage,
-    decode,
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
 from bostie.models.message import EDIT_PARTS, in_guild, message_body
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class MessageCreate(MessageParts, total=False):
@@ -134,7 +133,7 @@ class _Found(msgspec.Struct, kw_only=True):
     members: tuple[ThreadMember, ...] = ()
 
 
-class Messages(Group):
+class Messages(ResourceGroup):
     def __init__(
         self,
         http: HTTPClient,
@@ -163,8 +162,8 @@ class Messages(Group):
         body, files = message_body(
             content, parts, reply_to=reply_to, mentions=self._allowed_mentions
         )
-        message = await self._http._decoded(
-            partial(decode, Message),
+        message = await self._call(
+            Message,
             "POST",
             "/channels/{channel_id}/messages",
             json=body,
@@ -188,7 +187,7 @@ class Messages(Group):
         """
         check_keys(parts, EDIT_PARTS, "message parts")
         body, files = message_body(None, parts, mentions=self._allowed_mentions)
-        message = await self._http._decoded(
+        message = await self._call(
             decode_message,
             "PATCH",
             "/channels/{channel_id}/messages/{message_id}",
@@ -202,7 +201,7 @@ class Messages(Group):
     async def delete(
         self, channel_id: int, message_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/{message_id}",
             reason=reason,
@@ -218,7 +217,7 @@ class Messages(Group):
         reason: str | None = None,
         **options: Unpack[MessageBulkDelete],
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/channels/{channel_id}/messages/bulk-delete",
             json=wire(options, MessageBulkDelete),
@@ -271,8 +270,8 @@ class Messages(Group):
             await self.bulk_delete(channel_id, messages=batch, reason=reason)
 
     async def crosspost(self, channel_id: int, message_id: int, /) -> Message:
-        message = await self._http._decoded(
-            partial(decode, Message),
+        message = await self._call(
+            Message,
             "POST",
             "/channels/{channel_id}/messages/{message_id}/crosspost",
             channel_id=channel_id,
@@ -283,7 +282,7 @@ class Messages(Group):
     async def fetch(
         self, channel_id: int, message_id: int, /
     ) -> Message | WebhookMessage:
-        message = await self._http._decoded(
+        message = await self._call(
             decode_message,
             "GET",
             "/channels/{channel_id}/messages/{message_id}",
@@ -296,11 +295,10 @@ class Messages(Group):
         self, channel_id: int, /, **options: Unpack[MessageList]
     ) -> AsyncIterator[Message | WebhookMessage]:
         """Walk a channel's messages newest first, or oldest first with `after`."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/channels/{channel_id}/messages",
             wire(options, MessageList),
-            decode=each(self._message),
+            decodes=each(self._message),
             items=tuple,
             cursor=lambda message: message.id,
             page_size=100,
@@ -317,11 +315,10 @@ class Messages(Group):
         self, channel_id: int, /, **options: Unpack[MessageListPins]
     ) -> AsyncIterator[MessagePin]:
         """Walk a channel's pins, the latest pinned first."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/channels/{channel_id}/messages/pins",
             wire(options, MessageListPins),
-            decode=each(self._pin, "items"),
+            decodes=each(self._pin, "items"),
             items=tuple,
             cursor=lambda pin: pin.pinned_at,
             page_size=50,
@@ -333,7 +330,7 @@ class Messages(Group):
     async def pin(
         self, channel_id: int, message_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/messages/pins/{message_id}",
             reason=reason,
@@ -344,7 +341,7 @@ class Messages(Group):
     async def unpin(
         self, channel_id: int, message_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/messages/pins/{message_id}",
             reason=reason,
@@ -358,7 +355,7 @@ class Messages(Group):
         """Search messages, waiting out indexing; bound it with asyncio.timeout()."""
         query = wire(options, MessageSearch)
         while True:
-            found = await self._http._decoded(
+            found = await self._call(
                 partial(_search_results, guild_id),
                 "GET",
                 "/guilds/{guild_id}/messages/search",

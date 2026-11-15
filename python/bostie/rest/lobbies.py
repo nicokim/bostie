@@ -1,13 +1,12 @@
 from collections.abc import Mapping, Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 import msgspec
 
 from bostie.enums import LobbyMemberFlags, MessageFlags
-from bostie.models import Lobby, LobbyMember, LobbyMessage, decode
+from bostie.models import Lobby, LobbyMember, LobbyMessage
 from bostie.models.base import decoder
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class LobbyMemberAdd(TypedDict, total=False):
@@ -55,13 +54,13 @@ def _invite_code(data: bytes) -> str:
     return invite.code
 
 
-class Lobbies(Group):
+class Lobbies(ResourceGroup):
     async def add_member(
         self, lobby_id: int, user_id: int, /, **options: Unpack[LobbyMemberAdd]
     ) -> LobbyMember:
         """Add the user to the lobby, or update the member already in it."""
-        return await self._http._decoded(
-            partial(decode, LobbyMember),
+        return await self._call(
+            LobbyMember,
             "PUT",
             "/lobbies/{lobby_id}/members/{user_id}",
             json=wire(options, LobbyMemberAdd),
@@ -73,8 +72,8 @@ class Lobbies(Group):
         self, lobby_id: int, /, members: Sequence[LobbyMemberUpdate]
     ) -> tuple[LobbyMember, ...]:
         """Add, update or, with `remove_member`, remove up to 25 members at once."""
-        return await self._http._decoded(
-            each(partial(decode, LobbyMember)),
+        return await self._call(
+            each(LobbyMember),
             "POST",
             "/lobbies/{lobby_id}/members/bulk",
             json=members,
@@ -83,13 +82,13 @@ class Lobbies(Group):
 
     async def create(self, **options: Unpack[LobbyCreate]) -> Lobby:
         """Create a lobby, which Social SDK clients cannot join or leave themselves."""
-        return await self._http._decoded(
-            partial(decode, Lobby), "POST", "/lobbies", json=wire(options, LobbyCreate)
+        return await self._call(
+            Lobby, "POST", "/lobbies", json=wire(options, LobbyCreate)
         )
 
     async def create_invite_for_user(self, lobby_id: int, user_id: int, /) -> str:
         """A one-hour, single-use invite code to the lobby's linked channel."""
-        return await self._http._decoded(
+        return await self._call(
             _invite_code,
             "POST",
             "/lobbies/{lobby_id}/members/{user_id}/invites",
@@ -98,12 +97,12 @@ class Lobbies(Group):
         )
 
     async def delete(self, lobby_id: int, /) -> None:
-        await self._http._request("DELETE", "/lobbies/{lobby_id}", lobby_id=lobby_id)
+        await self._http.send("DELETE", "/lobbies/{lobby_id}", lobby_id=lobby_id)
 
     async def edit(self, lobby_id: int, /, **options: Unpack[LobbyCreate]) -> Lobby:
         """Change the lobby; `members` replaces every member."""
-        return await self._http._decoded(
-            partial(decode, Lobby),
+        return await self._call(
+            Lobby,
             "PATCH",
             "/lobbies/{lobby_id}",
             json=wire(options, LobbyCreate),
@@ -111,12 +110,10 @@ class Lobbies(Group):
         )
 
     async def fetch(self, lobby_id: int, /) -> Lobby:
-        return await self._http._decoded(
-            partial(decode, Lobby), "GET", "/lobbies/{lobby_id}", lobby_id=lobby_id
-        )
+        return await self._call(Lobby, "GET", "/lobbies/{lobby_id}", lobby_id=lobby_id)
 
     async def remove_member(self, lobby_id: int, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/lobbies/{lobby_id}/members/{user_id}",
             lobby_id=lobby_id,
@@ -127,7 +124,7 @@ class Lobbies(Group):
         self, lobby_id: int, message_id: int, /, metadata: Mapping[str, str]
     ) -> None:
         """Tell the game clients what to do with a lobby message; at most 5 keys."""
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/lobbies/{lobby_id}/messages/{message_id}/moderation-metadata",
             json=metadata,
@@ -136,10 +133,10 @@ class Lobbies(Group):
         )
 
 
-class BearerLobbies(Group):
+class BearerLobbies(ResourceGroup):
     async def create_invite_for_self(self, lobby_id: int, /) -> str:
         """A one-hour, single-use invite code to the lobby's linked channel."""
-        return await self._http._decoded(
+        return await self._call(
             _invite_code,
             "POST",
             "/lobbies/{lobby_id}/members/@me/invites",
@@ -148,21 +145,21 @@ class BearerLobbies(Group):
 
     async def create_or_join(self, **options: Unpack[LobbyCreateOrJoin]) -> Lobby:
         """Join the lobby that has `secret`, or create it."""
-        return await self._http._decoded(
-            partial(decode, Lobby),
+        return await self._call(
+            Lobby,
             "PUT",
             "/lobbies",
             json=wire(options, LobbyCreateOrJoin),
         )
 
     async def leave(self, lobby_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE", "/lobbies/{lobby_id}/members/@me", lobby_id=lobby_id
         )
 
     async def link_channel(self, lobby_id: int, /, channel_id: int) -> Lobby:
-        return await self._http._decoded(
-            partial(decode, Lobby),
+        return await self._call(
+            Lobby,
             "PATCH",
             "/lobbies/{lobby_id}/channel-linking",
             json={"channel_id": channel_id},
@@ -173,8 +170,8 @@ class BearerLobbies(Group):
         self, lobby_id: int, /, **options: Unpack[LobbyListMessages]
     ) -> tuple[LobbyMessage, ...]:
         """The latest messages, 50 unless `limit` says up to 200."""
-        return await self._http._decoded(
-            each(partial(decode, LobbyMessage)),
+        return await self._call(
+            each(LobbyMessage),
             "GET",
             "/lobbies/{lobby_id}/messages",
             query=wire(options, LobbyListMessages),
@@ -184,8 +181,8 @@ class BearerLobbies(Group):
     async def send_message(
         self, lobby_id: int, /, content: str, **options: Unpack[LobbySendMessage]
     ) -> LobbyMessage:
-        return await self._http._decoded(
-            partial(decode, LobbyMessage),
+        return await self._call(
+            LobbyMessage,
             "POST",
             "/lobbies/{lobby_id}/messages",
             json={"content": content} | wire(options, LobbySendMessage),
@@ -193,8 +190,8 @@ class BearerLobbies(Group):
         )
 
     async def unlink_channel(self, lobby_id: int, /) -> Lobby:
-        return await self._http._decoded(
-            partial(decode, Lobby),
+        return await self._call(
+            Lobby,
             "PATCH",
             "/lobbies/{lobby_id}/channel-linking",
             json={},

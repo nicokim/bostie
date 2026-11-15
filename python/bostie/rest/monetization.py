@@ -1,11 +1,10 @@
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
-from functools import partial
 from typing import Literal, Required, TypedDict, Unpack
 
-from bostie.models import SKU, PartialEntitlement, Subscription, decode
+from bostie.models import SKU, PartialEntitlement, Subscription
 from bostie.models.monetization import decode_entitlement
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class MonetizationCreateTestEntitlement(TypedDict, total=False):
@@ -34,11 +33,11 @@ class MonetizationListSubscriptions(TypedDict, total=False):
     user_id: int
 
 
-class Monetization(Group):
+class Monetization(ResourceGroup):
     async def consume_entitlement(
         self, application_id: int, entitlement_id: int, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/applications/{application_id}/entitlements/{entitlement_id}/consume",
             application_id=application_id,
@@ -51,8 +50,8 @@ class Monetization(Group):
         /,
         **options: Unpack[MonetizationCreateTestEntitlement],
     ) -> PartialEntitlement:
-        return await self._http._decoded(
-            partial(decode, PartialEntitlement),
+        return await self._call(
+            PartialEntitlement,
             "POST",
             "/applications/{application_id}/entitlements",
             json=wire(options, MonetizationCreateTestEntitlement),
@@ -62,7 +61,7 @@ class Monetization(Group):
     async def delete_test_entitlement(
         self, application_id: int, entitlement_id: int, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/applications/{application_id}/entitlements/{entitlement_id}",
             application_id=application_id,
@@ -72,7 +71,7 @@ class Monetization(Group):
     async def fetch_entitlement(
         self, application_id: int, entitlement_id: int, /
     ) -> PartialEntitlement:
-        return await self._http._decoded(
+        return await self._call(
             decode_entitlement,
             "GET",
             "/applications/{application_id}/entitlements/{entitlement_id}",
@@ -83,8 +82,8 @@ class Monetization(Group):
     async def fetch_subscription(
         self, sku_id: int, subscription_id: int, /
     ) -> Subscription:
-        return await self._http._decoded(
-            partial(decode, Subscription),
+        return await self._call(
+            Subscription,
             "GET",
             "/skus/{sku_id}/subscriptions/{subscription_id}",
             sku_id=sku_id,
@@ -101,11 +100,10 @@ class Monetization(Group):
         query = wire(options, MonetizationListEntitlements)
         if "sku_ids" in options:
             query["sku_ids"] = ",".join(map(str, options["sku_ids"]))
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/applications/{application_id}/entitlements",
             query,
-            decode=each(decode_entitlement),
+            decodes=each(decode_entitlement),
             items=tuple,
             cursor=lambda entitlement: entitlement.id,
             page_size=100,
@@ -115,8 +113,8 @@ class Monetization(Group):
         return (entitlement async for page in pages for entitlement in page)
 
     async def list_skus(self, application_id: int, /) -> tuple[SKU, ...]:
-        return await self._http._decoded(
-            each(partial(decode, SKU)),
+        return await self._call(
+            each(SKU),
             "GET",
             "/applications/{application_id}/skus",
             application_id=application_id,
@@ -125,11 +123,10 @@ class Monetization(Group):
     def list_subscriptions(
         self, sku_id: int, /, **options: Unpack[MonetizationListSubscriptions]
     ) -> AsyncIterator[Subscription]:
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/skus/{sku_id}/subscriptions",
             wire(options, MonetizationListSubscriptions),
-            decode=each(partial(decode, Subscription)),
+            decodes=each(Subscription),
             items=tuple,
             cursor=lambda subscription: subscription.id,
             page_size=100,

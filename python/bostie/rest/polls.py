@@ -1,9 +1,8 @@
 from collections.abc import AsyncIterator
-from functools import partial
 from typing import TypedDict, Unpack
 
-from bostie.models import Message, User, decode
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.models import Message, User
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class PollListAnswerVoters(TypedDict, total=False):
@@ -11,10 +10,10 @@ class PollListAnswerVoters(TypedDict, total=False):
     limit: int
 
 
-class Polls(Group):
+class Polls(ResourceGroup):
     async def end(self, channel_id: int, message_id: int, /) -> Message:
-        message = await self._http._decoded(
-            partial(decode, Message),
+        message = await self._call(
+            Message,
             "POST",
             "/channels/{channel_id}/polls/{message_id}/expire",
             channel_id=channel_id,
@@ -30,11 +29,10 @@ class Polls(Group):
         /,
         **options: Unpack[PollListAnswerVoters],
     ) -> AsyncIterator[User]:
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/channels/{channel_id}/polls/{message_id}/answers/{answer_id}",
             wire(options, PollListAnswerVoters),
-            decode=each(partial(decode, User), "users"),
+            decodes=each(User, "users"),
             items=tuple,
             cursor=lambda user: user.id,
             page_size=100,

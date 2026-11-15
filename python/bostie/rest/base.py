@@ -1,6 +1,7 @@
 import base64
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import datetime
+from functools import partial
 from pathlib import PurePath
 from typing import Any, cast
 
@@ -9,9 +10,9 @@ import msgspec
 from bostie.cache import Cache
 from bostie.enums import Permissions
 from bostie.file import File
-from bostie.http import HTTPClient
+from bostie.http import HTTPClient, decode_answer
 from bostie.models import AllowedMentions
-from bostie.models.base import check_keys, decoder
+from bostie.models.base import Model, check_keys, decode, decoder
 from bostie.models.message import PartialMessage, in_guild
 from bostie.snowflake import time_snowflake
 
@@ -28,7 +29,10 @@ DATA_URI_TYPES = {
 }
 
 
-class Group:
+type Decodes[T] = type[T] | Callable[[bytes], T]
+
+
+class ResourceGroup:
     """Base of the resource groups on `bot.rest`."""
 
     def __init__(
@@ -42,11 +46,73 @@ class Group:
         channel = self._cache.channel(message.channel_id)
         return in_guild(message, None if channel is None else channel.guild_id)
 
+    async def _call[T](
+        self, decodes: Decodes[T], method: str, route: str, /, **request: Any
+    ) -> T:
+        data = await self._http.send(method, route, **request)
+        return decode_answer(decoding(decodes), data, took_effect=method != "GET")
+
+    def _paginate[P, I](
+        self,
+        route: str,
+        options: Mapping[str, Any],
+        *,
+        decodes: Decodes[P],
+        items: Callable[[P], Sequence[I]],
+        cursor: Callable[[I], int | datetime],
+        page_size: int,
+        forward: bool = False,
+        time_cursor: bool = False,
+        **params: object,
+    ) -> AsyncIterator[P]:
+        given = [name for name in CURSORS if name in options]
+        if len(given) > 1:
+            raise ValueError(f"{' and '.join(given)} are mutually exclusive")
+        direction = given[0] if given else "after" if forward else "before"
+        limit: int | None = options.get("limit")
+
+        async def pages() -> AsyncIterator[P]:
+            query = {
+                name: _position(name, value, time_cursor=time_cursor)
+                for name, value in options.items()
+                if name != "limit"
+            }
+            remaining = limit
+            while remaining is None or remaining > 0:
+                size = page_size if remaining is None else min(page_size, remaining)
+                page = await self._call(
+                    decodes, "GET", route, query=query | {"limit": size}, **params
+                )
+                found = items(page)
+                if found:
+                    yield page
+                if direction == "around" or len(found) < size:
+                    return
+                if remaining is not None:
+                    remaining -= len(found)
+                positions = [cursor(item) for item in found]
+                query[direction] = (
+                    max(positions) if direction == "after" else min(positions)
+                )
+
+        return pages()
+
+
+def decoding[T](decodes: Decodes[T]) -> Callable[[bytes], T]:
+    """A model class's decoder, which keeps the payload as raw JSON, or `decodes`."""
+    if not isinstance(decodes, type):
+        return decodes
+    if issubclass(decodes, Model):
+        return cast("Callable[[bytes], T]", partial(decode, decodes))
+    typed: msgspec.json.Decoder[T] = decoder(cast("Any", decodes))
+    return typed.decode
+
 
 def each[T](
-    decode: Callable[[bytes], T], key: str | None = None
+    decodes: Decodes[T], key: str | None = None
 ) -> Callable[[bytes], tuple[T, ...]]:
     """A decoder of a JSON array, or of the one under `key`, element by element."""
+    decode_item = decoding(decodes)
 
     def decode_each(data: bytes) -> tuple[T, ...]:
         array: bytes | msgspec.Raw = data
@@ -56,7 +122,7 @@ def each[T](
                 raise msgspec.ValidationError(f"Object missing required field `{key}`")
             array = wrapper[key]
         raws = decoder(tuple[msgspec.Raw, ...]).decode(array)
-        return tuple(decode(bytes(raw)) for raw in raws)
+        return tuple(decode_item(bytes(raw)) for raw in raws)
 
     return decode_each
 
@@ -98,56 +164,6 @@ def _data_uri(file: File) -> str:
             f"{file.name!r} must end in one of {', '.join(DATA_URI_TYPES)}"
         )
     return f"data:{kind};base64,{base64.b64encode(file.data).decode()}"
-
-
-def paginate[P, I](
-    http: HTTPClient,
-    route: str,
-    options: Mapping[str, Any],
-    *,
-    decode: Callable[[bytes], P],
-    items: Callable[[P], Sequence[I]],
-    cursor: Callable[[I], int | datetime],
-    page_size: int,
-    forward: bool = False,
-    time_cursor: bool = False,
-    **params: object,
-) -> AsyncIterator[P]:
-    """Walk a GET route by its cursor up to `limit` items, or all of them without it.
-
-    A datetime cursor becomes the id of that moment unless `time_cursor` is set.
-    """
-    given = [name for name in CURSORS if name in options]
-    if len(given) > 1:
-        raise ValueError(f"{' and '.join(given)} are mutually exclusive")
-    direction = given[0] if given else "after" if forward else "before"
-    limit: int | None = options.get("limit")
-
-    async def pages() -> AsyncIterator[P]:
-        query = {
-            name: _position(name, value, time_cursor=time_cursor)
-            for name, value in options.items()
-            if name != "limit"
-        }
-        remaining = limit
-        while remaining is None or remaining > 0:
-            size = page_size if remaining is None else min(page_size, remaining)
-            page = await http._decoded(
-                decode, "GET", route, query=query | {"limit": size}, **params
-            )
-            found = items(page)
-            if found:
-                yield page
-            if direction == "around" or len(found) < size:
-                return
-            if remaining is not None:
-                remaining -= len(found)
-            positions = [cursor(item) for item in found]
-            query[direction] = (
-                max(positions) if direction == "after" else min(positions)
-            )
-
-    return pages()
 
 
 def _position(name: str, value: object, *, time_cursor: bool) -> object:

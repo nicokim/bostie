@@ -1,5 +1,4 @@
 from collections.abc import Mapping, Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.enums import (
@@ -14,9 +13,8 @@ from bostie.models import (
     ApplicationCommandOption,
     CommandPermission,
     GuildCommandPermissions,
-    decode,
 )
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class _CommandFields(TypedDict, total=False):
@@ -61,12 +59,12 @@ class CommandList(TypedDict, total=False):
     with_localizations: bool
 
 
-class _CommandPermissions(Group):
+class _CommandPermissions(ResourceGroup):
     async def fetch_permissions(
         self, application_id: int, guild_id: int, command_id: int, /
     ) -> GuildCommandPermissions:
-        return await self._http._decoded(
-            partial(decode, GuildCommandPermissions),
+        return await self._call(
+            GuildCommandPermissions,
             "GET",
             "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions",
             application_id=application_id,
@@ -77,8 +75,8 @@ class _CommandPermissions(Group):
     async def list_permissions(
         self, application_id: int, guild_id: int, /
     ) -> tuple[GuildCommandPermissions, ...]:
-        return await self._http._decoded(
-            each(partial(decode, GuildCommandPermissions)),
+        return await self._call(
+            each(GuildCommandPermissions),
             "GET",
             "/applications/{application_id}/guilds/{guild_id}/commands/permissions",
             application_id=application_id,
@@ -91,8 +89,8 @@ class Commands(_CommandPermissions):
         self, application_id: int, /, commands: Sequence[CommandBulkOverwrite]
     ) -> tuple[ApplicationCommand, ...]:
         """Replace every global command of the app with `commands`."""
-        return await self._http._decoded(
-            each(partial(decode, ApplicationCommand)),
+        return await self._call(
+            each(ApplicationCommand),
             "PUT",
             "/applications/{application_id}/commands",
             json=[wire(command, CommandBulkOverwrite) for command in commands],
@@ -107,8 +105,8 @@ class Commands(_CommandPermissions):
         commands: Sequence[CommandBulkOverwrite],
     ) -> tuple[ApplicationCommand, ...]:
         """Replace every command of the app in one guild with `commands`."""
-        return await self._http._decoded(
-            each(partial(decode, ApplicationCommand)),
+        return await self._call(
+            each(ApplicationCommand),
             "PUT",
             "/applications/{application_id}/guilds/{guild_id}/commands",
             json=[wire(command, CommandBulkOverwrite) for command in commands],
@@ -120,8 +118,8 @@ class Commands(_CommandPermissions):
         self, application_id: int, /, **options: Unpack[CommandCreate]
     ) -> ApplicationCommand:
         """Create a global command, or replace the one with the same name."""
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "POST",
             "/applications/{application_id}/commands",
             json=wire(options, CommandCreate),
@@ -136,8 +134,8 @@ class Commands(_CommandPermissions):
         **options: Unpack[CommandCreateGuild],
     ) -> ApplicationCommand:
         """Create a guild command, or replace the one with the same name."""
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "POST",
             "/applications/{application_id}/guilds/{guild_id}/commands",
             json=wire(options, CommandCreateGuild),
@@ -146,7 +144,7 @@ class Commands(_CommandPermissions):
         )
 
     async def delete(self, application_id: int, command_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/applications/{application_id}/commands/{command_id}",
             application_id=application_id,
@@ -156,7 +154,7 @@ class Commands(_CommandPermissions):
     async def delete_guild(
         self, application_id: int, guild_id: int, command_id: int, /
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}",
             application_id=application_id,
@@ -167,8 +165,8 @@ class Commands(_CommandPermissions):
     async def edit(
         self, application_id: int, command_id: int, /, **options: Unpack[CommandEdit]
     ) -> ApplicationCommand:
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "PATCH",
             "/applications/{application_id}/commands/{command_id}",
             json=wire(options, CommandEdit),
@@ -184,8 +182,8 @@ class Commands(_CommandPermissions):
         /,
         **options: Unpack[CommandEditGuild],
     ) -> ApplicationCommand:
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "PATCH",
             "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}",
             json=wire(options, CommandEditGuild),
@@ -197,8 +195,8 @@ class Commands(_CommandPermissions):
     async def fetch(
         self, application_id: int, command_id: int, /
     ) -> ApplicationCommand:
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "GET",
             "/applications/{application_id}/commands/{command_id}",
             application_id=application_id,
@@ -208,8 +206,8 @@ class Commands(_CommandPermissions):
     async def fetch_guild(
         self, application_id: int, guild_id: int, command_id: int, /
     ) -> ApplicationCommand:
-        return await self._http._decoded(
-            partial(decode, ApplicationCommand),
+        return await self._call(
+            ApplicationCommand,
             "GET",
             "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}",
             application_id=application_id,
@@ -220,8 +218,8 @@ class Commands(_CommandPermissions):
     async def list(
         self, application_id: int, /, **options: Unpack[CommandList]
     ) -> tuple[ApplicationCommand, ...]:
-        return await self._http._decoded(
-            each(partial(decode, ApplicationCommand)),
+        return await self._call(
+            each(ApplicationCommand),
             "GET",
             "/applications/{application_id}/commands",
             query=wire(options, CommandList),
@@ -231,8 +229,8 @@ class Commands(_CommandPermissions):
     async def list_guild(
         self, application_id: int, guild_id: int, /, **options: Unpack[CommandList]
     ) -> tuple[ApplicationCommand, ...]:
-        return await self._http._decoded(
-            each(partial(decode, ApplicationCommand)),
+        return await self._call(
+            each(ApplicationCommand),
             "GET",
             "/applications/{application_id}/guilds/{guild_id}/commands",
             query=wire(options, CommandList),
@@ -251,8 +249,8 @@ class BearerCommands(_CommandPermissions):
         permissions: Sequence[CommandPermission],
     ) -> GuildCommandPermissions:
         """Overwrite who may use the command in the guild; at most 100 entries."""
-        return await self._http._decoded(
-            partial(decode, GuildCommandPermissions),
+        return await self._call(
+            GuildCommandPermissions,
             "PUT",
             "/applications/{application_id}/guilds/{guild_id}/commands/{command_id}/permissions",
             json={

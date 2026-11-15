@@ -1,9 +1,8 @@
 from collections.abc import AsyncIterator, Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
-from bostie.models import Ban, BulkBan, decode
-from bostie.rest.base import Group, each, paginate, wire
+from bostie.models import Ban, BulkBan
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class BanBulkCreate(TypedDict, total=False):
@@ -21,7 +20,7 @@ class BanList(TypedDict, total=False):
     limit: int
 
 
-class Bans(Group):
+class Bans(ResourceGroup):
     async def bulk_create(
         self,
         guild_id: int,
@@ -30,8 +29,8 @@ class Bans(Group):
         reason: str | None = None,
         **options: Unpack[BanBulkCreate],
     ) -> BulkBan:
-        return await self._http._decoded(
-            partial(decode, BulkBan),
+        return await self._call(
+            BulkBan,
             "POST",
             "/guilds/{guild_id}/bulk-ban",
             json=wire(options, BanBulkCreate),
@@ -48,7 +47,7 @@ class Bans(Group):
         reason: str | None = None,
         **options: Unpack[BanCreate],
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/guilds/{guild_id}/bans/{user_id}",
             json=wire(options, BanCreate),
@@ -58,8 +57,8 @@ class Bans(Group):
         )
 
     async def fetch(self, guild_id: int, user_id: int, /) -> Ban:
-        return await self._http._decoded(
-            partial(decode, Ban),
+        return await self._call(
+            Ban,
             "GET",
             "/guilds/{guild_id}/bans/{user_id}",
             guild_id=guild_id,
@@ -68,11 +67,10 @@ class Bans(Group):
 
     def list(self, guild_id: int, /, **options: Unpack[BanList]) -> AsyncIterator[Ban]:
         """Walk the guild's bans by user id, lowest first unless `before` is given."""
-        pages = paginate(
-            self._http,
+        pages = self._paginate(
             "/guilds/{guild_id}/bans",
             wire(options, BanList),
-            decode=each(partial(decode, Ban)),
+            decodes=each(Ban),
             items=tuple,
             cursor=lambda ban: ban.user.id,
             page_size=1000,
@@ -84,7 +82,7 @@ class Bans(Group):
     async def remove(
         self, guild_id: int, user_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/guilds/{guild_id}/bans/{user_id}",
             reason=reason,

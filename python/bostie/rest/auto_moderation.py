@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.enums import AutoModerationEventType, AutoModerationTriggerType
@@ -7,9 +6,8 @@ from bostie.models import (
     AutoModerationAction,
     AutoModerationRule,
     AutoModerationTriggerMetadata,
-    decode,
 )
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class AutoModerationCreate(TypedDict, total=False):
@@ -33,7 +31,7 @@ class AutoModerationEdit(TypedDict, total=False):
     exempt_channels: Sequence[int]
 
 
-class AutoModeration(Group):
+class AutoModeration(ResourceGroup):
     async def create(
         self,
         guild_id: int,
@@ -42,8 +40,8 @@ class AutoModeration(Group):
         reason: str | None = None,
         **options: Unpack[AutoModerationCreate],
     ) -> AutoModerationRule:
-        return await self._http._decoded(
-            partial(decode, AutoModerationRule),
+        return await self._call(
+            AutoModerationRule,
             "POST",
             "/guilds/{guild_id}/auto-moderation/rules",
             json=wire(options, AutoModerationCreate),
@@ -54,7 +52,7 @@ class AutoModeration(Group):
     async def delete(
         self, guild_id: int, rule_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/guilds/{guild_id}/auto-moderation/rules/{rule_id}",
             reason=reason,
@@ -71,8 +69,8 @@ class AutoModeration(Group):
         reason: str | None = None,
         **options: Unpack[AutoModerationEdit],
     ) -> AutoModerationRule:
-        return await self._http._decoded(
-            partial(decode, AutoModerationRule),
+        return await self._call(
+            AutoModerationRule,
             "PATCH",
             "/guilds/{guild_id}/auto-moderation/rules/{rule_id}",
             json=wire(options, AutoModerationEdit),
@@ -82,8 +80,8 @@ class AutoModeration(Group):
         )
 
     async def fetch(self, guild_id: int, rule_id: int, /) -> AutoModerationRule:
-        return await self._http._decoded(
-            partial(decode, AutoModerationRule),
+        return await self._call(
+            AutoModerationRule,
             "GET",
             "/guilds/{guild_id}/auto-moderation/rules/{rule_id}",
             guild_id=guild_id,
@@ -91,8 +89,8 @@ class AutoModeration(Group):
         )
 
     async def list(self, guild_id: int, /) -> tuple[AutoModerationRule, ...]:
-        return await self._http._decoded(
-            each(partial(decode, AutoModerationRule)),
+        return await self._call(
+            each(AutoModerationRule),
             "GET",
             "/guilds/{guild_id}/auto-moderation/rules",
             guild_id=guild_id,

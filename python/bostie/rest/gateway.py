@@ -1,16 +1,10 @@
-from functools import partial
-
-from bostie.models import GatewayBotInfo, GatewayInfo, decode
-from bostie.rest.base import Group
+from bostie.models import GatewayBotInfo, GatewayInfo
+from bostie.rest.base import ResourceGroup
 
 
-class Gateway(Group):
+class Gateway(ResourceGroup):
     async def fetch(self) -> GatewayInfo:
-        return await self._http._decoded(
-            partial(decode, GatewayInfo), "GET", "/gateway"
-        )
+        return await self._call(GatewayInfo, "GET", "/gateway")
 
     async def fetch_bot(self) -> GatewayBotInfo:
-        return await self._http._decoded(
-            partial(decode, GatewayBotInfo), "GET", "/gateway/bot"
-        )
+        return await self._call(GatewayBotInfo, "GET", "/gateway/bot")

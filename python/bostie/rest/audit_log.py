@@ -1,11 +1,10 @@
 from collections.abc import AsyncIterator
 from datetime import datetime
-from functools import partial
 from typing import TypedDict, Unpack
 
 from bostie.enums import AuditLogEvent
-from bostie.models import AuditLogPage, decode
-from bostie.rest.base import Group, paginate, wire
+from bostie.models import AuditLogPage
+from bostie.rest.base import ResourceGroup, wire
 
 
 class AuditLogList(TypedDict, total=False):
@@ -16,16 +15,15 @@ class AuditLogList(TypedDict, total=False):
     limit: int
 
 
-class AuditLog(Group):
+class AuditLog(ResourceGroup):
     def list(
         self, guild_id: int, /, **options: Unpack[AuditLogList]
     ) -> AsyncIterator[AuditLogPage]:
         """Walk the audit log a page at a time, newest first, or oldest with `after`."""
-        return paginate(
-            self._http,
+        return self._paginate(
             "/guilds/{guild_id}/audit-logs",
             wire(options, AuditLogList),
-            decode=partial(decode, AuditLogPage),
+            decodes=AuditLogPage,
             items=lambda page: page.audit_log_entries,
             cursor=lambda entry: entry.id,
             page_size=100,

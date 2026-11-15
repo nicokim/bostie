@@ -233,7 +233,7 @@ class _InteractionContext[
 
     async def _send(self, method: str, route: str, **request: Any) -> bytes:
         try:
-            response: bytes = await self.bot.http._request(method, route, **request)
+            response = await self.bot.http.send(method, route, **request)
         except HTTPException as error:
             if error.status == HTTPStatus.UNAUTHORIZED or (
                 error.status == HTTPStatus.NOT_FOUND

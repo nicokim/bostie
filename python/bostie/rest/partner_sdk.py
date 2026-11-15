@@ -1,11 +1,10 @@
 from collections.abc import Mapping
-from functools import partial
 
-from bostie.models import AccessToken, decode
-from bostie.rest.base import Group
+from bostie.models import AccessToken
+from bostie.rest.base import ResourceGroup
 
 
-class PartnerSDK(Group):
+class PartnerSDK(ResourceGroup):
     async def create_provisional_token(
         self, *, external_user_id: str, preferred_global_name: str | None = None
     ) -> AccessToken:
@@ -15,8 +14,8 @@ class PartnerSDK(Group):
             if preferred_global_name is None
             else {"preferred_global_name": preferred_global_name}
         )
-        return await self._http._decoded(
-            partial(decode, AccessToken),
+        return await self._call(
+            AccessToken,
             "POST",
             "/partner-sdk/token/bot",
             json={"external_user_id": external_user_id} | name,
@@ -30,8 +29,8 @@ class PartnerSDK(Group):
         parent_client_secret: str,
     ) -> AccessToken:
         """A child game's token for a publisher's access token."""
-        return await self._http._decoded(
-            partial(decode, AccessToken),
+        return await self._call(
+            AccessToken,
             "POST",
             "/partner-sdk/child-token",
             json={
@@ -50,8 +49,8 @@ class PartnerSDK(Group):
         external_auth_token: str,
     ) -> AccessToken:
         """A Social SDK token for a token of an identity provider the app set up."""
-        return await self._http._decoded(
-            partial(decode, AccessToken),
+        return await self._call(
+            AccessToken,
             "POST",
             "/partner-sdk/token",
             json={
@@ -71,7 +70,7 @@ class PartnerSDK(Group):
         external_auth_token: str,
     ) -> None:
         """Split the Discord account from the provisional one of an identity token."""
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/partner-sdk/provisional-accounts/unmerge",
             json={
@@ -84,7 +83,7 @@ class PartnerSDK(Group):
 
     async def unmerge_provisional_account(self, *, external_user_id: str) -> None:
         """Split the Discord account from the provisional account of a player."""
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/partner-sdk/provisional-accounts/unmerge/bot",
             json={"external_user_id": external_user_id},
@@ -99,7 +98,7 @@ class PartnerSDK(Group):
         metadata: Mapping[str, str],
     ) -> None:
         """Tell the game clients what to do with a direct message between two users."""
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/partner-sdk/dms/{user_id_1}/{user_id_2}/messages/{message_id}/moderation-metadata",
             json=metadata,

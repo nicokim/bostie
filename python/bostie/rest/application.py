@@ -1,5 +1,4 @@
 from collections.abc import Mapping, Sequence
-from functools import partial
 from typing import TypedDict, Unpack
 
 from bostie.enums import (
@@ -13,11 +12,10 @@ from bostie.models import (
     ApplicationIntegrationTypeConfiguration,
     ApplicationRoleConnectionMetadata,
     InstallParams,
-    decode,
 )
 from bostie.models.application import Application as ApplicationModel
 from bostie.models.base import decoder
-from bostie.rest.base import Group, wire
+from bostie.rest.base import ResourceGroup, wire
 
 METADATA = decoder(tuple[ApplicationRoleConnectionMetadata, ...]).decode
 
@@ -42,31 +40,27 @@ class ApplicationEdit(TypedDict, total=False):
     event_webhooks_types: Sequence[str]
 
 
-class Application(Group):
+class Application(ResourceGroup):
     async def edit(self, **options: Unpack[ApplicationEdit]) -> ApplicationModel:
-        return await self._http._decoded(
-            partial(decode, ApplicationModel),
+        return await self._call(
+            ApplicationModel,
             "PATCH",
             "/applications/@me",
             json=wire(options, ApplicationEdit),
         )
 
     async def fetch(self) -> ApplicationModel:
-        return await self._http._decoded(
-            partial(decode, ApplicationModel), "GET", "/applications/@me"
-        )
+        return await self._call(ApplicationModel, "GET", "/applications/@me")
 
     async def fetch_bot_application(self) -> ApplicationModel:
         """The bot's application, through the OAuth2 route that `fetch` mirrors."""
-        return await self._http._decoded(
-            partial(decode, ApplicationModel), "GET", "/oauth2/applications/@me"
-        )
+        return await self._call(ApplicationModel, "GET", "/oauth2/applications/@me")
 
     async def fetch_activity_instance(
         self, application_id: int, instance_id: str, /
     ) -> ActivityInstance:
-        return await self._http._decoded(
-            partial(decode, ActivityInstance),
+        return await self._call(
+            ActivityInstance,
             "GET",
             "/applications/{application_id}/activity-instances/{instance_id}",
             application_id=application_id,
@@ -76,7 +70,7 @@ class Application(Group):
     async def list_role_connection_metadata(
         self, application_id: int, /
     ) -> tuple[ApplicationRoleConnectionMetadata, ...]:
-        return await self._http._decoded(
+        return await self._call(
             METADATA,
             "GET",
             "/applications/{application_id}/role-connections/metadata",
@@ -90,7 +84,7 @@ class Application(Group):
         records: Sequence[ApplicationRoleConnectionMetadata],
     ) -> tuple[ApplicationRoleConnectionMetadata, ...]:
         """Replace the app's role connection metadata, at most 5 records."""
-        return await self._http._decoded(
+        return await self._call(
             METADATA,
             "PUT",
             "/applications/{application_id}/role-connections/metadata",

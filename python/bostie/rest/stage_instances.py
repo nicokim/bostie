@@ -1,9 +1,8 @@
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 from bostie.enums import StagePrivacyLevel
-from bostie.models import StageInstance, decode
-from bostie.rest.base import Group, wire
+from bostie.models import StageInstance
+from bostie.rest.base import ResourceGroup, wire
 
 
 class StageInstanceCreate(TypedDict, total=False):
@@ -19,12 +18,12 @@ class StageInstanceEdit(TypedDict, total=False):
     privacy_level: StagePrivacyLevel
 
 
-class StageInstances(Group):
+class StageInstances(ResourceGroup):
     async def create(
         self, *, reason: str | None = None, **options: Unpack[StageInstanceCreate]
     ) -> StageInstance:
-        return await self._http._decoded(
-            partial(decode, StageInstance),
+        return await self._call(
+            StageInstance,
             "POST",
             "/stage-instances",
             json=wire(options, StageInstanceCreate),
@@ -32,7 +31,7 @@ class StageInstances(Group):
         )
 
     async def delete(self, channel_id: int, /, *, reason: str | None = None) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/stage-instances/{channel_id}",
             reason=reason,
@@ -47,8 +46,8 @@ class StageInstances(Group):
         reason: str | None = None,
         **options: Unpack[StageInstanceEdit],
     ) -> StageInstance:
-        return await self._http._decoded(
-            partial(decode, StageInstance),
+        return await self._call(
+            StageInstance,
             "PATCH",
             "/stage-instances/{channel_id}",
             json=wire(options, StageInstanceEdit),
@@ -57,8 +56,8 @@ class StageInstances(Group):
         )
 
     async def fetch(self, channel_id: int, /) -> StageInstance:
-        return await self._http._decoded(
-            partial(decode, StageInstance),
+        return await self._call(
+            StageInstance,
             "GET",
             "/stage-instances/{channel_id}",
             channel_id=channel_id,

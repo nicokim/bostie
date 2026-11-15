@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from functools import partial
 from typing import Required, TypedDict, Unpack
 
 import msgspec
@@ -10,11 +9,10 @@ from bostie.models import (
     Invite,
     InviteWithMetadata,
     TargetUsersJob,
-    decode,
     decode_invite,
 )
 from bostie.models.base import check_keys
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 
 
 class InviteCreate(TypedDict, total=False):
@@ -49,9 +47,9 @@ class InviteUpdateTargetUsers(TypedDict, total=False):
     target_users_file: Required[File]
 
 
-class Invites(Group):
+class Invites(ResourceGroup):
     async def add_target_user(self, code: str, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/invites/{code}/target-users/{user_id}",
             code=code,
@@ -61,7 +59,7 @@ class Invites(Group):
     async def bulk_add_target_users(
         self, code: str, /, **options: Unpack[InviteBulkAddTargetUsers]
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/invites/{code}/target-users/bulk-add",
             json=wire(options, InviteBulkAddTargetUsers),
@@ -71,7 +69,7 @@ class Invites(Group):
     async def bulk_delete_target_users(
         self, code: str, /, **options: Unpack[InviteBulkDeleteTargetUsers]
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "POST",
             "/invites/{code}/target-users/bulk-delete",
             json=wire(options, InviteBulkDeleteTargetUsers),
@@ -87,7 +85,7 @@ class Invites(Group):
         **options: Unpack[InviteCreate],
     ) -> Invite | InviteWithMetadata:
         file = options.pop("target_users_file", None)
-        return await self._http._decoded(
+        return await self._call(
             decode_invite,
             "POST",
             "/channels/{channel_id}/invites",
@@ -98,8 +96,8 @@ class Invites(Group):
         )
 
     async def delete(self, code: str, /, *, reason: str | None = None) -> Invite:
-        return await self._http._decoded(
-            partial(decode, Invite),
+        return await self._call(
+            Invite,
             "DELETE",
             "/invites/{code}",
             reason=reason,
@@ -107,8 +105,8 @@ class Invites(Group):
         )
 
     async def fetch(self, code: str, /, **options: Unpack[InviteFetch]) -> Invite:
-        return await self._http._decoded(
-            partial(decode, Invite),
+        return await self._call(
+            Invite,
             "GET",
             "/invites/{code}",
             query=wire(options, InviteFetch),
@@ -116,16 +114,16 @@ class Invites(Group):
         )
 
     async def fetch_target_users_job_status(self, code: str, /) -> TargetUsersJob:
-        return await self._http._decoded(
-            partial(decode, TargetUsersJob),
+        return await self._call(
+            TargetUsersJob,
             "GET",
             "/invites/{code}/target-users/job-status",
             code=code,
         )
 
     async def list(self, channel_id: int, /) -> tuple[InviteWithMetadata, ...]:
-        return await self._http._decoded(
-            each(partial(decode, InviteWithMetadata)),
+        return await self._call(
+            each(InviteWithMetadata),
             "GET",
             "/channels/{channel_id}/invites",
             channel_id=channel_id,
@@ -135,7 +133,7 @@ class Invites(Group):
         self, guild_id: int, /
     ) -> tuple[Invite | InviteWithMetadata, ...]:
         """The guild's invites, with their metadata if the bot can manage the guild."""
-        return await self._http._decoded(
+        return await self._call(
             each(decode_invite),
             "GET",
             "/guilds/{guild_id}/invites",
@@ -144,12 +142,12 @@ class Invites(Group):
 
     async def list_target_users(self, code: str, /) -> tuple[int, ...]:
         """The ids of the users who may see and accept the invite."""
-        return await self._http._decoded(
+        return await self._call(
             _user_ids, "GET", "/invites/{code}/target-users", code=code
         )
 
     async def remove_target_user(self, code: str, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/invites/{code}/target-users/{user_id}",
             code=code,
@@ -161,7 +159,7 @@ class Invites(Group):
     ) -> None:
         """Replace who may accept the invite with the users of a CSV file."""
         check_keys(options, InviteUpdateTargetUsers.__required_keys__, "options")
-        await self._http._request(
+        await self._http.send(
             "PUT", "/invites/{code}/target-users", form=options, code=code
         )
 

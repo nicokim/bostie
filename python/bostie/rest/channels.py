@@ -20,9 +20,8 @@ from bostie.models import (
     DefaultReaction,
     FollowedChannel,
     ForumTag,
-    decode,
 )
-from bostie.rest.base import Group, each, wire
+from bostie.rest.base import ResourceGroup, each, wire
 from bostie.rest.members import decode_permissions
 
 log = logging.getLogger("bostie.rest")
@@ -130,11 +129,11 @@ class ChannelCreateGroupDm(TypedDict, total=False):
     nicks: Required[Mapping[int, str]]
 
 
-class Channels(Group):
+class Channels(ResourceGroup):
     async def add_recipient(
         self, channel_id: int, user_id: int, /, **options: Unpack[ChannelAddRecipient]
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/recipients/{user_id}",
             json=wire(options, ChannelAddRecipient),
@@ -150,8 +149,8 @@ class Channels(Group):
         reason: str | None = None,
         **options: Unpack[ChannelCreate],
     ) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "POST",
             "/guilds/{guild_id}/channels",
             json=_with_overwrites(wire(options, ChannelCreate)),
@@ -161,8 +160,8 @@ class Channels(Group):
 
     async def create_dm(self, **options: Unpack[ChannelCreateDm]) -> Channel:
         """Open the bot's DM channel with a user; `bot.cache` keeps it if it may."""
-        channel = await self._http._decoded(
-            partial(decode, Channel),
+        channel = await self._call(
+            Channel,
             "POST",
             "/users/@me/channels",
             json=wire(options, ChannelCreateDm),
@@ -171,16 +170,16 @@ class Channels(Group):
         return channel
 
     async def create_group_dm(self, **options: Unpack[ChannelCreateGroupDm]) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "POST",
             "/users/@me/channels",
             json=wire(options, ChannelCreateGroupDm),
         )
 
     async def delete(self, channel_id: int, /, *, reason: str | None = None) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "DELETE",
             "/channels/{channel_id}",
             reason=reason,
@@ -190,7 +189,7 @@ class Channels(Group):
     async def delete_permission(
         self, channel_id: int, overwrite_id: int, /, *, reason: str | None = None
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/permissions/{overwrite_id}",
             reason=reason,
@@ -206,8 +205,8 @@ class Channels(Group):
         reason: str | None = None,
         **options: Unpack[ChannelEdit],
     ) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "PATCH",
             "/channels/{channel_id}",
             json=_with_overwrites(wire(options, ChannelEdit)),
@@ -224,7 +223,7 @@ class Channels(Group):
         reason: str | None = None,
         **options: Unpack[ChannelEditPermissions],
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/permissions/{overwrite_id}",
             json=wire(options, ChannelEditPermissions),
@@ -241,7 +240,7 @@ class Channels(Group):
         *,
         reason: str | None = None,
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PATCH",
             "/guilds/{guild_id}/channels",
             json=[wire(position, ChannelPosition) for position in positions],
@@ -250,8 +249,8 @@ class Channels(Group):
         )
 
     async def fetch(self, channel_id: int, /) -> Channel:
-        return await self._http._decoded(
-            partial(decode, Channel),
+        return await self._call(
+            Channel,
             "GET",
             "/channels/{channel_id}",
             channel_id=channel_id,
@@ -265,7 +264,7 @@ class Channels(Group):
         **options: Unpack[ChannelFetchPermissions],
     ) -> Permissions:
         """The member's permissions in the channel, with its roles and overwrites."""
-        return await self._http._decoded(
+        return await self._call(
             decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/member/{user_id}",
@@ -282,7 +281,7 @@ class Channels(Group):
         **options: Unpack[ChannelFetchPermissions],
     ) -> Permissions:
         """The permissions of the role and @everyone in the channel."""
-        return await self._http._decoded(
+        return await self._call(
             decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/role/{role_id}",
@@ -299,8 +298,8 @@ class Channels(Group):
         reason: str | None = None,
         **options: Unpack[ChannelFollow],
     ) -> FollowedChannel:
-        return await self._http._decoded(
-            partial(decode, FollowedChannel),
+        return await self._call(
+            FollowedChannel,
             "POST",
             "/channels/{channel_id}/followers",
             json=wire(options, ChannelFollow),
@@ -309,15 +308,15 @@ class Channels(Group):
         )
 
     async def list(self, guild_id: int, /) -> tuple[Channel, ...]:
-        return await self._http._decoded(
-            each(partial(decode, Channel)),
+        return await self._call(
+            each(Channel),
             "GET",
             "/guilds/{guild_id}/channels",
             guild_id=guild_id,
         )
 
     async def remove_recipient(self, channel_id: int, user_id: int, /) -> None:
-        await self._http._request(
+        await self._http.send(
             "DELETE",
             "/channels/{channel_id}/recipients/{user_id}",
             channel_id=channel_id,
@@ -332,7 +331,7 @@ class Channels(Group):
         reason: str | None = None,
         **options: Unpack[ChannelSetVoiceStatus],
     ) -> None:
-        await self._http._request(
+        await self._http.send(
             "PUT",
             "/channels/{channel_id}/voice-status",
             json=wire(options, ChannelSetVoiceStatus),
@@ -344,7 +343,7 @@ class Channels(Group):
         """Show the bot typing: once when awaited, or for as long as `async with`."""
         return Typing(
             partial(
-                self._http._request,
+                self._http.send,
                 "POST",
                 "/channels/{channel_id}/typing",
                 channel_id=channel_id,
