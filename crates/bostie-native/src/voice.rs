@@ -19,6 +19,8 @@ use pyo3::types::PyBytes;
 
 use crate::{Error, Result, seconds};
 
+const SINK_DETACH_BYTES: usize = 1 << 20;
+
 #[pyclass(frozen, name = "Sink", module = "bostie._native")]
 pub(crate) struct NativeSink(pub(crate) Arc<Sink>);
 
@@ -31,7 +33,12 @@ impl NativeSink {
 
     fn write(&self, py: Python<'_>, data: PyBuffer<u8>) -> Result<bool> {
         let data = data.to_vec(py)?;
-        Ok(py.detach(|| self.0.write(&data))?)
+        let written = if data.len() < SINK_DETACH_BYTES {
+            self.0.write(&data)
+        } else {
+            py.detach(|| self.0.write(&data))
+        };
+        Ok(written?)
     }
 
     fn mark(&self) -> Result<(u64, u64)> {
@@ -204,7 +211,10 @@ impl NativeReceiver {
 }
 
 #[pyclass(frozen, name = "OpusEncoder", module = "bostie._native")]
-pub(crate) struct NativeOpusEncoder(Mutex<FrameEncoder>);
+pub(crate) struct NativeOpusEncoder {
+    encoder: Mutex<FrameEncoder>,
+    detach_bytes: usize,
+}
 
 #[pymethods]
 impl NativeOpusEncoder {
@@ -241,12 +251,19 @@ impl NativeOpusEncoder {
             signal,
         );
         let encoder = FrameEncoder::new(format, settings)?;
-        Ok(Self(Mutex::new(encoder)))
+        Ok(Self {
+            encoder: Mutex::new(encoder),
+            detach_bytes: half_a_second(format),
+        })
     }
 
     fn encode<'py>(&self, py: Python<'py>, data: PyBuffer<u8>) -> Result<Vec<Bound<'py, PyBytes>>> {
         let data = data.to_vec(py)?;
-        let packets = py.detach(|| self.encoder().encode(&data));
+        let packets = if data.len() < self.detach_bytes {
+            self.encoder().encode(&data)
+        } else {
+            py.detach(|| self.encoder().encode(&data))
+        };
         Ok(packets
             .iter()
             .map(|packet| PyBytes::new(py, packet))
@@ -264,8 +281,18 @@ impl NativeOpusEncoder {
 
 impl NativeOpusEncoder {
     fn encoder(&self) -> MutexGuard<'_, FrameEncoder> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.encoder.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+fn half_a_second(format: PcmFormat) -> usize {
+    let sample_bytes = match format.sample {
+        SampleFormat::S16Le => 2,
+        SampleFormat::F32Le => 4,
+    };
+    usize::try_from(format.rate / 2).unwrap_or(usize::MAX)
+        * usize::from(format.channels)
+        * sample_bytes
 }
 
 #[pyfunction]
