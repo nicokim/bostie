@@ -122,7 +122,7 @@ if __name__ == "__main__":
 - `checks=[...]` on a command takes functions of the context and `bostie.checks` helpers: `has_permissions`, `bot_has_permissions`, `has_role` and `has_any_role` (ids, or names with the cache), `is_owner`, `Cooldown`, `MaxConcurrency`. `default_permissions=Permissions.MANAGE_GUILD` hides a command from members without that permission.
 - `@bot.on_error(Forbidden)`, or `.on_error` on one command, answers a failure. Without one, bostie logs the traceback and answers "Something went wrong.".
 - Split a bot into modules with `Router()`, which has the bot's decorators; `bot.include(router)` adds one.
-- `@bot.every(seconds=300)` runs a background task.
+- `@bot.every(seconds=300)` runs a background task and returns a `Task` with `start()`, `stop()`, `restart()`, `change_interval(...)`, `count` and the `@task.before` and `@task.after` hooks.
 
 ## Voice and tests
 

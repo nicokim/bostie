@@ -56,6 +56,7 @@ from bostie.models.base import Snowflake, decode, decoder, redacted_repr, shown_
 from bostie.models.interaction import decode_interaction
 from bostie.models.message import decode_message
 from bostie.models.monetization import decode_entitlement
+from bostie.tasks import Task
 
 logger = logging.getLogger("bostie.events")
 
@@ -1355,7 +1356,7 @@ class TaskError(BotEvent, kw_only=True):
 
     NAME = "bot.task_error"
 
-    task: Callable[[], Any]
+    task: Task
     error: Exception
 
 

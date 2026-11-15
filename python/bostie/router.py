@@ -240,22 +240,22 @@ class Router(ErrorHooks):
         """Route the submits of modals whose custom_id fits `template`."""
         return self._custom_id_route(MODAL_ROUTES, template, settings)
 
-    def every[T: TaskCallback](
+    def every(
         self,
         *,
         seconds: float | None = None,
         time: dt.time | Iterable[dt.time] = (),
-    ) -> Callable[[T], T]:
+    ) -> Callable[[TaskCallback], Task]:
         """Run `async def task()` while the bot is ready, every `seconds` or daily.
 
-        `time` names the times of day; one without tzinfo is in UTC.
+        `time` names the times of day; one without tzinfo is in UTC. The decorator
+        returns the `Task`, which starts, stops and reschedules it.
         """
-        times = (time,) if isinstance(time, dt.time) else tuple(time)
 
-        def register(callback: T) -> T:
-            task = Task(callback, seconds, times)
+        def register(callback: TaskCallback) -> Task:
+            task = Task(callback, seconds=seconds, times=time, router=self)
             self._add(TASKS, task.callback, task)
-            return callback
+            return task
 
         return register
 

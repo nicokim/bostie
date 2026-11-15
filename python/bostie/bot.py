@@ -129,7 +129,7 @@ from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.snowflake import snowflake_time
-from bostie.tasks import TaskCallback
+from bostie.tasks import Task
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults
@@ -314,7 +314,7 @@ class Bot(Router):
         self._claims: list[_Claim] = []
         self._tasks: set[asyncio.Task[None]] = set()
         self._deletions: set[asyncio.Task[None]] = set()
-        self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
+        self._running_tasks: dict[Task, asyncio.Task[None]] = {}
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
         self._requests: dict[tuple[str, object], list[_Request]] = {}
@@ -745,16 +745,16 @@ class Bot(Router):
             await self._gateway.close()
         if self._readiness is not None:
             self._readiness.close()
-        for task in [*self._running_tasks.values(), *self._deletions]:
+        loops = set(self._running_tasks.values())
+        for task in [*loops, *self._deletions]:
             task.cancel()
-        busy = self._tasks - set(self._running_tasks.values())
+        busy = self._tasks - loops
         if self._shutdown_grace and busy:
             await asyncio.wait(busy, timeout=self._shutdown_grace)
-        tasks = list(self._tasks)
-        for task in tasks:
+        for task in self._tasks - loops:
             task.cancel()
-        if tasks:
-            await asyncio.wait(tasks, timeout=TASK_CANCEL_TIMEOUT)
+        if pending := list(self._tasks):
+            await asyncio.wait(pending, timeout=TASK_CANCEL_TIMEOUT)
         self._running_tasks.clear()
         if self._bridge is not None:
             await self._bridge.close()
@@ -948,18 +948,18 @@ class Bot(Router):
     def _run_tasks(self) -> None:
         if not self._tasks_on:
             return
-        for callback, task in self.tasks.items():
-            if callback not in self._running_tasks:
-                running = asyncio.ensure_future(task.run(self._task_failed))
-                running.add_done_callback(self._tasks.discard)
-                self._tasks.add(running)
-                self._running_tasks[callback] = running
-        for callback in self._running_tasks.keys() - self.tasks.keys():
-            self._running_tasks.pop(callback).cancel()
+        wanted = {task for task in self.tasks.values() if not task._stopped}
+        for task in self._running_tasks.keys() - wanted:
+            self._running_tasks.pop(task).cancel()
+        for task in wanted - self._running_tasks.keys():
+            running = asyncio.ensure_future(task.run(self._task_failed))
+            running.add_done_callback(self._tasks.discard)
+            self._tasks.add(running)
+            self._running_tasks[task] = running
 
-    def _task_failed(self, task: TaskCallback, error: Exception) -> None:
+    def _task_failed(self, task: Task, error: Exception) -> None:
         if TaskError.NAME not in self.listeners:
-            log.error("the task %s raised", _python_name(task), exc_info=error)
+            log.error("the task %s raised", _python_name(task.callback), exc_info=error)
         self._emit(TaskError(task=task, error=error))
 
     def _shard_ready(self, shard_id: int) -> None:

@@ -3,9 +3,11 @@ from datetime import UTC, datetime, time, timedelta, timezone, tzinfo
 from typing import Self, override
 
 import pytest
+from clock import SteppedLoop, run_stepped
 
-from bostie import tasks
-from bostie.tasks import Task, next_time
+from bostie import Bot, Router, tasks
+from bostie.tasks import next_time
+from bostie.testing import FakeDiscord, running, settle
 
 UTC_PLUS_2 = timezone(timedelta(hours=2))
 AFTER = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)
@@ -45,7 +47,7 @@ def test_a_task_takes_positive_seconds_or_times_but_not_both(
         pass
 
     with pytest.raises(error):
-        Task(callback, seconds, times)
+        Router().every(seconds=seconds, time=times)(callback)
 
 
 def test_a_daily_task_runs_once_at_each_time_even_when_a_sleep_ends_early(
@@ -75,7 +77,7 @@ def test_a_daily_task_runs_once_at_each_time_even_when_a_sleep_ends_early(
             if len(calls) == 3:
                 third.set()
 
-        task = Task(callback, None, (time(21), time(9)))
+        task = Router().every(time=(time(21), time(9)))(callback)
         running = asyncio.ensure_future(
             task.run(lambda callback, error: errors.append(error))
         )
@@ -93,3 +95,85 @@ def test_a_daily_task_runs_once_at_each_time_even_when_a_sleep_ends_early(
         datetime(2026, 11, 2, 9, tzinfo=UTC) - early,
     ]
     assert errors == []
+
+
+async def taken(queue: asyncio.Queue[str], count: int) -> list[str]:
+    return [await queue.get() for _ in range(count)]
+
+
+def test_a_task_stops_starts_and_restarts_around_its_hooks_and_count() -> None:
+    async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
+        bot = Bot(api_url=fake.api_url)
+        seen: asyncio.Queue[str] = asyncio.Queue()
+
+        @bot.every(seconds=60)
+        async def tick() -> None:
+            seen.put_nowait(f"run {tick.count}")
+
+        @tick.before
+        async def opened() -> None:
+            seen.put_nowait("before")
+
+        @tick.after
+        async def closed() -> None:
+            seen.put_nowait("after")
+
+        tick.stop()
+        steps: list[list[str]] = []
+        async with running(bot, fake):
+            await settle()
+            steps.append(await taken(seen, seen.qsize()))
+            tick.start()
+            steps.append(await taken(seen, 2))
+            loop.advance(60)
+            steps.append(await taken(seen, 1))
+            tick.restart()
+            steps.append(await taken(seen, 3))
+            tick.stop()
+            steps.append(await taken(seen, 1))
+            loop.advance(120)
+            await settle()
+            steps.append(await taken(seen, seen.qsize()))
+            tick.start()
+            steps.append(await taken(seen, 2))
+        steps.append(await taken(seen, 1))
+
+        assert steps == [
+            [],
+            ["before", "run 0"],
+            ["run 1"],
+            ["after", "before", "run 0"],
+            ["after"],
+            [],
+            ["before", "run 0"],
+            ["after"],
+        ]
+
+    run_stepped(scenario)
+
+
+def test_a_new_interval_waits_afresh_from_the_change() -> None:
+    async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
+        bot = Bot(api_url=fake.api_url)
+        runs: asyncio.Queue[float] = asyncio.Queue()
+
+        @bot.every(seconds=60)
+        async def tick() -> None:
+            runs.put_nowait(loop.time())
+
+        async with running(bot, fake):
+            first = await runs.get()
+            loop.advance(30)
+            tick.change_interval(seconds=10)
+            await settle()
+            loop.advance(9)
+            await settle()
+            early = not runs.empty()
+            loop.advance(1)
+            second = await runs.get()
+
+        assert not early
+        assert (tick.seconds, tick.times) == (10, ())
+        assert 40 <= second - first < 41
+
+    run_stepped(scenario)

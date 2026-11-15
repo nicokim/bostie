@@ -28,4 +28,4 @@ async def midnight_utc() -> None:
 
 @bot.listen
 async def task_failed(failure: TaskError) -> None:
-    log.error("%s failed", failure.task, exc_info=failure.error)
+    log.error("%s failed", failure.task.callback.__name__, exc_info=failure.error)
