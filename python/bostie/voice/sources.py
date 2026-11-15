@@ -57,6 +57,11 @@ class Source(ABC):
         return self._format
 
     @property
+    def opened(self) -> bool:
+        """Whether `open()` ran, so the format and the rest are known."""
+        return self._format is not None
+
+    @property
     def duration(self) -> float | None:
         """Length in seconds, or None when unknown."""
         self._check_opened()

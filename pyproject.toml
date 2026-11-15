@@ -97,10 +97,10 @@ banned-module-level-imports = [
 "bostie._native".msg = "voice layers use only the public voice API"
 
 [tool.ruff.lint.per-file-ignores]
-"!python/bostie/voice/layers.py" = ["TID251", "TID253", "PLC0415"]
+"!python/bostie/voice/{player,utterances,recorder,_ogg}.py" = ["TID251", "TID253", "PLC0415"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 "python/bostie/{_bridge,bot,dispatch,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
-"python/bostie/voice/layers.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
+"python/bostie/voice/{player,recorder}.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
 "python/bostie/models/**" = ["RUF012"]  # msgspec copies an empty mutable default for each instance
 "crates/**/vectors.py" = ["T201"]  # the script prints the vectors
 "examples/**" = ["ARG"]  # listeners and hooks take their event, context or error even when unused

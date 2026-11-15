@@ -20,7 +20,7 @@ A source is audio to play. Each is used once: `play` opens it, and `source.again
 
 `File`, `Bytes` and `Url` are decoded in Rust: Ogg (Opus, Vorbis), WebM and Matroska, MP4 and M4A (AAC), MP3, FLAC and WAV. A URL must point at the media itself, not at a web page that embeds it. When the connection to the server breaks, `Url` reconnects up to three times, after 0.5, 1 and 2 seconds, and continues where it broke if the server accepts range requests. An HLS master playlist plays its audio rendition, a live playlist starts three segments before its end, and encrypted playlists and byte-range segments are refused with `SourceError`. `FFmpeg` runs the program with your input arguments and reads 48 kHz stereo 16-bit PCM from its output; it raises `SourceError` when the program is not on `PATH` or exits with an error. A source that cannot be opened, decoded or seeked raises `SourceError`, or ends its track with reason `ERROR`.
 
-After `open()`, a source has `format`, `duration` (seconds, `None` when unknown), `seekable` and `tags`, a `voice.Tags` with the `title`, `artist` and `album` the file names.
+After `open()`, which sets `opened`, a source has `format`, `duration` (seconds, `None` when unknown), `seekable` and `tags`, a `voice.Tags` with the `title`, `artist` and `album` the file names.
 
 ```python
 --8<-- "docs/snippets/voice/other_sources.py"
@@ -72,7 +72,7 @@ Gains are from -24 to 24 dB, and values out of range raise `ValueError`.
 - `queue.skip()` ends the current track; `queue.back()` plays the last track of the history again, then the current one anew.
 - `queue.move(track, index)`, `queue.remove(track)`, `queue.shuffle()` and `queue.clear()` rearrange the upcoming tracks.
 - `queue.loop = "track"` repeats the current track, `"queue"` the whole queue, `None` stops repeating; the type is `voice.Loop`. Repeats use `source.again()`.
-- `queue.pause()`, `queue.resume()`, `queue.volume` and `queue.filters` act on whatever plays.
+- `queue.pause()`, `queue.resume()`, `queue.paused`, `queue.volume` and `queue.filters` act on whatever plays.
 - `queue.stop()` ends every track; tracks added later play again.
 - `await queue.join()` waits until nothing is queued or playing.
 

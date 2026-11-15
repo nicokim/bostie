@@ -40,7 +40,7 @@ from bostie.events import VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT
 from bostie.models import Channel, User
 from bostie.models.base import check_keys
-from bostie.voice import layers
+from bostie.voice import player
 from bostie.voice._link import CoreLink, Handle
 from bostie.voice.encoder import DEFAULT_BITRATE
 from bostie.voice.events import (
@@ -738,10 +738,10 @@ class VoiceConnection:
         filters: Filters = NO_FILTERS,
         meta: Any = None,
         **options: Unpack[SinkOptions],
-    ) -> layers.Track:
+    ) -> player.Track:
         """Play a source on its own sink, mixed with anything else playing."""
         self._check_live()
-        return await layers.play(
+        return await player.play(
             self, source, volume=volume, filters=filters, meta=meta, **options
         )
 

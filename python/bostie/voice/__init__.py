@@ -71,21 +71,13 @@ from bostie.voice.formats import (
     StageRole,
 )
 from bostie.voice.frames import Frame, Packet
-from bostie.voice.layers import (
-    EndReason,
-    Loop,
-    Queue,
-    Recorder,
-    Track,
-    TrackEnd,
-    Utterance,
-    broadcast,
-    utterances,
-)
 from bostie.voice.message import message
+from bostie.voice.player import EndReason, Loop, Queue, Track, TrackEnd, broadcast
 from bostie.voice.receiver import Receiver, ReceiverStats
+from bostie.voice.recorder import Recorder
 from bostie.voice.sink import Marker, Sink, SinkStats
 from bostie.voice.sources import Bytes, FFmpeg, File, Source, Stream, Tags, Url
+from bostie.voice.utterances import Utterance, utterances
 
 __all__ = [
     "DECODE_RATES",

@@ -14,7 +14,7 @@ from bostie.errors import (
     VoiceNotConnected,
 )
 from bostie.testing import settle
-from bostie.voice import layers
+from bostie.voice import player
 from bostie.voice.formats import (
     DEFAULT_PCM,
     PCM,
@@ -25,11 +25,7 @@ from bostie.voice.formats import (
     Opus,
     SinkOptions,
 )
-from bostie.voice.layers import (
-    EndReason,
-    Queue,
-    Track,
-)
+from bostie.voice.player import EndReason, Queue, Track
 
 FRAME = 0.02
 SETTLE = 20
@@ -331,6 +327,10 @@ class FakeSource:
         return self._format
 
     @property
+    def opened(self) -> bool:
+        return bool(self.opened_at)
+
+    @property
     def seekable(self) -> bool:
         return self._seekable
 
@@ -393,7 +393,7 @@ def run(scenario: Scenario) -> None:
 
 
 async def play(vc: FakeConnection, source: FakeSource, **options: Any) -> Track:
-    return await layers.play(cast("Any", vc), cast("Any", source), **options)
+    return await player.play(cast("Any", vc), cast("Any", source), **options)
 
 
 def queue(vc: FakeConnection, **options: Any) -> Queue:
@@ -472,8 +472,8 @@ def test_sink_settings_reach_the_connection() -> None:
         add(loud, FakeSource(clock, "b", 5))
         await clock.until(lambda: len(vc.sinks) == 2)
         packets = FakeSource(clock, "c", 3, format=Opus())
-        await layers.broadcast(cast("Any", packets), [cast("Any", vc)])
-        await layers.broadcast(
+        await player.broadcast(cast("Any", packets), [cast("Any", vc)])
+        await player.broadcast(
             cast("Any", FakeSource(clock, "d", 3, format=Opus())),
             [cast("Any", vc)],
             stall="hold",
@@ -1072,7 +1072,7 @@ def test_broadcast_writes_every_packet_once_to_each_connection() -> None:
     async def scenario(clock: Clock) -> None:
         connections = [FakeConnection(clock) for _ in range(3)]
         source = FakeSource(clock, "p", 10, format=Opus())
-        await layers.broadcast(cast("Any", source), cast("Any", connections))
+        await player.broadcast(cast("Any", source), cast("Any", connections))
         assert [vc.sinks[0].sent for vc in connections] == [frames("p", 10)] * 3
         assert all(vc.sinks[0].closed for vc in connections)
         assert source.closed
@@ -1086,7 +1086,7 @@ def test_broadcast_is_not_delayed_by_a_connection_that_is_held() -> None:
         live, held = FakeConnection(clock), FakeConnection(clock)
         held.held = True
         source = FakeSource(clock, "p", 50, format=Opus())
-        await layers.broadcast(
+        await player.broadcast(
             cast("Any", source), [cast("Any", live), cast("Any", held)]
         )
         assert live.sinks[0].sent == frames("p", 50)
@@ -1102,7 +1102,7 @@ def test_broadcast_goes_on_without_a_connection_that_ended() -> None:
         connections = [FakeConnection(clock) for _ in range(3)]
         source = FakeSource(clock, "p", 30, format=Opus())
         playing = asyncio.create_task(
-            layers.broadcast(cast("Any", source), cast("Any", connections))
+            player.broadcast(cast("Any", source), cast("Any", connections))
         )
         await clock.sleep(0.1)
         connections[1].disconnect()
@@ -1122,7 +1122,7 @@ def test_broadcast_stops_once_no_connection_is_left() -> None:
         ended.state = State.DISCONNECTED
         source = FakeSource(clock, "p", 500, format=Opus())
         playing = asyncio.create_task(
-            layers.broadcast(cast("Any", source), cast("Any", [*connections, ended]))
+            player.broadcast(cast("Any", source), cast("Any", [*connections, ended]))
         )
         await clock.sleep(0.1)
         for vc in connections:
@@ -1138,19 +1138,19 @@ def test_broadcast_stops_once_no_connection_is_left() -> None:
 def test_broadcast_encodes_pcm_once_for_every_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(layers, "OpusEncoder", FakeEncoder)
+    monkeypatch.setattr(player, "OpusEncoder", FakeEncoder)
     monkeypatch.setattr(FakeEncoder, "made", [])
 
     async def scenario(clock: Clock) -> None:
         connections = [FakeConnection(clock) for _ in range(2)]
         pcm = PCM(24_000, 1)
         source = FakeSource(clock, "s", 3, format=pcm)
-        await layers.broadcast(cast("Any", source), cast("Any", connections))
+        await player.broadcast(cast("Any", source), cast("Any", connections))
         expected = [b"opus-" + chunk for chunk in frames("s", 3)] + [b"opus-tail"]
         assert [vc.sinks[0].sent for vc in connections] == [expected] * 2
         assert FakeEncoder.made == [(pcm, EncoderSettings())]
         voip = EncoderSettings(application="voip")
-        await layers.broadcast(
+        await player.broadcast(
             cast("Any", FakeSource(clock, "t", 1, format=pcm)),
             cast("Any", connections),
             encoder=voip,

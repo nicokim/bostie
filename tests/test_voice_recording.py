@@ -14,7 +14,8 @@ from bostie.testing import settle
 from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
 from bostie.voice.formats import PCM, Opus, ReceiveFormat
 from bostie.voice.frames import Frame
-from bostie.voice.layers import Recorder, Utterance, utterances
+from bostie.voice.recorder import Recorder
+from bostie.voice.utterances import Utterance, utterances
 
 SETTLE = 20
 
