@@ -57,7 +57,7 @@ from bostie.models import (
 )
 from bostie.models.base import decoder
 from bostie.testing import payloads
-from bostie.webhook_events import WEBHOOK_EVENTS
+from bostie.webhook_events import _WEBHOOK_EVENTS
 
 FIXTURES = payloads.FIXTURES
 WEBHOOK_FIXTURES = Path(__file__).parent / "fixtures" / "webhook_events"
@@ -218,7 +218,7 @@ def fixtures() -> Iterator[Any]:
         )
         yield pytest.param(FIXTURES / "rest" / f"{name}.json", rest, id=name)
     for path in sorted(WEBHOOK_FIXTURES.glob("*.json")):
-        if (event := WEBHOOK_EVENTS.get(path.stem)) is not None:
+        if (event := _WEBHOOK_EVENTS.get(path.stem)) is not None:
             yield pytest.param(
                 path, partial(event.decode, 0), id=f"webhook_{path.stem}"
             )

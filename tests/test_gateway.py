@@ -9,6 +9,7 @@ import msgspec
 import pytest
 
 from bostie._bridge import Bridge, GatewayDelivery, StatusDelivery
+from bostie._gateway import Shards
 from bostie.errors import (
     GatewayClosed,
     InvalidToken,
@@ -16,7 +17,6 @@ from bostie.errors import (
     ShardingRequired,
     TransportError,
 )
-from bostie.gateway import Shards
 from bostie.testing import FakeDiscord, payloads
 
 type Scenario = Callable[["Harness"], Coroutine[Any, Any, None]]
@@ -133,7 +133,7 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
 def test_close_ends_start_even_when_the_close_is_not_echoed_in_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("bostie.gateway.CLOSE_TIMEOUT", 0)
+    monkeypatch.setattr("bostie._gateway.CLOSE_TIMEOUT", 0)
 
     async def scenario(harness: Harness) -> None:
         await harness.ready()

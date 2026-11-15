@@ -7,10 +7,10 @@ from types import TracebackType
 from typing import Any, Self, Unpack, override
 from urllib.parse import urlsplit
 
-from bostie._bridge import Bridge, GatewayDelivery
+from bostie._bridge import Bridge, GatewayDelivery, warn_invalid_requests
 from bostie._util import resolve_token
 from bostie.errors import StateError
-from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
 from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST, BearerREST
@@ -23,7 +23,7 @@ from bostie.rest.webhooks import (
     Webhooks,
 )
 
-WEBHOOK_PATH = re.compile(r"/webhooks/(?P<id>\d+)/(?P<token>[^/]+)/?")
+_WEBHOOK_PATH = re.compile(r"/webhooks/(?P<id>\d+)/(?P<token>[^/]+)/?")
 
 
 class _Client[G](ABC):
@@ -176,7 +176,7 @@ class WebhookClient(_Client[Webhooks]):
         http_settings: HTTPSettings = DEFAULT_HTTP,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
-        found = WEBHOOK_PATH.search(urlsplit(url).path)
+        found = _WEBHOOK_PATH.search(urlsplit(url).path)
         if found is None:
             raise ValueError(f"{url!r} is not a webhook URL")
         super().__init__(

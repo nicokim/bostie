@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from bostie import ASGIApp, Bot, Context
-from bostie.asgi import MAX_BODY
+from bostie.asgi import _MAX_BODY
 from bostie.events import ApplicationAuthorized, Starting, Stopped
 from bostie.testing import FakeDiscord, payloads, run, running
 
@@ -149,7 +149,7 @@ def test_webhook_events_reach_listeners_with_the_apps_own_key() -> None:
 
 @pytest.mark.parametrize(
     ("method", "chunks", "status"),
-    [("GET", [b"{}"], 405), ("POST", [b" " * MAX_BODY, b" "], 413)],
+    [("GET", [b"{}"], 405), ("POST", [b" " * _MAX_BODY, b" "], 413)],
 )
 def test_the_endpoint_refuses_other_methods_and_bodies_over_4_mib(
     method: str, chunks: list[bytes], status: int

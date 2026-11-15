@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Unpack, overload, override
 
 import msgspec
 
-from bostie._util import split_subcommands
+from bostie._util import decode_answer, split_subcommands
 from bostie.enums import (
     ApplicationIntegrationType,
     CommandType,
@@ -26,7 +26,6 @@ from bostie.errors import (
     StateError,
 )
 from bostie.file import File
-from bostie.http import decode_answer
 from bostie.models import (
     AllowedMentions,
     Attachment,

@@ -8,10 +8,10 @@ from bostie.enums import InteractionType
 from bostie.errors import BostieError
 from bostie.events import InteractionCreate
 from bostie.models.base import decoder
-from bostie.webhook_events import split_webhook_event, verify_signature
+from bostie.webhook_events import _split_webhook_event, verify_signature
 
-MAX_BODY = 4 * 1024 * 1024
-PONG = b'{"type":1}'
+_MAX_BODY = 4 * 1024 * 1024
+_PONG = b'{"type":1}'
 
 type Message = dict[str, Any]
 type Receive = Callable[[], Awaitable[Message]]
@@ -108,14 +108,14 @@ class ASGIApp:
             return
         kind = decoder(_Kind).decode(body)
         if kind.token is None:
-            named = split_webhook_event(body)
+            named = _split_webhook_event(body)
             if named is not None:
-                self.bot.deliver(*named)
+                self.bot._deliver(*named)
             await _respond(send, 204)
         elif kind.type == InteractionType.PING:
-            await _respond(send, 200, PONG)
+            await _respond(send, 200, _PONG)
         else:
-            self.bot.deliver(InteractionCreate.NAME, body)
+            self.bot._deliver(InteractionCreate.NAME, body)
             await _respond(send, 202)
 
 
@@ -128,7 +128,7 @@ async def _body(receive: Receive) -> bytes | None:
             return b"".join(chunks)
         chunk: bytes = message.get("body", b"")
         size += len(chunk)
-        if size > MAX_BODY:
+        if size > _MAX_BODY:
             return None
         chunks.append(chunk)
         if not message.get("more_body", False):

@@ -57,14 +57,14 @@ def event(fixture: str, **changes: Any) -> Event:
 def applied[E: Event](cache: Cache, cls: type[E], fixture: str, **changes: Any) -> E:
     decoded = event(fixture, **changes)
     assert isinstance(decoded, cls)
-    return cache.apply(decoded)
+    return cache._apply(decoded)
 
 
 @pytest.fixture
 def cache() -> Cache:
     cache = Cache()
-    cache.apply(event("READY"))
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("READY"))
+    cache._apply(event("GUILD_CREATE"))
     return cache
 
 
@@ -96,10 +96,10 @@ def test_guild_create_fills_guild_channels_threads_and_roles(cache: Cache) -> No
 
 
 def test_cached_entities_hold_no_raw_payload(cache: Cache) -> None:
-    cache.apply(event("GUILD_UPDATE"))
-    cache.apply(event("CHANNEL_CREATE"))
-    cache.apply(event("THREAD_CREATE"))
-    cache.apply(event("GUILD_ROLE_CREATE"))
+    cache._apply(event("GUILD_UPDATE"))
+    cache._apply(event("CHANNEL_CREATE"))
+    cache._apply(event("THREAD_CREATE"))
+    cache._apply(event("GUILD_ROLE_CREATE"))
 
     cached = [
         cache.guild(GUILD),
@@ -113,7 +113,7 @@ def test_cached_entities_hold_no_raw_payload(cache: Cache) -> None:
 def test_an_unavailable_guild_create_never_replaces_the_cached_header(
     cache: Cache,
 ) -> None:
-    cache.apply(event("GUILD_CREATE.unavailable"))
+    cache._apply(event("GUILD_CREATE.unavailable"))
 
     guild = cache.guild(GUILD)
     assert guild is not None
@@ -123,9 +123,9 @@ def test_an_unavailable_guild_create_never_replaces_the_cached_header(
 
 
 def test_a_new_guild_create_replaces_the_guild_children(cache: Cache) -> None:
-    cache.apply(event("CHANNEL_CREATE"))
+    cache._apply(event("CHANNEL_CREATE"))
 
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("GUILD_CREATE"))
 
     assert cache.channel(1564614642892931073) is None
     assert len(cache.guild_channels(GUILD)) == 6
@@ -134,7 +134,7 @@ def test_a_new_guild_create_replaces_the_guild_children(cache: Cache) -> None:
 def test_guild_update_replaces_the_header_and_keeps_the_create_fields(
     cache: Cache,
 ) -> None:
-    cache.apply(event("GUILD_UPDATE"))
+    cache._apply(event("GUILD_UPDATE"))
 
     guild = cache.guild(GUILD)
     assert guild is not None
@@ -145,7 +145,7 @@ def test_guild_update_replaces_the_header_and_keeps_the_create_fields(
 
 
 def test_guild_delete_for_an_outage_keeps_the_guild(cache: Cache) -> None:
-    cache.apply(event("GUILD_DELETE"))
+    cache._apply(event("GUILD_DELETE"))
 
     guild = cache.guild(GUILD)
     assert guild is not None
@@ -155,7 +155,7 @@ def test_guild_delete_for_an_outage_keeps_the_guild(cache: Cache) -> None:
 
 
 def test_guild_delete_after_leaving_removes_everything(cache: Cache) -> None:
-    cache.apply(event("GUILD_DELETE.left"))
+    cache._apply(event("GUILD_DELETE.left"))
 
     assert cache.guilds() == []
     assert cache.guild_channels(GUILD) == []
@@ -202,10 +202,10 @@ def test_guild_children_follow_their_create_update_and_delete(
     before = held(cache)
     fresh = {key: "42"}
 
-    cache.apply(event(f"{kind}_CREATE", **fresh))
+    cache._apply(event(f"{kind}_CREATE", **fresh))
     created = [child for child in held(cache) if child not in before]
-    updated = cache.apply(event(f"{kind}_UPDATE", **fresh))
-    cache.apply(event(f"{kind}_DELETE", **fresh))
+    updated = cache._apply(event(f"{kind}_UPDATE", **fresh))
+    cache._apply(event(f"{kind}_DELETE", **fresh))
 
     assert len(created) == 1
     assert created[0].raw_json is None
@@ -219,7 +219,7 @@ def test_soundboard_updates_carry_the_old_sounds_and_answers_replace_them(
     before = cache.soundboard_sound(AIRHORN)
 
     updated = applied(cache, SoundboardSoundsUpdate, "GUILD_SOUNDBOARD_SOUNDS_UPDATE")
-    cache.apply(event("SOUNDBOARD_SOUNDS", soundboard_sounds=[]))
+    cache._apply(event("SOUNDBOARD_SOUNDS", soundboard_sounds=[]))
 
     assert updated.old == (before,)
     assert cache.soundboard_sound(YAY) is None
@@ -227,11 +227,11 @@ def test_soundboard_updates_carry_the_old_sounds_and_answers_replace_them(
 
 
 def test_channel_create_update_and_delete(cache: Cache) -> None:
-    cache.apply(event("CHANNEL_CREATE"))
+    cache._apply(event("CHANNEL_CREATE"))
     created = cache.channel(1564614642892931073)
-    cache.apply(event("CHANNEL_UPDATE", id="1564614642892931073", topic="bots"))
+    cache._apply(event("CHANNEL_UPDATE", id="1564614642892931073", topic="bots"))
     updated = cache.channel(1564614642892931073)
-    cache.apply(event("CHANNEL_DELETE"))
+    cache._apply(event("CHANNEL_DELETE"))
 
     assert created is not None
     assert created.name == "bot-commands"
@@ -246,23 +246,23 @@ def test_deleting_a_channel_drops_its_threads_but_not_its_children(
 ) -> None:
     category = 1335173043978371073
 
-    cache.apply(event("CHANNEL_DELETE", id=str(GENERAL)))
-    cache.apply(event("CHANNEL_DELETE", id=str(category), type=4))
+    cache._apply(event("CHANNEL_DELETE", id=str(GENERAL)))
+    cache._apply(event("CHANNEL_DELETE", id=str(category), type=4))
 
     assert cache.channel(RELEASE_NOTES_THREAD) is None
     assert cache.channel(STAFF_ONLY) is not None
 
 
 def test_channels_outside_cached_guilds_are_not_stored(cache: Cache) -> None:
-    cache.apply(event("CHANNEL_CREATE", guild_id="1"))
-    cache.apply(event("CHANNEL_CREATE", guild_id=None))
+    cache._apply(event("CHANNEL_CREATE", guild_id="1"))
+    cache._apply(event("CHANNEL_CREATE", guild_id=None))
 
     assert cache.channel(1564614642892931073) is None
 
 
 def test_threads_leave_the_cache_once_archived_or_deleted(cache: Cache) -> None:
     active = cache.channel(RELEASE_NOTES_THREAD)
-    cache.apply(event("THREAD_CREATE"))
+    cache._apply(event("THREAD_CREATE"))
     created = cache.channel(FORUM_THREAD)
 
     archived = applied(cache, ThreadUpdate, "THREAD_UPDATE")
@@ -280,10 +280,10 @@ def test_thread_list_sync_replaces_the_threads_of_the_listed_channels(
     cache: Cache,
 ) -> None:
     stale = 1564999999999999999
-    cache.apply(event("THREAD_CREATE"))
-    cache.apply(event("THREAD_CREATE", id=str(stale), parent_id=str(GENERAL)))
+    cache._apply(event("THREAD_CREATE"))
+    cache._apply(event("THREAD_CREATE", id=str(stale), parent_id=str(GENERAL)))
 
-    cache.apply(event("THREAD_LIST_SYNC"))
+    cache._apply(event("THREAD_LIST_SYNC"))
 
     assert cache.channel(stale) is None
     assert cache.channel(MOD_REVIEW_THREAD) is not None
@@ -294,9 +294,9 @@ def test_thread_list_sync_replaces_the_threads_of_the_listed_channels(
 def test_thread_list_sync_without_channel_ids_replaces_every_thread(
     cache: Cache,
 ) -> None:
-    cache.apply(event("THREAD_LIST_SYNC"))
+    cache._apply(event("THREAD_LIST_SYNC"))
 
-    cache.apply(event("THREAD_LIST_SYNC.guild"))
+    cache._apply(event("THREAD_LIST_SYNC.guild"))
 
     assert cache.channel(MOD_REVIEW_THREAD) is None
     assert cache.channel(RELEASE_NOTES_THREAD) is not None
@@ -309,7 +309,7 @@ def test_thread_list_sync_without_channel_ids_replaces_every_thread(
 def test_an_obfuscated_update_is_stored_as_received_and_drops_its_threads(
     cache: Cache,
 ) -> None:
-    cache.apply(event("CHANNEL_UPDATE.obfuscated"))
+    cache._apply(event("CHANNEL_UPDATE.obfuscated"))
 
     general = cache.channel(GENERAL)
     assert general is not None
@@ -323,11 +323,11 @@ def test_an_obfuscated_update_is_stored_as_received_and_drops_its_threads(
 def test_role_create_update_and_delete(cache: Cache) -> None:
     created_id = 1564612126310531073
 
-    cache.apply(event("GUILD_ROLE_CREATE"))
+    cache._apply(event("GUILD_ROLE_CREATE"))
     created = cache.role(created_id)
-    cache.apply(event("GUILD_ROLE_UPDATE"))
+    cache._apply(event("GUILD_ROLE_UPDATE"))
     updated = cache.role(ADMIN_ROLE)
-    cache.apply(event("GUILD_ROLE_DELETE"))
+    cache._apply(event("GUILD_ROLE_DELETE"))
 
     assert created is not None
     assert created.name == "Tester"
@@ -363,7 +363,7 @@ def test_expression_updates_replace_the_guilds_and_carry_the_old_ones(
 
 
 def test_user_update_replaces_the_bot_user(cache: Cache) -> None:
-    cache.apply(event("USER_UPDATE"))
+    cache._apply(event("USER_UPDATE"))
     bot = cache.user(BOT)
 
     assert bot is not None
@@ -374,11 +374,11 @@ def test_user_update_replaces_the_bot_user(cache: Cache) -> None:
 def test_a_ready_drops_only_the_guilds_of_its_shard(cache: Cache) -> None:
     other = GUILD + (1 << 22)
     shard = (GUILD >> 22) % 2
-    cache.apply(event("GUILD_CREATE", id=str(other), channels=[], threads=[]))
+    cache._apply(event("GUILD_CREATE", id=str(other), channels=[], threads=[]))
 
-    cache.apply(event("READY", shard=[1 - shard, 2]))
+    cache._apply(event("READY", shard=[1 - shard, 2]))
     kept = [guild.id for guild in cache.guilds()]
-    cache.apply(event("READY", shard=[shard, 2]))
+    cache._apply(event("READY", shard=[shard, 2]))
 
     assert kept == [GUILD]
     assert cache.guilds() == []
@@ -419,7 +419,7 @@ def test_update_and_delete_events_carry_what_the_cache_held(
 ) -> None:
     before = held(cache)
 
-    received = cache.apply(event(fixture, **changes))
+    received = cache._apply(event(fixture, **changes))
 
     assert before is not None
     assert getattr(received, field) == before
@@ -427,7 +427,7 @@ def test_update_and_delete_events_carry_what_the_cache_held(
 
 def test_member_count_follows_joins_and_leaves(cache: Cache) -> None:
     for fixture in ("GUILD_MEMBER_ADD", "GUILD_MEMBER_ADD", "GUILD_MEMBER_REMOVE"):
-        cache.apply(event(fixture))
+        cache._apply(event(fixture))
 
     guild = cache.guild(GUILD)
     assert guild is not None
@@ -456,9 +456,9 @@ def test_voice_states_follow_joins_changes_and_leaves(cache: Cache) -> None:
 def test_the_bots_member_follows_only_its_own_updates(cache: Cache) -> None:
     joined = cache.me(GUILD)
 
-    cache.apply(event("GUILD_MEMBER_UPDATE"))
+    cache._apply(event("GUILD_MEMBER_UPDATE"))
     other = cache.me(GUILD)
-    cache.apply(event("GUILD_MEMBER_UPDATE", user=BOT_USER, roles=[], deaf=None))
+    cache._apply(event("GUILD_MEMBER_UPDATE", user=BOT_USER, roles=[], deaf=None))
     renamed = cache.me(GUILD)
 
     assert joined is not None
@@ -476,9 +476,9 @@ def test_the_bots_member_follows_only_its_own_updates(cache: Cache) -> None:
 def test_the_bots_member_is_found_past_members_whose_fields_hold_its_id() -> None:
     members = event("GUILD_CREATE").raw["members"]
     cache = Cache()
-    cache.apply(event("READY"))
+    cache._apply(event("READY"))
 
-    cache.apply(
+    cache._apply(
         event("GUILD_CREATE", members=[members[0] | {"nick": str(BOT)}, *members])
     )
     me = cache.me(GUILD)
@@ -489,16 +489,16 @@ def test_the_bots_member_is_found_past_members_whose_fields_hold_its_id() -> Non
 
 def test_the_member_cache_follows_creates_joins_updates_chunks_and_leaves() -> None:
     cache = Cache(members=True)
-    cache.apply(event("READY"))
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("READY"))
+    cache._apply(event("GUILD_CREATE"))
     created = {member.id for member in cache.guild_members(GUILD)}
     moderator = cache.member(GUILD, MODERATOR)
 
-    cache.apply(event("GUILD_MEMBER_ADD"))
+    cache._apply(event("GUILD_MEMBER_ADD"))
     joined = cache.member(GUILD, NEWCOMER)
     updated = applied(cache, MemberUpdate, "GUILD_MEMBER_UPDATE")
     removed = applied(cache, MemberRemove, "GUILD_MEMBER_REMOVE")
-    cache.apply(event("GUILD_MEMBERS_CHUNK", members=[updated.raw | {"nick": None}]))
+    cache._apply(event("GUILD_MEMBERS_CHUNK", members=[updated.raw | {"nick": None}]))
     chunked = cache.member(GUILD, MODERATOR)
 
     assert created == {OWNER, SUPPORT, MODERATOR, BOT}
@@ -514,8 +514,8 @@ def test_the_member_cache_follows_creates_joins_updates_chunks_and_leaves() -> N
 
 def test_a_member_who_leaves_takes_their_presence_along() -> None:
     cache = Cache(presences=True)
-    cache.apply(event("READY"))
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("READY"))
+    cache._apply(event("GUILD_CREATE"))
 
     applied(
         cache, MemberRemove, "GUILD_MEMBER_REMOVE", user=payloads.user(id=str(SUPPORT))
@@ -527,14 +527,14 @@ def test_a_member_who_leaves_takes_their_presence_along() -> None:
 
 def test_the_presence_cache_drops_offline_members() -> None:
     cache = Cache(presences=True)
-    cache.apply(event("READY"))
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("READY"))
+    cache._apply(event("GUILD_CREATE"))
     created = {presence.user.id for presence in cache.guild_presences(GUILD)}
     support = cache.presence(GUILD, SUPPORT)
 
     updated = applied(cache, PresenceUpdate, "PRESENCE_UPDATE")
     offline = applied(cache, PresenceUpdate, "PRESENCE_UPDATE", status="offline")
-    cache.apply(event("GUILD_MEMBERS_CHUNK"))
+    cache._apply(event("GUILD_MEMBERS_CHUNK"))
     moderator = cache.presence(GUILD, MODERATOR)
 
     assert created == {OWNER, SUPPORT, BOT}
@@ -573,10 +573,10 @@ def test_leaving_a_private_thread_drops_it_unless_the_bot_manages_threads(
     cache: Cache, permissions: int, kept: bool
 ) -> None:
     role = event("GUILD_CREATE").raw["roles"][1] | {"permissions": str(permissions)}
-    cache.apply(event("GUILD_ROLE_UPDATE", role=role))
-    cache.apply(event("THREAD_CREATE", type=12))
+    cache._apply(event("GUILD_ROLE_UPDATE", role=role))
+    cache._apply(event("THREAD_CREATE", type=12))
 
-    cache.apply(
+    cache._apply(
         event(
             "THREAD_MEMBERS_UPDATE",
             id=str(FORUM_THREAD),
@@ -591,7 +591,7 @@ def test_the_message_cache_keeps_the_latest_and_hands_them_to_events() -> None:
     cache = Cache(max_messages=2)
     ids = [str(GUILD + number) for number in range(3)]
     for id in ids:
-        cache.apply(event("MESSAGE_CREATE", id=id))
+        cache._apply(event("MESSAGE_CREATE", id=id))
     second, third = cache.message(int(ids[1])), cache.message(int(ids[2]))
 
     edited = applied(cache, MessageUpdate, "MESSAGE_UPDATE", id=ids[1])
@@ -614,12 +614,12 @@ def test_leaving_a_guild_or_a_new_session_forgets_its_messages(
     fixture: str, dm_kept: bool
 ) -> None:
     cache = Cache(max_messages=10)
-    cache.apply(event("READY"))
-    cache.apply(event("GUILD_CREATE"))
+    cache._apply(event("READY"))
+    cache._apply(event("GUILD_CREATE"))
     guild = applied(cache, MessageCreate, "MESSAGE_CREATE").message
     dm = applied(cache, MessageCreate, "MESSAGE_CREATE", id="1", guild_id=None)
 
-    cache.apply(event(fixture))
+    cache._apply(event(fixture))
 
     assert cache.message(guild.id) is None
     assert (cache.message(dm.message.id) is not None) is dm_kept
@@ -627,10 +627,10 @@ def test_leaving_a_guild_or_a_new_session_forgets_its_messages(
 
 def test_dm_messages_keep_the_latest_dm_channels_without_the_messages() -> None:
     cache = Cache(max_dm_channels=2)
-    cache.apply(event("READY"))
+    cache._apply(event("READY"))
     for number in (1, 2, 3):
         author = BOT_USER | {"id": str(number)}
-        cache.apply(
+        cache._apply(
             event(
                 "MESSAGE_CREATE",
                 guild_id=None,
@@ -638,8 +638,10 @@ def test_dm_messages_keep_the_latest_dm_channels_without_the_messages() -> None:
                 channel_id=str(GUILD + number),
             )
         )
-    cache.apply(event("MESSAGE_CREATE", guild_id=None, author=BOT_USER, channel_id="4"))
-    cache.apply(event("MESSAGE_CREATE", author=BOT_USER | {"id": "5"}))
+    cache._apply(
+        event("MESSAGE_CREATE", guild_id=None, author=BOT_USER, channel_id="4")
+    )
+    cache._apply(event("MESSAGE_CREATE", author=BOT_USER | {"id": "5"}))
     third = cache.dm_channel(3)
 
     assert (cache.dm_channel(1), cache.channel(GUILD + 1)) == (None, None)
@@ -654,8 +656,8 @@ def test_dm_messages_keep_the_latest_dm_channels_without_the_messages() -> None:
 def test_events_the_cache_does_not_consume_change_nothing(cache: Cache) -> None:
     before = (cache.guilds(), cache.guild_channels(GUILD), cache.guild_roles(GUILD))
 
-    cache.apply(event("MESSAGE_CREATE"))
-    cache.apply(event("INTERACTION_CREATE.command"))
+    cache._apply(event("MESSAGE_CREATE"))
+    cache._apply(event("INTERACTION_CREATE.command"))
 
     assert (cache.guilds(), cache.guild_channels(GUILD), cache.guild_roles(GUILD)) == (
         before
@@ -666,8 +668,8 @@ def test_events_the_cache_does_not_consume_change_nothing(cache: Cache) -> None:
 def test_cached_channels_never_hold_fields_channel_update_leaves_stale(
     cache: Cache,
 ) -> None:
-    cache.apply(event("THREAD_UPDATE"))
-    cache.apply(event("CHANNEL_UPDATE"))
+    cache._apply(event("THREAD_UPDATE"))
+    cache._apply(event("CHANNEL_UPDATE"))
     received = event("GUILD_CREATE").raw
 
     assert received["channels"][1]["last_message_id"] is not None
@@ -687,7 +689,7 @@ def test_cached_channels_never_hold_fields_channel_update_leaves_stale(
 def test_an_obfuscated_update_without_guild_id_is_filed_by_channel_id(
     cache: Cache,
 ) -> None:
-    cache.apply(event("CHANNEL_UPDATE.obfuscated", guild_id=None))
+    cache._apply(event("CHANNEL_UPDATE.obfuscated", guild_id=None))
 
     general = cache.channel(GENERAL)
     assert general is not None

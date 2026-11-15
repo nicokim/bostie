@@ -12,13 +12,13 @@ import pytest
 
 from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie._gateway import Shards
 from bostie.errors import (
     BostieError,
     RequestBudgetExhausted,
     StateError,
     TransportError,
 )
-from bostie.gateway import Shards
 from bostie.http import HTTPSettings
 from bostie.testing import FakeDiscord
 

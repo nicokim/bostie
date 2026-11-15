@@ -5,7 +5,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+import msgspec
+
 from bostie.enums import OptionType
+from bostie.errors import UnexpectedResponse
 
 if TYPE_CHECKING:
     from bostie.models import InteractionDataOption
@@ -60,3 +63,12 @@ def routers_from(router: "Router") -> Iterator["Router"]:
     while current is not None:
         yield current
         current = current._parent
+
+
+def decode_answer[T](
+    decode: Callable[[bytes], T], data: bytes, *, took_effect: bool
+) -> T:
+    try:
+        return decode(data)
+    except msgspec.DecodeError as error:
+        raise UnexpectedResponse(data, str(error), took_effect=took_effect) from error

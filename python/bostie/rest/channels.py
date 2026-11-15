@@ -168,7 +168,7 @@ class Channels(ResourceGroup):
             json=wire(options, ChannelCreateDm),
         )
         if self._cache is not None:
-            self._cache.store_dm(channel)
+            self._cache._store_dm(channel)
         return channel
 
     async def create_group_dm(self, **options: Unpack[ChannelCreateGroupDm]) -> Channel:

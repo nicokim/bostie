@@ -48,6 +48,15 @@ type OnGateway = Callable[[GatewayDelivery, float], object]
 log = logging.getLogger("bostie.bridge")
 
 
+def warn_invalid_requests(count: int) -> None:
+    """Warn that Discord counted `count` invalid requests in the last 10 minutes."""
+    logging.getLogger("bostie.rest").warning(
+        "%d invalid requests (401, 403, 429) in the last 10 minutes; "
+        "Discord bans the IP at 10 000",
+        count,
+    )
+
+
 class Bridge:
     def __init__(
         self,

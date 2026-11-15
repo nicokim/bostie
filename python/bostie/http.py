@@ -1,10 +1,9 @@
 import asyncio
-import logging
 import math
 import mimetypes
 import os
 import secrets
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
@@ -24,7 +23,6 @@ from bostie.errors import (
     NotFound,
     RateLimited,
     ServerError,
-    UnexpectedResponse,
 )
 from bostie.file import File
 from bostie.models.base import encoder
@@ -33,22 +31,21 @@ from bostie.models.message import Attachment
 if TYPE_CHECKING:
     from bostie._bridge import Bridge
 
-TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
-CLIENT_SECRET_ROUTES = (
+_TOKEN_PLACEHOLDERS = ("{interaction_token}", "{webhook_token}")
+_CLIENT_SECRET_ROUTES = (
     "/oauth2/token",
     "/oauth2/token/revoke",
     "/partner-sdk/token",
     "/partner-sdk/child-token",
     "/partner-sdk/provisional-accounts/unmerge",
 )
-MAX_REASON = 512
+_MAX_REASON = 512
 
-log = logging.getLogger("bostie.rest")
 
 type QueryValue = str | int | float | bool | datetime
 type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
 
-STATUS_ERRORS: dict[int, type[HTTPException]] = {
+_STATUS_ERRORS: dict[int, type[HTTPException]] = {
     400: BadRequest,
     403: Forbidden,
     404: NotFound,
@@ -188,9 +185,9 @@ class HTTPClient:
         **params: object,
     ) -> bytes:
         """Send a request like `request`; return the raw body of the answer."""
-        if reason is not None and not 1 <= len(reason) <= MAX_REASON:
+        if reason is not None and not 1 <= len(reason) <= _MAX_REASON:
             raise ValueError(
-                f"reason must be 1 to {MAX_REASON} characters, got {len(reason)}"
+                f"reason must be 1 to {_MAX_REASON} characters, got {len(reason)}"
             )
         content_type = None
         body = None
@@ -215,29 +212,11 @@ class HTTPClient:
             reason=reason,
         )
         if status >= HTTPStatus.BAD_REQUEST:
-            bot_route = route not in CLIENT_SECRET_ROUTES and not any(
-                token in route for token in TOKEN_PLACEHOLDERS
+            bot_route = route not in _CLIENT_SECRET_ROUTES and not any(
+                token in route for token in _TOKEN_PLACEHOLDERS
             )
             raise _status_error(status, data, bot_route=bot_route)
         return data
-
-
-def warn_invalid_requests(count: int) -> None:
-    """Warn that Discord counted `count` invalid requests in the last 10 minutes."""
-    log.warning(
-        "%d invalid requests (401, 403, 429) in the last 10 minutes; "
-        "Discord bans the IP at 10 000",
-        count,
-    )
-
-
-def decode_answer[T](
-    decode: Callable[[bytes], T], data: bytes, *, took_effect: bool
-) -> T:
-    try:
-        return decode(data)
-    except msgspec.DecodeError as error:
-        raise UnexpectedResponse(data, str(error), took_effect=took_effect) from error
 
 
 def _query_pairs(query: Query) -> list[tuple[str, str]]:
@@ -309,6 +288,6 @@ def _status_error(status: int, body: bytes, *, bot_route: bool) -> BostieError:
     exception = (
         ServerError
         if status >= HTTPStatus.INTERNAL_SERVER_ERROR
-        else STATUS_ERRORS.get(status, HTTPException)
+        else _STATUS_ERRORS.get(status, HTTPException)
     )
     return exception(status, error.code, error.message, error.errors, body)

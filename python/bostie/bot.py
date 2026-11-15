@@ -23,8 +23,18 @@ import msgspec
 
 from bostie import fmt
 from bostie._aio import spawn
-from bostie._bridge import Bridge, GatewayDelivery
+from bostie._bridge import Bridge, GatewayDelivery, warn_invalid_requests
 from bostie._dispatch import Claim, Interactions
+from bostie._gateway import (
+    REQUEST_CHANNEL_INFO,
+    REQUEST_GUILD_MEMBERS,
+    REQUEST_SOUNDBOARD_SOUNDS,
+    REQUEST_TIMEOUT,
+    Readiness,
+    Shards,
+    member_request,
+    presence_fields,
+)
 from bostie._sync import SyncResult, Translate, fetch_ids, sync_commands
 from bostie._util import UNSET, Unset, qualified_name, resolve_token
 from bostie.activity import ActivityDict
@@ -76,20 +86,8 @@ from bostie.events import (
     UserUpdate,
     decode_event,
 )
-from bostie.gateway import (
-    LARGE_THRESHOLD,
-    REQUEST_CHANNEL_INFO,
-    REQUEST_GUILD_MEMBERS,
-    REQUEST_SOUNDBOARD_SOUNDS,
-    REQUEST_TIMEOUT,
-    GatewayClient,
-    Readiness,
-    RequestedMembers,
-    Shards,
-    member_request,
-    presence_fields,
-)
-from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
+from bostie.gateway import _LARGE_THRESHOLD, GatewayClient, RequestedMembers
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.lookup import Lookup
 from bostie.models import (
     AllowedMentions,
@@ -106,16 +104,16 @@ from bostie.voice.connection import VoiceManager
 from bostie.voice.events import VoiceEvent
 from bostie.voice.formats import Defaults
 
-log = logging.getLogger("bostie.bot")
+_log = logging.getLogger("bostie.bot")
 
-TASK_CANCEL_TIMEOUT = 5.0
-CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
+_TASK_CANCEL_TIMEOUT = 5.0
+_CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
     "status",
     "voice_start_time",
 )
 DEFAULT_VOICE = Defaults()
-OWNER_ROLES = frozenset({TeamMemberRole.ADMIN, TeamMemberRole.DEVELOPER})
-type LocalEvent = VoiceEvent | BotEvent
+_OWNER_ROLES = frozenset({TeamMemberRole.ADMIN, TeamMemberRole.DEVELOPER})
+type _LocalEvent = VoiceEvent | BotEvent
 
 
 @dataclass(slots=True)
@@ -192,7 +190,7 @@ class Bot(Router):
         presences: bool = False,
         max_dm_channels: int = 0,
         guild_ready_timeout: float = 2.0,
-        large_threshold: int = LARGE_THRESHOLD.start,
+        large_threshold: int = 50,
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
         status: Status = Status.ONLINE,
         activities: Iterable[ActivityDict] = (),
@@ -217,7 +215,7 @@ class Bot(Router):
             presences=presences,
             max_dm_channels=max_dm_channels,
         )
-        if large_threshold not in LARGE_THRESHOLD:
+        if large_threshold not in _LARGE_THRESHOLD:
             raise ValueError(
                 f"large_threshold must be 50 to 250, got {large_threshold}"
             )
@@ -399,7 +397,7 @@ class Bot(Router):
         self._adopt(application)
         if fetch_user:
             self.user = await self.rest.users.fetch_current()
-            self.cache.set_current_user(self.user)
+            self.cache._set_current_user(self.user)
         await self._setup()
         if self._auto_sync:
             await self._sync(always_put=False)
@@ -440,7 +438,7 @@ class Bot(Router):
         if resumed := shards.load_sessions():
             self._replaying |= resumed
             self.user = await self.rest.users.fetch_current()
-            self.cache.set_current_user(self.user)
+            self.cache._set_current_user(self.user)
         shards.filter(self._dispatch_names())
         shards.identify_limit(info["session_start_limit"])
         if self._before_identify is not None:
@@ -575,11 +573,11 @@ class Bot(Router):
                 del self._waiters[event.NAME]
                 self._refresh_filter()
 
-    def dispatch(self, event: LocalEvent) -> None:
+    def dispatch(self, event: _LocalEvent) -> None:
         """Send an event of your own to its listeners, waiters and streams."""
         self._emit(event)
 
-    def deliver(self, name: str, data: bytes) -> None:
+    def _deliver(self, name: str, data: bytes) -> None:
         """Handle an event payload that came over HTTP as if the gateway sent it."""
         self._dispatch(0, 0, name, data, asyncio.get_running_loop().time())
 
@@ -656,7 +654,7 @@ class Bot(Router):
         self,
         guild_id: int,
         *,
-        fields: Iterable[Literal["status", "voice_start_time"]] = CHANNEL_INFO_FIELDS,
+        fields: Iterable[Literal["status", "voice_start_time"]] = _CHANNEL_INFO_FIELDS,
     ) -> tuple[VoiceChannelInfo, ...]:
         """Ask the gateway for the voice status and start time of a guild's channels."""
         request = {"guild_id": str(guild_id), "fields": list(fields)}
@@ -766,7 +764,7 @@ class Bot(Router):
             running = set(self._tasks)
             self._emit(Stopping())
             if stopping := self._tasks - running:
-                await asyncio.wait(stopping, timeout=TASK_CANCEL_TIMEOUT)
+                await asyncio.wait(stopping, timeout=_TASK_CANCEL_TIMEOUT)
         await self.voice.close()
         if self._shards is not None:
             await self._shards.close()
@@ -781,7 +779,7 @@ class Bot(Router):
         for task in self._tasks - loops:
             task.cancel()
         if pending := list(self._tasks):
-            await asyncio.wait(pending, timeout=TASK_CANCEL_TIMEOUT)
+            await asyncio.wait(pending, timeout=_TASK_CANCEL_TIMEOUT)
         self._running_tasks.clear()
         if self._bridge is not None:
             await self._bridge.close()
@@ -849,7 +847,7 @@ class Bot(Router):
             return
         if not event.INTENTS & self._intents:
             privileged = event.INTENTS & Intents.PRIVILEGED == event.INTENTS
-            log.warning(
+            _log.warning(
                 "%s listens to %s, which needs the %s intent; add it to "
                 "Bot(intents=...)%s",
                 qualified_name(listener.callback),
@@ -864,7 +862,7 @@ class Bot(Router):
                 try:
                     self._dispatch(shard_id, seq, name, data, received)
                 except Exception:
-                    log.log(
+                    _log.log(
                         logging.DEBUG
                         if name in self._failed_dispatches
                         else logging.ERROR,
@@ -905,7 +903,7 @@ class Bot(Router):
             try:
                 await self._before_identify(shard_id)
             except Exception:
-                log.exception(
+                _log.exception(
                     "before_identify raised for shard %d; it identifies anyway",
                     shard_id,
                 )
@@ -922,7 +920,7 @@ class Bot(Router):
                 if request.shard_id == shard_id:
                     request.answers.put_nowait(dropped)
 
-    def _emit(self, event: LocalEvent) -> None:
+    def _emit(self, event: _LocalEvent) -> None:
         for waiter in self._waiters.get(event.NAME, ()):
             _resolve(waiter, event)
         for listener in self.listeners.get(event.NAME, ()):
@@ -939,13 +937,13 @@ class Bot(Router):
             await listener.callback(event)
         except Exception as error:
             if isinstance(event, ListenerError):
-                log.exception(
+                _log.exception(
                     "the ListenerError listener %s raised",
                     qualified_name(listener.callback),
                 )
                 return
             if ListenerError.NAME not in self.listeners:
-                log.exception(
+                _log.exception(
                     "the listener %s raised on %s",
                     qualified_name(listener.callback),
                     name,
@@ -972,7 +970,7 @@ class Bot(Router):
 
     def _task_failed(self, task: Task, error: Exception) -> None:
         if TaskError.NAME not in self.listeners:
-            log.error(
+            _log.error(
                 "the task %s raised", qualified_name(task.callback), exc_info=error
             )
         self._emit(TaskError(task=task, error=error))
@@ -999,7 +997,7 @@ class Bot(Router):
             cls = EVENTS[name]
             cached = dispatch.event(cls)
             if cached is not None:
-                dispatch.decoded[cls] = self.cache.apply(cached)
+                dispatch.decoded[cls] = self.cache._apply(cached)
         for key in (name, _RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
                 _resolve(waiter, dispatch.event(waiter.event))
@@ -1074,7 +1072,7 @@ class Bot(Router):
                     return
                 nonce = None if limited.meta is None else limited.meta.nonce
                 if not self._answer((MembersChunk.NAME, nonce), limited):
-                    log.warning(
+                    _log.warning(
                         "the gateway rate limited opcode %s; retry after %s s",
                         limited.opcode,
                         limited.retry_after,
@@ -1133,7 +1131,7 @@ def _owners(application: Application) -> frozenset[int]:
                 member.user.id
                 for member in team.members
                 if member.membership_state is MembershipState.ACCEPTED
-                and member.role in OWNER_ROLES
+                and member.role in _OWNER_ROLES
             ),
         }
     )

@@ -4,9 +4,9 @@ from typing import Required, TypedDict, Unpack
 
 import msgspec
 
+from bostie._util import decode_answer
 from bostie.enums import MemberFlags, Permissions
 from bostie.file import File
-from bostie.http import decode_answer
 from bostie.models import Member
 from bostie.models.base import decoder
 from bostie.rest.base import ResourceGroup, decoding, each, wire

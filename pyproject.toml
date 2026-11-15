@@ -89,12 +89,14 @@ ignorelist = ["format", "id", "type"]
 [tool.ruff.lint.flake8-self]
 extend-ignore-names = [  # the internal seams one bostie module reaches in another
     "_after_hooks",
+    "_apply",
     "_arguments",
     "_autocompletes",
     "_before_hooks",
     "_bind",
     "_checks",
     "_defaults",
+    "_deliver",
     "_error_handler",
     "_filled",
     "_match_command",
@@ -103,7 +105,9 @@ extend-ignore-names = [  # the internal seams one bostie module reaches in anoth
     "_payload",
     "_received",
     "_run",
+    "_set_current_user",
     "_state",
+    "_store_dm",
 ]
 
 [tool.ruff.lint.mccabe]

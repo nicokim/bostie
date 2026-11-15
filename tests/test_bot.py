@@ -46,6 +46,7 @@ from bostie import (
     ui,
 )
 from bostie._bridge import Bridge
+from bostie._gateway import Shards
 from bostie._sync import SyncResult
 from bostie.checks import MaxConcurrency
 from bostie.events import (
@@ -74,7 +75,6 @@ from bostie.events import (
     ThreadMembersUpdate,
     UserUpdate,
 )
-from bostie.gateway import Shards
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 STRING = OptionType.STRING
@@ -2173,14 +2173,14 @@ def test_a_failing_dispatch_is_logged_once_and_the_next_event_arrives(
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
         messages: asyncio.Queue[Message | WebhookMessage] = asyncio.Queue()
-        apply = bot.cache.apply
+        apply = bot.cache._apply
 
         def apply_or_fail(event: Any) -> None:
             if event.NAME == ChannelUpdate.NAME:
                 raise RuntimeError("cache bug")
             apply(event)
 
-        monkeypatch.setattr(bot.cache, "apply", apply_or_fail)
+        monkeypatch.setattr(bot.cache, "_apply", apply_or_fail)
 
         @bot.listen
         async def on_message(event: MessageCreate) -> None:

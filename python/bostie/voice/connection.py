@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from bostie import _native
 from bostie._aio import spawn
+from bostie._gateway import CLOSE_TIMEOUT
 from bostie.enums import (
     ChannelType,
     Direction,
@@ -37,7 +38,6 @@ from bostie.errors import (
     VoiceNotConnected,
 )
 from bostie.events import VoiceServerUpdate, VoiceStateUpdate
-from bostie.gateway import CLOSE_TIMEOUT
 from bostie.models import Channel, User
 from bostie.voice import player
 from bostie.voice._link import CoreLink, Handle

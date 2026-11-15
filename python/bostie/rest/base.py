@@ -7,10 +7,11 @@ from typing import Any, cast
 
 import msgspec
 
+from bostie._util import decode_answer
 from bostie.cache import Cache
 from bostie.enums import Permissions
 from bostie.file import File
-from bostie.http import HTTPClient, decode_answer
+from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
 from bostie.models.base import Model, check_keys, decode, decoder
 from bostie.models.message import PartialMessage, in_guild

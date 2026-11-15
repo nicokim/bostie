@@ -20,7 +20,7 @@ from bostie.events import (
 )
 from bostie.models.base import decoder
 
-WEBHOOK_EVENTS: dict[str, type[Event]] = {
+_WEBHOOK_EVENTS: dict[str, type[Event]] = {
     event.NAME: event
     for event in (
         ApplicationAuthorized,
@@ -57,16 +57,16 @@ def verify_signature(
 
 def decode_webhook_event(body: bytes) -> Event | None:
     """A webhook event request's event, a RawEvent if untyped, or None for a PING."""
-    named = split_webhook_event(body)
+    named = _split_webhook_event(body)
     if named is None:
         return None
     name, data = named
-    cls = WEBHOOK_EVENTS.get(name)
+    cls = _WEBHOOK_EVENTS.get(name)
     decoded = None if cls is None else decode_event(cls, 0, data)
     return decoded or RawEvent(raw_json=data, name=name, seq=0)
 
 
-def split_webhook_event(body: bytes) -> tuple[str, bytes] | None:
+def _split_webhook_event(body: bytes) -> tuple[str, bytes] | None:
     """The type and data of a webhook event request's event; None for a PING."""
     event = decoder(_Payload).decode(body).event
     return None if event is None else (event.type, bytes(event.data))

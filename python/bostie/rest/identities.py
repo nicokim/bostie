@@ -1,6 +1,6 @@
 from typing import TypedDict, Unpack
 
-from bostie.http import decode_answer
+from bostie._util import decode_answer
 from bostie.models import (
     ApplicationIdentity,
     ApplicationIdentityProfile,
