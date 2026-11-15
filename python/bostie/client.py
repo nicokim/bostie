@@ -10,7 +10,6 @@ from urllib.parse import urlsplit
 
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie._util import resolve_token
-from bostie.cache import Cache
 from bostie.errors import StateError
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
@@ -133,7 +132,7 @@ class RESTClient(_Client[REST]):
 
     @override
     def _open(self, http: HTTPClient) -> REST:
-        return REST(http, self._allowed_mentions, Cache(), self._deletions)
+        return REST(http, self._allowed_mentions, None, self._deletions)
 
 
 class BearerClient(_Client[BearerREST]):
@@ -163,7 +162,7 @@ class BearerClient(_Client[BearerREST]):
 
     @override
     def _open(self, http: HTTPClient) -> BearerREST:
-        return BearerREST(http, DEFAULT_ALLOWED_MENTIONS, Cache())
+        return BearerREST(http, DEFAULT_ALLOWED_MENTIONS, None)
 
 
 class WebhookClient(_Client[Webhooks]):
@@ -237,7 +236,7 @@ class WebhookClient(_Client[Webhooks]):
 
     @override
     def _open(self, http: HTTPClient) -> Webhooks:
-        return Webhooks(http, self._allowed_mentions, Cache())
+        return Webhooks(http, self._allowed_mentions, None)
 
 
 class SyncWebhookClient:

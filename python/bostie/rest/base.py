@@ -36,14 +36,16 @@ class ResourceGroup:
     """Base of the resource groups on `bot.rest`."""
 
     def __init__(
-        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache
+        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache | None
     ) -> None:
         self._http = http
         self._allowed_mentions = allowed_mentions
         self._cache = cache
 
     def _in_guild[M: PartialMessage](self, message: M) -> M:
-        channel = self._cache.channel(message.channel_id)
+        channel = (
+            None if self._cache is None else self._cache.channel(message.channel_id)
+        )
         return in_guild(message, None if channel is None else channel.guild_id)
 
     async def _call[T](

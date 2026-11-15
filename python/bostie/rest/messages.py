@@ -138,7 +138,7 @@ class Messages(ResourceGroup):
         self,
         http: HTTPClient,
         allowed_mentions: AllowedMentions,
-        cache: Cache,
+        cache: Cache | None,
         deletions: set[asyncio.Task[None]],
     ) -> None:
         super().__init__(http, allowed_mentions, cache)

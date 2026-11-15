@@ -46,7 +46,7 @@ class REST:
         self,
         http: HTTPClient,
         allowed_mentions: AllowedMentions,
-        cache: Cache,
+        cache: Cache | None,
         deletions: set[asyncio.Task[None]],
     ) -> None:
         shared = (http, allowed_mentions, cache)
@@ -86,7 +86,7 @@ class BearerREST:
     """What an OAuth2 access token reaches, for the user who granted it."""
 
     def __init__(
-        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache
+        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache | None
     ) -> None:
         shared = (http, allowed_mentions, cache)
         self.commands = BearerCommands(*shared)
