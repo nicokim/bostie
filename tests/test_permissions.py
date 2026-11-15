@@ -16,6 +16,7 @@ USER = 3
 MODS = 4
 MUTED = 5
 PARENT = 6
+ADMINS = 8
 P = Permissions
 EVERYONE = P.VIEW_CHANNEL | P.SEND_MESSAGES | P.ATTACH_FILES | P.CONNECT | P.SPEAK
 
@@ -55,7 +56,12 @@ def channel(type: int = 0, *overwrites: Any, parent_id: int | None = None) -> Ch
     )
 
 
-ROLES = (role(GUILD, EVERYONE), role(MODS, P.MANAGE_MESSAGES), role(MUTED, P(0)))
+ROLES = (
+    role(GUILD, EVERYONE),
+    role(MODS, P.MANAGE_MESSAGES),
+    role(MUTED, P(0)),
+    role(ADMINS, P.ADMINISTRATOR),
+)
 GUILD_MODEL = msgspec.structs.replace(
     model(Guild, **payloads.guild(id=GUILD, owner_id=OWNER)), roles=ROLES
 )
@@ -82,6 +88,7 @@ def member(
     ("target", "where", "parent", "expected"),
     [
         (member(OWNER), channel(0, HIDDEN), None, ALL),
+        (member(roles=(ADMINS,)), channel(0, HIDDEN), None, ALL),
         (member(), None, None, EVERYONE),
         (member(roles=(MODS,)), None, None, EVERYONE | P.MANAGE_MESSAGES),
         (member(roles=(MODS,), timed_out=True), None, None, P.VIEW_CHANNEL),
