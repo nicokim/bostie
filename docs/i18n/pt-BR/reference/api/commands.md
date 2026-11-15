@@ -1,5 +1,5 @@
 ---
-source: 924fe4ee7f123a5608b14cdde296c7d6ec187d58
+source: 68e78077054bc9371fe434e9a92b5c88f7968c11
 ---
 
 # Comandos
@@ -29,10 +29,6 @@ Os decoradores de [`Bot`][bostie.Bot] e [`Router`][bostie.Router] constroem este
 ## Rotas { #routes }
 
 ::: bostie.custom_id.ComponentRoute
-
-## Configurações { #settings }
-
-::: bostie.commands.CommandDefaults
 
 ## Sincronização { #sync }
 
