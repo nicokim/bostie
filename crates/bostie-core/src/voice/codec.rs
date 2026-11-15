@@ -180,15 +180,15 @@ fn rejected(error: &opus::Error) -> CoreError {
 
 #[derive(Debug, thiserror::Error)]
 #[error("opus could not decode a packet: {0}")]
-pub(crate) struct DecodeError(#[from] opus::Error);
+pub(crate) struct OpusDecodeError(#[from] opus::Error);
 
-pub(crate) struct Decoder {
+pub(crate) struct OpusDecoder {
     inner: opus::Decoder,
     rate: u32,
     channels: u8,
 }
 
-impl Decoder {
+impl OpusDecoder {
     pub(crate) fn new(rate: u32, channels: u8) -> Result<Self, CoreError> {
         let layout = match channels {
             1 => Channels::Mono,
@@ -213,7 +213,7 @@ impl Decoder {
         &mut self,
         packet: &[u8],
         scratch: &mut Vec<f32>,
-    ) -> Result<usize, DecodeError> {
+    ) -> Result<usize, OpusDecodeError> {
         let output = self.output(scratch, MAX_DECODE);
         Ok(self.inner.decode_float(packet, output, false)?)
     }
@@ -223,7 +223,7 @@ impl Decoder {
         next: Option<&[u8]>,
         samples48: u32,
         scratch: &mut Vec<f32>,
-    ) -> Result<usize, DecodeError> {
+    ) -> Result<usize, OpusDecodeError> {
         let output = self.output(scratch, samples48.min(MAX_DECODE));
         Ok(self
             .inner
@@ -533,8 +533,8 @@ pub(crate) mod tests {
             .collect()
     }
 
-    fn decoder_after(history: &[Vec<u8>]) -> Decoder {
-        let mut decoder = Decoder::new(16_000, 1).unwrap();
+    fn decoder_after(history: &[Vec<u8>]) -> OpusDecoder {
+        let mut decoder = OpusDecoder::new(16_000, 1).unwrap();
         let mut scratch = Vec::new();
         for packet in history {
             decoder.decode(packet, &mut scratch).unwrap();
@@ -542,7 +542,7 @@ pub(crate) mod tests {
         decoder
     }
 
-    fn output(samples: Result<usize, DecodeError>, scratch: &[f32]) -> Vec<f32> {
+    fn output(samples: Result<usize, OpusDecodeError>, scratch: &[f32]) -> Vec<f32> {
         scratch[..samples.unwrap()].to_vec()
     }
 
@@ -588,7 +588,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_decoder_outputs_the_requested_rate_and_channels() {
-        let mut decoder = Decoder::new(16_000, 1).unwrap();
+        let mut decoder = OpusDecoder::new(16_000, 1).unwrap();
         let mut scratch = Vec::new();
 
         for (duration, ranges) in [
@@ -606,7 +606,7 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(longest, 1_920);
 
-        let mut stereo = Decoder::new(24_000, 2).unwrap();
+        let mut stereo = OpusDecoder::new(24_000, 2).unwrap();
         let samples = stereo
             .decode(&packet(Channels::Mono, 960), &mut scratch)
             .unwrap();
@@ -616,7 +616,7 @@ pub(crate) mod tests {
     #[test]
     fn invalid_and_all_zero_payloads_are_refused() {
         let zeros = [0; 10];
-        let mut decoder = Decoder::new(48_000, 2).unwrap();
+        let mut decoder = OpusDecoder::new(48_000, 2).unwrap();
         let mut scratch = Vec::new();
 
         assert!(packet_samples(&zeros).is_some());

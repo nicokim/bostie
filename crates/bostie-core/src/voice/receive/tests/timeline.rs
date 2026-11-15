@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 
 use super::*;
-use crate::voice::codec::Decoder;
+use crate::voice::codec::OpusDecoder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Heard {
@@ -143,7 +143,7 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
         assert_eq!(receiver.stats().unwrap().lost, lost, "{format:?}");
         if format == pcm16k {
             assert!(lengths.iter().all(|&length| length == 640));
-            let mut fresh = Decoder::new(16_000, 1).unwrap();
+            let mut fresh = OpusDecoder::new(16_000, 1).unwrap();
             let mut scratch = Vec::new();
             let samples = fresh.decode(&packets[10], &mut scratch).unwrap();
             let mut after_the_skip = BytesMut::new();
@@ -196,7 +196,7 @@ fn a_mix_sums_users_and_soft_clips() {
     let receiver = rig.open(options(mixed()));
     let (quiet, loud) = (opus(3, 0.2), opus(2, 0.9));
     let decoded = |packets: &[Bytes]| -> Vec<f32> {
-        let mut decoder = Decoder::new(48_000, 2).unwrap();
+        let mut decoder = OpusDecoder::new(48_000, 2).unwrap();
         let mut pcm = Vec::new();
         for packet in packets {
             let mut scratch = Vec::new();

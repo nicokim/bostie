@@ -14,7 +14,7 @@ use tokio::time::Instant;
 use tracing::{debug, warn};
 
 use super::Throttle;
-use super::connection::{Command, Connection, GatewayEvent, Step, until};
+use super::connection::{ConnectStep, Connection, ConnectionCommand, GatewayEvent, until};
 use super::crypto::{Cipher, Mode};
 use super::dave::{Dave, Outbound, SendMode};
 use super::media::Transport;
@@ -103,10 +103,10 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
                 udp: None,
                 resumable: false,
             });
-            conn.set_step(Step::Websocket);
-            Progress::Identifying { ready: None }
+            conn.set_step(ConnectStep::Websocket);
+            SessionPhase::Identifying { ready: None }
         }
-        Attempt::Resume => Progress::Resuming,
+        Attempt::Resume => SessionPhase::Resuming,
     };
     let Some(url) = conn.voice.as_ref().map(|voice| voice.url.clone()) else {
         return SessionEnd::Failed("there is no voice session to resume".to_owned());
@@ -132,7 +132,7 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
 
 type Discovery = Pin<Box<dyn Future<Output = Result<SocketAddr, DiscoveryError>> + Send>>;
 
-enum Progress {
+enum SessionPhase {
     Identifying { ready: Option<proto::Ready> },
     Discovering { mode: Mode, discovery: Discovery },
     Describing { mode: Mode },
@@ -197,7 +197,7 @@ impl Keepalive {
 struct Session<'c> {
     conn: &'c mut Connection,
     socket: VoiceSocket,
-    progress: Progress,
+    progress: SessionPhase,
     heartbeat: Option<Heartbeat>,
     early: Vec<Inbound>,
     speaking: Coalescer,
@@ -208,7 +208,7 @@ struct Session<'c> {
 }
 
 impl<'c> Session<'c> {
-    fn new(conn: &'c mut Connection, socket: VoiceSocket, progress: Progress) -> Self {
+    fn new(conn: &'c mut Connection, socket: VoiceSocket, progress: SessionPhase) -> Self {
         let speaking = Coalescer::new(conn.tuning.speaking_coalesce);
         Self {
             conn,
@@ -228,7 +228,7 @@ impl<'c> Session<'c> {
         let Some(voice) = &self.conn.voice else {
             return Err(SessionEnd::Failed("the voice session is gone".to_owned()));
         };
-        let resuming = matches!(self.progress, Progress::Resuming);
+        let resuming = matches!(self.progress, SessionPhase::Resuming);
         let payload = if resuming {
             proto::resume(
                 self.conn.guild,
@@ -245,7 +245,7 @@ impl<'c> Session<'c> {
             )
         };
         if !resuming {
-            self.conn.set_step(Step::Handshake);
+            self.conn.set_step(ConnectStep::Handshake);
         }
         self.send_text(payload).await
     }
@@ -297,10 +297,10 @@ impl<'c> Session<'c> {
         }
     }
 
-    async fn on_command(&mut self, command: Option<Command>) -> Result<(), SessionEnd> {
-        let speaking = matches!(command, Some(Command::Speaking(_)));
+    async fn on_command(&mut self, command: Option<ConnectionCommand>) -> Result<(), SessionEnd> {
+        let speaking = matches!(command, Some(ConnectionCommand::Speaking(_)));
         match self.conn.command(command) {
-            Some(SessionEnd::Reconnect) if !matches!(self.progress, Progress::Ready) => Ok(()),
+            Some(SessionEnd::Reconnect) if !matches!(self.progress, SessionPhase::Ready) => Ok(()),
             Some(end) => Err(end),
             None if speaking => self.request_speaking().await,
             None => Ok(()),
@@ -334,7 +334,7 @@ impl<'c> Session<'c> {
     }
 
     fn on_invalid(&mut self, error: &ProtoError) -> Result<(), SessionEnd> {
-        if !matches!(self.progress, Progress::Ready) {
+        if !matches!(self.progress, SessionPhase::Ready) {
             return Err(SessionEnd::Failed(format!("invalid frame: {error}")));
         }
         if self.invalid.allows(Instant::now().into_std()) {
@@ -350,18 +350,18 @@ impl<'c> Session<'c> {
                 self.handshaken()
             }
             Inbound::Ready(ready) => {
-                if let Progress::Identifying { ready: slot @ None } = &mut self.progress {
+                if let SessionPhase::Identifying { ready: slot @ None } = &mut self.progress {
                     *slot = Some(ready);
                     return self.handshaken();
                 }
                 Ok(())
             }
             Inbound::SessionDescription(description) => match self.progress {
-                Progress::Describing { mode } => self.describe(mode, description).await,
+                SessionPhase::Describing { mode } => self.describe(mode, description).await,
                 _ => Ok(()),
             },
             Inbound::Resumed => match self.progress {
-                Progress::Resuming => self.resumed().await,
+                SessionPhase::Resuming => self.resumed().await,
                 _ => Ok(()),
             },
             Inbound::HeartbeatAck { t } => {
@@ -388,9 +388,9 @@ impl<'c> Session<'c> {
             | Inbound::Dave(_)) => {
                 if matches!(
                     self.progress,
-                    Progress::Identifying { .. }
-                        | Progress::Discovering { .. }
-                        | Progress::Describing { .. }
+                    SessionPhase::Identifying { .. }
+                        | SessionPhase::Discovering { .. }
+                        | SessionPhase::Describing { .. }
                 ) {
                     let limit = self.conn.tuning.early_ops;
                     if self.early.len() >= limit {
@@ -414,7 +414,7 @@ impl<'c> Session<'c> {
     }
 
     fn handshaken(&mut self) -> Result<(), SessionEnd> {
-        let Progress::Identifying { ready } = &mut self.progress else {
+        let SessionPhase::Identifying { ready } = &mut self.progress else {
             return Ok(());
         };
         if self.heartbeat.is_none() {
@@ -432,7 +432,7 @@ impl<'c> Session<'c> {
                 ),
             ));
         };
-        self.conn.set_step(Step::Udp);
+        self.conn.set_step(ConnectStep::Udp);
         let (socket, sender) = udp::bind(SocketAddr::new(ready.ip, ready.port))
             .map_err(|error| SessionEnd::Failed(format!("udp: {error}")))?;
         let socket = Arc::new(socket);
@@ -473,7 +473,7 @@ impl<'c> Session<'c> {
                 receiver,
             });
         }
-        self.progress = Progress::Discovering { mode, discovery };
+        self.progress = SessionPhase::Discovering { mode, discovery };
         Ok(())
     }
 
@@ -481,10 +481,10 @@ impl<'c> Session<'c> {
         &mut self,
         result: Result<SocketAddr, DiscoveryError>,
     ) -> Result<(), SessionEnd> {
-        let Progress::Discovering { mode, .. } = self.progress else {
+        let SessionPhase::Discovering { mode, .. } = self.progress else {
             return Ok(());
         };
-        self.progress = Progress::Describing { mode };
+        self.progress = SessionPhase::Describing { mode };
         let address = result.map_err(|error| SessionEnd::Failed(error.to_string()))?;
         self.send_text(proto::select_protocol(
             address.ip(),
@@ -492,7 +492,7 @@ impl<'c> Session<'c> {
             mode.as_str(),
         ))
         .await?;
-        self.conn.set_step(Step::Session);
+        self.conn.set_step(ConnectStep::Session);
         self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         Ok(())
     }
@@ -549,8 +549,8 @@ impl<'c> Session<'c> {
         };
         self.conn.media.begin(dave, transport);
         self.send_outbound(out).await?;
-        self.progress = Progress::Joining;
-        self.conn.set_step(Step::Dave);
+        self.progress = SessionPhase::Joining;
+        self.conn.set_step(ConnectStep::Dave);
         for inbound in mem::take(&mut self.early) {
             self.on_call(inbound).await?;
         }
@@ -559,15 +559,17 @@ impl<'c> Session<'c> {
     }
 
     async fn resumed(&mut self) -> Result<(), SessionEnd> {
-        self.progress = Progress::Ready;
+        self.progress = SessionPhase::Ready;
         self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         self.conn.became_ready();
         self.request_speaking().await
     }
 
     fn joined(&mut self) {
-        if matches!(self.progress, Progress::Joining) && self.conn.media.gate() != SendMode::Hold {
-            self.progress = Progress::Ready;
+        if matches!(self.progress, SessionPhase::Joining)
+            && self.conn.media.gate() != SendMode::Hold
+        {
+            self.progress = SessionPhase::Ready;
             self.conn.became_ready();
         }
     }
@@ -673,7 +675,7 @@ impl<'c> Session<'c> {
             return;
         };
         self.conn.info.ws_latency.set(latency);
-        if matches!(self.progress, Progress::Ready) && !mem::replace(&mut self.stable, true) {
+        if matches!(self.progress, SessionPhase::Ready) && !mem::replace(&mut self.stable, true) {
             self.conn.stable();
         }
     }
@@ -739,7 +741,7 @@ impl<'c> Session<'c> {
     }
 
     async fn request_speaking(&mut self) -> Result<(), SessionEnd> {
-        if !matches!(self.progress, Progress::Joining | Progress::Ready) {
+        if !matches!(self.progress, SessionPhase::Joining | SessionPhase::Ready) {
             return Ok(());
         }
         if self.speaking.request(Instant::now()) {
@@ -782,9 +784,9 @@ impl<'c> Session<'c> {
     }
 }
 
-async fn discovered(progress: &mut Progress) -> Result<SocketAddr, DiscoveryError> {
+async fn discovered(progress: &mut SessionPhase) -> Result<SocketAddr, DiscoveryError> {
     match progress {
-        Progress::Discovering { discovery, .. } => discovery.as_mut().await,
+        SessionPhase::Discovering { discovery, .. } => discovery.as_mut().await,
         _ => future::pending().await,
     }
 }

@@ -176,7 +176,7 @@ impl LogSink {
 }
 
 pub(crate) struct Inbox {
-    state: Mutex<State>,
+    state: Mutex<InboxState>,
     room: Notify,
     bell: Bell,
     dispatch_bytes_limit: usize,
@@ -184,7 +184,7 @@ pub(crate) struct Inbox {
 }
 
 #[derive(Default)]
-struct State {
+struct InboxState {
     deliveries: Vec<Delivery>,
     dispatch_bytes: usize,
     rung: bool,
@@ -197,7 +197,7 @@ impl Inbox {
 
     pub(crate) fn with_dispatch_limit(bell: Bell, dispatch_bytes_limit: usize) -> Self {
         Self {
-            state: Mutex::new(State::default()),
+            state: Mutex::new(InboxState::default()),
             room: Notify::new(),
             bell,
             dispatch_bytes_limit,

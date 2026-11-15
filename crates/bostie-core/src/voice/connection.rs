@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::debug;
 
-use super::Shared;
+use super::VoiceShared;
 use super::close::{self, CloseAction};
 use super::media::Media;
 use super::proto;
@@ -65,7 +65,7 @@ impl ConnectionTuning {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Command {
+pub(crate) enum ConnectionCommand {
     Update {
         channel: ChannelId,
         self_mute: bool,
@@ -78,7 +78,7 @@ pub(crate) enum Command {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Step {
+pub(crate) enum ConnectStep {
     VoiceEvents,
     Websocket,
     Handshake,
@@ -93,7 +93,7 @@ pub(crate) enum Step {
     SessionReplaced,
 }
 
-impl Step {
+impl ConnectStep {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::VoiceEvents => "voice_events",
@@ -226,12 +226,12 @@ struct Failures {
 }
 
 pub(super) struct Connection {
-    pub(super) shared: Arc<Shared>,
+    pub(super) shared: Arc<VoiceShared>,
     pub(super) guild: GuildId,
     pub(super) user: UserId,
     pub(super) info: Arc<Info>,
     pub(super) media: Arc<Media>,
-    pub(super) commands: mpsc::Receiver<Command>,
+    pub(super) commands: mpsc::Receiver<ConnectionCommand>,
     pub(super) stop: watch::Receiver<bool>,
     pub(super) gateway: watch::Receiver<Snapshot>,
     pub(super) speaking: u8,
@@ -245,20 +245,20 @@ pub(super) struct Connection {
     failures: Failures,
     seen: Seen,
     status: VoiceStatus,
-    step: Step,
+    step: ConnectStep,
     timeout: Duration,
     connected: bool,
 }
 
 pub(super) struct Inputs {
-    pub(super) commands: mpsc::Receiver<Command>,
+    pub(super) commands: mpsc::Receiver<ConnectionCommand>,
     pub(super) stop: watch::Receiver<bool>,
     pub(super) gateway: watch::Receiver<Snapshot>,
 }
 
 impl Connection {
     pub(super) fn new(
-        shared: Arc<Shared>,
+        shared: Arc<VoiceShared>,
         request: &ConnectRequest,
         info: Arc<Info>,
         media: Arc<Media>,
@@ -303,14 +303,14 @@ impl Connection {
             failures: Failures::default(),
             seen,
             status: VoiceStatus::Connecting,
-            step: Step::VoiceEvents,
+            step: ConnectStep::VoiceEvents,
             timeout: request.timeout,
             connected: false,
         }
     }
 
     pub(super) async fn run(mut self) -> Ending {
-        self.announce(VoiceStatus::Connecting, Step::VoiceEvents.as_str());
+        self.announce(VoiceStatus::Connecting, ConnectStep::VoiceEvents.as_str());
         let mut next = Next::Wait;
         loop {
             next = match next {
@@ -331,7 +331,7 @@ impl Connection {
         }
     }
 
-    pub(super) fn set_step(&mut self, step: Step) {
+    pub(super) fn set_step(&mut self, step: ConnectStep) {
         self.step = step;
     }
 
@@ -368,20 +368,20 @@ impl Connection {
         self.shared.inbox.push(delivery);
     }
 
-    pub(super) fn command(&mut self, command: Option<Command>) -> Option<SessionEnd> {
+    pub(super) fn command(&mut self, command: Option<ConnectionCommand>) -> Option<SessionEnd> {
         match command {
             None => Some(SessionEnd::Stopped),
-            Some(Command::Disconnect) => Some(SessionEnd::Disconnect),
-            Some(Command::Reconnect) => Some(SessionEnd::Reconnect),
-            Some(Command::Speaking(flags)) => {
+            Some(ConnectionCommand::Disconnect) => Some(SessionEnd::Disconnect),
+            Some(ConnectionCommand::Reconnect) => Some(SessionEnd::Reconnect),
+            Some(ConnectionCommand::Speaking(flags)) => {
                 self.speaking = flags;
                 None
             }
-            Some(Command::ServerChangeDelay(delay)) => {
+            Some(ConnectionCommand::ServerChangeDelay(delay)) => {
                 self.servers.change_delay = delay;
                 None
             }
-            Some(Command::Update {
+            Some(ConnectionCommand::Update {
                 channel,
                 self_mute,
                 self_deaf,
@@ -506,7 +506,7 @@ impl Connection {
         }
     }
 
-    fn reconnecting(&mut self, step: Step) {
+    fn reconnecting(&mut self, step: ConnectStep) {
         self.step = step;
         let status = if self.connected {
             self.media.set_reconnecting(true);
@@ -671,7 +671,7 @@ impl Connection {
         }
         failures.rejoins += 1;
         self.drop_session();
-        self.reconnecting(Step::Rejoining);
+        self.reconnecting(ConnectStep::Rejoining);
         match self.send_voice_state(Some(self.me.target)).await {
             Ok(()) => Next::Wait,
             Err(end) => self.after(end),
@@ -680,7 +680,7 @@ impl Connection {
 
     async fn wait_for_gateway(&mut self, reason: DisconnectReason, code: u16) -> Next {
         self.drop_session();
-        self.reconnecting(Step::WaitingForGateway);
+        self.reconnecting(ConnectStep::WaitingForGateway);
         let window = self.tuning.move_window;
         match self.interruptible(sleep(window)).await {
             Ok(()) => Next::End(Ending::new(
@@ -702,10 +702,10 @@ impl Connection {
                     "the bot left the voice channel or was removed from it",
                 ));
             }
-            GatewayEvent::Moved => Step::Moving,
-            GatewayEvent::ServerChanged => Step::ServerChanged,
-            GatewayEvent::ServerUnavailable => Step::ServerUnavailable,
-            GatewayEvent::SessionReplaced => Step::SessionReplaced,
+            GatewayEvent::Moved => ConnectStep::Moving,
+            GatewayEvent::ServerChanged => ConnectStep::ServerChanged,
+            GatewayEvent::ServerUnavailable => ConnectStep::ServerUnavailable,
+            GatewayEvent::SessionReplaced => ConnectStep::SessionReplaced,
         };
         self.servers.moved = self.connected
             && !self.servers.change_delay.is_zero()

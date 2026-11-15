@@ -258,7 +258,7 @@ impl Rig {
     fn run_unguarded(&mut self, now: Instant, skipped: u32) -> bool {
         let Reception { core, state, .. } = &mut self.reception;
         state
-            .get_or_insert_with(|| Box::new(State::new(core)))
+            .get_or_insert_with(|| Box::new(ReceptionState::new(core)))
             .run(now, skipped, now + FRAME)
     }
 

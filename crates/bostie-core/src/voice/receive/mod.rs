@@ -39,7 +39,7 @@ const MEDIA_RECENT: Duration = Duration::from_millis(100);
 type Key = (u32, UserId);
 
 #[derive(Clone)]
-struct Core {
+struct ReceiveContext {
     media: Arc<Media>,
     info: Arc<Info>,
     user: UserId,
@@ -108,13 +108,13 @@ struct Watchdog {
 }
 
 pub(crate) struct Reception {
-    core: Core,
-    state: Option<Box<State>>,
+    core: ReceiveContext,
+    state: Option<Box<ReceptionState>>,
     panicked: Throttle,
 }
 
-struct State {
-    core: Core,
+struct ReceptionState {
+    core: ReceiveContext,
     inflow: Inflow,
     owners: Owners,
     hold: Hold,
@@ -135,7 +135,7 @@ impl Reception {
         tuning: ReceiveTuning,
     ) -> Self {
         Self {
-            core: Core {
+            core: ReceiveContext {
                 media,
                 info,
                 user,
@@ -158,7 +158,7 @@ impl Reception {
         }
         let state = self
             .state
-            .get_or_insert_with(|| Box::new(State::new(&self.core)));
+            .get_or_insert_with(|| Box::new(ReceptionState::new(&self.core)));
         match panic::catch_unwind(AssertUnwindSafe(|| state.run(now, skipped, deadline))) {
             Ok(alive) => alive,
             Err(payload) => self.restart(now, payload.as_ref()),
@@ -185,8 +185,8 @@ impl Drop for Reception {
     }
 }
 
-impl State {
-    fn new(core: &Core) -> Self {
+impl ReceptionState {
+    fn new(core: &ReceiveContext) -> Self {
         Self {
             core: core.clone(),
             inflow: Inflow::default(),

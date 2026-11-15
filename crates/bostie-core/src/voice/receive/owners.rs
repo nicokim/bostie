@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::time::{Duration, Instant};
 
-use super::Core;
+use super::ReceiveContext;
 use crate::ids::UserId;
 use crate::voice::media::Arrival;
 use crate::voice::types::ReceiveTuning;
@@ -23,7 +23,7 @@ pub(super) struct Owners {
 impl Owners {
     pub(super) fn map(
         &mut self,
-        core: &Core,
+        core: &ReceiveContext,
         now: Instant,
         arrivals: &mut VecDeque<Arrival>,
         batch: &mut Vec<(UserId, Arrival)>,

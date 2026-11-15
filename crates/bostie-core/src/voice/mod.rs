@@ -44,7 +44,7 @@ use tokio_websockets::Connector;
 use tracing::{debug, error};
 
 pub use self::codec::FrameEncoder;
-use self::connection::{Command, Connection, ConnectionTuning, Ending, Info, Inputs};
+use self::connection::{Connection, ConnectionCommand, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
 use self::pacer::{Pace, PacerPool};
@@ -91,10 +91,10 @@ impl Default for Tuning {
 
 pub struct Voice {
     runtime: runtime::Handle,
-    shared: Arc<Shared>,
+    shared: Arc<VoiceShared>,
 }
 
-struct Shared {
+struct VoiceShared {
     inbox: Arc<Inbox>,
     tap: Arc<GatewayTap>,
     send: GatewaySend,
@@ -109,7 +109,7 @@ struct Shared {
 }
 
 struct ConnectionHandle {
-    commands: mpsc::Sender<Command>,
+    commands: mpsc::Sender<ConnectionCommand>,
     stop: watch::Sender<bool>,
     info: Arc<Info>,
     media: Arc<Media>,
@@ -145,7 +145,7 @@ impl Voice {
         proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
         Ok(Self {
-            shared: Arc::new(Shared {
+            shared: Arc::new(VoiceShared {
                 inbox,
                 tap,
                 send,
@@ -265,7 +265,7 @@ impl Voice {
         let shard = self.with_connection(guild, |handle| handle.info.shard)?;
         self.command(
             guild,
-            Command::Update {
+            ConnectionCommand::Update {
                 channel,
                 self_mute,
                 self_deaf,
@@ -278,14 +278,14 @@ impl Voice {
     }
 
     pub fn disconnect(&self, guild: GuildId) -> Result<(), CoreError> {
-        match self.command(guild, Command::Disconnect) {
+        match self.command(guild, ConnectionCommand::Disconnect) {
             Err(CoreError::UnknownVoice(_)) => Ok(()),
             result => result,
         }
     }
 
     pub fn reconnect(&self, guild: GuildId) -> Result<(), CoreError> {
-        self.command(guild, Command::Reconnect)
+        self.command(guild, ConnectionCommand::Reconnect)
     }
 
     pub fn set_encoder(&self, guild: GuildId, encoder: EncoderSettings) -> Result<(), CoreError> {
@@ -297,7 +297,7 @@ impl Voice {
 
     pub fn set_speaking(&self, guild: GuildId, flags: u8) -> Result<(), CoreError> {
         check_speaking(flags)?;
-        self.command(guild, Command::Speaking(flags))
+        self.command(guild, ConnectionCommand::Speaking(flags))
     }
 
     pub fn set_server_change_delay(
@@ -305,7 +305,7 @@ impl Voice {
         guild: GuildId,
         delay: Duration,
     ) -> Result<(), CoreError> {
-        self.command(guild, Command::ServerChangeDelay(delay))
+        self.command(guild, ConnectionCommand::ServerChangeDelay(delay))
     }
 
     pub fn latency(
@@ -447,7 +447,7 @@ impl Voice {
         self.with_connection(guild, |handle| Arc::clone(&handle.media))
     }
 
-    fn command(&self, guild: GuildId, command: Command) -> Result<(), CoreError> {
+    fn command(&self, guild: GuildId, command: ConnectionCommand) -> Result<(), CoreError> {
         let commands = self.with_connection(guild, |handle| handle.commands.clone())?;
         commands.try_send(command).map_err(|error| match error {
             mpsc::error::TrySendError::Full(_) => CoreError::VoiceQueueFull(guild),
@@ -475,7 +475,7 @@ fn check_speaking(flags: u8) -> Result<(), CoreError> {
 
 async fn supervise(
     task: JoinHandle<Ending>,
-    shared: Arc<Shared>,
+    shared: Arc<VoiceShared>,
     info: Arc<Info>,
     media: Arc<Media>,
 ) {
@@ -498,7 +498,7 @@ async fn supervise(
     finish(&shared, &info, &media, ending);
 }
 
-fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
+fn finish(shared: &VoiceShared, info: &Arc<Info>, media: &Media, ending: Ending) {
     media.close();
     shared.tap.unregister(info.guild);
     {

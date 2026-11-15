@@ -25,7 +25,7 @@ pub(crate) use self::envelope::{command, tree};
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
 use self::limits::Limits;
-use self::shard::{Session, Shard, Signals};
+use self::shard::{Shard, ShardSession, Signals};
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
@@ -47,11 +47,11 @@ pub struct SavedSession {
 pub struct Gateway {
     runtime: Handle,
     closed: AtomicBool,
-    shared: Arc<Shared>,
+    shared: Arc<GatewayShared>,
     shards: Mutex<HashMap<ShardId, ShardHandle>>,
 }
 
-struct Shared {
+struct GatewayShared {
     inbox: Arc<Inbox>,
     token: Box<str>,
     connector: Connector,
@@ -100,7 +100,7 @@ impl Gateway {
         Ok(Self {
             runtime,
             closed: AtomicBool::new(false),
-            shared: Arc::new(Shared {
+            shared: Arc::new(GatewayShared {
                 inbox,
                 token: token.into(),
                 connector: Connector::new().map_err(CoreError::Tls)?,
@@ -147,7 +147,7 @@ impl Gateway {
         })?;
         let session = saved
             .map(|saved| {
-                Session::restored(&saved).ok_or_else(|| {
+                ShardSession::restored(&saved).ok_or_else(|| {
                     CoreError::InvalidRequest(format!(
                         "{:?} is not a ws:// or wss:// resume URL",
                         saved.resume_url

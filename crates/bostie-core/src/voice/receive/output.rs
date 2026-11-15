@@ -10,9 +10,9 @@ use tracing::debug;
 
 use super::decrypt::Hold;
 use super::owners::Owners;
-use super::{Core, Feed, Key, Moment, instant, samples_since, speaking};
+use super::{Feed, Key, Moment, ReceiveContext, instant, samples_since, speaking};
 use crate::ids::{Handle, UserId};
-use crate::voice::codec::{self, Decoder};
+use crate::voice::codec::{self, OpusDecoder};
 use crate::voice::media::{Arrival, Media};
 use crate::voice::peak::Peak;
 use crate::voice::playout::{Cursor, Release, is_before, to_samples};
@@ -30,7 +30,7 @@ const MIX_SLACK: Duration = Duration::from_millis(100);
 struct Track {
     feed: u64,
     cursor: Cursor,
-    decoder: Option<Decoder>,
+    decoder: Option<OpusDecoder>,
 }
 
 #[derive(Debug, Default)]
@@ -215,7 +215,7 @@ impl Subscribers {
     pub(super) fn release(
         &mut self,
         streams: &mut HashMap<Key, Feed>,
-        core: &Core,
+        core: &ReceiveContext,
         at: Moment,
         transport: bool,
         owners: &Owners,
@@ -363,7 +363,7 @@ impl Subscriber {
     fn pass_marks(
         &self,
         streams: &HashMap<Key, Feed>,
-        core: &Core,
+        core: &ReceiveContext,
         at: Moment,
         owners: &Owners,
         hold: &Hold,
@@ -887,9 +887,9 @@ impl Fifo {
     }
 }
 
-fn decoder(track: &mut Track, format: PcmFormat) -> &mut Option<Decoder> {
+fn decoder(track: &mut Track, format: PcmFormat) -> &mut Option<OpusDecoder> {
     if track.decoder.is_none() {
-        track.decoder = Decoder::new(format.rate, format.channels).ok();
+        track.decoder = OpusDecoder::new(format.rate, format.channels).ok();
     }
     &mut track.decoder
 }

@@ -6,7 +6,7 @@ use bytes::{Bytes, BytesMut};
 use parking_lot::MutexGuard;
 use tracing::{debug, warn};
 
-use super::{Core, Key, Work};
+use super::{Key, ReceiveContext, Work};
 use crate::ids::{GuildId, UserId};
 use crate::voice::Throttle;
 use crate::voice::dave::{Dave, DecryptFailure};
@@ -165,7 +165,7 @@ impl Hold {
     pub(super) fn decrypt(
         &mut self,
         work: &mut [Work],
-        core: &Core,
+        core: &ReceiveContext,
         now: Instant,
         deadline: Instant,
     ) -> usize {
@@ -203,7 +203,7 @@ impl Hold {
         work: &mut [Work],
         from: usize,
         retries: &mut usize,
-        core: &Core,
+        core: &ReceiveContext,
         now: Instant,
     ) -> (usize, bool) {
         let started = Instant::now();
@@ -318,7 +318,7 @@ impl Hold {
         });
     }
 
-    fn request_recovery(&mut self, core: &Core, settling: bool, now: Instant) {
+    fn request_recovery(&mut self, core: &ReceiveContext, settling: bool, now: Instant) {
         let tolerance = core.tuning.decrypt_tolerance;
         let last_request = self.last_request;
         let asking = self

@@ -17,13 +17,13 @@ static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&ENVELOPE_KEYS));
 static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&READY_KEYS));
 
 #[derive(Serialize)]
-struct Command<T> {
+struct Payload<T> {
     op: u8,
     d: T,
 }
 
 pub(crate) fn command(op: u8, d: impl Serialize) -> Bytes {
-    sonic_rs::to_vec(&Command { op, d })
+    sonic_rs::to_vec(&Payload { op, d })
         .map(Bytes::from)
         .unwrap_or_default()
 }

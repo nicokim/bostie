@@ -17,7 +17,7 @@ use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime;
 use crate::voice::panic_message;
-use crate::voice::source::decode::{Decoder, Input, Step};
+use crate::voice::source::decode::{DecodeStep, FileDecoder, Input};
 use crate::voice::source::http::{Http, HttpMedia};
 use crate::voice::types::{SAMPLE_RATE, SourceSpec, samples_in};
 
@@ -50,23 +50,23 @@ pub enum SourceRead {
 
 pub struct Source {
     id: Handle,
-    shared: Arc<Shared>,
+    shared: Arc<SourceShared>,
 }
 
-struct Shared {
+struct SourceShared {
     id: Handle,
     inbox: Arc<Inbox>,
     prefetch: u64,
-    state: Mutex<State>,
+    state: Mutex<SourceState>,
     changed: Condvar,
 }
 
-struct State {
+struct SourceState {
     info: Option<SourceInfo>,
     tags: Tags,
     chunks: Vec<Bytes>,
     buffered: u64,
-    progress: Progress,
+    progress: Playback,
     seek: Option<Duration>,
     generation: u64,
     wake_armed: bool,
@@ -75,13 +75,13 @@ struct State {
 }
 
 #[derive(PartialEq, Eq)]
-enum Progress {
+enum Playback {
     Playing,
     Ended,
     Failed(String),
 }
 
-enum Command {
+enum DecoderCommand {
     Decode,
     Seek(Duration, u64),
     Close,
@@ -109,18 +109,18 @@ impl Source {
         id: Handle,
         inbox: Arc<Inbox>,
         prefetch: Duration,
-        body: impl FnOnce(&Shared) + Send + 'static,
+        body: impl FnOnce(&SourceShared) + Send + 'static,
     ) -> Result<Self, CoreError> {
-        let shared = Arc::new(Shared {
+        let shared = Arc::new(SourceShared {
             id,
             inbox,
             prefetch: samples_in(prefetch, SAMPLE_RATE),
-            state: Mutex::new(State {
+            state: Mutex::new(SourceState {
                 info: None,
                 tags: Tags::default(),
                 chunks: Vec::new(),
                 buffered: 0,
-                progress: Progress::Playing,
+                progress: Playback::Playing,
                 seek: None,
                 generation: 0,
                 wake_armed: true,
@@ -167,20 +167,20 @@ impl Source {
             return Ok(SourceRead::Chunks(chunks));
         }
         Ok(match &state.progress {
-            Progress::Playing => {
+            Playback::Playing => {
                 state.wake_armed = true;
                 SourceRead::Pending
             }
-            Progress::Ended => SourceRead::Ended(None),
-            Progress::Failed(error) => SourceRead::Ended(Some(error.clone())),
+            Playback::Ended => SourceRead::Ended(None),
+            Playback::Failed(error) => SourceRead::Ended(Some(error.clone())),
         })
     }
 
     pub fn error(&self) -> Result<Option<String>, CoreError> {
         runtime::check_owner()?;
         Ok(match &self.shared.state.lock().progress {
-            Progress::Failed(error) => Some(error.clone()),
-            Progress::Playing | Progress::Ended => None,
+            Playback::Failed(error) => Some(error.clone()),
+            Playback::Playing | Playback::Ended => None,
         })
     }
 
@@ -199,7 +199,7 @@ impl Source {
         state.generation += 1;
         state.chunks.clear();
         state.buffered = 0;
-        state.progress = Progress::Playing;
+        state.progress = Playback::Playing;
         self.shared.changed.notify_one();
         Ok(())
     }
@@ -218,7 +218,7 @@ impl Source {
         self.shared.changed.notify_one();
     }
 
-    fn open_state(&self) -> Result<MutexGuard<'_, State>, CoreError> {
+    fn open_state(&self) -> Result<MutexGuard<'_, SourceState>, CoreError> {
         let state = self.shared.state.lock();
         if state.closed {
             return Err(CoreError::SourceClosed(self.id));
@@ -233,7 +233,7 @@ impl Drop for Source {
     }
 }
 
-impl Shared {
+impl SourceShared {
     fn publish(&self, info: SourceInfo, tags: Tags) -> u64 {
         let mut state = self.state.lock();
         state.info = Some(info);
@@ -257,7 +257,7 @@ impl Shared {
         if state.generation != generation {
             return;
         }
-        state.progress = error.map_or(Progress::Ended, Progress::Failed);
+        state.progress = error.map_or(Playback::Ended, Playback::Failed);
         self.wake(&mut state);
     }
 
@@ -265,53 +265,53 @@ impl Shared {
         let mut state = self.state.lock();
         state.stopped = true;
         if let Some(failure) = failure {
-            state.progress = Progress::Failed(failure);
+            state.progress = Playback::Failed(failure);
         }
         self.wake(&mut state);
     }
 
-    fn command(&self) -> Command {
+    fn command(&self) -> DecoderCommand {
         let mut state = self.state.lock();
         loop {
             if state.closed {
-                return Command::Close;
+                return DecoderCommand::Close;
             }
             if let Some(position) = state.seek.take() {
-                return Command::Seek(position, state.generation);
+                return DecoderCommand::Seek(position, state.generation);
             }
-            if state.progress == Progress::Playing && state.buffered < self.prefetch {
-                return Command::Decode;
+            if state.progress == Playback::Playing && state.buffered < self.prefetch {
+                return DecoderCommand::Decode;
             }
             self.changed.wait(&mut state);
         }
     }
 
-    fn wake(&self, state: &mut State) {
+    fn wake(&self, state: &mut SourceState) {
         if mem::take(&mut state.wake_armed) {
             self.inbox.push(Delivery::VoiceWake { handle: self.id });
         }
     }
 }
 
-fn play(shared: &Shared, input: Input) {
-    let mut decoder = match Decoder::open(input) {
+fn play(shared: &SourceShared, input: Input) {
+    let mut decoder = match FileDecoder::open(input) {
         Ok(decoder) => decoder,
         Err(error) => return shared.finish(0, Some(error.to_string())),
     };
     let mut generation = shared.publish(decoder.info(), decoder.tags());
     loop {
         match shared.command() {
-            Command::Close => return,
-            Command::Seek(position, current) => {
+            DecoderCommand::Close => return,
+            DecoderCommand::Seek(position, current) => {
                 generation = current;
                 if let Err(error) = decoder.seek(position) {
                     shared.finish(generation, Some(error.to_string()));
                 }
             }
-            Command::Decode => match decoder.step() {
-                Ok(Step::Chunk { data, frames }) => shared.push(generation, data, frames),
-                Ok(Step::Skipped) => {}
-                Ok(Step::Ended) => shared.finish(generation, None),
+            DecoderCommand::Decode => match decoder.step() {
+                Ok(DecodeStep::Chunk { data, frames }) => shared.push(generation, data, frames),
+                Ok(DecodeStep::Skipped) => {}
+                Ok(DecodeStep::Ended) => shared.finish(generation, None),
                 Err(error) => shared.finish(generation, Some(error.to_string())),
             },
         }
@@ -463,7 +463,7 @@ pub(crate) mod tests {
     }
 
     impl Harness {
-        fn spawn(&mut self, body: impl FnOnce(&Shared) + Send + 'static) -> Source {
+        fn spawn(&mut self, body: impl FnOnce(&SourceShared) + Send + 'static) -> Source {
             let id = self.handle();
             Source::spawn(id, Arc::clone(&self.inbox), PREFETCH, body).unwrap()
         }
@@ -716,7 +716,7 @@ pub(crate) mod tests {
             let state = source.shared.state.lock();
             let last = state.chunks.last().map_or(0, |chunk| chunk.len() / 8) as u64;
             assert!(state.buffered - last < prefetch, "{}", state.buffered);
-            assert!(state.progress == Progress::Playing);
+            assert!(state.progress == Playback::Playing);
         }
         let (chunks, error) = read_to_end(&source);
 
@@ -783,7 +783,7 @@ pub(crate) mod tests {
         );
         step.send(()).unwrap();
         wait_until(
-            || source.shared.state.lock().progress == Progress::Ended,
+            || source.shared.state.lock().progress == Playback::Ended,
             "the end",
         );
 
@@ -806,7 +806,7 @@ pub(crate) mod tests {
             steps.recv().unwrap();
             shared.push(generation, Bytes::from_static(b"stale..."), 1);
             shared.finish(generation, Some("stale end".to_owned()));
-            let Command::Seek(position, current) = shared.command() else {
+            let DecoderCommand::Seek(position, current) = shared.command() else {
                 panic!("expected the seek");
             };
             seeked.send(position).unwrap();

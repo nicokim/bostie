@@ -5,7 +5,7 @@ use bytes::Bytes;
 use crate::error::CoreError;
 use crate::voice::codec;
 use crate::voice::source::SourceKind;
-use crate::voice::source::decode::{Decoder, Input, Step};
+use crate::voice::source::decode::{DecodeStep, FileDecoder, Input};
 use crate::voice::types::{CHANNELS, SAMPLE_RATE};
 
 const WINDOW: u64 = SAMPLE_RATE as u64 / 10;
@@ -14,17 +14,17 @@ const MAX_POINTS: usize = 256;
 pub fn voice_message(data: Bytes, hint: Option<String>) -> Result<(Duration, Vec<u8>), CoreError> {
     let unplayable = |error: &dyn std::fmt::Display| CoreError::InvalidRequest(error.to_string());
     let mut decoder =
-        Decoder::open(Input::Bytes { data, hint }).map_err(|error| unplayable(&error))?;
+        FileDecoder::open(Input::Bytes { data, hint }).map_err(|error| unplayable(&error))?;
     let info = decoder.info();
     let mut opus = match info.kind {
-        SourceKind::Opus => Some(codec::Decoder::new(SAMPLE_RATE, 2)?),
+        SourceKind::Opus => Some(codec::OpusDecoder::new(SAMPLE_RATE, 2)?),
         SourceKind::Pcm => None,
     };
     let mut peaks = Peaks::default();
     let mut scratch = Vec::new();
     loop {
         match decoder.step().map_err(|error| unplayable(&error))? {
-            Step::Chunk { data, .. } => match &mut opus {
+            DecodeStep::Chunk { data, .. } => match &mut opus {
                 Some(opus) => {
                     let frames = opus
                         .decode(&data, &mut scratch)
@@ -33,8 +33,8 @@ pub fn voice_message(data: Bytes, hint: Option<String>) -> Result<(Duration, Vec
                 }
                 None => peaks.add_f32le(&data),
             },
-            Step::Skipped => {}
-            Step::Ended => break,
+            DecodeStep::Skipped => {}
+            DecodeStep::Ended => break,
         }
     }
     let (measured, waveform) = peaks.finish();

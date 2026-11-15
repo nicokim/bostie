@@ -37,7 +37,7 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum DecodeError {
+pub(crate) enum FileDecodeError {
     #[error("{0}")]
     Io(#[from] io::Error),
     #[error("{0}")]
@@ -50,25 +50,25 @@ pub(crate) enum DecodeError {
     Unplayable(String),
 }
 
-pub(crate) enum Step {
+pub(crate) enum DecodeStep {
     Chunk { data: Bytes, frames: u64 },
     Skipped,
     Ended,
 }
 
-pub(crate) struct Decoder {
+pub(crate) struct FileDecoder {
     format: Option<Box<dyn FormatReader>>,
     hint: Hint,
     track: u32,
     time_base: Option<TimeBase>,
     info: SourceInfo,
     tags: Tags,
-    output: Output,
+    output: Emit,
     resume_at: Option<Timestamp>,
     finished: bool,
 }
 
-enum Output {
+enum Emit {
     Opus,
     Pcm(Box<Pcm>),
 }
@@ -88,8 +88,8 @@ struct Downmix {
     gains: Vec<[f32; 2]>,
 }
 
-impl Decoder {
-    pub(crate) fn open(input: Input) -> Result<Self, DecodeError> {
+impl FileDecoder {
+    pub(crate) fn open(input: Input) -> Result<Self, FileDecodeError> {
         let mut hint = Hint::new();
         let mut described = None;
         let (media, seekable): (Box<dyn MediaSource>, bool) = match input {
@@ -138,7 +138,7 @@ impl Decoder {
             MediaError::IoError(io) if io.kind() == ErrorKind::UnexpectedEof => {
                 no_decoder_for(described)
             }
-            other => DecodeError::Media(other),
+            other => FileDecodeError::Media(other),
         })?;
         let tags = read_tags(format.as_mut());
         let mut decoder = Self {
@@ -152,7 +152,7 @@ impl Decoder {
                 seekable,
             },
             tags,
-            output: Output::Opus,
+            output: Emit::Opus,
             resume_at: None,
             finished: false,
         };
@@ -168,9 +168,9 @@ impl Decoder {
         self.tags.clone()
     }
 
-    pub(crate) fn step(&mut self) -> Result<Step, DecodeError> {
+    pub(crate) fn step(&mut self) -> Result<DecodeStep, FileDecodeError> {
         if self.finished {
-            return Ok(Step::Ended);
+            return Ok(DecodeStep::Ended);
         }
         let packet = match self.reader()?.next_packet() {
             Ok(Some(packet)) => packet,
@@ -181,26 +181,26 @@ impl Decoder {
             Err(MediaError::ResetRequired) => {
                 let kind = self.info.kind;
                 let tail = match &mut self.output {
-                    Output::Pcm(pcm) => pcm.flush(),
-                    Output::Opus => Step::Skipped,
+                    Emit::Pcm(pcm) => pcm.flush(),
+                    Emit::Opus => DecodeStep::Skipped,
                 };
                 self.select_track()?;
                 if self.info.kind != kind {
-                    return Err(DecodeError::Unplayable(
+                    return Err(FileDecodeError::Unplayable(
                         "the stream switched between Opus and PCM audio".to_owned(),
                     ));
                 }
                 return Ok(match tail {
-                    Step::Ended => Step::Skipped,
+                    DecodeStep::Ended => DecodeStep::Skipped,
                     step => step,
                 });
             }
             Err(error) => return Err(error.into()),
         };
         if packet.track_id != self.track {
-            return Ok(Step::Skipped);
+            return Ok(DecodeStep::Skipped);
         }
-        let Output::Pcm(pcm) = &mut self.output else {
+        let Emit::Pcm(pcm) = &mut self.output else {
             return Ok(self.opus(packet));
         };
         let first_kept = packet.pts.saturating_add(packet.trim_start);
@@ -208,15 +208,15 @@ impl Decoder {
             .resume_at
             .and_then(|resume| span(self.time_base, first_kept, resume));
         let step = pcm.decode(&packet, skip)?;
-        if !matches!(step, Step::Skipped) {
+        if !matches!(step, DecodeStep::Skipped) {
             self.resume_at = None;
         }
         Ok(step)
     }
 
-    pub(crate) fn seek(&mut self, position: Duration) -> Result<(), DecodeError> {
+    pub(crate) fn seek(&mut self, position: Duration) -> Result<(), FileDecodeError> {
         let time = Time::try_from_nanos_u128(position.as_nanos())
-            .ok_or_else(|| DecodeError::Unplayable(format!("cannot seek to {position:?}")))?;
+            .ok_or_else(|| FileDecodeError::Unplayable(format!("cannot seek to {position:?}")))?;
         self.finished = false;
         self.resume_at = None;
         self.reopen()?;
@@ -240,54 +240,54 @@ impl Decoder {
         }
     }
 
-    fn reader(&mut self) -> Result<&mut dyn FormatReader, DecodeError> {
+    fn reader(&mut self) -> Result<&mut dyn FormatReader, FileDecodeError> {
         match &mut self.format {
             Some(format) => Ok(format.as_mut()),
             None => Err(lost()),
         }
     }
 
-    fn reopen(&mut self) -> Result<(), DecodeError> {
+    fn reopen(&mut self) -> Result<(), FileDecodeError> {
         let mut stream = self.format.take().ok_or_else(lost)?.into_inner();
         stream.seek(SeekFrom::Start(0))?;
         self.format = Some(probe(&self.hint, stream)?);
         self.select_track()
     }
 
-    fn select_track(&mut self) -> Result<(), DecodeError> {
+    fn select_track(&mut self) -> Result<(), FileDecodeError> {
         let format = self.format.as_deref().ok_or_else(lost)?;
         let track = format
             .first_track(TrackType::Audio)
-            .ok_or(DecodeError::NoAudio)?;
+            .ok_or(FileDecodeError::NoAudio)?;
         let params = track
             .codec_params
             .as_ref()
             .and_then(CodecParameters::audio)
-            .ok_or(DecodeError::NoAudio)?;
+            .ok_or(FileDecodeError::NoAudio)?;
         let output = if params.codec == CODEC_ID_OPUS {
             let channels = params.channels.as_ref().map_or(0, Channels::count);
             if channels > CHANNELS {
-                return Err(DecodeError::NoDecoder(format!(
+                return Err(FileDecodeError::NoDecoder(format!(
                     "opus with {channels} channels"
                 )));
             }
-            Output::Opus
+            Emit::Opus
         } else {
             let decoder = symphonia::default::get_codecs()
                 .make_audio_decoder(params, &AudioDecoderOptions::default())
                 .map_err(|error| match error {
-                    MediaError::Unsupported(_) => DecodeError::NoDecoder(format!(
+                    MediaError::Unsupported(_) => FileDecodeError::NoDecoder(format!(
                         "{} in {}",
                         codec_name(params.codec),
                         format.format_info().short_name
                     )),
-                    other => DecodeError::Media(other),
+                    other => FileDecodeError::Media(other),
                 })?;
-            Output::Pcm(Box::new(Pcm::new(decoder)))
+            Emit::Pcm(Box::new(Pcm::new(decoder)))
         };
         self.info.kind = match output {
-            Output::Opus => SourceKind::Opus,
-            Output::Pcm(_) => SourceKind::Pcm,
+            Emit::Opus => SourceKind::Opus,
+            Emit::Pcm(_) => SourceKind::Pcm,
         };
         self.info.duration = duration(track);
         self.track = track.id;
@@ -296,32 +296,32 @@ impl Decoder {
         Ok(())
     }
 
-    fn opus(&mut self, packet: Packet) -> Step {
+    fn opus(&mut self, packet: Packet) -> DecodeStep {
         let Some(samples) = codec::packet_samples(&packet.data) else {
             tracing::debug!(
                 bytes = packet.data.len(),
                 "skipped a packet libopus cannot parse"
             );
-            return Step::Skipped;
+            return DecodeStep::Skipped;
         };
         if let Some(resume) = self.resume_at {
             let length = duration_of(u64::from(samples), SAMPLE_RATE);
             if span(self.time_base, packet.pts, resume).is_some_and(|ahead| ahead >= length) {
-                return Step::Skipped;
+                return DecodeStep::Skipped;
             }
             self.resume_at = None;
         }
-        Step::Chunk {
+        DecodeStep::Chunk {
             data: Bytes::from(Vec::from(packet.data)),
             frames: u64::from(samples),
         }
     }
 
-    fn finish(&mut self) -> Step {
+    fn finish(&mut self) -> DecodeStep {
         self.finished = true;
         match &mut self.output {
-            Output::Opus => Step::Ended,
-            Output::Pcm(pcm) => pcm.flush(),
+            Emit::Opus => DecodeStep::Ended,
+            Emit::Pcm(pcm) => pcm.flush(),
         }
     }
 }
@@ -338,12 +338,16 @@ impl Pcm {
         }
     }
 
-    fn decode(&mut self, packet: &Packet, skip: Option<Duration>) -> Result<Step, DecodeError> {
+    fn decode(
+        &mut self,
+        packet: &Packet,
+        skip: Option<Duration>,
+    ) -> Result<DecodeStep, FileDecodeError> {
         let buffer = match self.decoder.decode(packet) {
             Ok(buffer) => buffer,
             Err(MediaError::DecodeError(reason)) => {
                 tracing::debug!(reason, "skipped a packet the decoder cannot read");
-                return Ok(Step::Skipped);
+                return Ok(DecodeStep::Skipped);
             }
             Err(error) => return Err(error.into()),
         };
@@ -351,7 +355,7 @@ impl Pcm {
         let layout = buffer.spec().channels();
         let count = layout.count();
         if count == 0 || rate == 0 {
-            return Ok(Step::Skipped);
+            return Ok(DecodeStep::Skipped);
         }
         buffer.copy_to_vec_interleaved(&mut self.decoded);
         let skipped = skip.map_or(0, |skip| {
@@ -362,7 +366,7 @@ impl Pcm {
             .get(skipped.saturating_mul(count)..)
             .unwrap_or_default();
         if samples.is_empty() {
-            return Ok(Step::Skipped);
+            return Ok(DecodeStep::Skipped);
         }
         self.converted.clear();
         let (samples, channels) = if count > CHANNELS {
@@ -377,13 +381,13 @@ impl Pcm {
         Ok(chunk(&self.converted))
     }
 
-    fn flush(&mut self) -> Step {
+    fn flush(&mut self) -> DecodeStep {
         self.converted.clear();
         if let Some(converter) = &mut self.converter {
             converter.flush(&mut self.converted);
         }
         match chunk(&self.converted) {
-            Step::Skipped => Step::Ended,
+            DecodeStep::Skipped => DecodeStep::Ended,
             step => step,
         }
     }
@@ -456,7 +460,7 @@ fn converter_for<'a>(
     rate: u32,
     channels: usize,
     out: &mut Vec<f32>,
-) -> Result<&'a mut Converter, DecodeError> {
+) -> Result<&'a mut Converter, FileDecodeError> {
     let format = PcmFormat {
         rate,
         channels: u8::try_from(channels).unwrap_or(u8::MAX),
@@ -471,21 +475,21 @@ fn converter_for<'a>(
     if let Some(converter) = slot {
         Ok(converter)
     } else {
-        let converter =
-            Converter::new(format).map_err(|error| DecodeError::Unplayable(error.to_string()))?;
+        let converter = Converter::new(format)
+            .map_err(|error| FileDecodeError::Unplayable(error.to_string()))?;
         Ok(slot.insert(converter))
     }
 }
 
-fn chunk(samples: &[f32]) -> Step {
+fn chunk(samples: &[f32]) -> DecodeStep {
     if samples.is_empty() {
-        return Step::Skipped;
+        return DecodeStep::Skipped;
     }
     let data: Vec<u8> = samples
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
         .collect();
-    Step::Chunk {
+    DecodeStep::Chunk {
         data: Bytes::from(data),
         frames: (samples.len() / CHANNELS) as u64,
     }
@@ -550,12 +554,12 @@ fn read_tags(format: &mut dyn FormatReader) -> Tags {
     tags
 }
 
-fn lost() -> DecodeError {
-    DecodeError::Unplayable("the media could not be read again after a seek".to_owned())
+fn lost() -> FileDecodeError {
+    FileDecodeError::Unplayable("the media could not be read again after a seek".to_owned())
 }
 
-fn no_decoder_for(described: Option<String>) -> DecodeError {
-    DecodeError::NoDecoder(described.unwrap_or_else(|| "this media".to_owned()))
+fn no_decoder_for(described: Option<String>) -> FileDecodeError {
+    FileDecodeError::NoDecoder(described.unwrap_or_else(|| "this media".to_owned()))
 }
 
 fn codec_name(codec: AudioCodecId) -> String {
@@ -576,19 +580,19 @@ mod tests {
 
     const H: f32 = MINUS_3_DB;
 
-    fn decode_rest(decoder: &mut Decoder) -> Vec<Bytes> {
+    fn decode_rest(decoder: &mut FileDecoder) -> Vec<Bytes> {
         let mut chunks = Vec::new();
         loop {
             match decoder.step().unwrap() {
-                Step::Chunk { data, .. } => chunks.push(data),
-                Step::Skipped => {}
-                Step::Ended => return chunks,
+                DecodeStep::Chunk { data, .. } => chunks.push(data),
+                DecodeStep::Skipped => {}
+                DecodeStep::Ended => return chunks,
             }
         }
     }
 
-    fn open(name: &str) -> Decoder {
-        Decoder::open(Input::File(fixture(name))).unwrap()
+    fn open(name: &str) -> FileDecoder {
+        FileDecoder::open(Input::File(fixture(name))).unwrap()
     }
 
     #[test]
@@ -744,6 +748,6 @@ mod tests {
 
         decoder.seek(Duration::from_secs(5)).unwrap();
 
-        assert!(matches!(decoder.step().unwrap(), Step::Ended));
+        assert!(matches!(decoder.step().unwrap(), DecodeStep::Ended));
     }
 }

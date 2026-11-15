@@ -19,7 +19,7 @@ use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame, command};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
-use super::{SavedSession, Shared};
+use super::{GatewayShared, SavedSession};
 use crate::backoff::backoff;
 use crate::error::describe;
 use crate::ids::ShardId;
@@ -79,13 +79,13 @@ impl Signals {
     }
 }
 
-pub(super) struct Session {
+pub(super) struct ShardSession {
     id: String,
     resume_url: Option<Url>,
     seq: u64,
 }
 
-impl Session {
+impl ShardSession {
     pub(super) fn restored(saved: &SavedSession) -> Option<Self> {
         Some(Self {
             id: saved.id.clone(),
@@ -106,7 +106,7 @@ impl Session {
 }
 
 #[derive(Debug)]
-enum Ending {
+enum ShardEnding {
     Stop,
     Requested,
     Reconnect,
@@ -124,7 +124,7 @@ struct Held {
     forward: Forward,
 }
 
-struct Heartbeat {
+struct ShardHeartbeat {
     interval: Duration,
     next: Instant,
     sent_at: Option<Instant>,
@@ -132,7 +132,7 @@ struct Heartbeat {
     paused: bool,
 }
 
-impl Heartbeat {
+impl ShardHeartbeat {
     fn after_hello(interval: Duration, hello_at: Instant, fraction: f64) -> Self {
         Self {
             interval,
@@ -150,14 +150,14 @@ impl Heartbeat {
     }
 }
 
-struct Connection {
+struct ShardConnection {
     socket: Socket,
     signals: Arc<Signals>,
     hello_timeout: Duration,
     close_timeout: Duration,
     inflater: Inflater,
     hello_deadline: Instant,
-    heartbeat: Option<Heartbeat>,
+    heartbeat: Option<ShardHeartbeat>,
     limiter: Option<SendLimiter>,
     identify_at: Option<Instant>,
     awaiting_approval: Option<u64>,
@@ -165,7 +165,7 @@ struct Connection {
     held: Option<Held>,
 }
 
-impl Connection {
+impl ShardConnection {
     fn next_tick(&self) -> Instant {
         self.heartbeat
             .as_ref()
@@ -183,19 +183,19 @@ impl Connection {
         self.limiter.as_mut().map(|limiter| limiter.next_slot(now))
     }
 
-    async fn send(&mut self, payload: Bytes) -> Result<(), Ending> {
+    async fn send(&mut self, payload: Bytes) -> Result<(), ShardEnding> {
         let patience = self
             .heartbeat
             .as_ref()
             .map_or(self.hello_timeout, |heartbeat| heartbeat.interval);
         tokio::select! {
             biased;
-            () = self.signals.close.notified() => return Err(Ending::Stop),
-            () = self.signals.reconnect.notified() => return Err(Ending::Requested),
+            () = self.signals.close.notified() => return Err(ShardEnding::Stop),
+            () = self.signals.reconnect.notified() => return Err(ShardEnding::Requested),
             sent = timeout(patience, self.socket.send(Message::text(payload))) => match sent {
-                Ok(sent) => sent.map_err(|error| Ending::Lost(describe(&error)))?,
+                Ok(sent) => sent.map_err(|error| ShardEnding::Lost(describe(&error)))?,
                 Err(_) => {
-                    return Err(Ending::Lost(format!(
+                    return Err(ShardEnding::Lost(format!(
                         "a write did not finish within {patience:?}"
                     )));
                 }
@@ -236,10 +236,10 @@ impl Connection {
 pub(super) struct Shard {
     id: ShardId,
     url: Url,
-    shared: Arc<Shared>,
+    shared: Arc<GatewayShared>,
     commands: mpsc::Receiver<Bytes>,
     signals: Arc<Signals>,
-    session: Option<Session>,
+    session: Option<ShardSession>,
     had_session: bool,
     identify_requests: u64,
     failures: u32,
@@ -250,10 +250,10 @@ impl Shard {
     pub(super) fn new(
         id: ShardId,
         url: Url,
-        shared: Arc<Shared>,
+        shared: Arc<GatewayShared>,
         commands: mpsc::Receiver<Bytes>,
         signals: Arc<Signals>,
-        session: Option<Session>,
+        session: Option<ShardSession>,
     ) -> Self {
         Self {
             id,
@@ -349,10 +349,10 @@ impl Shard {
         true
     }
 
-    async fn connect_and_serve(&mut self) -> Ending {
+    async fn connect_and_serve(&mut self) -> ShardEnding {
         let limits = &self.shared.limits;
         let Some(inflater) = Inflater::new(limits.max_decompressed) else {
-            return Ending::Lost("zstd could not allocate a decompression context".to_owned());
+            return ShardEnding::Lost("zstd could not allocate a decompression context".to_owned());
         };
         let url = self
             .session
@@ -362,15 +362,15 @@ impl Shard {
         debug!(shard = %self.id, %url, "connecting");
         let socket = tokio::select! {
             biased;
-            () = self.signals.close.notified() => return Ending::Stop,
-            () = self.signals.reconnect.notified() => return Ending::Requested,
+            () = self.signals.close.notified() => return ShardEnding::Stop,
+            () = self.signals.reconnect.notified() => return ShardEnding::Requested,
             connected = timeout(limits.connect_timeout, connect(url, &self.shared.connector, self.shared.proxy.as_ref())) => match connected {
                 Ok(Ok(socket)) => socket,
-                Ok(Err(error)) => return Ending::Unreachable(error),
-                Err(_) => return Ending::Unreachable(format!("no connection within {:?}", limits.connect_timeout)),
+                Ok(Err(error)) => return ShardEnding::Unreachable(error),
+                Err(_) => return ShardEnding::Unreachable(format!("no connection within {:?}", limits.connect_timeout)),
             },
         };
-        let mut connection = Connection {
+        let mut connection = ShardConnection {
             socket,
             signals: Arc::clone(&self.signals),
             hello_timeout: limits.hello_timeout,
@@ -386,7 +386,7 @@ impl Shard {
         };
         let ending = self.serve(&mut connection).await;
         match ending {
-            Ending::Stop => {
+            ShardEnding::Stop => {
                 let code = if self.signals.keep_session.load(Ordering::Acquire) {
                     SESSION_KEEPING_CLOSE
                 } else {
@@ -394,13 +394,13 @@ impl Shard {
                 };
                 connection.close(code, Some(&mut self.commands)).await;
             }
-            Ending::Closed(_) | Ending::Lost(_) => {}
+            ShardEnding::Closed(_) | ShardEnding::Lost(_) => {}
             _ => connection.close(SESSION_KEEPING_CLOSE, None).await,
         }
         ending
     }
 
-    async fn serve(&mut self, connection: &mut Connection) -> Ending {
+    async fn serve(&mut self, connection: &mut ShardConnection) -> ShardEnding {
         loop {
             let now = Instant::now();
             let next_tick = connection.next_tick();
@@ -409,8 +409,8 @@ impl Shard {
             let commands_wait_until = command_slot.filter(|&slot| slot > now);
             let step = tokio::select! {
                 biased;
-                () = self.signals.close.notified() => Err(Ending::Stop),
-                () = self.signals.reconnect.notified() => Err(Ending::Requested),
+                () = self.signals.close.notified() => Err(ShardEnding::Stop),
+                () = self.signals.reconnect.notified() => Err(ShardEnding::Requested),
                 () = sleep_until(next_tick) => self.on_tick(connection).await,
                 () = sleep_until(connection.identify_at.unwrap_or(now)), if connection.identify_at.is_some() => {
                     self.identify_due(connection).await
@@ -427,7 +427,7 @@ impl Shard {
                 }
                 command = self.commands.recv(), if commands_due => match command {
                     Some(payload) => connection.send(payload).await,
-                    None => Err(Ending::Stop),
+                    None => Err(ShardEnding::Stop),
                 },
                 () = sleep_until(commands_wait_until.unwrap_or(now)), if commands_wait_until.is_some() => Ok(()),
             };
@@ -437,21 +437,21 @@ impl Shard {
         }
     }
 
-    async fn on_tick(&self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn on_tick(&self, connection: &mut ShardConnection) -> Result<(), ShardEnding> {
         let Some(heartbeat) = &mut connection.heartbeat else {
-            return Err(Ending::Unreachable(format!(
+            return Err(ShardEnding::Unreachable(format!(
                 "no HELLO within {:?}",
                 connection.hello_timeout
             )));
         };
         if !heartbeat.acked && !heartbeat.paused {
-            return Err(Ending::Zombie);
+            return Err(ShardEnding::Zombie);
         }
         heartbeat.beat(connection.held.is_some(), Instant::now());
         self.send_heartbeat(connection).await
     }
 
-    async fn send_heartbeat(&self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn send_heartbeat(&self, connection: &mut ShardConnection) -> Result<(), ShardEnding> {
         let seq = self.session.as_ref().map(|session| session.seq);
         connection.send(command(HEARTBEAT, seq)).await?;
         if let Some(heartbeat) = &mut connection.heartbeat {
@@ -460,7 +460,7 @@ impl Shard {
         Ok(())
     }
 
-    async fn identify_due(&mut self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn identify_due(&mut self, connection: &mut ShardConnection) -> Result<(), ShardEnding> {
         connection.identify_at = None;
         if !self.shared.identify_gated.load(Ordering::Relaxed) {
             return self.send_identify(connection).await;
@@ -474,7 +474,7 @@ impl Shard {
         Ok(())
     }
 
-    async fn on_approval(&mut self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn on_approval(&mut self, connection: &mut ShardConnection) -> Result<(), ShardEnding> {
         let approved = self.signals.approved_request.load(Ordering::Acquire);
         if connection
             .awaiting_approval
@@ -486,7 +486,7 @@ impl Shard {
         self.send_identify(connection).await
     }
 
-    async fn send_identify(&mut self, connection: &mut Connection) -> Result<(), Ending> {
+    async fn send_identify(&mut self, connection: &mut ShardConnection) -> Result<(), ShardEnding> {
         if self.had_session {
             while self.commands.try_recv().is_ok() {}
         }
@@ -497,33 +497,33 @@ impl Shard {
 
     async fn on_message(
         &mut self,
-        connection: &mut Connection,
+        connection: &mut ShardConnection,
         message: Option<Result<Message, tokio_websockets::Error>>,
-    ) -> Result<(), Ending> {
+    ) -> Result<(), ShardEnding> {
         let message = match message {
             Some(Ok(message)) => message,
-            Some(Err(error)) => return Err(Ending::Lost(describe(&error))),
+            Some(Err(error)) => return Err(ShardEnding::Lost(describe(&error))),
             None => {
-                return Err(Ending::Lost(
+                return Err(ShardEnding::Lost(
                     "the connection ended without a close frame".to_owned(),
                 ));
             }
         };
         if let Some((code, _)) = message.as_close() {
-            return Err(Ending::Closed(code.into()));
+            return Err(ShardEnding::Closed(code.into()));
         }
         let payload = if message.is_binary() {
             connection
                 .inflater
                 .inflate(message.as_payload())
-                .map_err(|error| Ending::InvalidFrame(error.to_string()))?
+                .map_err(|error| ShardEnding::InvalidFrame(error.to_string()))?
         } else if message.is_text() {
             message.as_payload()
         } else {
             return Ok(());
         };
         let frame = Frame::parse(payload, |name| self.wants(name))
-            .map_err(|error| Ending::InvalidFrame(error.to_string()))?;
+            .map_err(|error| ShardEnding::InvalidFrame(error.to_string()))?;
         self.on_frame(connection, frame).await
     }
 
@@ -541,7 +541,11 @@ impl Shard {
                 .is_none_or(|names| names.contains(name))
     }
 
-    async fn on_frame(&mut self, connection: &mut Connection, frame: Frame) -> Result<(), Ending> {
+    async fn on_frame(
+        &mut self,
+        connection: &mut ShardConnection,
+        frame: Frame,
+    ) -> Result<(), ShardEnding> {
         match frame {
             Frame::Dispatch { seq, forward: None } => self.commit(seq),
             Frame::Dispatch {
@@ -562,9 +566,9 @@ impl Shard {
             Frame::Hello { heartbeat_interval } => {
                 return self.on_hello(connection, heartbeat_interval).await;
             }
-            Frame::Reconnect => return Err(Ending::Reconnect),
+            Frame::Reconnect => return Err(ShardEnding::Reconnect),
             Frame::InvalidSession { resumable } => {
-                return Err(Ending::InvalidSession { resumable });
+                return Err(ShardEnding::InvalidSession { resumable });
             }
             Frame::Other { op } => debug!(shard = %self.id, op, "ignoring an unknown opcode"),
         }
@@ -573,16 +577,16 @@ impl Shard {
 
     async fn on_hello(
         &mut self,
-        connection: &mut Connection,
+        connection: &mut ShardConnection,
         interval: Duration,
-    ) -> Result<(), Ending> {
+    ) -> Result<(), ShardEnding> {
         self.base_url_failures = 0;
         let now = Instant::now();
-        connection.heartbeat = Some(Heartbeat::after_hello(interval, now, fastrand::f64()));
+        connection.heartbeat = Some(ShardHeartbeat::after_hello(interval, now, fastrand::f64()));
         connection.limiter = Some(SendLimiter::new(interval));
         let Some(session) = &self.session else {
             let slot = self.shared.identify.reserve(self.id, now);
-            connection.identify_at = Some(slot.ok_or(Ending::NoIdentifyLeft)?);
+            connection.identify_at = Some(slot.ok_or(ShardEnding::NoIdentifyLeft)?);
             return Ok(());
         };
         debug!(shard = %self.id, seq = session.seq, "resuming");
@@ -594,7 +598,7 @@ impl Shard {
         connection.send(command(RESUME, resume)).await
     }
 
-    fn on_heartbeat_ack(&self, connection: &mut Connection) {
+    fn on_heartbeat_ack(&self, connection: &mut ShardConnection) {
         let Some(heartbeat) = &mut connection.heartbeat else {
             return;
         };
@@ -605,7 +609,7 @@ impl Shard {
         self.signals.latency.set(sent_at.elapsed());
     }
 
-    fn forward(&mut self, connection: &mut Connection, held: Held) {
+    fn forward(&mut self, connection: &mut ShardConnection, held: Held) {
         let backlog = self.shared.inbox.backlog();
         let Some(queued_bytes) = backlog.filter(|_| !ends_the_handshake(&held.forward.name)) else {
             self.deliver(connection, held);
@@ -622,13 +626,13 @@ impl Shard {
         connection.held = Some(held);
     }
 
-    fn deliver_held(&mut self, connection: &mut Connection) {
+    fn deliver_held(&mut self, connection: &mut ShardConnection) {
         if let Some(held) = connection.held.take() {
             self.deliver(connection, held);
         }
     }
 
-    fn deliver(&mut self, connection: &mut Connection, held: Held) {
+    fn deliver(&mut self, connection: &mut ShardConnection, held: Held) {
         let Held {
             seq,
             forward: Forward { name, data },
@@ -647,11 +651,11 @@ impl Shard {
         self.commit(seq);
     }
 
-    fn begin_session(&mut self, connection: &mut Connection, data: &[u8]) {
+    fn begin_session(&mut self, connection: &mut ShardConnection, data: &[u8]) {
         self.shared.tap.session_started(self.id);
         self.had_session = true;
         self.session = envelope::ready_session(data).and_then(|ready| {
-            Some(Session {
+            Some(ShardSession {
                 id: ready.id,
                 resume_url: Some(gateway_url(&ready.resume_url)?),
                 seq: 0,
@@ -663,7 +667,7 @@ impl Shard {
         self.start_running(connection);
     }
 
-    fn start_running(&mut self, connection: &mut Connection) {
+    fn start_running(&mut self, connection: &mut ShardConnection) {
         debug!(shard = %self.id, "running");
         connection.running = true;
         self.failures = 0;
@@ -675,13 +679,13 @@ impl Shard {
         }
     }
 
-    fn conclude(&mut self, ending: Ending) -> Option<Duration> {
+    fn conclude(&mut self, ending: ShardEnding) -> Option<Duration> {
         match ending {
-            Ending::Stop => {
+            ShardEnding::Stop => {
                 self.closed();
                 return None;
             }
-            Ending::Closed(code) => {
+            ShardEnding::Closed(code) => {
                 let (action, text) = close::classify(code);
                 match action {
                     CloseAction::Fatal => {
@@ -693,7 +697,7 @@ impl Shard {
                 }
                 self.disconnected(Some(code), text.to_owned());
             }
-            Ending::InvalidSession { resumable } => {
+            ShardEnding::InvalidSession { resumable } => {
                 if !resumable {
                     self.session = None;
                 }
@@ -711,9 +715,9 @@ impl Shard {
                     );
                 }
             }
-            Ending::Unreachable(error) => {
+            ShardEnding::Unreachable(error) => {
                 match &mut self.session {
-                    Some(Session {
+                    Some(ShardSession {
                         resume_url: resume_url @ Some(_),
                         ..
                     }) => *resume_url = None,
@@ -721,16 +725,16 @@ impl Shard {
                 }
                 self.disconnected(None, error);
             }
-            Ending::NoIdentifyLeft => {}
-            Ending::Requested => self.disconnected(None, "reconnect requested".to_owned()),
-            Ending::Reconnect => {
+            ShardEnding::NoIdentifyLeft => {}
+            ShardEnding::Requested => self.disconnected(None, "reconnect requested".to_owned()),
+            ShardEnding::Reconnect => {
                 self.disconnected(None, "reconnect requested by Discord".to_owned());
             }
-            Ending::Zombie => {
+            ShardEnding::Zombie => {
                 self.disconnected(None, "no heartbeat ACK (zombie connection)".to_owned());
             }
-            Ending::Lost(error) => self.disconnected(None, error),
-            Ending::InvalidFrame(error) => {
+            ShardEnding::Lost(error) => self.disconnected(None, error),
+            ShardEnding::InvalidFrame(error) => {
                 self.disconnected(None, format!("invalid frame: {error}"));
             }
         }
@@ -818,7 +822,7 @@ mod tests {
         let interval = Duration::from_millis(41_250);
         let hello_at = Instant::now();
         for fraction in [0.0, 0.5, 0.999] {
-            let mut heartbeat = Heartbeat::after_hello(interval, hello_at, fraction);
+            let mut heartbeat = ShardHeartbeat::after_hello(interval, hello_at, fraction);
             let first = heartbeat.next;
 
             heartbeat.beat(false, first);
@@ -836,7 +840,7 @@ mod tests {
     fn a_beat_after_a_stall_waits_half_an_interval_before_the_next() {
         let interval = Duration::from_millis(41_250);
         let hello_at = Instant::now();
-        let mut heartbeat = Heartbeat::after_hello(interval, hello_at, 0.0);
+        let mut heartbeat = ShardHeartbeat::after_hello(interval, hello_at, 0.0);
         let woke = hello_at + interval * 3;
 
         heartbeat.beat(false, woke);
