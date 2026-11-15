@@ -16,6 +16,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # davey pins openmls 0.8; move these together with davey
+      - dependency-name: "openmls*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       cargo:
         patterns: ["*"]
