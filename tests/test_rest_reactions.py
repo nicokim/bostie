@@ -12,7 +12,9 @@ from bostie.testing import FakeDiscord, payloads, run, running
     ("walk", "route", "page", "query"),
     [
         (
-            lambda rest: rest.reactions.list(1, 2, "lyre:3", type=ReactionType.BURST),
+            lambda rest: rest.reactions.list(
+                1, 2, "<a:lyre:3>", type=ReactionType.BURST
+            ),
             "/channels/1/messages/2/reactions/lyre:3",
             lambda users: users,
             {"type": "1"},

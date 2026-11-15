@@ -29,7 +29,7 @@ A URL can be `attachment://name` to show a file uploaded with the message. Every
 - `ui.link_button(label, url)` opens a URL and never reaches the bot.
 - `ui.premium_button(sku_id)` offers an SKU of the app for sale and never reaches the bot.
 
-Buttons take `emoji=`, a Unicode emoji as a `str` or a custom emoji as a mapping such as `{"id": 123, "name": "bostie"}`, and `disabled=True`. A label is at most 80 characters and a custom id 1 to 100.
+Buttons take `emoji=`: a Unicode emoji, a custom emoji written as Discord shows it (`<:name:id>`, or `<a:name:id>` when animated, as `fmt.emoji` makes it), or an `Emoji` or `PartialEmoji` model. `PartialEmoji.parse(text)` reads such a string. Buttons also take `disabled=True`. A label is at most 80 characters and a custom id 1 to 100.
 
 ## Routes
 
@@ -73,7 +73,7 @@ A `ComponentContext` has the answering methods of a command's context, plus:
 
 `ctx.ids` holds the picked ids of any entity select. Reading the wrong kind, such as `ctx.values` on a user select, raises `TypeError`.
 
-Every select takes `placeholder` (up to 150 characters), `min_values` and `max_values` (1 by default, at most 25) and `disabled`. A string select has 1 to 25 options; `select_option` takes `description`, `emoji` and `default=True` to show it as picked. Entity selects take `defaults`, the ids shown as picked, and the mentionable select takes `default_users` and `default_roles`. `required` matters only in a [modal](modals.md).
+Every select takes `placeholder` (up to 150 characters), `min_values` and `max_values` (1 by default, at most 25) and `disabled`. A string select has 1 to 25 options; `select_option` takes `description`, `emoji` as buttons do, and `default=True` to show it as picked. Entity selects take `defaults`, the ids shown as picked, and the mentionable select takes `default_users` and `default_roles`. `required` matters only in a [modal](modals.md).
 
 ## Pages
 

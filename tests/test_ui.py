@@ -8,6 +8,8 @@ from bostie import (
     ButtonStyle,
     ChannelSelect,
     ChannelType,
+    Emoji,
+    PartialEmoji,
     SelectDefaultValue,
     ui,
 )
@@ -19,7 +21,7 @@ def test_ui_builders_return_discord_component_dicts() -> None:
     components = ui.row(
         ui.button("Helpful", custom_id="vote:rules:1", style=ui.ButtonStyle.SUCCESS),
         ui.button(None, custom_id="skip", emoji="\N{THUMBS UP SIGN}", disabled=True),
-        ui.link_button("Docs", "https://example.com", emoji={"id": "1", "name": "d"}),
+        ui.link_button("Docs", "https://example.com", emoji="<:d:1>"),
     )
 
     assert components == {
@@ -43,12 +45,27 @@ def test_ui_builders_return_discord_component_dicts() -> None:
                 "type": 2,
                 "style": 5,
                 "label": "Docs",
-                "emoji": {"id": "1", "name": "d"},
+                "emoji": {"id": 1, "name": "d", "animated": False},
                 "url": "https://example.com",
                 "disabled": False,
             },
         ],
     }
+
+
+def test_emoji_strings_and_models_become_discords_emoji_object() -> None:
+    parsed = [
+        PartialEmoji.parse(text) for text in ("\N{FIRE}", "<:d:1>", "<a:d:1>", "d:1")
+    ]
+    option = ui.select_option("D", "d", emoji=Emoji(id=1, name="d", animated=True))
+
+    assert parsed == [
+        PartialEmoji(name="\N{FIRE}"),
+        PartialEmoji(id=1, name="d", animated=False),
+        PartialEmoji(id=1, name="d", animated=True),
+        PartialEmoji(id=1, name="d", animated=False),
+    ]
+    assert option["emoji"] == {"id": 1, "name": "d", "animated": True}
 
 
 def test_ui_string_select_and_options() -> None:

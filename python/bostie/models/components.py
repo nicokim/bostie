@@ -1,5 +1,6 @@
+import re
 from collections.abc import Iterable
-from typing import Literal, cast
+from typing import Literal, Self, cast
 
 import msgspec
 
@@ -11,6 +12,9 @@ from bostie.enums import (
     UnfurledMediaItemFlags,
 )
 from bostie.models.base import Builder, Model, decoder
+from bostie.models.expressions import Emoji
+
+CUSTOM_EMOJI = re.compile(r"(?:(a)?:)?(\w+):(\d+)", re.ASCII)
 
 
 class PartialEmoji(Builder, kw_only=True):
@@ -19,6 +23,27 @@ class PartialEmoji(Builder, kw_only=True):
     id: int | None = None
     name: str | None = None
     animated: bool | None = None
+
+    @classmethod
+    def parse(cls, text: str) -> Self:
+        """Custom emoji from `<:name:id>`, `<a:name:id>` or `name:id`, else unicode."""
+        inner = text[1:-1] if text.startswith("<") and text.endswith(">") else text
+        custom = CUSTOM_EMOJI.fullmatch(inner)
+        if custom is None:
+            return cls(name=text)
+        animated, name, id = custom.groups()
+        return cls(id=int(id), name=name, animated=animated is not None)
+
+
+type AnyEmoji = str | PartialEmoji | Emoji
+
+
+def partial_emoji(emoji: AnyEmoji) -> PartialEmoji:
+    if isinstance(emoji, str):
+        return PartialEmoji.parse(emoji)
+    if isinstance(emoji, Emoji):
+        return PartialEmoji(id=emoji.id, name=emoji.name, animated=emoji.animated)
+    return emoji
 
 
 class _Component(Builder, kw_only=True, tag_field="type"):

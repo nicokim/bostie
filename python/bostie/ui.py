@@ -1,9 +1,11 @@
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal, NewType, NotRequired, TypedDict, cast
 
+import msgspec
+
 from bostie.custom_id import MAX_CUSTOM_ID, ComponentRoute
 from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
-from bostie.models.components import SelectDefaultType
+from bostie.models.components import AnyEmoji, SelectDefaultType, partial_emoji
 
 __all__ = [
     "ButtonDict",
@@ -89,7 +91,6 @@ SELECT_TYPES = frozenset(
     }
 )
 
-type _Emoji = str | Mapping[str, Any]
 RawComponent = NewType("RawComponent", dict[str, Any])
 type InteractiveStyle = Literal[
     ButtonStyle.PRIMARY, ButtonStyle.SECONDARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER
@@ -330,7 +331,7 @@ def button(
     *,
     custom_id: str,
     style: InteractiveStyle = ButtonStyle.SECONDARY,
-    emoji: _Emoji | None = None,
+    emoji: AnyEmoji | None = None,
     disabled: bool = False,
     id: int | None = None,
 ) -> ButtonDict:
@@ -377,7 +378,7 @@ def link_button(
     label: str | None,
     url: str,
     *,
-    emoji: _Emoji | None = None,
+    emoji: AnyEmoji | None = None,
     disabled: bool = False,
     id: int | None = None,
 ) -> ButtonDict:
@@ -547,7 +548,7 @@ def select_option(
     value: str,
     *,
     description: str | None = None,
-    emoji: _Emoji | None = None,
+    emoji: AnyEmoji | None = None,
     default: bool = False,
 ) -> SelectOptionDict:
     """One entry of a select menu; `value` is what the bot receives."""
@@ -860,7 +861,7 @@ def _defaults(ids: Iterable[int], type: SelectDefaultType) -> list[SelectDefault
 
 
 def _labelled(
-    button: ButtonDict, label: str | None, emoji: _Emoji | None, id: int | None
+    button: ButtonDict, label: str | None, emoji: AnyEmoji | None, id: int | None
 ) -> ButtonDict:
     return _with(
         button,
@@ -877,8 +878,8 @@ def _with[C: Mapping[str, Any]](component: C, **fields: object) -> C:
     return component
 
 
-def _emoji(emoji: _Emoji) -> Mapping[str, Any]:
-    return {"name": emoji} if isinstance(emoji, str) else emoji
+def _emoji(emoji: AnyEmoji) -> Mapping[str, Any]:
+    return cast("Mapping[str, Any]", msgspec.to_builtins(partial_emoji(emoji)))
 
 
 def _checked(custom_id: str) -> str:

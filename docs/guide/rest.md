@@ -12,6 +12,7 @@
 - Everything else is a keyword argument named as in Discord's documentation, checked against a `TypedDict` per operation, so a typo is a type error and a `TypeError` at run time.
 - Operations that Discord records in the audit log take `reason=`, 1 to 512 characters, shown to the guild's moderators.
 - An image or sound field, such as an emoji's `image` or a guild's `icon`, takes a `File`; bostie sends it as the data URI Discord expects. Permission fields take `Permissions`.
+- An emoji, such as the one `reactions.create` adds, takes a Unicode emoji, a custom emoji as `<:name:id>`, `<a:name:id>` or `name:id`, or an `Emoji` or `PartialEmoji` model.
 - Methods named `fetch` get one object, `list` iterates over several, `edit` modifies, `create` creates and `delete` deletes. Other verbs keep the documentation's word, such as `members.add_role` or `guilds.begin_prune`.
 - Methods return models, or `None` when Discord answers with no content. They do not change `bot.cache`, except that `channels.create_dm` keeps the DM channel when `max_dm_channels` allows; the gateway events that follow a change update the cache.
 
