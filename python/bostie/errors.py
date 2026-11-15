@@ -1,24 +1,11 @@
 import time
-from collections.abc import Callable, Coroutine, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast, override
+from typing import Any, cast, override
 
 import msgspec
 
 from bostie.enums import DisconnectReason, JSONErrorCode, Permissions
-
-if TYPE_CHECKING:
-    from bostie.context import (
-        AutocompleteContext,
-        ComponentContext,
-        Context,
-        ModalContext,
-    )
-
-type ErrorContext = Context | ComponentContext | ModalContext | AutocompleteContext
-type ErrorHook[E: BaseException] = Callable[
-    [ErrorContext, E], Coroutine[Any, Any, None]
-]
 
 
 class BostieError(Exception):

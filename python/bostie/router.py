@@ -39,9 +39,9 @@ from bostie.enums import (
     InteractionContextType,
     Permissions,
 )
-from bostie.errors import CommandDefinitionError, ErrorHook, StateError
+from bostie.errors import CommandDefinitionError, StateError
 from bostie.events import BotEvent, Event, RawEvent
-from bostie.hooks import ErrorHooks
+from bostie.hooks import ErrorHook, ErrorHooks
 from bostie.models import CommandData, InteractionDataOption
 from bostie.models.base import check_keys
 from bostie.tasks import Task, TaskCallback

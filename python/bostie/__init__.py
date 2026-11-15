@@ -111,7 +111,6 @@ from bostie.errors import (
     CommandError,
     CommandSyncError,
     CooldownActive,
-    ErrorContext,
     Forbidden,
     GatewayClosed,
     GatewayQueueFull,
@@ -142,6 +141,7 @@ from bostie.errors import (
 )
 from bostie.file import File
 from bostie.gateway import RequestedMembers
+from bostie.hooks import ErrorContext
 from bostie.http import HTTPSettings
 from bostie.models import (
     SKU,

@@ -1,8 +1,9 @@
 import time
 from collections import deque
 from collections.abc import Callable, Hashable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
+from bostie.context import AnyContext
 from bostie.enums import Permissions
 from bostie.errors import (
     BotMissingPermissions,
@@ -12,9 +13,6 @@ from bostie.errors import (
     MissingRole,
     NotOwner,
 )
-
-if TYPE_CHECKING:
-    from bostie.context import ComponentContext, Context, ModalContext
 
 __all__ = [
     "Cooldown",
@@ -27,7 +25,6 @@ __all__ = [
     "is_owner",
 ]
 
-type AnyContext = Context | ComponentContext | ModalContext
 type Per = Literal["user", "guild", "channel", "global"] | Callable[[Any], Hashable]
 
 

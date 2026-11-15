@@ -40,6 +40,7 @@ from bostie.commands import (
     autocomplete_choices,
 )
 from bostie.context import (
+    AnyContext,
     AutocompleteContext,
     ComponentContext,
     Context,
@@ -108,6 +109,7 @@ from bostie.gateway import (
     member_request,
     presence_fields,
 )
+from bostie.hooks import ErrorContext
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
 from bostie.lookup import Lookup
 from bostie.models import (
@@ -1281,7 +1283,7 @@ class Bot(Router):
 
     async def _run_handler(
         self,
-        ctx: Context | ComponentContext | ModalContext,
+        ctx: AnyContext,
         node: Node,
         handler: Handler,
         arguments: Arguments,
@@ -1326,7 +1328,7 @@ class Bot(Router):
             )
 
     def _defer_when_slow(
-        self, ctx: Context | ComponentContext | ModalContext, seconds: float | None
+        self, ctx: AnyContext, seconds: float | None
     ) -> asyncio.TimerHandle | None:
         if seconds is None:
             return None
@@ -1334,9 +1336,7 @@ class Bot(Router):
             ctx.received + seconds, self._defer_if_unanswered, ctx
         )
 
-    def _defer_if_unanswered(
-        self, ctx: Context | ComponentContext | ModalContext
-    ) -> None:
+    def _defer_if_unanswered(self, ctx: AnyContext) -> None:
         if ctx.state is ResponseState.PENDING:
             spawn(self._tasks, _defer_unanswered(ctx))
 
@@ -1355,7 +1355,7 @@ class Bot(Router):
 
     async def _handle_error(
         self,
-        ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
+        ctx: ErrorContext,
         node: Node,
         handler: Callable[..., object],
         error: Exception,
@@ -1418,7 +1418,7 @@ async def _queued[T](
         yield item
 
 
-async def _defer_unanswered(ctx: Context | ComponentContext | ModalContext) -> None:
+async def _defer_unanswered(ctx: AnyContext) -> None:
     try:
         if isinstance(ctx, Context) or ctx.interaction.message_flags is None:
             await ctx.defer()
@@ -1433,7 +1433,7 @@ async def _defer_unanswered(ctx: Context | ComponentContext | ModalContext) -> N
 
 
 async def _answer_failure(
-    ctx: Context | ComponentContext | ModalContext | AutocompleteContext,
+    ctx: ErrorContext,
     answer: str = FAILURE_ANSWER,
 ) -> None:
     try:
@@ -1526,9 +1526,7 @@ def _checks(node: Node, routers: list[Router]) -> list[Check]:
     ]
 
 
-async def _after(
-    ctx: Context | ComponentContext | ModalContext, routers: list[Router]
-) -> None:
+async def _after(ctx: AnyContext, routers: list[Router]) -> None:
     for router in reversed(routers):
         for hook in router.after_hooks:
             try:
@@ -1537,9 +1535,7 @@ async def _after(
                 log.exception("the after_invoke hook %s raised", qualified_name(hook))
 
 
-async def _run_check(
-    check: Check, ctx: Context | ComponentContext | ModalContext
-) -> None:
+async def _run_check(check: Check, ctx: AnyContext) -> None:
     result = check(ctx)
     if not (await result if inspect.isawaitable(result) else result):
         raise CheckFailure

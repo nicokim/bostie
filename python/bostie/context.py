@@ -767,6 +767,9 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
             self.state = ResponseState.RESPONDED
 
 
+type AnyContext = Context | ComponentContext | ModalContext
+
+
 def _command_name(data: CommandData) -> str:
     names, _ = split_subcommands(data.options)
     return " ".join((data.name, *names))

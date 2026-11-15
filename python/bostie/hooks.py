@@ -1,11 +1,16 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, cast, overload
 
 from bostie._util import routers_from
-from bostie.errors import ErrorHook
 
 if TYPE_CHECKING:
+    from bostie.context import AnyContext, AutocompleteContext
     from bostie.router import Router
+
+type ErrorContext = AnyContext | AutocompleteContext
+type ErrorHook[E: BaseException] = Callable[
+    [ErrorContext, E], Coroutine[Any, Any, None]
+]
 
 
 class ErrorHooks:
