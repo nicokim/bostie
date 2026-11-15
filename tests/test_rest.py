@@ -4,7 +4,7 @@ import contextlib
 import inspect
 import re
 import textwrap
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -12,7 +12,14 @@ from urllib.parse import unquote
 
 import pytest
 
-from bostie import Bot, File, HTTPException, NotFound, UnexpectedResponse
+from bostie import (
+    Bot,
+    File,
+    HTTPException,
+    NotFound,
+    RESTClient,
+    UnexpectedResponse,
+)
 from bostie.cache import Cache
 from bostie.enums import (
     AutoModerationEventType,
@@ -307,6 +314,135 @@ def test_a_listing_walks_pages_from_its_cursor_up_to_its_limit(
             assert [request.query for request in fake.requests[-len(pages) :]] == (
                 queries
             )
+
+    run(scenario)
+
+
+IDENTITY = {"provider_type": "steam", "provider_issued_user_id": "p3", "user_id": "2"}
+
+
+@pytest.mark.parametrize(
+    ("listed", "route", "key", "item"),
+    [
+        (
+            lambda rest: rest.emojis.list_application(1),
+            "/applications/1/emojis",
+            "items",
+            payloads.fixture("events/GUILD_EMOJIS_UPDATE")["emojis"][0],
+        ),
+        (
+            lambda rest: rest.soundboard.list(1),
+            "/guilds/1/soundboard-sounds",
+            "items",
+            payloads.fixture("events/GUILD_SOUNDBOARD_SOUND_CREATE"),
+        ),
+        (
+            lambda rest: rest.identities.list(2, 1),
+            "/users/2/application-identities/1",
+            "identities",
+            IDENTITY,
+        ),
+        (
+            lambda rest: rest.identities.list_by_external_id(1, "steam", "p3"),
+            "/applications/1/application-identities/steam/p3",
+            "identities",
+            IDENTITY,
+        ),
+    ],
+    ids=["application_emojis", "soundboard", "identities", "identities_by_external_id"],
+)
+def test_a_list_discord_wraps_in_an_object_decodes_from_its_key(
+    listed: Callable[[REST], Awaitable[tuple[Any, ...]]],
+    route: str,
+    key: str,
+    item: dict[str, Any],
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.fail("GET", route, 200, {key: [item]})
+        async with RESTClient(fake.token, api_url=fake.api_url) as client:
+            (found,) = await listed(client.rest)
+        assert found.raw == item
+
+    run(scenario)
+
+
+def member(id: int) -> dict[str, Any]:
+    return payloads.member(user=payloads.user(id=str(id)))
+
+
+def ban(id: int) -> dict[str, Any]:
+    return payloads.fixture("rest/ban") | {"user": payloads.user(id=str(id))}
+
+
+def subscription(id: int) -> dict[str, Any]:
+    return payloads.fixture("events/SUBSCRIPTION_CREATE") | {"id": str(id)}
+
+
+def thread(id: int) -> dict[str, Any]:
+    archived: dict[str, Any] = payloads.fixture("rest/active_threads")["threads"][0]
+    return archived | {"id": str(id)}
+
+
+def threads(page: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"threads": page, "members": [], "has_more": True}
+
+
+def as_is(page: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return page
+
+
+@pytest.mark.parametrize(
+    ("walk", "route", "size", "item", "wrap", "cursor"),
+    [
+        (
+            lambda rest: rest.members.list(1),
+            "/guilds/1/members",
+            1000,
+            member,
+            as_is,
+            "after",
+        ),
+        (lambda rest: rest.bans.list(1), "/guilds/1/bans", 1000, ban, as_is, "after"),
+        (
+            lambda rest: rest.monetization.list_subscriptions(1),
+            "/skus/1/subscriptions",
+            100,
+            subscription,
+            as_is,
+            "after",
+        ),
+        (
+            lambda rest: rest.threads.list_joined_private_archived(1),
+            "/channels/1/users/@me/threads/archived/private",
+            100,
+            thread,
+            threads,
+            "before",
+        ),
+    ],
+    ids=["members", "bans", "subscriptions", "joined_private_archived"],
+)
+def test_a_listing_asks_for_full_pages_and_moves_its_cursor_past_each(
+    walk: Callable[[REST], AsyncIterator[object]],
+    route: str,
+    size: int,
+    item: Callable[[int], dict[str, Any]],
+    wrap: Callable[[list[dict[str, Any]]], object],
+    cursor: str,
+) -> None:
+    first = range(5000, 5000 + size)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.fail("GET", route, 200, wrap([item(id) for id in first]))
+        fake.fail("GET", route, 200, wrap([item(9000)]))
+        async with RESTClient(fake.token, api_url=fake.api_url) as client:
+            walked = [found async for found in walk(client.rest)]
+        passed = max(first) if cursor == "after" else min(first)
+        assert len(walked) == size + 1
+        assert [request.query for request in fake.requests] == [
+            {"limit": str(size)},
+            {"limit": str(size), cursor: str(passed)},
+        ]
 
     run(scenario)
 
