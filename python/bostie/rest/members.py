@@ -9,7 +9,7 @@ from bostie.enums import MemberFlags, Permissions
 from bostie.file import File
 from bostie.models import Member
 from bostie.models.base import decoder
-from bostie.rest.base import ResourceGroup, decoding, each, wire
+from bostie.rest._base import ResourceGroup, decoding, each, wire
 
 
 class MemberAdd(TypedDict, total=False):
@@ -51,7 +51,7 @@ class _Permissions(msgspec.Struct):
     permissions: str
 
 
-def decode_permissions(data: bytes) -> Permissions:
+def _decode_permissions(data: bytes) -> Permissions:
     found = decoder(_Permissions).decode(data)
     return Permissions(int(found.permissions))
 
@@ -138,7 +138,7 @@ class Members(ResourceGroup):
     async def fetch_permissions(self, guild_id: int, user_id: int, /) -> Permissions:
         """The member's guild permissions from their roles and `@everyone`."""
         return await self._call(
-            decode_permissions,
+            _decode_permissions,
             "GET",
             "/guilds/{guild_id}/permissions/member/{user_id}",
             guild_id=guild_id,

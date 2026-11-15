@@ -6,7 +6,7 @@ import msgspec
 from bostie.enums import LobbyMemberFlags, MessageFlags
 from bostie.models import Lobby, LobbyMember, LobbyMessage
 from bostie.models.base import decoder
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class LobbyMemberAdd(TypedDict, total=False):

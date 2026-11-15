@@ -4,7 +4,7 @@ from typing import Literal, Required, TypedDict, Unpack
 
 from bostie.models import SKU, PartialEntitlement, Subscription
 from bostie.models.monetization import decode_entitlement
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class MonetizationCreateTestEntitlement(TypedDict, total=False):

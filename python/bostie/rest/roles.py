@@ -5,8 +5,8 @@ from bostie.enums import Permissions
 from bostie.file import File
 from bostie.models import Role, RoleColors
 from bostie.models.base import decoder
-from bostie.rest.base import ResourceGroup, each, wire
-from bostie.rest.members import decode_permissions
+from bostie.rest._base import ResourceGroup, each, wire
+from bostie.rest.members import _decode_permissions
 
 
 class RoleCreate(TypedDict, total=False):
@@ -123,7 +123,7 @@ class Roles(ResourceGroup):
     async def fetch_permissions(self, guild_id: int, role_id: int, /) -> Permissions:
         """The role's guild permissions combined with those of `@everyone`."""
         return await self._call(
-            decode_permissions,
+            _decode_permissions,
             "GET",
             "/guilds/{guild_id}/permissions/role/{role_id}",
             guild_id=guild_id,

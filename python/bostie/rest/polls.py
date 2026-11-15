@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from typing import TypedDict, Unpack
 
 from bostie.models import Message, User, WebhookMessage, decode_message
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class PollListAnswerVoters(TypedDict, total=False):

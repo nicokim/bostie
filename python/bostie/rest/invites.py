@@ -11,7 +11,7 @@ from bostie.models import (
     TargetUsersJob,
     decode_invite,
 )
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class InviteCreate(TypedDict, total=False):

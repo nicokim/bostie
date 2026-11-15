@@ -5,7 +5,7 @@ from bostie._util import partial_emoji
 from bostie.enums import ReactionType
 from bostie.models import User
 from bostie.models.components import AnyEmoji
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class ReactionList(TypedDict, total=False):

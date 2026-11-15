@@ -15,9 +15,9 @@ from bostie.models import (
 )
 from bostie.models.base import Model
 from bostie.models.message import _message_body
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
-ARCHIVED_PAGE = 100
+_ARCHIVED_PAGE = 100
 
 
 class ForumThreadMessage(TypedDict, total=False):
@@ -246,7 +246,7 @@ class Threads(ResourceGroup):
         time_cursor: bool,
     ) -> AsyncIterator[Channel]:
         limit: int | None = options.get("limit")
-        if limit is not None and limit % ARCHIVED_PAGE == 1:
+        if limit is not None and limit % _ARCHIVED_PAGE == 1:
             options["limit"] = limit + 1
         pages = self._paginate(
             route,
@@ -254,7 +254,7 @@ class Threads(ResourceGroup):
             decodes=each(Channel, "threads"),
             items=tuple,
             cursor=cursor,
-            page_size=ARCHIVED_PAGE,
+            page_size=_ARCHIVED_PAGE,
             time_cursor=time_cursor,
             channel_id=channel_id,
         )

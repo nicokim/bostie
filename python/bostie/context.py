@@ -60,7 +60,7 @@ from bostie.models import (
 )
 from bostie.models.base import check_keys, decoder
 from bostie.models.message import _in_guild, _message_body
-from bostie.rest.messages import delete_later
+from bostie.rest.messages import _delete_later
 from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
 
@@ -407,7 +407,7 @@ class _ReplyingContext[
 
     def _delete_later(self, delay: float | None, message_id: int | None) -> None:
         if delay is not None:
-            delete_later(
+            _delete_later(
                 self._deletions, delay, functools.partial(self.delete, message_id)
             )
 

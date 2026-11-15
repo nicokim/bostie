@@ -22,12 +22,12 @@ from bostie.models import (
     FollowedChannel,
     ForumTag,
 )
-from bostie.rest.base import ResourceGroup, each, wire
-from bostie.rest.members import decode_permissions
+from bostie.rest._base import ResourceGroup, each, wire
+from bostie.rest.members import _decode_permissions
 
-log = logging.getLogger("bostie.rest")
+_log = logging.getLogger("bostie.rest")
 
-TYPING_RENEWAL = 9.0
+_TYPING_RENEWAL = 9.0
 
 
 class PermissionOverwrite(TypedDict, total=False):
@@ -267,7 +267,7 @@ class Channels(ResourceGroup):
     ) -> Permissions:
         """The member's permissions in the channel, with its roles and overwrites."""
         return await self._call(
-            decode_permissions,
+            _decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/member/{user_id}",
             query=wire(options, ChannelFetchPermissions),
@@ -284,7 +284,7 @@ class Channels(ResourceGroup):
     ) -> Permissions:
         """The permissions of the role and @everyone in the channel."""
         return await self._call(
-            decode_permissions,
+            _decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/role/{role_id}",
             query=wire(options, ChannelFetchPermissions),
@@ -385,11 +385,11 @@ class Typing:
 
     async def _renew(self) -> None:
         while True:
-            await asyncio.sleep(TYPING_RENEWAL)
+            await asyncio.sleep(_TYPING_RENEWAL)
             try:
                 await self._trigger()
             except BostieError as error:
-                log.warning("renewing the typing indicator failed: %s", error)
+                _log.warning("renewing the typing indicator failed: %s", error)
 
 
 def _with_overwrites(body: dict[str, Any]) -> dict[str, Any]:

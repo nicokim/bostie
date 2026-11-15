@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TypedDict, Unpack
 
 from bostie.models import VoiceRegion, VoiceState
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class VoiceEditCurrentState(TypedDict, total=False):

@@ -6,7 +6,7 @@ from bostie.models import (
     ApplicationIdentityProfile,
     ProfileData,
 )
-from bostie.rest.base import ResourceGroup, decoding, each, wire
+from bostie.rest._base import ResourceGroup, decoding, each, wire
 
 
 class IdentityUpdateProfile(TypedDict, total=False):

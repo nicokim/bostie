@@ -3,7 +3,7 @@ from typing import Literal
 
 from bostie.enums import OAuth2Scope
 from bostie.models import AccessToken, Authorization
-from bostie.rest.base import ResourceGroup
+from bostie.rest._base import ResourceGroup
 
 
 class OAuth2(ResourceGroup):

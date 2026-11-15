@@ -4,7 +4,7 @@ from typing import TypedDict, Unpack
 
 from bostie.enums import AuditLogEvent
 from bostie.models import AuditLogPage
-from bostie.rest.base import ResourceGroup, wire
+from bostie.rest._base import ResourceGroup, wire
 
 
 class AuditLogList(TypedDict, total=False):

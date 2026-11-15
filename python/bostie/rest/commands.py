@@ -14,7 +14,7 @@ from bostie.models import (
     CommandPermission,
     GuildCommandPermissions,
 )
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class _CommandFields(TypedDict, total=False):

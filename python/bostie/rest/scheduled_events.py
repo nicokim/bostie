@@ -14,7 +14,7 @@ from bostie.models import (
     ScheduledEventEntityMetadata,
     ScheduledEventUser,
 )
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class ScheduledEventCreate(TypedDict, total=False):

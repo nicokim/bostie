@@ -10,7 +10,7 @@ from bostie.models import (
     WebhookMessage,
 )
 from bostie.models.message import _message_body
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class WebhookCreate(TypedDict, total=False):

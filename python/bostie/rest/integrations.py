@@ -1,5 +1,5 @@
 from bostie.models import Integration
-from bostie.rest.base import ResourceGroup, each
+from bostie.rest._base import ResourceGroup, each
 
 
 class Integrations(ResourceGroup):

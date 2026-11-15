@@ -1,7 +1,7 @@
 from typing import Required, TypedDict, Unpack
 
 from bostie.models import GuildTemplate
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class TemplateCreate(TypedDict, total=False):

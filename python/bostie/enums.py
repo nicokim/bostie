@@ -1,8 +1,8 @@
 from enum import KEEP, Enum, IntEnum, IntFlag, StrEnum
 from typing import Self, override
 
-FLAG_WIDTH = 128
-MSGSPEC_ENUM_MAX = (1 << 63) - 1
+_FLAG_WIDTH = 128
+_MSGSPEC_ENUM_MAX = (1 << 63) - 1
 
 
 def _named_unknown[E: Enum](cls: type[E], unknown: E, value: int | str) -> E:
@@ -31,12 +31,12 @@ class DiscordIntFlag(IntFlag, boundary=KEEP):
     def _missing_(cls, value: object) -> Self:
         if isinstance(value, int):
             if value < 0:
-                return cls(value & ((1 << FLAG_WIDTH) - 1))
+                return cls(value & ((1 << _FLAG_WIDTH) - 1))
             known = cls._value2member_map_.get(value)
             if isinstance(known, cls):
                 return known
         flag: Self = super()._missing_(value)
-        if flag > MSGSPEC_ENUM_MAX:
+        if flag > _MSGSPEC_ENUM_MAX:
             cls._value2member_map_.pop(value, None)
         return flag
 
@@ -126,10 +126,10 @@ class MessageType(DiscordIntEnum):
     @property
     def deletable(self) -> bool:
         """Whether Discord lets a message of this type be deleted at all."""
-        return self not in UNDELETABLE_MESSAGES
+        return self not in _UNDELETABLE_MESSAGES
 
 
-UNDELETABLE_MESSAGES = frozenset(
+_UNDELETABLE_MESSAGES = frozenset(
     {
         MessageType.RECIPIENT_ADD,
         MessageType.RECIPIENT_REMOVE,

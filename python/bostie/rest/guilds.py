@@ -23,7 +23,7 @@ from bostie.models import (
     WelcomeScreen,
     WelcomeScreenChannel,
 )
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class GuildBeginPrune(TypedDict, total=False):

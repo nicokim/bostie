@@ -3,7 +3,7 @@ from typing import Required, TypedDict, Unpack
 
 from bostie.enums import OnboardingMode, OnboardingPromptType
 from bostie.models import GuildOnboarding
-from bostie.rest.base import ResourceGroup, wire
+from bostie.rest._base import ResourceGroup, wire
 
 
 class OnboardingPromptOptionData(TypedDict, total=False):

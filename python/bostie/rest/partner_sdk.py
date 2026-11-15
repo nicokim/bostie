@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 
 from bostie.models import AccessToken
-from bostie.rest.base import ResourceGroup
+from bostie.rest._base import ResourceGroup
 
 
 class PartnerSDK(ResourceGroup):

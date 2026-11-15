@@ -8,7 +8,7 @@ from bostie.models import (
     CurrentUser,
     User,
 )
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class UserEditCurrent(TypedDict, total=False):

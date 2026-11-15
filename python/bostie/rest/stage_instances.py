@@ -2,7 +2,7 @@ from typing import Required, TypedDict, Unpack
 
 from bostie.enums import StagePrivacyLevel
 from bostie.models import StageInstance
-from bostie.rest.base import ResourceGroup, wire
+from bostie.rest._base import ResourceGroup, wire
 
 
 class StageInstanceCreate(TypedDict, total=False):

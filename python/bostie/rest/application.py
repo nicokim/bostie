@@ -15,9 +15,9 @@ from bostie.models import (
 )
 from bostie.models.application import Application as ApplicationModel
 from bostie.models.base import decoder
-from bostie.rest.base import ResourceGroup, wire
+from bostie.rest._base import ResourceGroup, wire
 
-METADATA = decoder(tuple[ApplicationRoleConnectionMetadata, ...]).decode
+_METADATA = decoder(tuple[ApplicationRoleConnectionMetadata, ...]).decode
 
 
 class ApplicationEdit(TypedDict, total=False):
@@ -71,7 +71,7 @@ class Application(ResourceGroup):
         self, application_id: int, /
     ) -> tuple[ApplicationRoleConnectionMetadata, ...]:
         return await self._call(
-            METADATA,
+            _METADATA,
             "GET",
             "/applications/{application_id}/role-connections/metadata",
             application_id=application_id,
@@ -85,7 +85,7 @@ class Application(ResourceGroup):
     ) -> tuple[ApplicationRoleConnectionMetadata, ...]:
         """Replace the app's role connection metadata, at most 5 records."""
         return await self._call(
-            METADATA,
+            _METADATA,
             "PUT",
             "/applications/{application_id}/role-connections/metadata",
             json=records,

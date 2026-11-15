@@ -28,7 +28,7 @@ from bostie.models import (
 )
 from bostie.models.base import decoder
 from bostie.models.message import _in_guild, _message_body
-from bostie.rest.base import ResourceGroup, each, wire
+from bostie.rest._base import ResourceGroup, each, wire
 
 
 class MessageCreate(MessageParts, total=False):
@@ -88,13 +88,13 @@ class MessageSearch(TypedDict, total=False):
     include_nsfw: bool
 
 
-BULK_DELETE_MAX = 100
-BULK_DELETABLE_FOR = timedelta(days=14) - timedelta(minutes=1)
+_BULK_DELETE_MAX = 100
+_BULK_DELETABLE_FOR = timedelta(days=14) - timedelta(minutes=1)
 
-log = logging.getLogger("bostie.rest")
+_log = logging.getLogger("bostie.rest")
 
 
-def delete_later(
+def _delete_later(
     tasks: set[asyncio.Task[None]],
     delay: float,
     delete: Callable[[], Awaitable[None]],
@@ -110,7 +110,7 @@ async def _delete_after(delay: float, delete: Callable[[], Awaitable[None]]) -> 
     except NotFound:
         pass
     except BostieError as error:
-        log.warning("deleting a message after %s s failed: %s", delay, error)
+        _log.warning("deleting a message after %s s failed: %s", delay, error)
 
 
 class _Pin(msgspec.Struct):
@@ -172,7 +172,7 @@ class Messages(ResourceGroup):
             channel_id=channel_id,
         )
         if delete_after is not None:
-            delete_later(
+            _delete_later(
                 self._deletions,
                 delete_after,
                 partial(self.delete, channel_id, message.id),
@@ -253,9 +253,9 @@ class Messages(ResourceGroup):
             if not message.type.deletable or (check is not None and not check(message)):
                 continue
             deleted.append(message)
-            if bulk and datetime.now(UTC) - message.created_at < BULK_DELETABLE_FOR:
+            if bulk and datetime.now(UTC) - message.created_at < _BULK_DELETABLE_FOR:
                 batch.append(message.id)
-                if len(batch) == BULK_DELETE_MAX:
+                if len(batch) == _BULK_DELETE_MAX:
                     await self._delete_batch(channel_id, batch, reason)
                     batch = []
             else:
