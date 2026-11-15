@@ -53,7 +53,7 @@ class Task:
         return self._stopped
 
     def start(self) -> None:
-        """Run the task while the bot is ready, from now if it is; undoes `stop()`."""
+        """Run the task whenever the bot is ready, from now if it is; undo `stop()`."""
         self._stopped = False
         self._changed()
 
@@ -142,7 +142,7 @@ class Task:
 
 
 def next_time(times: Iterable[time], after: datetime) -> datetime:
-    """The first moment after `after` that one of `times` names; naive times are UTC."""
+    """The first moment after `after` that one of `times` names, naive ones in UTC."""
     return min(_next(at, after) for at in times)
 
 

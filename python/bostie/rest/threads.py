@@ -185,7 +185,7 @@ class Threads(ResourceGroup):
         reason: str | None = None,
         **options: Unpack[ThreadStart],
     ) -> Channel:
-        """Start a thread without a message; it is private unless `type` says not."""
+        """Start a thread without a message, private unless `type` says otherwise."""
         return await self._call(
             Channel,
             "POST",

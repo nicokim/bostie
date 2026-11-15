@@ -526,7 +526,7 @@ class Bot(Router):
         await self.close()
 
     async def wait_until_ready(self) -> None:
-        """Wait until every shard is ready, as Started says; StateError if it stops."""
+        """Wait until every shard is ready; raise StateError if the bot stops first."""
         if self._ready:
             return
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()

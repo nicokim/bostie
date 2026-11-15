@@ -87,7 +87,7 @@ class Identities(ResourceGroup):
         /,
         **options: Unpack[IdentityUpdateProfile],
     ) -> ApplicationIdentityProfile | None:
-        """Set the profile, `data` as a whole; only the first write returns it."""
+        """Replace the profile with `data`; only the first write returns it."""
         answer = await self._http.send(
             "PATCH",
             "/applications/{application_id}/users/{user_id}/identities/{provider_issued_user_id}/profile",

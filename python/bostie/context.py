@@ -115,7 +115,7 @@ class ReplyParts(MessageParts, total=False):
 
 
 class ReplyEditParts(EditParts, total=False):
-    """The parts of an edit; `ephemeral` cannot change the message and only warns."""
+    """The parts of an edit; `ephemeral` cannot change a sent message and only warns."""
 
     ephemeral: bool
 
@@ -363,7 +363,7 @@ class _ReplyingContext[
         delete_after: float | None = None,
         **parts: Unpack[ReplyParts],
     ) -> WebhookMessage:
-        """Send another message; right after `defer()` it fills the deferred answer."""
+        """Send another message, or fill in the answer right after `defer()`."""
         body, files = self._message_body(content, REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()

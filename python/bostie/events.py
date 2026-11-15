@@ -133,7 +133,7 @@ class _GuildCreatePayload(Guild, kw_only=True):
 
 
 class GuildCreate(Event, kw_only=True):
-    """A guild arrived: joined if `joined`, else available; children lack guild_id."""
+    """A guild the bot joined, or one available again; its children lack guild_id."""
 
     NAME = "GUILD_CREATE"
     INTENTS = Intents.GUILDS
@@ -266,7 +266,7 @@ class _ThreadCreateFields(msgspec.Struct):
 
 
 class ThreadCreate(_ChannelEvent, kw_only=True):
-    """A new thread, or one the bot was added to; `member` is then the bot's."""
+    """A thread was created or the bot was added to one, then `member` is the bot's."""
 
     NAME = "THREAD_CREATE"
 
@@ -367,7 +367,7 @@ class MessageCreate(_MessageEvent, kw_only=True):
 
 
 class MessageUpdate(_MessageEvent, kw_only=True):
-    """A message was edited; `old` is the cached one, with Bot(max_messages=...)."""
+    """A message was edited; `old` is the copy Bot(max_messages=...) cached, if any."""
 
     NAME = "MESSAGE_UPDATE"
 
@@ -876,7 +876,7 @@ class EntitlementCreate(_EntitlementEvent, kw_only=True):
 
 
 class EntitlementUpdate(_EntitlementEvent, kw_only=True):
-    """An entitlement changed; a subscription's one only when it ends."""
+    """An entitlement changed; subscriptions send it only when they end."""
 
     NAME = "ENTITLEMENT_UPDATE"
 
@@ -1018,7 +1018,7 @@ class ThreadMemberUpdate(Event, kw_only=True):
 
 
 class ThreadMembersUpdate(Event, Snowflake, kw_only=True):
-    """Members joined or left a thread; others than the bot need GUILD_MEMBERS."""
+    """Members joined or left a thread; members besides the bot need GUILD_MEMBERS."""
 
     NAME = "THREAD_MEMBERS_UPDATE"
     INTENTS = Intents.GUILDS | Intents.GUILD_MEMBERS
@@ -1286,19 +1286,19 @@ class Starting(BotEvent, kw_only=True):
 
 
 class Started(BotEvent, kw_only=True):
-    """Every shard is ready, once per start(); wait_until_ready() returns now."""
+    """Every shard is ready, sent once per start(), when wait_until_ready() returns."""
 
     NAME = "bot.started"
 
 
 class Stopping(BotEvent, kw_only=True):
-    """close() began after Started; its listeners finish before the gateway closes."""
+    """close() began after Started; it awaits these listeners with the gateway open."""
 
     NAME = "bot.stopping"
 
 
 class Stopped(BotEvent, kw_only=True):
-    """close() finished a start() that sent Starting; the gateway and REST are gone."""
+    """close() ended a run that sent Starting; the gateway and REST are closed."""
 
     NAME = "bot.stopped"
 
@@ -1352,7 +1352,7 @@ class ListenerError(BotEvent, kw_only=True):
 
 
 class TaskError(BotEvent, kw_only=True):
-    """A task raised and runs again at its next time; logged without listeners."""
+    """A task raised and runs again at its next time; with no listener it is logged."""
 
     NAME = "bot.task_error"
 

@@ -48,7 +48,7 @@ log = logging.getLogger("bostie.gateway")
 
 
 class PresenceOptions(TypedDict, total=False):
-    """What the bot shows; `bot.update_presence()` keeps each option not given."""
+    """What the bot shows; `bot.update_presence()` keeps the options left out."""
 
     status: Status
     activities: Iterable[ActivityDict]

@@ -31,7 +31,7 @@ TYPING_RENEWAL = 9.0
 
 
 class PermissionOverwrite(TypedDict, total=False):
-    """A role's or member's overwrite to set; an absent or None set is empty."""
+    """An overwrite to set for a role or member; a missing or None set is empty."""
 
     id: Required[int]
     type: Required[OverwriteType]
@@ -160,7 +160,7 @@ class Channels(ResourceGroup):
         )
 
     async def create_dm(self, **options: Unpack[ChannelCreateDm]) -> Channel:
-        """Open the bot's DM channel with a user; `bot.cache` keeps it if it may."""
+        """Open the bot's DM channel with a user; a cache that keeps DMs keeps it."""
         channel = await self._call(
             Channel,
             "POST",

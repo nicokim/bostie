@@ -71,7 +71,7 @@ class ActivitySecrets(Model, kw_only=True):
 
 
 class Activity(Model, kw_only=True):
-    """`created_at` is a unix time in milliseconds; `buttons` holds the labels."""
+    """An activity; `created_at` is in unix milliseconds and `buttons` holds labels."""
 
     name: str
     type: ActivityType

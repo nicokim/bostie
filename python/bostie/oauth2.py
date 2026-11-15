@@ -44,7 +44,7 @@ def invite_url(
     guild_id: int | None = None,
     disable_guild_select: bool | None = None,
 ) -> str:
-    """The URL that installs the app; what it leaves out the Developer Portal sets."""
+    """The URL that installs the app; its Developer Portal settings fill in the rest."""
     return _url(
         {
             "client_id": client_id,

@@ -255,7 +255,7 @@ class ModalSubmitInteraction(_Interaction, kw_only=True):
 
     @property
     def message_flags(self) -> MessageFlags | None:
-        """The flags of that message, decoded without the rest; None without one."""
+        """The flags of that message, decoded alone, or None without a message."""
         if self._message == NULL:
             return None
         return decoder(_MessageFlags).decode(self._message).flags

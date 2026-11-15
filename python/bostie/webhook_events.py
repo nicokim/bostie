@@ -56,7 +56,7 @@ def verify_signature(
 
 
 def decode_webhook_event(body: bytes) -> Event | None:
-    """A webhook event request's event, as a RawEvent if untyped; None for a PING."""
+    """A webhook event request's event, a RawEvent if untyped, or None for a PING."""
     named = split_webhook_event(body)
     if named is None:
         return None

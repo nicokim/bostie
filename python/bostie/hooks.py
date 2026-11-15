@@ -87,12 +87,12 @@ class Answering(ErrorHooks):
 
     @property
     def ephemeral(self) -> bool:
-        """Whether answers are ephemeral unless a call says; set here or on a router."""
+        """Whether answers are ephemeral by default, as set here or on a router."""
         return bool(self._inherited("ephemeral", False))
 
     @property
     def auto_defer(self) -> float | None:
-        """Seconds before an unanswered use is deferred; the bot's unless set here."""
+        """Seconds before an unanswered use is deferred, as set here or above it."""
         for scope in self._scopes():
             if "auto_defer" in scope:
                 return cast("float | None", scope["auto_defer"])

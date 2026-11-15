@@ -237,7 +237,7 @@ class WebhookClient(_Client[Webhooks]):
 
 
 class SyncWebhookClient:
-    """A WebhookClient for code without an event loop; each call runs its own."""
+    """A WebhookClient for code without an event loop, each call running its own."""
 
     def __init__(
         self,

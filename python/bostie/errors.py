@@ -24,7 +24,7 @@ class MissingIntent(BostieError, ValueError):
 
 
 class MemberRequestRateLimited(BostieError):
-    """Discord refused a member request; another may follow after `retry_after` s."""
+    """Discord refused a member request; send another after `retry_after` seconds."""
 
     def __init__(self, retry_after: float) -> None:
         super().__init__(
@@ -281,7 +281,7 @@ class NotOwner(CheckFailure):
 
 
 class CooldownActive(CheckFailure):
-    """A cooldown refused the use; another one may follow after `retry_after` s."""
+    """A cooldown refused the use; the next one may come after `retry_after` seconds."""
 
     def __init__(self, retry_after: float) -> None:
         super().__init__(f"Try again <t:{int(time.time() + retry_after) + 1}:R>.")

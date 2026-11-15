@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 
 class Lookup:
-    """`bot.lookup`: an object from the cache, else from REST; REST stores nothing."""
+    """`bot.lookup`: an object from the cache, or from REST without caching it."""
 
     def __init__(self, bot: "Bot") -> None:
         self._bot = bot
