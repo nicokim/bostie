@@ -12,8 +12,9 @@ OAuth2 lets a user grant your app access to their account: their profile, their 
 
 - `code_challenge`, the S256 challenge of a PKCE verifier, which `exchange_code` then sends as `code_verifier`; the snippet computes one;
 - `prompt="none"` to skip the consent screen for a user who already granted the scopes, or `"consent"` to show it again;
-- `integration_type` to install the app to a guild or to the user;
-- `response_type="token"` for the implicit grant, which redirects with a token instead of a code.
+- `integration_type` to install the app to a guild or to the user.
+
+bostie builds only the authorization code grant. Discord advises against the implicit grant, which puts the token in the redirect URL and gives no refresh token, and recommends the code grant with PKCE instead.
 
 `oauth2.invite_url(client_id, permissions=..., scopes=[...])` returns the install link of the app, with `integration_type`, `guild_id` to preselect a guild, and `disable_guild_select`. Whatever it leaves out comes from the app's installation settings in the Developer Portal.
 

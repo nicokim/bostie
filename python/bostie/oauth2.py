@@ -18,16 +18,11 @@ def authorize_url(
     prompt: Literal["consent", "none"] | None = None,
     integration_type: ApplicationIntegrationType | None = None,
     code_challenge: str | None = None,
-    response_type: Literal["code", "token"] = "code",
 ) -> str:
-    """The URL that asks a user to grant `scopes` and redirects back with a code.
-
-    `code_challenge` is the S256 PKCE challenge of the verifier the code exchange
-    sends; `response_type="token"` redirects with a token instead of a code.
-    """
+    """The code grant URL for `scopes`; `code_challenge` is an S256 PKCE challenge."""
     return _url(
         {
-            "response_type": response_type,
+            "response_type": "code",
             "client_id": client_id,
             "scope": " ".join(scopes),
             "redirect_uri": redirect_uri,
