@@ -29,17 +29,17 @@ percent-encoding = "2.3.2"
 proptest = "1.12.0"
 pyo3 = { version = "=0.30.1", features = ["abi3-py312"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2"] }
-rubato = "5.0.1"
+rubato = "5.1.0"
 serde = { version = "1.0.229", features = ["derive"] }
-sonic-rs = "0.5.10"
+sonic-rs = "0.5.11"
 symphonia = { version = "0.6.1", default-features = false, features = ["ogg", "mkv", "isomp4", "flac", "vorbis", "mp3", "aac", "wav", "pcm", "id3v2", "opt-simd"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
 tokio-websockets = { version = "0.13.3", features = ["client", "fastrand", "aws_lc_rs", "rustls-platform-verifier"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
-twilight-http-ratelimiting = "=0.17.1"
-zstd-safe = { version = "8.2.0", default-features = false, features = ["std"] }
+twilight-http-ratelimiting = "=0.18.0"
+zstd-safe = { version = "8.3.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -41,7 +41,7 @@ PERFORMANCE OF THIS SOFTWARE.
 Used by:
 
 - [sonic-number 0.1.3](https://github.com/cloudwego/sonic-rs)
-- [sonic-rs 0.5.10](https://github.com/cloudwego/sonic-rs)
+- [sonic-rs 0.5.11](https://github.com/cloudwego/sonic-rs)
 
 ````text
                                  Apache License
@@ -251,7 +251,7 @@ Used by:
 Used by:
 
 - [sonic-number 0.1.3](https://github.com/cloudwego/sonic-rs)
-- [sonic-rs 0.5.10](https://github.com/cloudwego/sonic-rs)
+- [sonic-rs 0.5.11](https://github.com/cloudwego/sonic-rs)
 - [sonic-simd 0.1.4](https://github.com/cloudwego/sonic-rs)
 
 ````text
@@ -460,7 +460,7 @@ Used by:
 
 Used by:
 
-- [sonic-rs 0.5.10](https://github.com/cloudwego/sonic-rs)
+- [sonic-rs 0.5.11](https://github.com/cloudwego/sonic-rs)
 
 ````text
                                  Apache License
@@ -807,8 +807,8 @@ Used by:
 
 Used by:
 
-- [zstd-safe 8.2.0](https://github.com/gyscos/zstd-rs)
-- [zstd-sys 2.1.2+zstd.1.5.7](https://github.com/gyscos/zstd-rs)
+- [zstd-safe 8.3.0](https://github.com/gyscos/zstd-rs)
+- [zstd-sys 2.1.3+zstd.1.5.7](https://github.com/gyscos/zstd-rs)
 
 ````text
 BSD 3-Clause License
@@ -844,7 +844,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Used by:
 
-- [zstd-sys 2.1.2+zstd.1.5.7](https://github.com/gyscos/zstd-rs)
+- [zstd-sys 2.1.3+zstd.1.5.7](https://github.com/gyscos/zstd-rs)
 
 ````text
 BSD License
@@ -1526,7 +1526,7 @@ third-party/chromium/LICENSE.
 
 Used by:
 
-- [twilight-http-ratelimiting 0.17.1](https://github.com/twilight-rs/twilight.git), which ships no license file; its repository gives the notice "Copyright (c) 2019 (c) The Twilight Contributors"
+- [twilight-http-ratelimiting 0.18.0](https://github.com/twilight-rs/twilight.git), which ships no license file; its repository gives the notice "Copyright (c) 2019 (c) The Twilight Contributors"
 
 ````text
 ISC License
@@ -4338,7 +4338,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 
-- [rubato 5.0.1](https://github.com/HEnquist/rubato)
+- [rubato 5.1.0](https://github.com/HEnquist/rubato)
 
 ````text
 Copyright (c) 2020 Henrik Enquist
@@ -5667,7 +5667,7 @@ SOFTWARE.
 Used by:
 
 - [sonic-number 0.1.3](https://github.com/cloudwego/sonic-rs)
-- [sonic-rs 0.5.10](https://github.com/cloudwego/sonic-rs)
+- [sonic-rs 0.5.11](https://github.com/cloudwego/sonic-rs)
 
 ````text
 MIT License
@@ -5855,7 +5855,7 @@ Used by:
 - [serde_core 1.0.229](https://github.com/serde-rs/serde)
 - [serde_derive 1.0.229](https://github.com/serde-rs/serde)
 - [serde_json 1.0.154](https://github.com/serde-rs/json)
-- [sonic-rs 0.5.10](https://github.com/cloudwego/sonic-rs)
+- [sonic-rs 0.5.11](https://github.com/cloudwego/sonic-rs)
 - [syn 2.0.119](https://github.com/dtolnay/syn)
 - [syn 3.0.9](https://github.com/dtolnay/syn)
 - [thiserror-impl 2.0.21](https://github.com/dtolnay/thiserror)
