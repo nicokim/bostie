@@ -22,15 +22,12 @@ def test_target_users_go_up_as_a_csv_file_part_beside_the_json() -> None:
             csv = File("users.csv", b"user_id\n5\n")
             invite = payloads.fixture("rest/invite") | METADATA
             fake.fail("POST", "/channels/1/invites", 200, invite)
-            created = await invites.create(
-                1, max_uses=1, target_users_file=csv, reason="event"
-            )
+            created = await invites.create(1, max_uses=1, target_users_file=csv)
             sent = fake.requests[-1]
             assert (sent.json, sent.parts[1:]) == (
                 {"max_uses": 1},
                 [Part("target_users_file", "users.csv", "text/csv", csv.data)],
             )
-            assert sent.headers["x-audit-log-reason"] == "event"
             assert isinstance(created, InviteWithMetadata)
 
             fake.fail("PUT", f"/invites/{created.code}/target-users", 204, None)

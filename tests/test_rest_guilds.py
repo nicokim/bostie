@@ -27,7 +27,7 @@ def test_prune_sends_roles_as_csv_to_count_and_as_an_array_to_begin() -> None:
 
             fake.fail("POST", "/guilds/1/prune", 200, {"pruned": None})
             pruned = await guilds.begin_prune(
-                1, compute_prune_count=False, include_roles=[5, 6], reason="tidy"
+                1, compute_prune_count=False, include_roles=[5, 6]
             )
             assert pruned is None
             assert fake.requests[-1].json == {

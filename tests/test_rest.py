@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import contextlib
 import inspect
 import re
 import textwrap
@@ -7,11 +8,19 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import unquote
 
 import pytest
 
-from bostie import Bot, File, NotFound, UnexpectedResponse
+from bostie import Bot, File, HTTPException, NotFound, UnexpectedResponse
 from bostie.cache import Cache
+from bostie.enums import (
+    AutoModerationEventType,
+    AutoModerationTriggerType,
+    OverwriteType,
+    ScheduledEventEntityType,
+    ScheduledEventPrivacyLevel,
+)
 from bostie.events import GuildCreate
 from bostie.models import AllowedMentions
 from bostie.rest import REST, BearerREST
@@ -26,6 +35,39 @@ MENTIONS = {"parse": ["users", "roles"]}
 VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 type Shape = tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], bool]
+
+
+PNG = File("a.png", b"\x89PNG\r\n\x1a\n")
+REQUIRED: dict[str, dict[str, Any]] = {
+    "auto_moderation.create": {
+        "name": "n",
+        "event_type": AutoModerationEventType.MESSAGE_SEND,
+        "trigger_type": AutoModerationTriggerType.KEYWORD,
+        "actions": [],
+    },
+    "bans.bulk_create": {"user_ids": [1]},
+    "channels.create": {"name": "n"},
+    "channels.edit_permissions": {"type": OverwriteType.ROLE},
+    "channels.edit_positions": {"positions": [{"id": 1}]},
+    "channels.follow": {"webhook_channel_id": 1},
+    "channels.set_voice_status": {"status": None},
+    "emojis.create": {"name": "n", "image": PNG},
+    "messages.bulk_delete": {"messages": [1, 2]},
+    "roles.edit_positions": {"positions": {1: 1}},
+    "scheduled_events.create": {
+        "name": "n",
+        "scheduled_start_time": datetime(2026, 11, 1, tzinfo=UTC),
+        "privacy_level": ScheduledEventPrivacyLevel.GUILD_ONLY,
+        "entity_type": ScheduledEventEntityType.VOICE,
+    },
+    "soundboard.create": {"name": "n", "sound": File("a.mp3", b"ID3")},
+    "stage_instances.create": {"channel_id": 1, "topic": "t"},
+    "stickers.create": {"name": "n", "tags": "t", "file": PNG},
+    "threads.start": {"name": "n"},
+    "threads.start_from_message": {"name": "n"},
+    "threads.start_in_forum": {"name": "n", "message": {"content": "c"}},
+    "webhooks.create": {"name": "n"},
+}
 
 
 def rows(path: Path) -> list[list[str]]:
@@ -114,6 +156,30 @@ def test_every_pinned_spec_operation_is_named_or_out_of_scope() -> None:
     assert set(named) & skipped == set()
 
 
+def test_every_operation_that_takes_a_reason_sends_it_to_the_audit_log() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            unsent = []
+            for verb, path, name, *marks in rows(FIXTURES / "operations.txt"):
+                if "reason" not in marks:
+                    continue
+                group, method = name.split(".")
+                call = getattr(getattr(bot.rest, group), method)
+                with contextlib.suppress(HTTPException, UnexpectedResponse):
+                    await call(
+                        *[1] * path.count("{"), **REQUIRED.get(name, {}), reason=name
+                    )
+                request = fake.requests[-1]
+                reason = unquote(request.headers.get("x-audit-log-reason", ""))
+                if (request.method, reason) != (verb, name):
+                    unsent.append(name)
+
+            assert unsent == []
+
+    run(scenario)
+
+
 def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
@@ -153,8 +219,7 @@ def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
             cleared = await messages.edit(channel_id, sent.id, content=None)
             assert cleared.content == ""
 
-            await messages.delete(channel_id, sent.id, reason="cleanup")
-            assert fake.requests[-1].headers["x-audit-log-reason"] == "cleanup"
+            await messages.delete(channel_id, sent.id)
             with pytest.raises(NotFound):
                 await messages.fetch(channel_id, sent.id)
 

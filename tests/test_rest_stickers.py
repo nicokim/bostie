@@ -15,7 +15,6 @@ def test_a_sticker_is_created_from_form_fields_and_its_file() -> None:
                 name="Wave",
                 tags="wave",
                 file=File("wave.png", b"PNG"),
-                reason="new",
             )
             sent = fake.requests[-1]
             assert sent.parts == [
@@ -23,7 +22,6 @@ def test_a_sticker_is_created_from_form_fields_and_its_file() -> None:
                 Part("tags", None, None, b"wave"),
                 Part("file", "wave.png", "image/png", b"PNG"),
             ]
-            assert sent.headers["x-audit-log-reason"] == "new"
             assert created.name == "Wave"
 
     run(scenario)
