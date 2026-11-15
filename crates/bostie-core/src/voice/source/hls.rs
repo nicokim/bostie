@@ -357,12 +357,13 @@ mod tests {
     use crate::voice::types::SourceSpec;
 
     type Pages = Arc<Mutex<HashMap<String, VecDeque<Vec<u8>>>>>;
-    type Moved = Arc<Mutex<HashMap<String, String>>>;
+    type ByPath = Arc<Mutex<HashMap<String, String>>>;
 
     struct Site {
         base: String,
         pages: Pages,
-        moved: Moved,
+        moved: ByPath,
+        types: ByPath,
     }
 
     impl Site {
@@ -370,18 +371,33 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
             let pages = Pages::default();
-            let moved = Moved::default();
+            let moved = ByPath::default();
+            let types = ByPath::default();
             let served = Arc::clone(&pages);
             let redirects = Arc::clone(&moved);
+            let typed = Arc::clone(&types);
             thread::spawn(move || {
                 for stream in listener.incoming() {
                     let Ok(stream) = stream else { return };
                     let pages = Arc::clone(&served);
                     let moved = Arc::clone(&redirects);
-                    thread::spawn(move || answer(stream, &pages, &moved));
+                    let types = Arc::clone(&typed);
+                    thread::spawn(move || answer(stream, &pages, &moved, &types));
                 }
             });
-            Self { base, pages, moved }
+            Self {
+                base,
+                pages,
+                moved,
+                types,
+            }
+        }
+
+        fn typed(&self, path: &str, mime: &str) {
+            self.types
+                .lock()
+                .unwrap()
+                .insert(path.to_owned(), mime.to_owned());
         }
 
         fn redirect(&self, from: &str, to: &str) {
@@ -406,7 +422,7 @@ mod tests {
         }
     }
 
-    fn answer(mut stream: TcpStream, pages: &Pages, moved: &Moved) {
+    fn answer(mut stream: TcpStream, pages: &Pages, moved: &ByPath, types: &ByPath) {
         let mut head = Vec::new();
         let mut byte = [0; 1];
         while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
@@ -432,10 +448,16 @@ mod tests {
                 bodies[0].clone()
             }
         });
+        let mime = types
+            .lock()
+            .unwrap()
+            .get(&path)
+            .map(|mime| format!("content-type: {mime}\r\n"))
+            .unwrap_or_default();
         let response = match body {
             Some(body) => [
                 format!(
-                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\n{mime}content-length: {}\r\nconnection: close\r\n\r\n",
                     body.len()
                 )
                 .into_bytes(),
@@ -525,5 +547,133 @@ mod tests {
             error.as_deref(),
             Some("encrypted HLS streams are not supported")
         );
+    }
+
+    fn base() -> Url {
+        Url::parse("https://cdn.example/radio/index.m3u8").unwrap()
+    }
+
+    #[test]
+    fn a_master_playlist_picks_the_default_audio_then_the_best_audio_variant() {
+        let audio = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"en\",DEFAULT=NO,URI=\"en.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"main\",DEFAULT=YES,URI=\"main.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"fr\",DEFAULT=NO,URI=\"fr.m3u8\"\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO=\"a\"\nvideo.m3u8\n";
+        let undecided = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"en\",URI=\"en.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"fr\",URI=\"fr.m3u8\"\n";
+        let muxed = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"main\",DEFAULT=YES\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS=\"avc1.4d401f,mp4a.40.2\"\nhd.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=48000,CODECS=\"mp4a.40.2\"\nlow.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=96000,CODECS=\"mp4a.40.2\"\nhigh.m3u8\n";
+        let video = "#EXTM3U\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS=\"avc1.4d401f,mp4a.40.2\"\nhd.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=300000,CODECS=\"avc1.4d401f,mp4a.40.2\"\nsd.m3u8\n";
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\na.ts\n";
+        for (text, chosen) in [
+            (audio, Some("main.m3u8")),
+            (undecided, Some("en.m3u8")),
+            (muxed, Some("high.m3u8")),
+            (video, Some("sd.m3u8")),
+            (media, None),
+        ] {
+            let chosen = chosen.map(|uri| base().join(uri).unwrap());
+            assert_eq!(choose_variant(text, &base()).unwrap(), chosen, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_media_playlist_reads_its_segments_init_section_and_end() {
+        let vod = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:10\n\
+            #EXT-X-MAP:URI=\"init.mp4\"\n#EXT-X-KEY:METHOD=NONE\n\
+            #EXTINF:4.0,\na.m4s\n#EXTINF:4.0,\n/other/b.m4s\n#EXT-X-ENDLIST\n";
+        let live = "#EXTM3U\n#EXTINF:6.0,\nlive.ts\n";
+
+        let parsed = parse_media(vod, &base()).unwrap();
+        let open = parse_media(live, &base()).unwrap();
+
+        assert_eq!(parsed.target, Duration::from_secs(4));
+        assert_eq!(parsed.map, Some(base().join("init.mp4").unwrap()));
+        assert_eq!(
+            parsed.segments,
+            [
+                (10, base().join("a.m4s").unwrap()),
+                (11, base().join("/other/b.m4s").unwrap())
+            ]
+        );
+        assert!(parsed.ended);
+        assert_eq!(
+            (open.target, open.map, open.ended),
+            (Duration::from_secs(6), None, false)
+        );
+        assert_eq!(open.segments, [(0, base().join("live.ts").unwrap())]);
+    }
+
+    #[test]
+    fn a_media_playlist_bostie_cannot_play_is_refused_by_name() {
+        for (text, refusal) in [
+            (
+                "#EXTINF:6.0,\na.ts\n",
+                "the HLS playlist does not start with #EXTM3U",
+            ),
+            (
+                "#EXTM3U\n#EXT-X-MAP:BYTERANGE=\"720@0\"\n",
+                "an HLS #EXT-X-MAP has no URI",
+            ),
+            (
+                "#EXTM3U\n#EXTINF:6.0,\n#EXT-X-BYTERANGE:1000@0\nall.ts\n",
+                "HLS byte ranges are not supported",
+            ),
+        ] {
+            let error = parse_media(text, &base()).err().unwrap();
+            assert_eq!(error.to_string(), refusal, "{text}");
+        }
+    }
+
+    #[test]
+    fn packed_audio_drops_its_id3_tag_and_any_footer() {
+        let tag = |flags: u8| [&b"ID3\x04\x00"[..], &[flags, 0, 0, 1, 2], &[7; 130]].concat();
+        let audio = b"\xff\xf1aac";
+        for segment in [
+            [tag(0), audio.to_vec()].concat(),
+            [tag(0x10), vec![9; 10], audio.to_vec()].concat(),
+            audio.to_vec(),
+        ] {
+            let mut demux = Demux::default();
+            assert_eq!(demux.elementary(Bytes::from(segment)), &audio[..]);
+        }
+    }
+
+    #[test]
+    fn a_live_playlist_starts_three_segments_before_its_live_edge() {
+        let site = Site::start();
+        let live = "#EXTM3U\n#EXT-X-TARGETDURATION:0\n#EXTINF:1.0,\n0.ts\n#EXTINF:1.0,\n1.ts\n\
+            #EXTINF:1.0,\n2.ts\n#EXTINF:1.0,\n3.ts\n#EXTINF:1.0,\n4.ts\n";
+        let ended = format!("{live}#EXT-X-ENDLIST\n");
+        site.page("/live.m3u8", &[live.as_bytes(), ended.as_bytes()]);
+        for index in 0..5 {
+            site.page(&format!("/{index}.ts"), &[&tone_ts()]);
+        }
+
+        let (chunks, error) = site.play("/live.m3u8");
+
+        assert_eq!(error, None);
+        assert!((seconds(&chunks) - 3.0).abs() < 0.1, "{}", seconds(&chunks));
+    }
+
+    #[test]
+    fn a_playlist_is_spotted_by_its_content_type_alone() {
+        let site = Site::start();
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1.0,\na.ts\n#EXT-X-ENDLIST\n";
+        site.page("/radio", &[media.as_bytes()]);
+        site.typed("/radio", "application/vnd.apple.mpegurl");
+        site.page("/a.ts", &[&tone_ts()]);
+
+        let (chunks, error) = site.play("/radio");
+
+        assert_eq!(error, None);
+        assert!((seconds(&chunks) - 1.0).abs() < 0.1, "{}", seconds(&chunks));
     }
 }
