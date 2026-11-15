@@ -13,11 +13,10 @@ from collections.abc import (
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict, Unpack, overload
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, overload
 
 from bostie import _native
 from bostie._aio import spawn
-from bostie.cache import Cache
 from bostie.enums import (
     ChannelType,
     Direction,
@@ -37,12 +36,10 @@ from bostie.errors import (
     VoiceConnectError,
     VoiceNotConnected,
 )
-from bostie.events import Event, VoiceServerUpdate, VoiceStateUpdate
-from bostie.gateway import CLOSE_TIMEOUT, GatewayClient
-from bostie.http import HTTPClient
+from bostie.events import VoiceServerUpdate, VoiceStateUpdate
+from bostie.gateway import CLOSE_TIMEOUT
 from bostie.models import Channel, User
 from bostie.models.base import check_keys
-from bostie.rest import REST
 from bostie.voice import layers
 from bostie.voice._link import CoreLink, Handle
 from bostie.voice.encoder import DEFAULT_BITRATE
@@ -73,24 +70,20 @@ from bostie.voice.formats import (
     Format,
     Latency,
     Opus,
-    Overflow,
     PacketReceiveOptions,
     Packets,
     ReceiveFormat,
     ReceiveOptions,
-    ReceiveStall,
-    Sample,
     SinkOptions,
-    SinkStall,
     StageRole,
     check_stall_after,
 )
 from bostie.voice.frames import Frame, Packet
-from bostie.voice.receiver import NativeReceiver, Receiver
-from bostie.voice.sink import NativeSink, Sink
-from bostie.voice.sources import NativeSource
+from bostie.voice.receiver import Receiver
+from bostie.voice.sink import Sink
 
 if TYPE_CHECKING:
+    from bostie.bot import Bot
     from bostie.voice.sources import Source
 
 log = logging.getLogger("bostie.voice")
@@ -114,73 +107,6 @@ type ConnectionDelivery = (
 type VoiceDelivery = (
     ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
 )
-
-
-class VoiceCore(Protocol):
-    def voice_connect(
-        self,
-        guild_id: int,
-        channel_id: int,
-        *,
-        shard_id: int,
-        user_id: int,
-        self_mute: bool,
-        self_deaf: bool,
-        timeout: float,
-        server_change_delay: float,
-        encoder: EncoderSettings,
-        speaking: int,
-    ) -> None: ...
-    def voice_update(
-        self, guild_id: int, channel_id: int, *, self_mute: bool, self_deaf: bool
-    ) -> None: ...
-    def voice_disconnect(self, guild_id: int) -> None: ...
-    def voice_reconnect(self, guild_id: int) -> None: ...
-    def voice_encoder(self, guild_id: int, *, encoder: EncoderSettings) -> None: ...
-    def voice_speaking(self, guild_id: int, flags: int) -> None: ...
-    def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
-    def voice_dave(self, guild_id: int) -> tuple[int, int | None, str | None]: ...
-    def voice_verification_code(self, guild_id: int, user_id: int) -> str: ...
-    def voice_sink(
-        self,
-        guild_id: int,
-        *,
-        kind: Literal["pcm", "opus"],
-        rate: int,
-        channels: int,
-        sample: Sample,
-        buffer: float,
-        volume: float,
-        stall: SinkStall,
-        after: int | None,
-        crossfade: float,
-    ) -> NativeSink: ...
-    def voice_file(self, path: str) -> NativeSource: ...
-    def voice_bytes(self, data: bytes, hint: str | None) -> NativeSource: ...
-    def voice_url(self, url: str, headers: list[tuple[str, str]]) -> NativeSource: ...
-    def voice_receive(
-        self,
-        guild_id: int,
-        *,
-        kind: Literal["pcm", "opus", "packets"],
-        rate: int,
-        channels: int,
-        sample: Sample,
-        users: list[int] | None,
-        exclude: list[int],
-        include_self: bool,
-        buffer: float,
-        jitter: float,
-        markers: bool,
-        mix: bool,
-        overflow: Overflow,
-        stall: ReceiveStall,
-    ) -> NativeReceiver: ...
-    def voice_speech_hangover(self, guild_id: int, hangover: float) -> None: ...
-    def voice_server_change_delay(self, guild_id: int, delay: float) -> None: ...
-    def voice_stall_after(self, guild_id: int, after: float) -> None: ...
-    def voice_speech_activity(self, guild_id: int, *, enabled: bool) -> None: ...
-    def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
 
 class EditOptions(TypedDict, total=False):
@@ -222,28 +148,6 @@ MOVE_OPTIONS = MoveOptions.__optional_keys__
 EDIT_OPTIONS = EditOptions.__optional_keys__
 
 
-class VoiceHost(Protocol):
-    @property
-    def user(self) -> User | None: ...
-    @property
-    def cache(self) -> Cache: ...
-    @property
-    def http(self) -> HTTPClient: ...
-    @property
-    def gateway(self) -> GatewayClient: ...
-    @property
-    def intents(self) -> Intents: ...
-    @property
-    def rest(self) -> REST: ...
-    async def wait_for[E: Event](
-        self, event: type[E], *, check: Callable[[E], bool] | None = None
-    ) -> E: ...
-    def stream[E: Event](
-        self, event: type[E], *, check: Callable[[E], bool] | None = None
-    ) -> contextlib.AbstractAsyncContextManager[AsyncIterator[E]]: ...
-    def dispatch(self, event: VoiceEvent) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class Dave:
     """The call's end-to-end encryption; `protocol_version` 0 means none."""
@@ -269,7 +173,7 @@ class ExternalVoice:
 
     state: VoiceStateUpdate
     server: VoiceServerUpdate
-    _bot: VoiceHost = field(repr=False, compare=False)
+    _bot: "Bot" = field(repr=False, compare=False)
     _guild_id: int = field(repr=False, compare=False)
 
     @contextlib.asynccontextmanager
@@ -314,9 +218,9 @@ class VoiceManager:
 
     def __init__(
         self,
-        bot: VoiceHost,
+        bot: "Bot",
         defaults: Defaults,
-        core: Callable[[], VoiceCore | None],
+        core: Callable[[], _native.Core | None],
     ) -> None:
         self.defaults = defaults
         self.link = CoreLink(core)
@@ -324,7 +228,7 @@ class VoiceManager:
         self._connections: dict[int, _Connection] = {}
 
     @property
-    def bot(self) -> VoiceHost:
+    def bot(self) -> "Bot":
         """The bot these connections belong to."""
         return self._bot
 
@@ -1033,7 +937,7 @@ class VoiceConnection:
     def _emit(self, event: VoiceEvent) -> None:
         self._bot.dispatch(event)
 
-    def _core(self) -> VoiceCore:
+    def _core(self) -> _native.Core:
         return self._link.core()
 
     def _check_live(self) -> None:
@@ -1359,7 +1263,7 @@ class ContextVoice:
         return state.channel_id
 
 
-async def _voice_channel(bot: VoiceHost, channel_id: int) -> tuple[int, Channel]:
+async def _voice_channel(bot: "Bot", channel_id: int) -> tuple[int, Channel]:
     channel = bot.cache.channel(channel_id) or await bot.rest.channels.fetch(channel_id)
     if channel.guild_id is None or channel.type not in VOICE_CHANNELS:
         raise ValueError(f"channel {channel_id} is not a voice or stage channel")
@@ -1367,7 +1271,7 @@ async def _voice_channel(bot: VoiceHost, channel_id: int) -> tuple[int, Channel]
 
 
 def _send_voice_state(
-    bot: VoiceHost,
+    bot: "Bot",
     guild_id: int,
     channel_id: int | None,
     *,

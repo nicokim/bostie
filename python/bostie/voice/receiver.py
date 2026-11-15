@@ -4,7 +4,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, Self, assert_never, cast
+from typing import TYPE_CHECKING, Any, Self, assert_never, cast
 
 from bostie.enums import ClosedReason, State
 from bostie.errors import BostieError, Empty, ReceiverClosed
@@ -13,25 +13,14 @@ from bostie.voice.formats import Overflow, ReceiveFormat, ReceiveStall
 from bostie.voice.frames import Frame, Packet
 
 if TYPE_CHECKING:
-    from bostie._native import ClosedReasonName, ReceivedItem
+    from bostie import _native
+    from bostie._native import ReceivedItem
     from bostie.voice._link import Handle
     from bostie.voice.connection import VoiceConnection
 
 READ_LIMIT = 256
 
 type Item = Frame | Packet | SpeechStart | SpeechStop | UserLeave
-
-
-class NativeReceiver(Protocol):
-    @property
-    def id(self) -> int: ...
-    def read(self, limit: int) -> "list[ReceivedItem] | None": ...
-    def queued(self) -> float: ...
-    def clear(self) -> None: ...
-    def mark(self) -> int: ...
-    def stats(self) -> tuple[int, int, int]: ...
-    def closed_reason(self) -> "ClosedReasonName | None": ...
-    def close(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +38,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
     def __init__(
         self,
         connection: "VoiceConnection",
-        native: NativeReceiver,
+        native: "_native.Receiver",
         handle: "Handle",
         format: ReceiveFormat,
         *,

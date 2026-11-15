@@ -6,7 +6,7 @@ from bostie._aio import Wake
 from bostie.errors import StateError
 
 if TYPE_CHECKING:
-    from bostie.voice.connection import VoiceCore
+    from bostie import _native
 
 
 class Handle:
@@ -46,7 +46,7 @@ class Handle:
 class CoreLink:
     """The bot's running core, and the handles its wakes and markers go to."""
 
-    def __init__(self, core: Callable[[], "VoiceCore | None"]) -> None:
+    def __init__(self, core: Callable[[], "_native.Core | None"]) -> None:
         self._running = core
         self._handles: dict[int, Handle] = {}
 
@@ -55,7 +55,7 @@ class CoreLink:
         """Whether the bot runs, so it has a core."""
         return self._running() is not None
 
-    def core(self) -> "VoiceCore":
+    def core(self) -> "_native.Core":
         """The running core; StateError while the bot is not running."""
         core = self._running()
         if core is None:

@@ -1,14 +1,13 @@
 import math
 from contextlib import AbstractContextManager, nullcontext
 from enum import StrEnum
-from typing import Any, get_args, get_type_hints
+from typing import Any, get_args
 
 import pytest
 
 import bostie
 from bostie import _native, voice
 from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlags, State
-from bostie.voice.connection import VoiceCore
 from bostie.voice.events import LOCAL_NAMES, VoiceEvent
 
 VALID = nullcontext()
@@ -193,8 +192,6 @@ def test_enum_values_are_the_names_rust_sends(
         (voice.OpusBandwidth.__value__, _native.OPUS_BANDWIDTHS),
         (voice.OpusSignal.__value__, _native.OPUS_SIGNALS),
         (voice.Sample.__value__, _native.SAMPLES),
-        (get_type_hints(VoiceCore.voice_sink)["kind"], _native.SINK_KINDS),
-        (get_type_hints(VoiceCore.voice_receive)["kind"], _native.RECEIVE_KINDS),
         (voice.SinkStall.__value__, _native.SINK_STALLS),
         (voice.ReceiveStall.__value__, _native.RECEIVE_STALLS),
         (voice.Overflow.__value__, _native.OVERFLOWS),

@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 from collections.abc import Buffer, Callable, Generator, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from bostie.errors import BostieError, BufferFull, SinkClosed
 from bostie.voice.formats import (
@@ -16,26 +16,10 @@ from bostie.voice.formats import (
 )
 
 if TYPE_CHECKING:
+    from bostie import _native
     from bostie.voice._link import Handle
 
 MIN_PIECE = 0.02
-
-
-class NativeSink(Protocol):
-    @property
-    def id(self) -> int: ...
-    def write(self, data: Buffer) -> bool: ...
-    def mark(self) -> tuple[int, int]: ...
-    def flush(self) -> tuple[int, int]: ...
-    def clear(self, until: int | None = None, since: int | None = None) -> None: ...
-    def set_volume(self, volume: float) -> None: ...
-    def set_filters(
-        self, bands: list[tuple[float, float]], bass: float, speed: float, pitch: float
-    ) -> None: ...
-    def queued(self) -> float: ...
-    def passthrough(self) -> bool: ...
-    def stats(self) -> tuple[int, int, int, int, int, int]: ...
-    def close(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +57,7 @@ class Sink:
 
     def __init__(
         self,
-        native: NativeSink,
+        native: "_native.Sink",
         handle: "Handle",
         format: Format,
         *,

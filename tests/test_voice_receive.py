@@ -1,329 +1,286 @@
 import asyncio
+import contextlib
 import logging
-import time
-from typing import TYPE_CHECKING, Any, Literal, assert_type
+import struct
+from collections.abc import AsyncIterator
+from typing import Any, Literal, assert_type
 
 import pytest
-from voice_fakes import (
-    GUILD_ID,
-    OTHER_VOICE,
-    USER_ID,
-    VOICE,
-    FakeBot,
-    FakeReceiver,
-    connected,
-    disconnected,
-    run,
-)
 
-from bostie import voice
-from bostie.testing import settle
-from bostie.voice.connection import VoiceDelivery
+from bostie import Bot, voice
+from bostie.testing import FakeDiscord, payloads, run, running, settle
 
-if TYPE_CHECKING:
-    from bostie._native import FrameItem
-
+GUILD_ID = int(payloads.voice_channel()["guild_id"])
+VOICE_ID = int(payloads.voice_channel()["id"])
+OTHER_ID = VOICE_ID + 1
+FRIEND_ID = 1_100_000_000_000_000_001
+SSRC = 4321
+SPOKEN = voice.OpusEncoder().encode(bytes(3840 * 50))
+MANY = voice.OpusEncoder().encode(bytes(3840 * 600))
+REPORT = struct.pack(">BBHI", 0x80, 201, 1, SSRC)
 DEAFENED = (
     f"a moderator deafened the bot in guild {GUILD_ID}, so Discord sends it no audio"
 )
 
-
-def frame(offset: int, age: float = 0.0, queued: float = 0.0) -> "FrameItem":
-    return (
-        "frame",
-        USER_ID,
-        77,
-        offset,
-        offset,
-        960,
-        age,
-        b"\x01\x00",
-        False,
-        None,
-        queued,
-    )
+type Item = voice.Packet | voice.SpeechStart | voice.SpeechStop | voice.UserLeave
 
 
-async def open_receiver(
-    bot: FakeBot,
-) -> tuple[voice.Receiver[voice.Frame], FakeReceiver]:
-    vc = await connected(bot)
-    return vc.receive(), bot.core.receivers[-1]
+@contextlib.asynccontextmanager
+async def started(fake: FakeDiscord, **options: Any) -> AsyncIterator[Bot]:
+    fake.channels[str(OTHER_ID)] = payloads.voice_channel(id=str(OTHER_ID))
+    bot = Bot(api_url=fake.api_url, **options)
+    async with running(bot, fake):
+        yield bot
+
+
+async def connected(bot: Bot, fake: FakeDiscord) -> voice.VoiceConnection:
+    vc = await bot.voice.connect(VOICE_ID)
+    await fake.voice.speaking(FRIEND_ID, SSRC, 1)
+    return vc
+
+
+async def until_queued(bot: Bot, fake: FakeDiscord, rx: voice.Receiver[Any]) -> None:
+    await asyncio.gather(bot.wait_for(voice.RtcpPacket), fake.voice.send_rtcp(REPORT))
+    assert await rx.mark()
+
+
+async def moved(bot: Bot, fake: FakeDiscord, channel_id: int) -> None:
+    await asyncio.gather(bot.wait_for(voice.Moved), fake.move_bot(channel_id))
 
 
 def test_receivers_take_their_settings_from_the_defaults_unless_given() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        vc.receive()
-        packets = vc.receive(
-            voice.Packets(),
-            users={USER_ID + 1, USER_ID},
-            exclude=[USER_ID],
-            include_self=True,
-            buffer=5.0,
-            markers=True,
-            overflow="drop_oldest",
-            stall="wait",
-        )
-        mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.0, mix=True)
-        vc.receive(voice.Opus(), users=())
-        assert_type(
-            packets,
-            voice.Receiver[
-                voice.Packet | voice.SpeechStart | voice.SpeechStop | voice.UserLeave
-            ],
-        )
-        assert_type(mixed, voice.Receiver[voice.Frame])
-        common: dict[str, Any] = {
-            "rate": 48_000,
-            "channels": 2,
-            "sample": "s16le",
-            "users": None,
-            "exclude": [],
-            "include_self": False,
-            "buffer": 1.5,
-            "jitter": 0.06,
-            "markers": False,
-            "mix": False,
-            "overflow": "drop_newest",
-            "stall": "end",
-        }
-        assert [call[2] for call in bot.calls("voice_receive")] == [
-            {**common, "kind": "pcm"},
-            {
-                **common,
-                "kind": "packets",
-                "users": [USER_ID, USER_ID + 1],
-                "exclude": [USER_ID],
-                "include_self": True,
-                "buffer": 5.0,
-                "markers": True,
-                "overflow": "drop_oldest",
-                "stall": "wait",
-            },
-            {
-                **common,
-                "kind": "pcm",
-                "rate": 16_000,
-                "channels": 1,
-                "sample": "f32le",
-                "jitter": 0.0,
-                "mix": True,
-            },
-            {**common, "kind": "opus", "users": []},
-        ]
-        assert (packets.users, packets.exclude, packets.jitter, packets.buffer) == (
-            frozenset({USER_ID, USER_ID + 1}),
-            frozenset({USER_ID}),
-            0.06,
-            5.0,
-        )
-
-    run(
-        scenario,
-        defaults=voice.Defaults(
-            receive_buffer=1.5,
-            jitter=0.06,
-            overflow="drop_newest",
-            receive_stall="end",
-        ),
+    defaults = voice.Defaults(
+        receive_buffer=1.5, jitter=0.06, overflow="drop_newest", receive_stall="end"
     )
 
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake, voice=defaults) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            plain = vc.receive()
+            packets = vc.receive(
+                voice.Packets(),
+                users={FRIEND_ID + 1, FRIEND_ID},
+                exclude=[FRIEND_ID],
+                include_self=True,
+                buffer=5.0,
+                markers=True,
+                overflow="drop_oldest",
+                stall="wait",
+            )
+            mixed = vc.receive(voice.PCM(16_000, 1, "f32le"), jitter=0.0, mix=True)
 
-def test_items_become_frames_packets_and_markers_aged_against_one_reading() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        rx = vc.receive(markers=True)
-        bot.core.receivers[-1].items.extend(
-            [
-                ("speech", USER_ID, 77, True, 0, 0.5, 0.0, 0.0),
-                ("frame", USER_ID, 77, 1000, 0, 960, 0.25, b"pcm", False, -12.5, 0.0),
-                ("frame", None, None, None, 960, 960, 0.125, b"", True, None, 0.0),
-                ("packet", USER_ID, 77, 9, 1960, 0.0625, b"opus", [(1, b"\x85")], 0.0),
-                ("speech", USER_ID, 77, False, 1920, 0.03125, 0.25, 0.0),
-                ("leave", USER_ID, 2880, 0.0),
-            ]
+            assert_type(packets, voice.Receiver[Item])
+            assert_type(mixed, voice.Receiver[voice.Frame])
+            assert (plain.users, plain.exclude, plain.include_self, plain.markers) == (
+                None,
+                frozenset(),
+                False,
+                False,
+            )
+            assert (plain.buffer, plain.jitter, plain.overflow, plain.stall) == (
+                1.5,
+                0.06,
+                "drop_newest",
+                "end",
+            )
+            assert (packets.users, packets.exclude, packets.buffer) == (
+                frozenset({FRIEND_ID, FRIEND_ID + 1}),
+                frozenset({FRIEND_ID}),
+                5.0,
+            )
+            assert (packets.overflow, packets.stall, packets.include_self) == (
+                "drop_oldest",
+                "wait",
+                True,
+            )
+            assert (mixed.format, mixed.jitter, mixed.mix) == (
+                voice.PCM(16_000, 1, "f32le"),
+                0.0,
+                True,
+            )
+
+    run(scenario, voice=True)
+
+
+def test_packets_carry_their_rtp_fields_and_markers_their_user() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets(), markers=True)
+            await fake.voice.send_audio(
+                SSRC, SPOKEN[:1], sequence=9, timestamp=1960, extension=b"\x10\x85"
+            )
+            packet = await anext(
+                item async for item in rx if isinstance(item, voice.Packet)
+            )
+            await fake.voice.client_disconnect(FRIEND_ID)
+            leave = await anext(
+                item async for item in rx if isinstance(item, voice.UserLeave)
+            )
+
+        assert (packet.user_id, packet.ssrc, packet.sequence, packet.timestamp) == (
+            FRIEND_ID,
+            SSRC,
+            9,
+            1960,
         )
-        before = time.monotonic()
-        items: list[object] = [rx.get_nowait() for _ in range(6)]
-        after = time.monotonic()
-        start = items[0]
-        assert isinstance(start, voice.SpeechStart)
-        now = start.at + 0.5
-        assert before <= now <= after
-        assert items == [
-            voice.SpeechStart(
-                guild_id=GUILD_ID, user_id=USER_ID, ssrc=77, at=now - 0.5, offset=0
-            ),
-            voice.Frame(USER_ID, 77, 1000, 0, 960, now - 0.25, b"pcm", False, -12.5),
-            voice.Frame(None, None, None, 960, 960, now - 0.125, b"", True),
-            voice.Packet(USER_ID, 77, 9, 1960, now - 0.0625, b"opus", ((1, b"\x85"),)),
-            voice.SpeechStop(
-                guild_id=GUILD_ID,
-                user_id=USER_ID,
-                ssrc=77,
-                at=now - 0.03125,
-                duration=0.25,
-                offset=1920,
-            ),
-            voice.UserLeave(guild_id=GUILD_ID, user_id=USER_ID, offset=2880),
-        ]
+        assert (packet.opus, packet.extensions) == (SPOKEN[0], ((1, b"\x85"),))
+        assert leave == voice.UserLeave(guild_id=GUILD_ID, user_id=FRIEND_ID)
 
-    run(scenario)
+    run(scenario, voice=True)
 
 
 def test_iteration_lets_other_tasks_run_after_each_full_batch() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        offsets: list[int] = []
-        seen: list[int] = []
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets())
+            await fake.voice.send_audio(SSRC, MANY)
+            await until_queued(bot, fake, rx)
+            sequences: list[int] = []
+            seen: list[int] = []
 
-        async def consume() -> None:
-            async for item in rx:
-                offsets.append(item.offset)
+            async def watch() -> None:
+                while True:
+                    seen.append(len(sequences))
+                    await asyncio.sleep(0)
 
-        async def watch() -> None:
-            while True:
-                seen.append(len(offsets))
-                await asyncio.sleep(0)
+            watcher = asyncio.create_task(watch())
+            async for packet in rx:
+                sequences.append(packet.sequence)
+                if len(sequences) == len(MANY):
+                    break
+            watcher.cancel()
 
-        consumer = asyncio.ensure_future(consume())
-        watcher = asyncio.ensure_future(watch())
-        await settle()
-        native.feed(*(frame(960 * index) for index in range(600)))
-        await settle()
-        bot.deliver(disconnected("removed"))
-        await consumer
-        watcher.cancel()
-        assert offsets == [960 * index for index in range(600)]
-        assert 256 in seen
+            assert sequences == list(range(len(MANY)))
+            assert 256 in seen
 
-    run(scenario)
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
-    ("ended", "ending", "reason"),
+    ("ending", "reason"),
     [
-        ("disconnected", disconnected("removed"), voice.ClosedReason.DISCONNECTED),
-        (
-            "moved",
-            ("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, False),
-            voice.ClosedReason.MOVED,
-        ),
-        (None, disconnected("removed"), voice.ClosedReason.DISCONNECTED),
+        ("disconnect", voice.ClosedReason.DISCONNECTED),
+        ("move", voice.ClosedReason.MOVED),
     ],
 )
 def test_iteration_ends_after_the_queued_items_with_the_reason(
-    ended: Literal["disconnected", "moved"] | None,
-    ending: VoiceDelivery,
-    reason: voice.ClosedReason,
+    ending: str, reason: voice.ClosedReason
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        native.items.extend(frame(960 * index) for index in range(3))
-        native.counters = (3, 1, 2)
-        if ended is not None:
-            native.end(ended)
-        bot.deliver(ending)
-        assert [item.offset async for item in rx] == [0, 960, 1920]
-        assert (rx.closed, rx.closed_reason, rx.stats()) == (
-            True,
-            reason,
-            voice.ReceiverStats(3, 1, 2),
-        )
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets())
+            await fake.voice.send_audio(SSRC, SPOKEN[:3])
+            await until_queued(bot, fake, rx)
+            if ending == "disconnect":
+                await vc.disconnect()
+            else:
+                await moved(bot, fake, OTHER_ID)
 
-    run(scenario)
+            assert [packet.sequence async for packet in rx] == [0, 1, 2]
+            assert (rx.closed, rx.closed_reason) == (True, reason)
+            assert rx.stats() == voice.ReceiverStats(3, 0, 0)
 
-
-def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        rx = vc.receive()
-        native = bot.core.receivers[-1]
-        native.counters = (3, 1, 2)
-        waiting = asyncio.ensure_future(anext(rx, None))
-        await settle()
-
-        async def leave_with_an_error() -> None:
-            async with rx:
-                raise LookupError
-
-        with pytest.raises(LookupError):
-            await leave_with_an_error()
-        assert await waiting is None
-        assert native.closed
-        assert (rx.closed, rx.closed_reason) == (True, voice.ClosedReason.CLOSED)
-        rx.clear()
-        rx.close()
-        assert (rx.queued, rx.stats()) == (0.0, voice.ReceiverStats(3, 1, 2))
-
-    run(scenario)
-
-
-def test_a_cancelled_wait_loses_no_item() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        cancelled = asyncio.ensure_future(anext(rx))
-        await settle()
-        cancelled.cancel()
-        await settle()
-        waiting = asyncio.ensure_future(anext(rx))
-        await settle()
-        native.feed(frame(0))
-        assert (await waiting).offset == 0
-
-    run(scenario)
-
-
-def test_a_receiver_mark_resolves_on_delivery_or_false_when_it_ends() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        passed, pending = rx.mark(), rx.mark()
-        bot.deliver(("voice_marker", native.id, 1, True))
-        assert await passed
-        bot.deliver(disconnected("removed"))
-        assert (await pending, await rx.mark()) == (False, False)
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 def test_get_nowait_raises_empty_then_receiver_closed_once_drained() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        with pytest.raises(voice.Empty):
-            rx.get_nowait()
-        native.items.append(frame(0))
-        native.end("disconnected")
-        assert rx.get_nowait().offset == 0
-        with pytest.raises(voice.ReceiverClosed):
-            rx.get_nowait()
-        assert rx.closed_reason is voice.ClosedReason.DISCONNECTED
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets())
+            with pytest.raises(voice.Empty):
+                rx.get_nowait()
+            await fake.voice.send_audio(SSRC, SPOKEN[:1])
+            await until_queued(bot, fake, rx)
+            await vc.disconnect()
 
-    run(scenario)
+            assert rx.get_nowait().sequence == 0
+            with pytest.raises(voice.ReceiverClosed):
+                rx.get_nowait()
+            assert rx.closed_reason is voice.ClosedReason.DISCONNECTED
+
+    run(scenario, voice=True)
 
 
-def test_queued_counts_from_queueing_and_clear_and_close_drop_the_items() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        rx, native = await open_receiver(bot)
-        native.lag = 5.0
-        assert rx.queued == 5.0
-        native.items.extend(
-            [frame(0, age=9.0, queued=2.0), frame(960, age=9.0, queued=1.0)]
-        )
-        rx.get_nowait()
-        assert 1.0 <= rx.queued < 2.0
-        rx.clear()
-        native.lag = 0.0
-        assert (rx.queued, native.clears) == (0.0, 1)
-        with pytest.raises(voice.Empty):
+def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            rx = vc.receive()
+            waiting = asyncio.create_task(anext(rx, None))
+            await settle()
+
+            async def leave_with_an_error() -> None:
+                async with rx:
+                    raise LookupError
+
+            with pytest.raises(LookupError):
+                await leave_with_an_error()
+            stats = rx.stats()
+            rx.clear()
+            rx.close()
+
+            assert await waiting is None
+            assert (rx.closed, rx.closed_reason) == (True, voice.ClosedReason.CLOSED)
+            assert (rx.queued, rx.stats()) == (0.0, stats)
+
+    run(scenario, voice=True)
+
+
+def test_a_cancelled_wait_loses_no_item() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets())
+            cancelled = asyncio.create_task(anext(rx))
+            await settle()
+            cancelled.cancel()
+            await settle()
+            waiting = asyncio.create_task(anext(rx))
+            await settle()
+            await fake.voice.send_audio(SSRC, SPOKEN[:1])
+
+            assert (await waiting).sequence == 0
+
+    run(scenario, voice=True)
+
+
+def test_a_receiver_mark_is_false_once_the_connection_ended() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            rx = vc.receive()
+            live = await rx.mark()
+            await vc.disconnect()
+
+            assert (live, await rx.mark()) == (True, False)
+
+    run(scenario, voice=True)
+
+
+def test_queued_counts_the_lag_and_clear_and_close_drop_the_items() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await connected(bot, fake)
+            rx = vc.receive(voice.Packets())
+            await fake.voice.send_audio(SSRC, SPOKEN[:3])
+            await until_queued(bot, fake, rx)
             rx.get_nowait()
-        native.items.extend([frame(1920), frame(2880)])
-        rx.get_nowait()
-        rx.close()
-        with pytest.raises(voice.ReceiverClosed):
-            rx.get_nowait()
+            lag = rx.queued
+            rx.clear()
+            cleared = rx.queued
+            with pytest.raises(voice.Empty):
+                rx.get_nowait()
+            rx.close()
+            with pytest.raises(voice.ReceiverClosed):
+                rx.get_nowait()
 
-    run(scenario)
+            assert (lag > 0.0, cleared) == (True, 0.0)
+
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
@@ -340,100 +297,78 @@ def test_a_moderator_deafen_warns_once_per_receive_and_a_self_deafen_never(
     steps: list[Literal["receive", "close", "self_deafen", "server_deafen"]],
     warnings: list[str],
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        opened: list[voice.Receiver[voice.Frame]] = []
-        for step in steps:
-            match step:
-                case "receive":
-                    opened.append(vc.receive())
-                case "close":
-                    opened.pop().close()
-                case "self_deafen":
-                    bot.deliver(("voice_self", GUILD_ID, False, True, False, False))
-                case "server_deafen":
-                    bot.deliver(("voice_deaf", GUILD_ID, True))
-        assert vc.deaf is ("server_deafen" in steps)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            opened: list[voice.Receiver[voice.Frame]] = []
+            for step in steps:
+                match step:
+                    case "receive":
+                        opened.append(vc.receive())
+                    case "close":
+                        opened.pop().close()
+                    case "self_deafen":
+                        await vc.edit(self_deaf=True)
+                    case "server_deafen":
+                        fake.deaf = True
+                        elsewhere = OTHER_ID if vc.channel_id == VOICE_ID else VOICE_ID
+                        await moved(bot, fake, elsewhere)
+            assert vc.deaf is ("server_deafen" in steps)
 
     with caplog.at_level(logging.WARNING, "bostie.voice"):
-        run(scenario)
+        run(scenario, voice=True)
     assert [record.getMessage() for record in caplog.records] == warnings
 
 
-def test_speech_updates_speaking_before_its_event_and_disconnect_stops_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
+def test_speech_updates_speaking_before_its_event_and_disconnect_stops_it() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        connections: list[voice.VoiceConnection] = []
         seen: list[tuple[voice.VoiceEvent, dict[int, float]]] = []
-        monkeypatch.setattr(
-            bot, "dispatch", lambda event: seen.append((event, dict(vc.speaking)))
-        )
-        now = time.monotonic()
-        with monkeypatch.context() as frozen:
-            frozen.setattr(time, "monotonic", lambda: now)
-            bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.5, 0.0))
-            bot.deliver(("voice_speech", GUILD_ID, USER_ID + 1, 12, True, 0.25, 0.0))
-            bot.deliver(("voice_speech", GUILD_ID, USER_ID + 1, 12, False, 0.125, 0.25))
-        bot.deliver(disconnected("removed"))
-        ended = time.monotonic()
-        bot.deliver(("voice_speech", GUILD_ID, USER_ID, 11, True, 0.0, 0.0))
-        stop = seen[3][0]
+
+        @bot.listen
+        async def on_speech(event: voice.SpeechStart | voice.SpeechStop) -> None:
+            seen.append((event, dict(connections[0].speaking)))
+
+        async with running(bot, fake):
+            connections.append(vc := await connected(bot, fake))
+            start, _ = await asyncio.gather(
+                bot.wait_for(voice.SpeechStart), fake.voice.send_audio(SSRC, SPOKEN)
+            )
+            await vc.disconnect()
+
+        (first, during), (stop, after) = seen
+        assert (first, during) == (start, {FRIEND_ID: start.at})
         assert isinstance(stop, voice.SpeechStop)
-        assert now <= stop.at <= ended
-        assert seen[:4] == [
-            (
-                voice.SpeechStart(
-                    guild_id=GUILD_ID, user_id=USER_ID, ssrc=11, at=now - 0.5
-                ),
-                {USER_ID: now - 0.5},
-            ),
-            (
-                voice.SpeechStart(
-                    guild_id=GUILD_ID, user_id=USER_ID + 1, ssrc=12, at=now - 0.25
-                ),
-                {USER_ID: now - 0.5, USER_ID + 1: now - 0.25},
-            ),
-            (
-                voice.SpeechStop(
-                    guild_id=GUILD_ID,
-                    user_id=USER_ID + 1,
-                    ssrc=12,
-                    at=now - 0.125,
-                    duration=0.25,
-                ),
-                {USER_ID: now - 0.5},
-            ),
-            (
-                voice.SpeechStop(
-                    guild_id=GUILD_ID,
-                    user_id=USER_ID,
-                    ssrc=11,
-                    at=stop.at,
-                    duration=stop.at - (now - 0.5),
-                ),
-                {},
-            ),
-        ]
-        assert [type(event) for event, _ in seen[4:]] == [voice.StateChange]
+        assert (stop.user_id, stop.ssrc, after) == (FRIEND_ID, SSRC, {})
+        assert stop.duration == pytest.approx(stop.at - start.at)
         assert vc.speaking == {}
 
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def test_speech_settings_reach_the_core_at_connect_and_on_assignment() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        vc.speech_hangover = 0.75
-        vc.speech_activity = True
-        assert [call[1] for call in bot.calls("voice_speech_hangover")] == [
-            (GUILD_ID, 0.3),
-            (GUILD_ID, 0.75),
-        ]
-        assert [call[1] for call in bot.calls("voice_speech_activity")] == [
-            (GUILD_ID, False),
-            (GUILD_ID, True),
-        ]
-        assert (vc.speech_hangover, vc.speech_activity) == (0.75, True)
+def test_speech_events_follow_speech_activity_from_the_connect_on() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, voice=voice.Defaults(speech_activity=False))
+        starts: list[voice.SpeechStart] = []
 
-    run(scenario, defaults=voice.Defaults(speech_hangover=0.3, speech_activity=False))
+        @bot.listen
+        async def on_start(event: voice.SpeechStart) -> None:
+            starts.append(event)
+
+        async with running(bot, fake):
+            vc = await connected(bot, fake)
+            rx = vc.receive(markers=True)
+            await fake.voice.send_audio(SSRC, SPOKEN[:5])
+            marked = await anext(rx)
+            silent = list(starts)
+            vc.speech_activity = True
+            await asyncio.gather(
+                bot.wait_for(voice.SpeechStart),
+                fake.voice.send_audio(SSRC, SPOKEN[5:10], sequence=5, timestamp=4800),
+            )
+
+        assert isinstance(marked, voice.SpeechStart)
+        assert silent == []
+
+    run(scenario, voice=True)

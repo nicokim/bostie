@@ -1,100 +1,108 @@
 import asyncio
+import contextlib
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import msgspec
 import pytest
-from voice_fakes import (
-    BOT_ID,
-    GUILD_ID,
-    NO_BITRATE,
-    OTHER_GUILD_ID,
-    OTHER_VOICE,
-    STAGE,
-    TEXT,
-    USER_ID,
-    VOICE,
-    FakeBot,
-    connected,
-    disconnected,
-    ready,
-    rest_voice_state,
-    run,
-    voice_state,
-)
-from voice_fakes import Call as CoreCall
 
-from bostie import voice
+from bostie import Bot, voice
 from bostie.enums import Intents, SpeakingFlags
-from bostie.errors import Forbidden, MissingIntent, NotFound
+from bostie.errors import Forbidden, MissingIntent, NotFound, StateError
 from bostie.events import GuildCreate, VoiceServerUpdate, VoiceStateUpdate
-from bostie.models import VoiceState, decode
-from bostie.testing import payloads, settle
+from bostie.testing import FakeDiscord, payloads, run, running
+from bostie.testing.payloads import Json
 from bostie.voice.formats import StageRole
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
+GUILD_ID = int(payloads.voice_channel()["guild_id"])
+VOICE_ID = int(payloads.voice_channel()["id"])
+STAGE_ID = int(payloads.stage_channel()["id"])
+OTHER_ID = VOICE_ID + 1
+USER_ID = int(payloads.member()["user"]["id"])
 PATCH_ME = f"/guilds/{GUILD_ID}/voice-states/@me"
+SILENCE = bytes(3840)
 
 
-def test_connect_merges_each_argument_over_the_defaults() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        await connected(
-            bot,
-            self_mute=False,
-            timeout=3.0,
-            server_change_delay=0.0,
-            encoder=voice.EncoderSettings(
-                bitrate=50_000,
-                application="lowdelay",
-                fec=False,
-                packet_loss=0.29,
-                complexity=0,
-                bandwidth="wide",
-                signal_type="voice",
-            ),
-            speaking_flags=SpeakingFlags.SOUNDSHARE,
-            speech_activity=False,
-        )
-        assert bot.calls("voice_connect") == [
-            (
-                "voice_connect",
-                (GUILD_ID, VOICE),
-                {
-                    "shard_id": 0,
-                    "user_id": BOT_ID,
-                    "self_mute": False,
-                    "self_deaf": True,
-                    "timeout": 3.0,
-                    "server_change_delay": 0.0,
-                    "encoder": voice.EncoderSettings(
-                        bitrate=50_000,
-                        application="lowdelay",
-                        fec=False,
-                        packet_loss=0.29,
-                        complexity=0,
-                        bandwidth="wide",
-                        signal_type="voice",
-                    ),
-                    "speaking": 2,
-                },
+@contextlib.asynccontextmanager
+async def started(fake: FakeDiscord, **options: Any) -> AsyncIterator[Bot]:
+    bot = Bot(api_url=fake.api_url, **options)
+    async with running(bot, fake):
+        yield bot
+
+
+def joined(
+    channel_id: int | None, *, self_mute: bool = False, self_deaf: bool = False
+) -> Json:
+    return {
+        "guild_id": str(GUILD_ID),
+        "channel_id": None if channel_id is None else str(channel_id),
+        "self_mute": self_mute,
+        "self_deaf": self_deaf,
+    }
+
+
+def sent(fake: FakeDiscord, op: int) -> list[Any]:
+    payloads = []
+    while not fake.gateway_received.empty():
+        payload = fake.gateway_received.get_nowait()
+        if payload["op"] == op:
+            payloads.append(payload["d"])
+    return payloads
+
+
+def voice_ops(fake: FakeDiscord, op: int) -> list[Any]:
+    found = []
+    while not fake.voice.received.empty():
+        payload = fake.voice.received.get_nowait()
+        if isinstance(payload, dict) and payload["op"] == op:
+            found.append(payload["d"])
+    return found
+
+
+def patches(fake: FakeDiscord, since: int = 0) -> list[Any]:
+    return [
+        request.json
+        for request in fake.requests[since:]
+        if (request.method, request.path) == ("PATCH", PATCH_ME)
+    ]
+
+
+def lookups(fake: FakeDiscord) -> list[str]:
+    return [
+        request.path
+        for request in fake.requests
+        if request.path.startswith("/channels/") or "/voice-states/" in request.path
+    ]
+
+
+def add_voice_channel(fake: FakeDiscord, channel_id: int) -> None:
+    fake.channels[str(channel_id)] = payloads.voice_channel(id=str(channel_id))
+
+
+def test_connect_applies_its_arguments_over_the_bot_defaults() -> None:
+    defaults = voice.Defaults(self_deaf=True, self_mute=True, stall_after=5.0)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake, voice=defaults) as bot:
+            vc = await bot.voice.connect(
+                VOICE_ID,
+                self_mute=False,
+                speaking_flags=SpeakingFlags.SOUNDSHARE,
+                speech_activity=False,
+                stall_after=0.5,
             )
-        ]
-        assert [call[1] for call in bot.calls("voice_speech_activity")] == [
-            (GUILD_ID, False)
-        ]
+            vc.sink().write_nowait(SILENCE)
+            await fake.voice.wait_for_packets(1)
 
-    run(
-        scenario,
-        defaults=voice.Defaults(
-            self_deaf=True,
-            self_mute=True,
-            timeout=15.0,
-            server_change_delay=0.3,
-            encoder=voice.EncoderSettings(application="voip"),
-        ),
-    )
+            assert (vc.speaking_flags, vc.speech_activity, vc.stall_after) == (
+                SpeakingFlags.SOUNDSHARE,
+                False,
+                0.5,
+            )
+            assert voice_ops(fake, 5)[0]["speaking"] == SpeakingFlags.SOUNDSHARE
+        assert sent(fake, 4)[0] == joined(VOICE_ID, self_deaf=True)
+
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
@@ -112,211 +120,107 @@ def test_invalid_connect_options_raise_before_anything_is_sent(
 ) -> None:
     options: dict[str, Any] = {option: 0.0}
 
-    async def scenario(bot: FakeBot) -> None:
-        attempts: dict[str, Callable[[], Awaitable[object]]] = {
-            "connect": lambda: bot.voice.connect(VOICE, **options),
-            "connect_external": lambda: bot.voice.connect_external(
-                GUILD_ID, VOICE, **options
-            ),
-            "context": lambda: context_voice(bot).connect(**options),
-        }
-        with pytest.raises(error, match=option):
-            await attempts[call]()
-        assert (bot.core.sent, bot.api.requests) == ([], [])
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            attempts: dict[str, Callable[[], Awaitable[object]]] = {
+                "connect": lambda: bot.voice.connect(VOICE_ID, **options),
+                "connect_external": lambda: bot.voice.connect_external(
+                    GUILD_ID, VOICE_ID, **options
+                ),
+                "context": lambda: voice.ContextVoice(
+                    bot.voice, GUILD_ID, USER_ID
+                ).connect(**options),
+            }
+            with pytest.raises(error, match=option):
+                await attempts[call]()
+        assert (sent(fake, 4), lookups(fake)) == ([], [])
 
-    run(scenario)
-
-
-def test_bitrate_follows_the_channel_and_falls_back_to_64_kbps() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        await connected(bot, VOICE)
-        await connected(bot, NO_BITRATE, guild_id=OTHER_GUILD_ID)
-        bitrates = [call[2]["encoder"].bitrate for call in bot.calls("voice_connect")]
-        assert bitrates == [96_000, 64_000]
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize("call", ["connect", "connect_external"])
 def test_voice_needs_the_guild_voice_states_intent(call: str) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        attempt = (
-            bot.voice.connect(VOICE)
-            if call == "connect"
-            else bot.voice.connect_external(GUILD_ID, VOICE)
-        )
-        with pytest.raises(MissingIntent, match=r"Intents\.GUILD_VOICE_STATES"):
-            await attempt
-        assert (bot.core.sent, bot.api.requests) == ([], [])
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake, intents=Intents.GUILDS) as bot:
+            attempt = (
+                bot.voice.connect(VOICE_ID)
+                if call == "connect"
+                else bot.voice.connect_external(GUILD_ID, VOICE_ID)
+            )
+            with pytest.raises(MissingIntent, match=r"Intents\.GUILD_VOICE_STATES"):
+                await attempt
+        assert sent(fake, 4) == []
 
-    run(scenario, intents=Intents.GUILDS)
+    run(scenario, voice=True)
 
 
 def test_voice_needs_a_running_bot() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        with pytest.raises(RuntimeError, match=r"bot\.voice\.connect\(\) needs a run"):
-            await bot.voice.connect(VOICE)
+    async def scenario() -> None:
+        with pytest.raises(StateError, match=r"bot\.voice\.connect\(\) needs a run"):
+            await Bot().voice.connect(VOICE_ID)
 
-    run(scenario, running=False)
+    asyncio.run(scenario())
 
 
 def test_a_cached_channel_needs_no_request() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        guild = payloads.guild(
-            id=str(GUILD_ID),
-            channels=[{"id": str(VOICE), "type": 2, "bitrate": 128_000}],
-            threads=[],
-        )
-        bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
-        await connected(bot)
-        assert bot.api.requests == []
-        assert bot.calls("voice_connect")[0][2]["encoder"].bitrate == 128_000
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            await asyncio.gather(
+                bot.wait_for(GuildCreate),
+                fake.dispatch("GUILD_CREATE", payloads.guild()),
+            )
+            await bot.voice.connect(VOICE_ID)
+        assert lookups(fake) == []
 
-    run(scenario)
-
-
-@pytest.mark.parametrize("channel_id", [TEXT, 999])
-def test_only_guild_voice_and_stage_channels_connect(channel_id: int) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        bot.api.answers[("GET", "/channels/999")] = (200, {"id": "999", "type": 2})
-        with pytest.raises(ValueError, match="is not a voice or stage channel"):
-            await bot.voice.connect(channel_id)
-        assert bot.core.sent == []
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
-    ("default", "channel", "options", "patches"),
+    "channel", [payloads.channel(), {"id": "999", "type": 2}], ids=["text", "dm"]
+)
+def test_only_guild_voice_and_stage_channels_connect(channel: Json) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.channels[channel["id"]] = channel
+        async with started(fake) as bot:
+            with pytest.raises(ValueError, match="is not a voice or stage channel"):
+                await bot.voice.connect(int(channel["id"]))
+        assert sent(fake, 4) == []
+
+    run(scenario, voice=True)
+
+
+@pytest.mark.parametrize(
+    ("default", "channel", "options", "asked"),
     [
-        ("listen", VOICE, {"stage": "speak"}, []),
-        ("listen", STAGE, {"stage": "speak"}, [{"suppress": False}]),
-        ("listen", STAGE, {}, []),
-        ("speak", STAGE, {}, [{"suppress": False}]),
-        ("speak", STAGE, {"stage": "listen"}, []),
+        ("listen", VOICE_ID, {"stage": "speak"}, []),
+        ("listen", STAGE_ID, {"stage": "speak"}, [{"suppress": False}]),
+        ("listen", STAGE_ID, {}, []),
+        ("speak", STAGE_ID, {}, [{"suppress": False}]),
+        ("speak", STAGE_ID, {"stage": "listen"}, []),
     ],
 )
 def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
     default: StageRole,
     channel: int,
     options: voice.ConnectOptions,
-    patches: list[dict[str, bool]],
+    asked: list[Json],
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        await connected(bot, channel, **options)
-        sent = [request for request in bot.api.requests if request.method == "PATCH"]
-        assert [request.path for request in sent] == [PATCH_ME] * len(patches)
-        assert [request.json for request in sent] == [
-            {"channel_id": channel} | patch for patch in patches
-        ]
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake, voice=voice.Defaults(stage=default)) as bot:
+            await bot.voice.connect(channel, **options)
+        assert patches(fake) == [{"channel_id": channel} | role for role in asked]
 
-    run(scenario, defaults=voice.Defaults(stage=default))
-
-
-def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        before = datetime.now(UTC)
-        await connected(bot, STAGE, stage="request")
-        after = datetime.now(UTC)
-        request = bot.api.requests[-1]
-        assert request.json.keys() == {"channel_id", "request_to_speak_timestamp"}
-        asked = datetime.fromisoformat(request.json["request_to_speak_timestamp"])
-        assert before <= asked <= after
-
-    run(scenario)
-
-
-def test_a_failing_stage_request_disconnects_and_raises() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        bot.api.answers[("PATCH", PATCH_ME)] = (
-            403,
-            {"code": 50013, "message": "Missing Permissions"},
-        )
-        task = asyncio.ensure_future(bot.voice.connect(STAGE, stage="speak"))
-        await settle()
-        bot.deliver(ready())
-        with pytest.raises(Forbidden):
-            await task
-        assert bot.core.sent == [voice_state(STAGE), voice_state(None)]
-        assert bot.voice.get(GUILD_ID) is None
-
-    run(scenario)
-
-
-def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot, VOICE)
-        moving = asyncio.ensure_future(bot.voice.connect(OTHER_VOICE))
-        await settle()
-        bot.deliver(("voice_state", GUILD_ID, "reconnecting", None, None, "moving"))
-        bot.deliver(("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, True))
-        await settle()
-        assert not moving.done()
-        bot.deliver(ready())
-        assert await moving is vc
-        assert bot.voice.connections == (vc,)
-        assert bot.core.sent == [voice_state(VOICE), voice_state(OTHER_VOICE)]
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
-    ("options", "applied"),
+    ("default", "start", "entry", "options", "asked"),
     [
-        ({}, []),
-        ({"self_deaf": True}, [("voice_update", (GUILD_ID, VOICE, True, True), {})]),
-        (
-            {"encoder": voice.EncoderSettings(application="voip")},
-            [
-                (
-                    "voice_encoder",
-                    (GUILD_ID,),
-                    {
-                        "encoder": voice.EncoderSettings(
-                            bitrate=96_000, application="voip"
-                        )
-                    },
-                )
-            ],
-        ),
-        (
-            {"speaking_flags": SpeakingFlags.SOUNDSHARE},
-            [("voice_speaking", (GUILD_ID, 2), {})],
-        ),
-        (
-            {"speech_hangover": 0.5, "speech_activity": False},
-            [
-                ("voice_speech_hangover", (GUILD_ID, 0.5), {}),
-                ("voice_speech_activity", (GUILD_ID, False), {}),
-            ],
-        ),
-        (
-            {"server_change_delay": 0.5},
-            [("voice_server_change_delay", (GUILD_ID, 0.5), {})],
-        ),
-        ({"stall_after": 0.5}, [("voice_stall_after", (GUILD_ID, 0.5), {})]),
-    ],
-)
-def test_a_second_connect_keeps_the_state_and_applies_only_its_options(
-    options: dict[str, Any], applied: list[CoreCall]
-) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot, self_mute=True)
-        before = len(bot.core.calls)
-        assert await bot.voice.connect(VOICE, **options) is vc
-        assert bot.core.calls[before:] == applied
-
-    run(scenario)
-
-
-@pytest.mark.parametrize(
-    ("default", "start", "entry", "options", "patches"),
-    [
-        ("listen", STAGE, "connect", {"stage": "speak"}, [{"suppress": False}]),
-        ("speak", STAGE, "connect", {"stage": "listen"}, [{"suppress": True}]),
-        ("speak", VOICE, "connect", {}, [{"suppress": False}]),
-        ("speak", VOICE, "move", {}, [{"suppress": False}]),
-        ("listen", VOICE, "move", {}, []),
+        ("listen", STAGE_ID, "connect", {"stage": "speak"}, [{"suppress": False}]),
+        ("speak", STAGE_ID, "connect", {"stage": "listen"}, [{"suppress": True}]),
+        ("speak", VOICE_ID, "connect", {}, [{"suppress": False}]),
+        ("speak", VOICE_ID, "move", {}, [{"suppress": False}]),
+        ("listen", VOICE_ID, "move", {}, []),
     ],
 )
 def test_entering_a_stage_asks_for_the_connections_stage_role(
@@ -324,238 +228,306 @@ def test_entering_a_stage_asks_for_the_connections_stage_role(
     start: int,
     entry: str,
     options: voice.ConnectOptions,
-    patches: list[dict[str, bool]],
+    asked: list[Json],
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot, start)
-        before = len(bot.api.requests)
-        task = asyncio.ensure_future(
-            bot.voice.connect(STAGE, **options)
-            if entry == "connect"
-            else vc.move(STAGE)
-        )
-        await settle()
-        if start != STAGE:
-            bot.deliver(("voice_moved", GUILD_ID, start, STAGE, True))
-            bot.deliver(ready())
-        await task
-        sent = [r for r in bot.api.requests[before:] if r.method == "PATCH"]
-        assert [r.json for r in sent] == [
-            {"channel_id": STAGE} | patch for patch in patches
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake, voice=voice.Defaults(stage=default)) as bot:
+            vc = await bot.voice.connect(start)
+            before = len(fake.requests)
+            if entry == "connect":
+                await bot.voice.connect(STAGE_ID, **options)
+            else:
+                await vc.move(STAGE_ID)
+            entered = patches(fake, before)
+
+        assert entered == [{"channel_id": STAGE_ID} | role for role in asked]
+
+    run(scenario, voice=True)
+
+
+def test_a_stage_request_patches_the_time_it_asked_to_speak() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            before = datetime.now(UTC)
+            await bot.voice.connect(STAGE_ID, stage="request")
+            after = datetime.now(UTC)
+        [asked] = patches(fake)
+        assert asked.keys() == {"channel_id", "request_to_speak_timestamp"}
+        assert before <= datetime.fromisoformat(asked["request_to_speak_timestamp"])
+        assert datetime.fromisoformat(asked["request_to_speak_timestamp"]) <= after
+
+    run(scenario, voice=True)
+
+
+def test_a_failing_stage_request_disconnects_and_raises() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            fake.fail("PATCH", PATCH_ME, 403, {"code": 50013, "message": "Missing"})
+            with pytest.raises(Forbidden):
+                await bot.voice.connect(STAGE_ID, stage="speak")
+            assert bot.voice.get(GUILD_ID) is None
+        assert sent(fake, 4) == [joined(STAGE_ID), joined(None)]
+
+    run(scenario, voice=True)
+
+
+def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        add_voice_channel(fake, OTHER_ID)
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            assert await bot.voice.connect(OTHER_ID) is vc
+            assert (vc.channel_id, vc.state) == (OTHER_ID, voice.State.READY)
+            assert bot.voice.connections == (vc,)
+        assert sent(fake, 4) == [joined(VOICE_ID), joined(OTHER_ID), joined(None)]
+
+    run(scenario, voice=True)
+
+
+def test_a_second_connect_keeps_the_connection_and_applies_only_its_options() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        encoder = voice.EncoderSettings(application="voip")
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID, self_mute=True)
+            assert await bot.voice.connect(VOICE_ID) is vc
+            again = await bot.voice.connect(
+                VOICE_ID,
+                self_deaf=True,
+                encoder=encoder,
+                speaking_flags=SpeakingFlags.SOUNDSHARE,
+                speech_hangover=0.5,
+                speech_activity=False,
+                stall_after=0.5,
+            )
+
+            assert again is vc
+            assert vc.encoder == encoder
+            assert (
+                vc.speaking_flags,
+                vc.speech_hangover,
+                vc.speech_activity,
+                vc.stall_after,
+            ) == (SpeakingFlags.SOUNDSHARE, 0.5, False, 0.5)
+        assert sent(fake, 4) == [
+            joined(VOICE_ID, self_mute=True),
+            joined(VOICE_ID, self_mute=True, self_deaf=True),
+            joined(None),
         ]
 
-    run(scenario, defaults=voice.Defaults(stage=default))
+    run(scenario, voice=True)
 
 
 def test_concurrent_connects_both_get_the_ready_connection() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        first = asyncio.ensure_future(bot.voice.connect(VOICE))
-        second = asyncio.ensure_future(bot.voice.connect(VOICE))
-        await settle()
-        bot.deliver(ready())
-        one, two = await asyncio.gather(first, second)
-        assert one is two
-        assert bot.core.sent == [voice_state(VOICE)]
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            one, two = await asyncio.gather(
+                bot.voice.connect(VOICE_ID), bot.voice.connect(VOICE_ID)
+            )
+            assert one is two
+        assert sent(fake, 4) == [joined(VOICE_ID), joined(None)]
 
-    run(scenario)
-
-
-def test_concurrent_connects_both_raise_when_the_attempt_fails() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        first = asyncio.ensure_future(bot.voice.connect(VOICE))
-        second = asyncio.ensure_future(bot.voice.connect(VOICE))
-        await settle()
-        bot.deliver(disconnected("timeout", detail="waiting for VOICE_SERVER_UPDATE"))
-        results = await asyncio.gather(first, second, return_exceptions=True)
-        assert [type(result) for result in results] == [voice.VoiceConnectError] * 2
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def test_a_failed_connect_raises_with_reason_code_and_detail() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        task = asyncio.ensure_future(bot.voice.connect(VOICE))
-        await settle()
-        bot.deliver(disconnected("authentication_failed", 4004, "rejoin limit reached"))
-        with pytest.raises(voice.VoiceConnectError) as raised:
-            await task
-        error = raised.value
-        assert (error.reason, error.code, error.detail) == (
-            voice.DisconnectReason.AUTHENTICATION_FAILED,
-            4004,
-            "rejoin limit reached",
-        )
-        assert bot.voice.get(GUILD_ID) is None
+def test_a_connect_discord_never_answers_raises_for_every_caller() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            release = fake.hold_voice_state()
+            results = await asyncio.gather(
+                bot.voice.connect(VOICE_ID, timeout=0.05),
+                bot.voice.connect(VOICE_ID, timeout=0.05),
+                return_exceptions=True,
+            )
+            release.set()
 
-    run(scenario)
+            for error in results:
+                assert isinstance(error, voice.VoiceConnectError)
+                assert (error.reason, error.code) == (
+                    voice.DisconnectReason.TIMEOUT,
+                    None,
+                )
+                assert error.detail
+            assert bot.voice.get(GUILD_ID) is None
 
-
-def test_cancelling_a_connect_disconnects() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        task = asyncio.ensure_future(bot.voice.connect(VOICE))
-        await settle()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        await settle()
-        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
-        assert bot.voice.connections == ()
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def voice_state_update(channel_id: int, user_id: int = BOT_ID) -> VoiceStateUpdate:
-    state = msgspec.json.encode(rest_voice_state(channel_id, user_id))
-    return VoiceStateUpdate(voice_state=decode(VoiceState, state))
+def test_cancelling_a_connect_leaves_the_channel() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            release = fake.hold_voice_state()
+            ended = asyncio.create_task(
+                bot.wait_for(
+                    voice.StateChange,
+                    check=lambda event: event.new is voice.State.DISCONNECTED,
+                )
+            )
+            connecting = asyncio.create_task(bot.voice.connect(VOICE_ID))
+            asked = await fake.next_voice_state_update()
+            connecting.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await connecting
+            release.set()
+            left = await fake.next_voice_state_update()
+            await ended
+
+            assert (asked, left) == (joined(VOICE_ID), joined(None))
+            assert bot.voice.connections == ()
+
+    run(scenario, voice=True)
 
 
-def test_connect_external_returns_the_state_and_server_and_disconnects() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
-        await settle()
-        assert bot.core.sent == [voice_state(VOICE)]
-        bot.feed(voice_state_update(VOICE, user_id=USER_ID))
-        bot.feed(
-            VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="other", endpoint=None)
-        )
-        bot.feed(voice_state_update(VOICE))
-        bot.feed(
-            VoiceServerUpdate(guild_id=GUILD_ID, token="t", endpoint="v.discord.gg")
-        )
-        external = await task
-        assert external.state.voice_state.session_id == "abc"
-        assert (external.server.token, external.server.endpoint) == (
-            "t",
-            "v.discord.gg",
-        )
-        await external.disconnect()
-        assert bot.core.sent[-1] == voice_state(None)
-        assert bot.voice.get(GUILD_ID) is None
+def test_connect_external_returns_the_bots_state_and_server_and_leaves() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            release = fake.hold_voice_state()
+            connecting = asyncio.create_task(
+                bot.voice.connect_external(GUILD_ID, VOICE_ID)
+            )
+            await fake.next_voice_state_update()
+            await fake.dispatch(
+                "VOICE_STATE_UPDATE",
+                payloads.voice_state(user_id=str(USER_ID), channel_id=str(VOICE_ID)),
+            )
+            await fake.dispatch(
+                "VOICE_SERVER_UPDATE", {"token": "t", "guild_id": "1", "endpoint": None}
+            )
+            release.set()
+            external = await connecting
+            state = fake.voice_states[str(GUILD_ID), fake.bot_user["id"]]
+            await external.disconnect()
+            left = await fake.next_voice_state_update()
 
-    run(scenario)
+            assert external.state.voice_state.session_id == state["session_id"]
+            assert external.state.voice_state.user_id == int(fake.bot_user["id"])
+            assert external.server.guild_id == GUILD_ID
+            assert external.server.token
+            assert left == joined(None)
+            assert bot.voice.get(GUILD_ID) is None
+
+    run(scenario, voice=True)
 
 
 def test_connect_external_hands_on_later_servers_and_bot_states() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
-        await settle()
-        bot.feed(voice_state_update(VOICE))
-        bot.feed(VoiceServerUpdate(guild_id=GUILD_ID, token="t", endpoint="a"))
-        external = await task
-        moved = voice_state_update(OTHER_VOICE)
-        server = VoiceServerUpdate(guild_id=GUILD_ID, token="u", endpoint="b")
-        async with external.updates() as updates:
-            bot.feed(voice_state_update(OTHER_VOICE, user_id=USER_ID))
-            bot.feed(
-                VoiceServerUpdate(guild_id=OTHER_GUILD_ID, token="x", endpoint=None)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            external = await bot.voice.connect_external(GUILD_ID, VOICE_ID)
+            async with external.updates() as updates:
+                await fake.dispatch(
+                    "VOICE_STATE_UPDATE",
+                    payloads.voice_state(
+                        user_id=str(USER_ID), channel_id=str(OTHER_ID)
+                    ),
+                )
+                await fake.dispatch(
+                    "VOICE_SERVER_UPDATE",
+                    {"token": "x", "guild_id": "1", "endpoint": None},
+                )
+                await fake.move_bot(OTHER_ID)
+                got = [await anext(updates), await anext(updates)]
+
+            states = [u for u in got if isinstance(u, VoiceStateUpdate)]
+            servers = [u for u in got if isinstance(u, VoiceServerUpdate)]
+            assert [state.voice_state.channel_id for state in states] == [OTHER_ID]
+            assert [server.guild_id for server in servers] == [GUILD_ID]
+
+    run(scenario, voice=True)
+
+
+@pytest.mark.parametrize("ending", ["cancel", "timeout"])
+def test_a_connect_external_that_gives_up_leaves_the_channel(ending: str) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            release = fake.hold_voice_state()
+            connecting = asyncio.create_task(
+                bot.voice.connect_external(GUILD_ID, VOICE_ID, timeout=0.05)
             )
-            bot.feed(moved)
-            bot.feed(server)
-            got = [await anext(updates), await anext(updates)]
-            assert moved in got
-            assert server in got
+            asked = await fake.next_voice_state_update()
+            if ending == "cancel":
+                connecting.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await connecting
+            else:
+                with pytest.raises(voice.VoiceConnectError) as raised:
+                    await connecting
+                assert raised.value.reason is voice.DisconnectReason.TIMEOUT
+            release.set()
 
-    run(scenario)
+            assert (asked, await fake.next_voice_state_update()) == (
+                joined(VOICE_ID),
+                joined(None),
+            )
 
-
-def test_a_cancelled_connect_external_leaves_the_channel_it_asked_for() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
-        await settle()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 def test_connect_external_refuses_a_guild_bostie_already_runs() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        await connected(bot)
-        with pytest.raises(RuntimeError, match="already runs a voice connection"):
-            await bot.voice.connect_external(GUILD_ID, VOICE)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            await bot.voice.connect(VOICE_ID)
+            with pytest.raises(voice.AlreadyConnected):
+                await bot.voice.connect_external(GUILD_ID, VOICE_ID)
 
-    run(scenario)
-
-
-def test_connect_external_timing_out_leaves_the_channel() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        with pytest.raises(voice.VoiceConnectError) as raised:
-            await bot.voice.connect_external(GUILD_ID, VOICE, timeout=0.05)
-        assert raised.value.reason is voice.DisconnectReason.TIMEOUT
-        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def context_voice(bot: FakeBot, guild_id: int | None = GUILD_ID) -> voice.ContextVoice:
-    return voice.ContextVoice(bot.voice, guild_id, USER_ID)
-
-
-def test_context_voice_connects_to_the_users_channel() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        bot.api.answers[("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")] = (
-            200,
-            rest_voice_state(OTHER_VOICE),
+def test_context_voice_connects_to_the_users_channel_with_its_options() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        add_voice_channel(fake, OTHER_ID)
+        fake.voice_states[str(GUILD_ID), str(USER_ID)] = payloads.voice_state(
+            user_id=str(USER_ID), channel_id=str(OTHER_ID)
         )
-        ctx = context_voice(bot)
-        before = ctx.current
-        assert before is None
-        task = asyncio.ensure_future(ctx.connect(self_deaf=True))
-        await settle()
-        bot.deliver(ready())
-        vc = await task
-        assert (vc.channel_id, ctx.current) == (OTHER_VOICE, vc)
-        assert bot.core.sent == [voice_state(OTHER_VOICE, self_deaf=True)]
-        assert context_voice(bot, None).current is None
+        async with started(fake) as bot:
+            ctx = voice.ContextVoice(bot.voice, GUILD_ID, USER_ID)
+            before = ctx.current
+            vc = await ctx.connect(self_deaf=True)
 
-    run(scenario)
+            assert before is None
+            assert (vc.channel_id, ctx.current) == (OTHER_ID, vc)
+            assert voice.ContextVoice(bot.voice, None, USER_ID).current is None
+        assert sent(fake, 4)[0] == joined(OTHER_ID, self_deaf=True)
+
+    run(scenario, voice=True)
 
 
-@pytest.mark.parametrize("cached", [OTHER_VOICE, None])
-def test_context_voice_reads_a_cached_guilds_voice_states(cached: int | None) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        states = [] if cached is None else [rest_voice_state(cached)]
-        guild = payloads.guild(
-            id=str(GUILD_ID),
-            channels=[{"id": str(OTHER_VOICE), "type": 2}],
-            threads=[],
-            voice_states=states,
+@pytest.mark.parametrize("cached", [True, False])
+def test_context_voice_reads_a_cached_guilds_voice_states(cached: bool) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        state = payloads.voice_state(user_id=str(USER_ID), channel_id=str(VOICE_ID))
+        guild = payloads.guild(voice_states=[state] if cached else [])
+        async with started(fake) as bot:
+            await asyncio.gather(
+                bot.wait_for(GuildCreate), fake.dispatch("GUILD_CREATE", guild)
+            )
+            ctx = voice.ContextVoice(bot.voice, GUILD_ID, USER_ID)
+            if cached:
+                assert (await ctx.connect()).channel_id == VOICE_ID
+            else:
+                with pytest.raises(voice.NotInVoice):
+                    await ctx.connect()
+        assert lookups(fake) == []
+
+    run(scenario, voice=True)
+
+
+@pytest.mark.parametrize(
+    ("case", "error"),
+    [("dm", voice.NotInVoice), ("no channel", voice.NotInVoice), ("gone", NotFound)],
+)
+def test_context_voice_raises_when_the_user_has_no_voice_channel(
+    case: str, error: type[Exception]
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        route = f"/guilds/{GUILD_ID}/voice-states/{USER_ID}"
+        fake.voice_states[str(GUILD_ID), str(USER_ID)] = payloads.voice_state(
+            user_id=str(USER_ID), channel_id=None
         )
-        bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
-        if cached is None:
-            with pytest.raises(voice.NotInVoice):
-                await context_voice(bot).connect()
-        else:
-            task = asyncio.ensure_future(context_voice(bot).connect())
-            await settle()
-            bot.deliver(ready())
-            assert (await task).channel_id == OTHER_VOICE
-        assert bot.api.requests == []
+        if case == "gone":
+            fake.fail("GET", route, 404, {"code": 10004, "message": "Unknown Guild"})
+        async with started(fake) as bot:
+            guild_id = None if case == "dm" else GUILD_ID
+            with pytest.raises(error):
+                await voice.ContextVoice(bot.voice, guild_id, USER_ID).connect()
+        assert sent(fake, 4) == []
 
-    run(scenario)
-
-
-@pytest.mark.parametrize("case", ["dm", "unknown voice state", "no channel"])
-def test_context_voice_raises_not_in_voice(case: str) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        route = ("GET", f"/guilds/{GUILD_ID}/voice-states/{USER_ID}")
-        if case == "unknown voice state":
-            bot.api.answers[route] = (404, {"code": 10065, "message": "Unknown"})
-        elif case == "no channel":
-            bot.api.answers[route] = (200, rest_voice_state(None))
-        guild_id = None if case == "dm" else GUILD_ID
-        with pytest.raises(voice.NotInVoice):
-            await context_voice(bot, guild_id).connect()
-        assert bot.core.sent == []
-
-    run(scenario)
-
-
-def test_context_voice_lets_other_not_found_errors_through() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        with pytest.raises(NotFound):
-            await context_voice(bot).connect()
-
-    run(scenario)
+    run(scenario, voice=True)

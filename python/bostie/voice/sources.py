@@ -6,15 +6,16 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol, Self, override
+from typing import TYPE_CHECKING, Self, override
 from urllib.parse import urlsplit
 
 from bostie.errors import SourceError, StateError
 from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE, Format, Opus
 
 if TYPE_CHECKING:
+    from bostie import _native
     from bostie.voice._link import Handle
-    from bostie.voice.connection import VoiceCore, VoiceManager
+    from bostie.voice.connection import VoiceManager
 
 PLAYS_ONCE = "a Source plays once; create a new one"
 NATIVE_PCM = PCM(SAMPLE_RATE, 2, "f32le")
@@ -35,17 +36,6 @@ class Tags:
     title: str | None = None
     artist: str | None = None
     album: str | None = None
-
-
-class NativeSource(Protocol):
-    @property
-    def id(self) -> int: ...
-    def info(self) -> tuple[Literal["pcm", "opus"], float | None, bool] | None: ...
-    def tags(self) -> tuple[str | None, str | None, str | None]: ...
-    def read(self) -> list[bytes] | None: ...
-    def error(self) -> str | None: ...
-    def seek(self, position: float) -> None: ...
-    def close(self) -> None: ...
 
 
 class Source(ABC):
@@ -115,13 +105,13 @@ class Source(ABC):
 
 class _DecodedSource(Source):
     def __init__(self) -> None:
-        self._native: NativeSource | None = None
+        self._native: _native.Source | None = None
         self._handle: Handle | None = None
         self._chunks: deque[bytes] = deque()
         self._closed = False
 
     @abstractmethod
-    def _create(self, core: "VoiceCore") -> NativeSource: ...
+    def _create(self, core: "_native.Core") -> "_native.Source": ...
 
     @override
     async def open(self, manager: "VoiceManager") -> None:
@@ -180,7 +170,7 @@ class _DecodedSource(Source):
         if self._handle is not None:
             self._handle.close()
 
-    def _opened(self) -> tuple[NativeSource, "Handle"]:
+    def _opened(self) -> tuple["_native.Source", "Handle"]:
         if self._native is None or self._handle is None or self._format is None:
             raise StateError("open() the source first")
         return self._native, self._handle
@@ -194,7 +184,7 @@ class File(_DecodedSource):
         self._path = os.fspath(path)
 
     @override
-    def _create(self, core: "VoiceCore") -> NativeSource:
+    def _create(self, core: "_native.Core") -> "_native.Source":
         return core.voice_file(self._path)
 
     @override
@@ -215,7 +205,7 @@ class Bytes(_DecodedSource):
         self._hint = hint
 
     @override
-    def _create(self, core: "VoiceCore") -> NativeSource:
+    def _create(self, core: "_native.Core") -> "_native.Source":
         return core.voice_bytes(self._data, self._hint)
 
     @override
@@ -236,7 +226,7 @@ class Url(_DecodedSource):
         self._headers = dict(headers or {})
 
     @override
-    def _create(self, core: "VoiceCore") -> NativeSource:
+    def _create(self, core: "_native.Core") -> "_native.Source":
         return core.voice_url(self._url, list(self._headers.items()))
 
     @override

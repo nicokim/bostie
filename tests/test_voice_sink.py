@@ -1,424 +1,379 @@
 import array
 import asyncio
-from types import SimpleNamespace
+import contextlib
+import hashlib
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from voice_fakes import (
-    ELSEWHERE,
-    OTHER_GUILD_ID,
-    FakeBot,
-    FakeSink,
-    connected,
-    disconnected,
-    run,
-)
 
-from bostie import voice
+from bostie import Bot, voice
 from bostie.errors import BufferFull, SinkClosed
-from bostie.testing import settle
-from bostie.voice import encoder as encoder_module
-from bostie.voice.sink import Sink
+from bostie.testing import FakeDiscord, Packet, payloads, run, running, settle
+from bostie.voice.sink import _piece_bytes
 
+GUILD_ID = int(payloads.voice_channel()["guild_id"])
+VOICE_ID = int(payloads.voice_channel()["id"])
+ELSEWHERE_ID = VOICE_ID + 2
 SECOND = 48_000 * 2 * 2
+SAMPLE = b"\x00\x00\x00\x00"
+SILENCE = b"\xf8\xff\xfe"
+SILENT_TAIL = [SILENCE] * 5
+NOISE = hashlib.shake_256(b"noise").digest(SECOND)
 
 
-async def open_sink(bot: FakeBot, *args: Any, **options: Any) -> tuple[Sink, FakeSink]:
-    vc = await connected(bot)
-    sink = vc.sink(*args, **options)
-    return sink, bot.core.sinks[-1]
+@contextlib.asynccontextmanager
+async def started(fake: FakeDiscord, **options: Any) -> AsyncIterator[Bot]:
+    bot = Bot(api_url=fake.api_url, **options)
+    async with running(bot, fake):
+        yield bot
 
 
-async def consume(native: FakeSink, step: float = 0.02) -> None:
+@contextlib.asynccontextmanager
+async def connected(fake: FakeDiscord) -> AsyncIterator[voice.VoiceConnection]:
+    async with started(fake) as bot:
+        yield await bot.voice.connect(VOICE_ID)
+
+
+async def played(fake: FakeDiscord) -> list[Packet]:
+    count = len(SILENT_TAIL)
     while True:
-        await asyncio.sleep(0)
-        native.pull(step)
+        packets = await fake.voice.wait_for_packets(count)
+        if [packet.payload for packet in packets[-len(SILENT_TAIL) :]] == SILENT_TAIL:
+            return packets
+        count += 1
+
+
+async def reached(marker: voice.Marker) -> bool:
+    return await marker
 
 
 def test_sinks_take_buffer_and_stall_from_the_defaults_unless_given() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        vc.sink()
-        vc.sink(voice.PCM(24_000, 1, "f32le"), buffer=0.5, volume=0.3, stall="hold")
-        vc.sink(voice.Opus())
-        assert [call[2] for call in bot.calls("voice_sink")] == [
-            {
-                "kind": "pcm",
-                "rate": 48_000,
-                "channels": 2,
-                "sample": "s16le",
-                "buffer": 0.4,
-                "volume": 1.0,
-                "stall": "drop",
-                "after": None,
-                "crossfade": 0.0,
-            },
-            {
-                "kind": "pcm",
-                "rate": 24_000,
-                "channels": 1,
-                "sample": "f32le",
-                "buffer": 0.5,
-                "volume": 0.3,
-                "stall": "hold",
-                "after": None,
-                "crossfade": 0.0,
-            },
-            {
-                "kind": "opus",
-                "rate": 48_000,
-                "channels": 2,
-                "sample": "s16le",
-                "buffer": 0.4,
-                "volume": 1.0,
-                "stall": "drop",
-                "after": None,
-                "crossfade": 0.0,
-            },
-        ]
+    async def scenario(fake: FakeDiscord) -> None:
+        defaults = voice.Defaults(sink_buffer=0.4, stall="drop")
+        async with started(fake, voice=defaults) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            sinks = [
+                vc.sink(),
+                vc.sink(
+                    voice.PCM(24_000, 1, "f32le"), buffer=0.5, volume=0.3, stall="hold"
+                ),
+                vc.sink(voice.Opus()),
+            ]
 
-    run(scenario, defaults=voice.Defaults(sink_buffer=0.4, stall="drop"))
+            assert [
+                (out.format, out.buffer, out.stall, out.volume) for out in sinks
+            ] == [
+                (voice.PCM(), 0.4, "drop", 1.0),
+                (voice.PCM(24_000, 1, "f32le"), 0.5, "hold", 0.3),
+                (voice.Opus(), 0.4, "drop", 1.0),
+            ]
+
+    run(scenario, voice=True)
 
 
-def test_write_waits_while_full_and_resumes_on_the_wake() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=0.2)
-        writing = asyncio.ensure_future(sink.write(bytes(int(SECOND * 0.3))))
-        await settle()
-        assert not writing.done()
-        assert native.written == pytest.approx(0.2)
-        native.pull(0.1)
-        await writing
-        assert native.written == pytest.approx(0.3)
+def test_write_waits_while_full_and_resumes_as_the_sink_plays() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=0.2)
+            writing = asyncio.create_task(out.write(bytes(int(SECOND * 0.3))))
+            await settle()
+            waited = not writing.done()
+            await writing
 
-    run(scenario)
+            assert waited
+            assert out.queued <= 0.2
+
+    run(scenario, voice=True)
 
 
 def test_one_wake_resumes_every_waiter_even_if_another_was_cancelled() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=0.2)
-        await sink.write(bytes(int(SECOND * 0.2)))
-        first = asyncio.ensure_future(sink.write(b"\x01\x00\x01\x00"))
-        second = asyncio.ensure_future(sink.write(b"\x02\x00\x02\x00"))
-        cancelled = asyncio.ensure_future(sink.write(b"\x03\x00\x03\x00"))
-        await settle()
-        cancelled.cancel()
-        native.pull(0.1)
-        await asyncio.gather(first, second)
-        assert native.writes[-2:] == [b"\x01\x00\x01\x00", b"\x02\x00\x02\x00"]
-        assert cancelled.cancelled()
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=0.1)
+            out.write_nowait(bytes(SECOND // 5))
+            first = asyncio.create_task(out.write(SAMPLE))
+            second = asyncio.create_task(out.write(SAMPLE))
+            cancelled = asyncio.create_task(out.write(SAMPLE))
+            await settle()
+            waited = not (first.done() or second.done())
+            cancelled.cancel()
+            await asyncio.gather(first, second)
 
-    run(scenario)
+            assert waited
+            assert cancelled.cancelled()
+
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize(
-    ("format", "buffer", "size", "pieces"),
+    ("format", "buffer", "piece"),
     [
-        (voice.PCM(44_100, 1), 0.2, 10_000, [4410, 4410, 1180]),
-        (voice.PCM(), 0.04, 5000, [3840, 1160]),
-        (voice.PCM(44_100, 1, "f32le"), 0.2, 20_000, [8820, 8820, 2360]),
+        (voice.PCM(44_100, 1), 0.2, 2205 * 2),
+        (voice.PCM(), 0.04, 960 * 4),
+        (voice.PCM(44_100, 1, "f32le"), 0.2, 2205 * 4),
+        (voice.Opus(), 0.2, 0),
     ],
 )
 def test_pieces_are_20_ms_or_a_quarter_buffer_in_whole_sample_frames(
-    format: voice.PCM, buffer: float, size: int, pieces: list[int]
+    format: voice.Format, buffer: float, piece: int
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, format, buffer=buffer)
-        await sink.write(bytes(size))
-        assert [len(write) for write in native.writes] == pieces
-
-    run(scenario)
+    assert _piece_bytes(format, buffer) == piece
 
 
-def test_opus_writes_go_to_the_native_sink_whole() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, voice.Opus(), buffer=0.02)
-        packet = bytes(range(256)) * 20
-        await sink.write(packet)
-        assert native.writes == [packet]
+def test_an_opus_write_reaches_discord_as_one_packet() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        packet = voice.OpusEncoder().encode(NOISE[:3840])[0]
+        async with connected(fake) as vc:
+            async with vc.sink(voice.Opus(), buffer=0.02) as out:
+                await out.write(packet)
+            packets = await played(fake)
 
-    run(scenario)
+        assert [p.payload for p in packets] == [packet, *SILENT_TAIL]
+
+    run(scenario, voice=True)
 
 
 def test_any_c_contiguous_buffer_is_accepted_without_tobytes() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot)
-        samples = array.array("h", [1, -1, 2, -2])
-        data = bytes(samples)
-        await sink.write(data)
-        await sink.write(bytearray(data))
-        await sink.write(memoryview(b"xx" + data + b"yy")[2:-2])
-        await sink.write(samples)
-        sink.write_nowait(samples)
-        assert native.writes == [data] * 5
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=1.0)
+            samples = array.array("h", [1, -1, 2, -2])
+            data = bytes(samples)
+            await out.write(data)
+            await out.write(bytearray(data))
+            await out.write(memoryview(b"xx" + data + b"yy")[2:-2])
+            await out.write(samples)
+            out.write_nowait(samples)
 
-    run(scenario)
+            assert await out.drain()
+
+    run(scenario, voice=True)
 
 
 def test_write_nowait_writes_the_whole_chunk_or_raises_buffer_full() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=0.2)
-        sink.write_nowait(bytes(SECOND))
-        assert [len(write) for write in native.writes] == [SECOND]
-        with pytest.raises(BufferFull):
-            sink.write_nowait(b"\x00\x00\x00\x00")
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=0.2)
+            out.write_nowait(bytes(SECOND))
 
-    run(scenario)
+            assert out.queued > 0.5
+            with pytest.raises(BufferFull):
+                out.write_nowait(SAMPLE)
+
+    run(scenario, voice=True)
 
 
 def test_a_closed_sink_raises_sink_closed_and_ignores_the_rest() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, _ = await open_sink(bot)
-        sink.close()
-        with pytest.raises(SinkClosed):
-            await sink.write(b"\x00\x00\x00\x00")
-        with pytest.raises(SinkClosed):
-            sink.write_nowait(b"")
-        with pytest.raises(SinkClosed):
-            await sink.mark()
-        sink.clear()
-        sink.volume = 0.5
-        sink.close()
-        assert await sink.drain() is False
-        assert (sink.closed, sink.queued, sink.passthrough) == (True, 0.0, False)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink()
+            out.close()
+            with pytest.raises(SinkClosed):
+                await out.write(SAMPLE)
+            with pytest.raises(SinkClosed):
+                out.write_nowait(b"")
+            with pytest.raises(SinkClosed):
+                await out.mark()
+            out.clear()
+            out.volume = 0.5
+            out.close()
 
-    run(scenario)
+            assert await out.drain() is False
+            assert (out.closed, out.queued, out.passthrough) == (True, 0.0, False)
 
-
-def test_a_native_runtime_error_is_left_as_it_is() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot)
-        native.failure = RuntimeError("the process forked")
-        with pytest.raises(RuntimeError, match="forked"):
-            await sink.write(b"\x00\x00\x00\x00")
-        assert not sink.closed
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
 def test_ending_the_connection_closes_its_sinks_and_frees_their_waiters() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, _ = await open_sink(bot, buffer=0.2)
-        await sink.write(bytes(int(SECOND * 0.2)))
-        marker = sink.mark()
-        blocked = asyncio.ensure_future(sink.write(bytes(SECOND)))
-        await settle()
-        bot.deliver(disconnected("removed"))
-        with pytest.raises(SinkClosed):
-            await blocked
-        assert await marker is False
-        assert sink.closed
-        assert bot.voice.link._handles == {}
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=0.2)
+            out.write_nowait(bytes(SECOND))
+            marker = out.mark()
+            blocked = asyncio.create_task(out.write(bytes(SECOND)))
+            await settle()
+            await fake.kick_bot()
 
-    run(scenario)
+            with pytest.raises(SinkClosed):
+                await blocked
+            assert await marker is False
+            assert out.closed
+
+    run(scenario, voice=True)
 
 
-def test_a_sink_after_another_passes_its_handle_unless_that_one_closed() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        first = vc.sink()
-        vc.sink(after=first)
-        first.close()
-        vc.sink(after=first)
-        assert [call[2]["after"] for call in bot.calls("voice_sink")] == [
-            None,
-            bot.core.sinks[0].id,
-            None,
-        ]
-        other = await connected(bot, ELSEWHERE, OTHER_GUILD_ID)
-        with pytest.raises(ValueError, match="this connection"):
-            other.sink(after=vc.sink())
+def test_after_must_be_an_open_sink_of_this_connection() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.channels[str(ELSEWHERE_ID)] = payloads.voice_channel(
+            id=str(ELSEWHERE_ID), guild_id=str(GUILD_ID + 1)
+        )
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            other = await bot.voice.connect(ELSEWHERE_ID)
+            first = vc.sink()
+            first.close()
 
-    run(scenario)
+            assert not vc.sink(after=first).closed
+            with pytest.raises(ValueError, match="this connection"):
+                other.sink(after=vc.sink())
+
+    run(scenario, voice=True)
 
 
 def test_vc_sinks_lists_the_open_sinks_and_stop_closes_them_all() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        first, second = vc.sink(), vc.sink(voice.Opus())
-        assert vc.sinks == (first, second)
-        vc.stop()
-        assert [first.closed, second.closed, len(vc.sinks)] == [True, True, 0]
-        assert all(native.closed for native in bot.core.sinks)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            first, second = vc.sink(), vc.sink(voice.Opus())
+            listed = vc.sinks
+            vc.stop()
 
-    run(scenario)
+            assert listed == (first, second)
+            assert (first.closed, second.closed, vc.sinks) == (True, True, ())
 
-
-def test_close_succeeds_when_the_core_already_closed_the_sink() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot)
-        native.close()
-        sink.close()
-        assert sink.closed
-        assert bot.voice.link._handles == {}
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def test_drain_flushes_and_returns_whether_everything_played() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot)
-        await sink.write(bytes(SECOND // 10))
-        draining = asyncio.ensure_future(sink.drain())
-        await settle()
-        assert native.flushes == 1
-        native.pull(0.1)
-        assert await draining is True
-        await sink.write(bytes(SECOND // 10))
-        draining = asyncio.ensure_future(sink.drain())
-        await settle()
-        sink.clear()
-        assert await draining is False
+def test_drain_returns_whether_everything_played() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink()
+            await out.write(bytes(SECOND // 10))
+            played_out = await out.drain()
+            await out.write(bytes(SECOND // 10))
+            draining = asyncio.create_task(out.drain())
+            await settle()
+            out.clear()
 
-    run(scenario)
+            assert (played_out, await draining) == (True, False)
+
+    run(scenario, voice=True)
 
 
 def test_markers_report_seconds_and_survive_a_cancelled_wait() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=1.0)
-        await sink.write(bytes(SECOND // 4))
-        marker = sink.mark()
-        assert marker.position == pytest.approx(0.25)
-        first = asyncio.ensure_future(marker)
-        second = asyncio.ensure_future(marker)
-        await settle()
-        first.cancel()
-        await settle()
-        assert not marker.done()
-        native.pull(0.25)
-        assert await second is True
-        assert marker.done()
-        assert await marker is True
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=1.0)
+            await out.write(bytes(SECOND // 5))
+            marker = out.mark()
+            first = asyncio.create_task(reached(marker))
+            second = asyncio.create_task(reached(marker))
+            await settle()
+            first.cancel()
+            await settle()
+            pending = not marker.done()
 
-    run(scenario)
+            assert marker.position == 0.2
+            assert pending
+            assert await second is True
+            assert marker.done()
+            assert await marker is True
+
+    run(scenario, voice=True)
 
 
-def test_clear_until_or_since_a_marker_passes_its_id() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot)
-        await sink.write(bytes(SECOND // 10))
-        marker = sink.mark()
-        sink.clear(until=marker)
-        sink.clear(since=marker)
-        sink.clear()
-        assert native.clears == [marker.id, None, None]
-        assert native.since == [None, marker.id, None]
-        with pytest.raises(ValueError, match="not both"):
-            sink.clear(until=marker, since=marker)
+def test_clear_drops_the_audio_before_until_or_after_since() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=2.0)
+            tenth = bytes(SECOND // 10)
+            out.write_nowait(tenth)
+            first = out.mark()
+            out.write_nowait(tenth)
+            second = out.mark()
+            out.clear(since=first)
+            kept = (await first, await second)
+            out.write_nowait(tenth)
+            third = out.mark()
+            out.write_nowait(tenth)
+            fourth = out.mark()
+            out.clear(until=third)
 
-    run(scenario)
+            assert kept == (True, False)
+            assert (await third, await fourth) == (False, True)
+            with pytest.raises(ValueError, match="not both"):
+                out.clear(until=third, since=third)
+
+    run(scenario, voice=True)
 
 
 def test_async_with_drains_then_closes_on_a_normal_exit() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
-        consumer: asyncio.Future[None] | None = None
-        async with vc.sink() as out:
-            native = bot.core.sinks[-1]
-            await out.write(bytes(SECOND // 10))
-            consumer = asyncio.ensure_future(consume(native))
-        consumer.cancel()
-        assert (native.flushes, native.clears, native.closed) == (1, [], True)
-        assert out.closed
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            async with vc.sink() as out:
+                await out.write(bytes(SECOND // 10))
+            packets = await played(fake)
 
-    run(scenario)
+            assert out.closed
+            assert len(packets) == 5 + len(SILENT_TAIL)
+
+    run(scenario, voice=True)
 
 
 @pytest.mark.parametrize("ending", [ValueError, asyncio.CancelledError])
-def test_async_with_clears_then_closes_when_the_block_raises(
+def test_async_with_discards_the_audio_when_the_block_raises(
     ending: type[BaseException],
 ) -> None:
-    async def scenario(bot: FakeBot) -> None:
-        vc = await connected(bot)
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=2.0)
 
-        async def write_then_end() -> None:
-            async with vc.sink() as out:
-                await out.write(bytes(SECOND // 10))
-                raise ending
+            async def write_then_end() -> None:
+                async with out:
+                    out.write_nowait(bytes(SECOND))
+                    await fake.voice.wait_for_packets(1)
+                    raise ending
 
-        with pytest.raises(ending):
-            await write_then_end()
-        native = bot.core.sinks[-1]
-        assert (native.flushes, native.clears, native.closed) == (0, [None], True)
+            with pytest.raises(ending):
+                await write_then_end()
+            packets = await played(fake)
 
-    run(scenario)
+            assert out.closed
+            assert len(packets) < 25
 
-
-def test_volume_and_filters_go_to_the_native_sink() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, volume=0.8)
-        assert (sink.volume, sink.filters, native.filters) == (
-            0.8,
-            voice.Filters(),
-            None,
-        )
-        sink.volume = 0.25
-        assert (sink.volume, native.volume) == (0.25, 0.25)
-        nightcore = voice.Filters(equalizer={60: 3.0}, bass=2.0, speed=1.25, pitch=1.25)
-        sink.filters = nightcore
-        assert (sink.filters, native.filters) == (
-            nightcore,
-            ([(60, 3.0)], 2.0, 1.25, 1.25),
-        )
-        _, opened = await open_sink(bot, filters=voice.Filters(speed=0.5))
-        assert opened.filters == ([], 0.0, 0.5, 1.0)
-
-    run(scenario)
+    run(scenario, voice=True)
 
 
-def test_stats_are_in_seconds_and_keep_their_last_value_after_close() -> None:
-    async def scenario(bot: FakeBot) -> None:
-        sink, native = await open_sink(bot, buffer=1.0)
-        await sink.write(bytes(SECOND // 2))
-        native.pull(0.5)
-        native.counters = (24_000, 2, 3, 4800, 7)
-        expected = voice.SinkStats(0.5, 0.5, 2, 3, 0.1, 7)
-        assert sink.stats() == expected
-        sink.close()
-        assert sink.stats() == expected
+def test_volume_and_filters_are_kept_on_the_sink() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(volume=0.8)
+            opened = (out.volume, out.filters)
+            nightcore = voice.Filters(
+                equalizer={60: 3.0}, bass=2.0, speed=1.25, pitch=1.25
+            )
+            out.volume = 0.25
+            out.filters = nightcore
+            slow = vc.sink(filters=voice.Filters(speed=0.5))
 
-    run(scenario)
+            assert opened == (0.8, voice.Filters())
+            assert (out.volume, out.filters) == (0.25, nightcore)
+            assert slow.filters == voice.Filters(speed=0.5)
+
+    run(scenario, voice=True)
 
 
-def test_opus_encoder_fills_in_64_kbps_and_whole_percents(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    created: list[dict[str, Any]] = []
+def test_stats_keep_their_last_value_after_close() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with connected(fake) as vc:
+            out = vc.sink(buffer=1.0)
+            await out.write(bytes(SECOND // 10))
+            await out.drain()
+            stats = out.stats()
+            out.close()
 
-    class NativeEncoder:
-        def __init__(self, **options: Any) -> None:
-            created.append(options)
+            assert (stats.sent, stats.position) == (0.1, 0.1)
+            assert out.stats() == stats
 
-    monkeypatch.setattr(
-        encoder_module, "_native", SimpleNamespace(OpusEncoder=NativeEncoder)
+    run(scenario, voice=True)
+
+
+def test_an_encoder_without_a_bitrate_encodes_at_64_kbps() -> None:
+    default = voice.OpusEncoder().encode(NOISE)
+    chosen = voice.OpusEncoder(encoder=voice.EncoderSettings(bitrate=24_000)).encode(
+        NOISE
     )
-    voice.OpusEncoder(voice.PCM(24_000, 1))
-    voice.OpusEncoder(
-        encoder=voice.EncoderSettings(
-            bitrate=96_000,
-            application="voip",
-            fec=False,
-            packet_loss=0.29,
-            complexity=0,
-        )
-    )
-    assert created == [
-        {
-            "rate": 24_000,
-            "channels": 1,
-            "sample": "s16le",
-            "encoder": voice.EncoderSettings(bitrate=64_000),
-        },
-        {
-            "rate": 48_000,
-            "channels": 2,
-            "sample": "s16le",
-            "encoder": voice.EncoderSettings(
-                bitrate=96_000,
-                application="voip",
-                fec=False,
-                packet_loss=0.29,
-                complexity=0,
-            ),
-        },
-    ]
+
+    assert len(default) == len(chosen) == 50
+    assert sum(map(len, default)) * 8 == pytest.approx(64_000, rel=0.15)
+    assert sum(map(len, chosen)) * 8 == pytest.approx(24_000, rel=0.15)
