@@ -4,7 +4,8 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self, assert_never, cast
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Final, Self, assert_never, cast
 
 from bostie.enums import ClosedReason, State
 from bostie.errors import BostieError, Empty, ReceiverClosed
@@ -53,16 +54,16 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
         overflow: Overflow,
         stall: ReceiveStall,
     ) -> None:
-        self.format = format
-        self.users = users
-        self.exclude = exclude
-        self.include_self = include_self
-        self.buffer = buffer
-        self.jitter = jitter
-        self.markers = markers
-        self.mix = mix
-        self.overflow = overflow
-        self.stall = stall
+        self.format: Final = format
+        self.users: Final = users
+        self.exclude: Final = exclude
+        self.include_self: Final = include_self
+        self.buffer: Final = buffer
+        self.jitter: Final = jitter
+        self.markers: Final = markers
+        self.mix: Final = mix
+        self.overflow: Final = overflow
+        self.stall: Final = stall
         self._connection = connection
         self._native = native
         self._handle = handle
@@ -113,7 +114,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
             future = asyncio.get_running_loop().create_future()
             future.set_result(False)
             return future
-        return self._handle.marker(self._native.mark())
+        return asyncio.shield(self._handle.marker(self._native.mark()))
 
     def close(self) -> None:
         """Stop receiving and discard what is queued."""
@@ -147,7 +148,12 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *exc: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
     def _read(self) -> int:

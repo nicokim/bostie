@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self, Unpack, cast, override
 
 import pytest
 
-from bostie.enums import State
+from bostie.enums import EndReason, State
 from bostie.errors import (
     SinkClosed,
     SourceError,
@@ -25,7 +25,7 @@ from bostie.voice.formats import (
     Opus,
     SinkOptions,
 )
-from bostie.voice.player import EndReason, Queue, Track
+from bostie.voice.player import Queue, Track
 
 FRAME = 0.02
 SETTLE = 20

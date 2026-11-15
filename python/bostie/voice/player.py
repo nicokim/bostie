@@ -5,11 +5,11 @@ import random
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
-from enum import Enum, StrEnum, auto
+from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, Literal, Unpack
 
 from bostie._aio import spawn
-from bostie.enums import State
+from bostie.enums import EndReason, State
 from bostie.errors import SinkClosed, SourceError, StateError, VoiceNotConnected
 from bostie.models.base import check_keys
 from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
@@ -35,13 +35,6 @@ if TYPE_CHECKING:
 log = logging.getLogger("bostie.voice")
 
 type Loop = Literal["track", "queue"] | None
-
-
-class EndReason(StrEnum):
-    FINISHED = "finished"
-    STOPPED = "stopped"
-    ERROR = "error"
-    CLEANUP = "cleanup"
 
 
 @dataclass(frozen=True, slots=True)

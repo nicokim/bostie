@@ -6,7 +6,7 @@ import string
 import wave
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, TracebackType
 from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
 from bostie.errors import Empty, ReceiverClosed
@@ -22,25 +22,25 @@ if TYPE_CHECKING:
 log = logging.getLogger("bostie.voice")
 
 SILENCE = b"\xf8\xff\xfe"
-SILENCE_SAMPLES = 960
+SAMPLES_PER_PACKET = 960
 TEMPLATE_FIELDS = frozenset({"guild_id", "user_id"})
 
 
 class _OggFile:
     def __init__(self, file: BinaryIO, serial: int, *, encode: bool) -> None:
         self.file = file
-        self.stream = OggStream(file, serial)
+        self.stream = OggStream(serial)
         self.encoder = OpusEncoder() if encode else None
 
     def add(self, frame: Frame, *, align: bool) -> bytes:
         stream = self.stream
         if self.encoder is not None:
             for packet in self.encoder.encode(frame.data):
-                stream.add(packet, SILENCE_SAMPLES)
+                stream.add(packet, SAMPLES_PER_PACKET)
         elif not frame.lost and len(frame.data) <= MAX_PACKET:
             if align:
-                gap = round((frame.offset - stream.granule) / SILENCE_SAMPLES)
-                stream.add(SILENCE, SILENCE_SAMPLES, max(gap, 0))
+                gap = round((frame.offset - stream.granule) / SAMPLES_PER_PACKET)
+                stream.add(SILENCE, SAMPLES_PER_PACKET, max(gap, 0))
             stream.add(frame.data, frame.samples)
         return stream.take()
 
@@ -51,7 +51,7 @@ class _OggFile:
     def close(self) -> None:
         with self.file:
             for packet in [] if self.encoder is None else self.encoder.flush():
-                self.stream.add(packet, SILENCE_SAMPLES)
+                self.stream.add(packet, SAMPLES_PER_PACKET)
             self.stream.flush(END_OF_STREAM)
             self.file.write(self.stream.take())
 
@@ -130,18 +130,15 @@ class Recorder:
         self._stopping: asyncio.Future[None] = (
             asyncio.get_running_loop().create_future()
         )
-        receiving: dict[str, Any] = {
-            "users": users,
-            "exclude": exclude,
-            "include_self": include_self,
-            "buffer": buffer,
-            "jitter": jitter,
-            "stall": "wait",
-        }
-        if self._wav or mix:
-            receiving["mix"] = mix
         self._rx: Receiver[Frame] = vc.receive(
-            self._format if self._wav or mix else Opus(), **receiving
+            self._format if self._wav or mix else Opus(),
+            users=users,
+            exclude=exclude,
+            include_self=include_self,
+            buffer=buffer,
+            jitter=jitter,
+            stall="wait",
+            mix=mix,
         )
         self._task = asyncio.create_task(self._record())
 
@@ -169,7 +166,12 @@ class Recorder:
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *exc: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         await self.stop()
 
     async def _record(self) -> None:

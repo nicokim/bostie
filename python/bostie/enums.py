@@ -1325,3 +1325,12 @@ class ClosedReason(StrEnum):
     DISCONNECTED = "disconnected"
     MOVED = "moved"
     RECONNECTING = "reconnecting"
+
+
+class EndReason(StrEnum):
+    """How a track ended: it finished, was stopped, failed, or its connection ended."""
+
+    FINISHED = "finished"
+    STOPPED = "stopped"
+    ERROR = "error"
+    CLEANUP = "cleanup"

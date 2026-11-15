@@ -9,11 +9,11 @@ from bostie.enums import (
     SpeakingFlags,
     State,
 )
+from bostie.voice.formats import SAMPLE_RATE
 
 if TYPE_CHECKING:
     from bostie._native import RtcpPacketItem
 
-RTP_RATE = 48_000
 DELAY_UNITS = 65_536
 
 
@@ -148,7 +148,7 @@ class RtcpPacket(VoiceEvent, kw_only=True):
                 fraction / 256,
                 lost,
                 highest,
-                jitter / RTP_RATE,
+                jitter / SAMPLE_RATE,
                 last,
                 delay / DELAY_UNITS,
             )

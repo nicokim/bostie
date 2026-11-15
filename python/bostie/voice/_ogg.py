@@ -1,7 +1,6 @@
 import math
 import struct
 import zlib
-from typing import BinaryIO
 
 from bostie.voice.formats import SAMPLE_RATE
 
@@ -18,8 +17,7 @@ REVERSED_BITS = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
 class OggStream:
     """The Ogg pages of one Opus stream, OpusHead and OpusTags first."""
 
-    def __init__(self, file: BinaryIO, serial: int) -> None:
-        self.file = file
+    def __init__(self, serial: int) -> None:
         self.serial = serial
         self.sequence = 0
         self.granule = 0

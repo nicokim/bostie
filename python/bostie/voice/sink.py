@@ -2,7 +2,8 @@ import asyncio
 import contextlib
 from collections.abc import Buffer, Callable, Generator, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Final, Self
 
 from bostie.errors import BostieError, BufferFull, SinkClosed
 from bostie.voice.formats import (
@@ -69,10 +70,10 @@ class Sink:
         on_audio: Callable[[], None],
         on_close: Callable[["Sink"], None],
     ) -> None:
-        self.format = format
-        self.buffer = buffer
-        self.stall = stall
-        self.crossfade = crossfade
+        self.format: Final = format
+        self.buffer: Final = buffer
+        self.stall: Final = stall
+        self.crossfade: Final = crossfade
         self._native = native
         self._handle = handle
         self._room = handle.woken
@@ -183,18 +184,17 @@ class Sink:
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *exc: object) -> None:
-        drained = False
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         try:
-            if exc[0] is None:
+            if exc_type is None:
                 await self.drain()
-                drained = True
         finally:
-            try:
-                if not drained:
-                    self.clear()
-            finally:
-                self.close()
+            self.close()
 
     def _check_open(self) -> None:
         if self._handle.closed:

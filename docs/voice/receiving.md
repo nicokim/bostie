@@ -43,7 +43,7 @@ The settings are the `voice.ReceiveOptions` of `vc.receive`, or `voice.PacketRec
 - `rx.get_nowait()` returns the next item, or raises `voice.Empty` when nothing is queued and `voice.ReceiverClosed` when the receiver ended.
 - `rx.queued` is how long the oldest queued item has waited: the consumer's lag.
 - `rx.clear()` drops everything queued and continues live.
-- `await rx.mark()` returns `True` once the audio received before the call is queued or dropped, or `False` after 1.2 seconds plus twice the jitter.
+- `await rx.mark()` returns `True` once the audio received before the call is queued or dropped, or `False` after 1.2 seconds plus twice the jitter; cancelling one wait leaves the mark for the others.
 - `rx.stats()` returns a `ReceiverStats`: items `delivered`, `dropped` by overflow, and packets `lost` on the way.
 - `rx.close()` stops receiving. `rx.closed_reason`, a `voice.ClosedReason`, says why a receiver ended: `CLOSED`, `DISCONNECTED`, `MOVED` (the bot changed channels) or `RECONNECTING` (with `stall="end"`).
 

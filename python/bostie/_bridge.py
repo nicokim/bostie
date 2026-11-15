@@ -82,7 +82,7 @@ class Bridge:
 
     async def __aenter__(self) -> Self:
         if self._loop is not None:
-            raise RuntimeError("a bridge can only be started once")
+            raise StateError("a bridge can only be started once")
         self._loop = asyncio.get_running_loop()
         _native.log_levels(
             [logging.getLogger(name).getEffectiveLevel() for name in _native.LOGGERS]
@@ -151,9 +151,7 @@ class Bridge:
     def _running_loop(self) -> asyncio.AbstractEventLoop:
         loop = asyncio.get_running_loop()
         if self._loop is None:
-            raise RuntimeError(
-                "the bridge is not running; use 'async with Bridge(...)'"
-            )
+            raise StateError("the bridge is not running; use 'async with Bridge(...)'")
         if self._stopped:
             raise StateError("the bridge stopped") from self._failure
         if loop is not self._loop:

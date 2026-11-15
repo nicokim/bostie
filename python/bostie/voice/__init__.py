@@ -2,6 +2,7 @@ from bostie.enums import (
     ClosedReason,
     Direction,
     DisconnectReason,
+    EndReason,
     SpeakingFlags,
     State,
 )
@@ -72,7 +73,7 @@ from bostie.voice.formats import (
 )
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.message import message
-from bostie.voice.player import EndReason, Loop, Queue, Track, TrackEnd, broadcast
+from bostie.voice.player import Loop, Queue, Track, TrackEnd, broadcast
 from bostie.voice.receiver import Receiver, ReceiverStats
 from bostie.voice.recorder import Recorder
 from bostie.voice.sink import Marker, Sink, SinkStats
