@@ -1042,6 +1042,32 @@ def test_a_session_file_resumes_the_sessions_of_the_last_run(
     run(scenario)
 
 
+@pytest.mark.parametrize("resharded", [True, False])
+def test_a_resharded_or_unreadable_session_file_identifies_fresh(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, resharded: bool
+) -> None:
+    path = tmp_path / "sessions.json"
+
+    async def scenario(fake: FakeDiscord) -> None:
+        session = {
+            "shard_id": 0,
+            "shard_count": 2,
+            "session_id": "s",
+            "seq": 1,
+            "resume_url": fake.gateway_url,
+        }
+        path.write_bytes(msgspec.json.encode([session]) if resharded else b"{")
+        async with running(Bot(api_url=fake.api_url, session_file=path), fake):
+            await fake.next_identify()
+
+        assert 6 not in [payload["op"] for payload in fake.connections[0].received]
+
+    with caplog.at_level(logging.WARNING, "bostie.gateway"):
+        run(scenario)
+    unreadable = f"{path} holds no gateway sessions, so every shard identifies"
+    assert caplog.messages == ([] if resharded else [unreadable])
+
+
 def test_user_update_replaces_the_bot_user() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
