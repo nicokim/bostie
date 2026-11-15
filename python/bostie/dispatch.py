@@ -8,7 +8,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from bostie._aio import spawn
-from bostie._util import qualified_name, routers_from
+from bostie._util import UNSET, Unset, qualified_name, routers_from
 from bostie.checks import ReleasingCheck
 from bostie.commands import (
     AutocompleteCallback,
@@ -27,7 +27,7 @@ from bostie.context import (
     ModalContext,
     ResponseState,
 )
-from bostie.custom_id import AnswerSettings, ComponentRoute
+from bostie.custom_id import ComponentRoute
 from bostie.errors import CheckFailure, InteractionResponded
 from bostie.events import InteractionCreate
 from bostie.hooks import ErrorContext
@@ -74,7 +74,8 @@ class Claim[C: ComponentContext | ModalContext]:
     context: type[C]
     custom_ids: frozenset[str]
     check: Callable[[C], bool] | None
-    settings: AnswerSettings
+    ephemeral: bool
+    auto_defer: float | Unset | None
     future: asyncio.Future[C]
 
 
@@ -143,12 +144,11 @@ class Interactions:
                 continue
             if claim.custom_ids and interaction.data.custom_id not in claim.custom_ids:
                 continue
-            settings = claim.settings
             ctx = claim.context(
                 interaction,
                 self._bot,
                 received=received,
-                ephemeral=settings.get("ephemeral", False),
+                ephemeral=claim.ephemeral,
                 allowed_mentions=self._allowed_mentions,
                 deletions=self._deletions,
             )
@@ -159,7 +159,10 @@ class Interactions:
                 continue
             if matched:
                 self._defer_when_slow(
-                    ctx, settings.get("auto_defer", self._bot.auto_defer)
+                    ctx,
+                    self._bot.auto_defer
+                    if claim.auto_defer is UNSET
+                    else claim.auto_defer,
                 )
                 claim.future.set_result(ctx)
                 return True

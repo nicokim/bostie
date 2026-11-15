@@ -24,7 +24,7 @@ import msgspec
 from bostie import fmt, sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie._util import qualified_name, resolve_token
+from bostie._util import UNSET, Unset, qualified_name, resolve_token
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
 from bostie.commands import (
@@ -34,7 +34,6 @@ from bostie.context import (
     ComponentContext,
     ModalContext,
 )
-from bostie.custom_id import ANSWER_SETTINGS, AnswerSettings
 from bostie.dispatch import Claim, Interactions
 from bostie.enums import (
     ApplicationIntegrationType,
@@ -518,37 +517,50 @@ class Bot(Router):
         self,
         *custom_ids: str,
         check: Callable[[ComponentContext], bool] | None = None,
-        **settings: Unpack[AnswerSettings],
+        ephemeral: bool = False,
+        auto_defer: float | Unset | None = UNSET,
     ) -> ComponentContext:
         """Wait for a use of a component with one of `custom_ids`, or of any.
 
         The context answers like a route's, and no route runs for that use. An
         exception from `check` is raised here; bound the wait with asyncio.timeout().
         """
-        return await self._claim(ComponentContext, custom_ids, check, settings)
+        return await self._claim(
+            ComponentContext,
+            custom_ids,
+            check,
+            ephemeral=ephemeral,
+            auto_defer=auto_defer,
+        )
 
     async def wait_for_modal(
         self,
         *custom_ids: str,
         check: Callable[[ModalContext], bool] | None = None,
-        **settings: Unpack[AnswerSettings],
+        ephemeral: bool = False,
+        auto_defer: float | Unset | None = UNSET,
     ) -> ModalContext:
         """Wait for the submit of a modal with one of `custom_ids`, or of any.
 
         The context answers like a route's, and no route runs for that submit.
         """
-        return await self._claim(ModalContext, custom_ids, check, settings)
+        return await self._claim(
+            ModalContext, custom_ids, check, ephemeral=ephemeral, auto_defer=auto_defer
+        )
 
     async def _claim[C: ComponentContext | ModalContext](
         self,
         context: type[C],
         custom_ids: Iterable[str],
         check: Callable[[C], bool] | None,
-        settings: AnswerSettings,
+        *,
+        ephemeral: bool,
+        auto_defer: float | Unset | None,
     ) -> C:
-        check_keys(settings, ANSWER_SETTINGS, "settings")
         future: asyncio.Future[C] = asyncio.get_running_loop().create_future()
-        claim = Claim(context, frozenset(custom_ids), check, settings, future)
+        claim = Claim(
+            context, frozenset(custom_ids), check, ephemeral, auto_defer, future
+        )
         self._interactions.claims.append(claim)
         self._refresh_filter()
         try:

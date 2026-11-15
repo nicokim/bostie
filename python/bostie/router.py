@@ -11,7 +11,6 @@ from typing import (
     Any,
     TypeAliasType,
     Union,
-    Unpack,
     get_args,
     get_origin,
     overload,
@@ -27,7 +26,7 @@ from bostie.commands import (
     Group,
     TargetType,
 )
-from bostie.custom_id import ComponentRoute, RouteSettings
+from bostie.custom_id import ComponentRoute
 from bostie.enums import (
     ApplicationIntegrationType,
     CommandType,
@@ -374,15 +373,27 @@ class Router(ErrorHooks):
         return register
 
     def on_component[**P](
-        self, template: str, **settings: Unpack[RouteSettings]
+        self,
+        template: str,
+        *,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        checks: Iterable[Check] = (),
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route buttons and selects whose custom_id fits `template`."""
+        settings = {"ephemeral": ephemeral, "auto_defer": auto_defer, "checks": checks}
         return self._custom_id_route(COMPONENT_ROUTES, template, settings)
 
     def on_modal[**P](
-        self, template: str, **settings: Unpack[RouteSettings]
+        self,
+        template: str,
+        *,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        checks: Iterable[Check] = (),
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route the submits of modals whose custom_id fits `template`."""
+        settings = {"ephemeral": ephemeral, "auto_defer": auto_defer, "checks": checks}
         return self._custom_id_route(MODAL_ROUTES, template, settings)
 
     def every(
@@ -563,12 +574,12 @@ class Router(ErrorHooks):
         self,
         registry: _Registry[str, ComponentRoute[...]],
         template: str,
-        settings: RouteSettings,
+        settings: Mapping[str, object],
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         def register(
             handler: Callable[P, Coroutine[Any, Any, None]],
         ) -> ComponentRoute[P]:
-            route = ComponentRoute(template, handler, router=self, **settings)
+            route = ComponentRoute(template, handler, router=self, settings=settings)
             self._add(registry, template, route)
             return route
 

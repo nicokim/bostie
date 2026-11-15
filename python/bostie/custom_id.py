@@ -1,11 +1,9 @@
 import re
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Callable, Coroutine, Mapping
 from functools import cache
-from typing import TYPE_CHECKING, Any, TypedDict, Unpack
+from typing import TYPE_CHECKING, Any
 
-from bostie.commands import Check
 from bostie.hooks import Answering
-from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
     from bostie.router import Router
@@ -13,23 +11,6 @@ if TYPE_CHECKING:
 MAX_CUSTOM_ID = 100
 PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 KINDS = frozenset({"", "int"})
-
-
-class AnswerSettings(TypedDict, total=False):
-    """How a component or modal context answers; `auto_defer` defaults to the bot's."""
-
-    ephemeral: bool
-    auto_defer: float | None
-
-
-class RouteSettings(AnswerSettings, total=False):
-    """How a route answers, and the checks that run before its handler."""
-
-    checks: Iterable[Check]
-
-
-ANSWER_SETTINGS = AnswerSettings.__optional_keys__
-ROUTE_SETTINGS = RouteSettings.__optional_keys__
 
 
 class ComponentRoute[**P](Answering):
@@ -41,10 +22,9 @@ class ComponentRoute[**P](Answering):
         handler: Callable[P, Coroutine[Any, Any, None]],
         *,
         router: "Router",
-        **settings: Unpack[RouteSettings],
+        settings: Mapping[str, Any],
     ) -> None:
         super().__init__(router, settings)
-        check_keys(settings, ROUTE_SETTINGS, "settings")
         pieces = PLACEHOLDER.split(template)
         literals = pieces[::2]
         placeholders = [_placeholder(template, text) for text in pieces[1::2]]
@@ -57,7 +37,7 @@ class ComponentRoute[**P](Answering):
             raise ValueError(f"{template!r} repeats a placeholder name")
         self.template = template
         self.handler = handler
-        self.checks = tuple(settings.get("checks", ()))
+        self.checks = tuple(settings["checks"])
         self.names = names
         self._literals = literals
         self._kinds = tuple(kind for _, kind in placeholders)

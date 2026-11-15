@@ -16,7 +16,7 @@ MANY = "{a}:{b}:{c}:{d}:{e}:{f}:end"
 
 
 def route(template: str) -> ComponentRoute[...]:
-    return ComponentRoute(template, handler, router=Router())
+    return Router().on_component(template)(handler)
 
 
 @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ def test_a_route_still_calls_its_handler() -> None:
     async def vote(ctx: object, tag: str, up: int) -> None:
         seen.append((ctx, tag, up))
 
-    vote_route = ComponentRoute("vote:{tag}:{up:int}", vote, router=Router())
+    vote_route = Router().on_component("vote:{tag}:{up:int}")(vote)
     asyncio.run(vote_route("ctx", "rules", up=1))
 
     assert seen == [("ctx", "rules", 1)]
