@@ -272,7 +272,7 @@ def test_after_the_end_calls_raise_voice_not_connected(name: str) -> None:
         vc = await connected(bot)
         dave = vc.dave
         bot.deliver(disconnected("removed"))
-        with pytest.raises(voice.VoiceNotConnected):
+        with pytest.raises(voice.VoiceNotConnected, match="has ended"):
             await awaited(AFTER_THE_END[name](vc))
         assert vc.dave == dave
 
@@ -283,11 +283,12 @@ def test_after_the_end_reads_return_the_last_values() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)
         bot.core.ssrc_map = {4242: USER_ID}
-        ssrcs, dave = vc.ssrcs, vc.dave
+        assert vc.ssrcs == {4242: USER_ID}
+        dave = vc.dave
         bot.deliver(disconnected("requested"))
         await vc.disconnect()
         assert vc.latency == voice.Latency(None, None)
-        assert (vc.ssrcs, vc.dave) == (ssrcs, dave)
+        assert (vc.ssrcs, vc.dave) == ({4242: USER_ID}, dave)
         assert bot.voice.connections == ()
 
     run(scenario)
