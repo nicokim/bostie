@@ -1,4 +1,6 @@
-from collections.abc import Mapping, Sequence
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from functools import partial
 from typing import Any, Required, TypedDict, Unpack
 
@@ -11,6 +13,7 @@ from bostie.enums import (
     SortOrderType,
     VideoQualityMode,
 )
+from bostie.errors import BostieError
 from bostie.file import File
 from bostie.models import (
     Channel,
@@ -21,6 +24,10 @@ from bostie.models import (
 )
 from bostie.rest.base import Group, each, wire
 from bostie.rest.members import decode_permissions
+
+log = logging.getLogger("bostie.rest")
+
+TYPING_RENEWAL = 9.0
 
 
 class PermissionOverwrite(TypedDict, total=False):
@@ -333,10 +340,50 @@ class Channels(Group):
             channel_id=channel_id,
         )
 
-    async def trigger_typing_indicator(self, channel_id: int, /) -> None:
-        await self._http._request(
-            "POST", "/channels/{channel_id}/typing", channel_id=channel_id
+    def trigger_typing_indicator(self, channel_id: int, /) -> "Typing":
+        """Show the bot typing: once when awaited, or for as long as `async with`."""
+        return Typing(
+            partial(
+                self._http._request,
+                "POST",
+                "/channels/{channel_id}/typing",
+                channel_id=channel_id,
+            )
         )
+
+
+class Typing:
+    """Await it to show typing for 10 s, or `async with` it to keep typing."""
+
+    def __init__(self, trigger: Callable[[], Awaitable[object]]) -> None:
+        self._trigger = trigger
+        self._renewing: asyncio.Task[None] | None = None
+
+    def __await__(self) -> Generator[Any, Any, None]:
+        return self._show().__await__()
+
+    async def __aenter__(self) -> None:
+        await self._trigger()
+        self._renewing = asyncio.Task(
+            self._renew(), loop=asyncio.get_running_loop(), eager_start=True
+        )
+
+    async def __aexit__(self, *exc: object) -> None:
+        renewing, self._renewing = self._renewing, None
+        if renewing is not None:
+            renewing.cancel()
+            await asyncio.wait([renewing])
+
+    async def _show(self) -> None:
+        await self._trigger()
+
+    async def _renew(self) -> None:
+        while True:
+            await asyncio.sleep(TYPING_RENEWAL)
+            try:
+                await self._trigger()
+            except BostieError as error:
+                log.warning("renewing the typing indicator failed: %s", error)
 
 
 def _with_overwrites(body: dict[str, Any]) -> dict[str, Any]:

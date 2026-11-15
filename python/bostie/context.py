@@ -24,6 +24,7 @@ from bostie.errors import (
     InteractionExpired,
     InteractionNotAnswered,
     InteractionResponded,
+    StateError,
 )
 from bostie.file import File
 from bostie.http import decode_answer
@@ -67,6 +68,7 @@ from bostie.voice.connection import ContextVoice
 
 if TYPE_CHECKING:
     from bostie.bot import Bot
+    from bostie.rest.channels import Typing
 
 logger = logging.getLogger("bostie.context")
 
@@ -282,6 +284,12 @@ class _ReplyingContext[
         finally:
             if timer is not None:
                 timer.cancel()
+
+    def typing(self) -> "Typing":
+        """Typing in the interaction's channel, awaited once or kept in `async with`."""
+        if self.channel_id is None:
+            raise StateError("this interaction has no channel to type in")
+        return self.bot.rest.channels.trigger_typing_indicator(self.channel_id)
 
     async def respond(
         self, content: str | None = None, **parts: Unpack[ReplyParts]

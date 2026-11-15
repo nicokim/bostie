@@ -46,6 +46,14 @@ A message whose `components` include a layout component (`ui.text`, `ui.section`
 
 `reply_to` takes the id of a message in the same channel. To forward a message, pass `message_reference=MessageReference(type=MessageReferenceType.FORWARD, message_id=..., channel_id=...)` instead; the two cannot be combined. Reading `message.content` in guilds needs the privileged Message Content intent, as the [gateway guide](gateway.md#intents) explains.
 
+## Typing indicator
+
+```python
+--8<-- "docs/snippets/responses/typing_indicator.py"
+```
+
+`async with ctx.typing():` shows the bot typing in the interaction's channel while the block runs. bostie sends the indicator when the block starts and again every 9 seconds, since Discord shows it for 10, and stops when the block ends, by an exception too. `await ctx.typing()` shows it once. Outside an interaction, `bot.rest.channels.trigger_typing_indicator(channel_id)` does the same, awaited or in `async with`. A message the bot sends in the channel clears the indicator at once.
+
 ## Voice messages
 
 ```python

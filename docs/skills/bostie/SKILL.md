@@ -88,6 +88,7 @@ if __name__ == "__main__":
 - Answer on every path, early returns included. A handler that returns without answering leaves the user with "The application did not respond".
 - `ephemeral=True` on a call, or `@bot.command(ephemeral=True)`, shows the answer only to the user who ran the command.
 - `ctx.edit(...)` edits the first answer and `ctx.followup(...)` always sends a new message.
+- `async with ctx.typing():` shows the bot typing during slow work, renewed until the block ends.
 - Blocking work (reading files, CPU work, synchronous HTTP clients) goes through `asyncio.to_thread`. Blocking the event loop delays every handler past Discord's deadline.
 
 ## Components and modals

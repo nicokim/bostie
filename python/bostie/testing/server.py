@@ -114,6 +114,13 @@ class _Fault:
 
 
 @dataclass
+class _Expected:
+    method: str
+    route_prefix: str
+    request: asyncio.Future[Recorded]
+
+
+@dataclass
 class _Hold:
     method: str
     route_prefix: str
@@ -179,6 +186,7 @@ class FakeDiscord(VoiceGateway):
         self._hold_acks = False
         self._faults: list[_Fault] = []
         self._holds: list[_Hold] = []
+        self._expected: list[_Expected] = []
         self._windows: dict[tuple[str, str], tuple[float, int]] = {}
         self._sessions: dict[int, _Session] = {}
         self._identifies: asyncio.Queue[Json] = asyncio.Queue()
@@ -234,6 +242,7 @@ class FakeDiscord(VoiceGateway):
                 "/channels/{channel_id}/messages/bulk-delete",
                 self._bulk_delete,
             ),
+            ("POST", "/channels/{channel_id}/typing", self._typing),
             *(
                 (
                     method,
@@ -429,6 +438,14 @@ class FakeDiscord(VoiceGateway):
         """Serve `data` at a CDN path like `attachments/1/2/a.png`; return its URL."""
         self._cdn_files[unquote(path)] = data
         return f"{self.api_url.removesuffix(API)}{CDN}/{path}"
+
+    def expect_request(
+        self, method: str, route_prefix: str
+    ) -> asyncio.Future[Recorded]:
+        """A future for the next matching request the bot makes from now on."""
+        request: asyncio.Future[Recorded] = asyncio.get_running_loop().create_future()
+        self._expected.append(_Expected(method, route_prefix, request))
+        return request
 
     def hold(self, method: str, route_prefix: str) -> asyncio.Event:
         """Keep the next matching request waiting until the returned event is set."""
@@ -636,6 +653,13 @@ class FakeDiscord(VoiceGateway):
         record = await _record(request)
         request[RECORD] = record
         self.requests.append(record)
+        for expected in list(self._expected):
+            if expected.method == request.method and record.path.startswith(
+                expected.route_prefix
+            ):
+                self._expected.remove(expected)
+                if not expected.request.done():
+                    expected.request.set_result(record)
         for hold in self._holds:
             if hold.method == request.method and record.path.startswith(
                 hold.route_prefix
@@ -862,6 +886,9 @@ class FakeDiscord(VoiceGateway):
             return _error(400, 50021, "Cannot execute action on a system message")
         for id in ids:
             messages.pop(id, None)
+        return web.Response(status=204)
+
+    async def _typing(self, _request: web.Request) -> web.Response:
         return web.Response(status=204)
 
     async def _channel_message(self, request: web.Request) -> web.Response:

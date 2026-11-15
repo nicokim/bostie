@@ -32,7 +32,7 @@ Interaction types are Discord's numbers: 2 for a command, 3 for a component, 4 f
 
 ## Checking what the bot sent
 
-`fake.requests` lists every REST request as a `Recorded`, with `method`, `path` (relative to the API base), `query`, `headers`, `json` and, for uploads, `parts`. A `Recorded` answer to an interaction has the callback body in `json`, as above. `fake.gateway_received` is a queue of the payloads the bot sent on the gateway, and `fake.connections` the gateway connections, `Connection` objects with their `received` payloads, `shard` and `close_code`.
+`fake.requests` lists every REST request as a `Recorded`, and `fake.expect_request(method, route_prefix)` returns a future for the next matching one, for a request the bot makes on its own, such as from a task. A `Recorded` has `method`, `path` (relative to the API base), `query`, `headers`, `json` and, for uploads, `parts`. A `Recorded` answer to an interaction has the callback body in `json`, as above. `fake.gateway_received` is a queue of the payloads the bot sent on the gateway, and `fake.connections` the gateway connections, `Connection` objects with their `received` payloads, `shard` and `close_code`.
 
 `fake.cdn_file(path, data)` serves `data` at a CDN URL it returns, for an attachment or asset the bot downloads, and `fake.cdn_requests` records those downloads.
 

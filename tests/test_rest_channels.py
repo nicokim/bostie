@@ -1,12 +1,18 @@
-from typing import TYPE_CHECKING
+import asyncio
+from typing import TYPE_CHECKING, Literal
 
-from bostie import Bot, ChannelType, ForumTag, OverwriteType, Permissions
-from bostie.testing import FakeDiscord, payloads, run, running
+import pytest
+from clock import SteppedLoop, run_stepped
+
+from bostie import Bot, ChannelType, Context, ForumTag, OverwriteType, Permissions
+from bostie.testing import FakeDiscord, payloads, run, running, settle
 
 if TYPE_CHECKING:
     from bostie.rest.channels import PermissionOverwrite
 
 GUILD = "/guilds/1/channels"
+CHANNEL = int(payloads.interaction(2, {})["channel_id"])
+TYPING = f"/channels/{CHANNEL}/typing"
 
 
 def test_overwrites_go_out_as_permission_strings_and_positions_as_a_list() -> None:
@@ -82,3 +88,44 @@ def test_a_created_dm_channel_is_kept_for_its_recipient() -> None:
             assert bot.cache.channel(9) == cached
 
     run(scenario)
+
+
+@pytest.mark.parametrize("source", ["rest", "context"])
+def test_typing_shows_once_or_again_every_nine_seconds_until_its_block_ends(
+    source: Literal["rest", "context"],
+) -> None:
+    async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
+        bot = Bot(api_url=fake.api_url)
+        contexts: asyncio.Queue[Context] = asyncio.Queue()
+        done = asyncio.Event()
+
+        @bot.command
+        async def think(ctx: Context) -> None:
+            """Think hard."""
+            await ctx.defer()
+            contexts.put_nowait(ctx)
+            await done.wait()
+            await ctx.respond("Done.")
+
+        def typed() -> int:
+            return sum(request.path == TYPING for request in fake.requests)
+
+        async with running(bot, fake):
+            await bot.rest.channels.trigger_typing_indicator(CHANNEL)
+            if source == "rest":
+                typing = bot.rest.channels.trigger_typing_indicator(CHANNEL)
+            else:
+                await fake.interaction(2, payloads.command("think"))
+                typing = (await contexts.get()).typing()
+            async with typing:
+                renewed = fake.expect_request("POST", TYPING)
+                assert typed() == 2
+                loop.advance(9)
+                await renewed
+            loop.advance(9)
+            await settle()
+            done.set()
+
+        assert typed() == 3
+
+    run_stepped(scenario)
