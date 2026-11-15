@@ -56,6 +56,12 @@ class Application(Group):
             partial(decode, ApplicationModel), "GET", "/applications/@me"
         )
 
+    async def fetch_bot_application(self) -> ApplicationModel:
+        """The bot's application, through the OAuth2 route that `fetch` mirrors."""
+        return await self._http._decoded(
+            partial(decode, ApplicationModel), "GET", "/oauth2/applications/@me"
+        )
+
     async def fetch_activity_instance(
         self, application_id: int, instance_id: str, /
     ) -> ActivityInstance:

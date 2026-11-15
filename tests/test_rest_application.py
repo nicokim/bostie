@@ -60,3 +60,15 @@ def test_an_activity_instance_decodes_its_location() -> None:
             assert found.users == (205519959982473217,)
 
     run(scenario)
+
+
+def test_the_oauth2_route_fetches_the_same_application() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            app = await bot.rest.application.fetch_bot_application()
+
+        assert app.id == fake.application_id
+        assert fake.requests[-1].path == "/oauth2/applications/@me"
+
+    run(scenario)

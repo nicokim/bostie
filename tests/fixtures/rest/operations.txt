@@ -1,6 +1,7 @@
 PATCH /applications/@me application.edit
 GET /applications/@me application.fetch
 GET /applications/{application_id}/activity-instances/{instance_id} application.fetch_activity_instance
+GET /oauth2/applications/@me application.fetch_bot_application
 GET /applications/{application_id}/role-connections/metadata application.list_role_connection_metadata
 PUT /applications/{application_id}/role-connections/metadata application.update_role_connection_metadata
 GET /guilds/{guild_id}/audit-logs audit_log.list

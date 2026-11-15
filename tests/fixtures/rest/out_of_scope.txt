@@ -16,7 +16,6 @@ PATCH /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/exceptions/
 GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/users/counts undocumented: in the spec, not in the docs
 GET /guilds/{guild_id}/scheduled-events/{guild_scheduled_event_id}/{guild_scheduled_event_exception_id}/users undocumented: in the spec, not in the docs
 POST /interactions/{interaction_id}/{interaction_token}/callback interaction contexts answer it: ctx.respond, ctx.defer, ctx.modal, ctx.update
-GET /oauth2/applications/@me older path of GET /applications/@me (application.fetch)
 GET /oauth2/keys undocumented: in the spec, not in the docs
 GET /oauth2/userinfo undocumented: in the spec, not in the docs
 GET /users/@me/applications/{application_id}/entitlements undocumented: in the spec, not in the docs

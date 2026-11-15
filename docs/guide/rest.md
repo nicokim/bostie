@@ -60,7 +60,7 @@ A script or a web backend that needs only REST uses a `RESTClient`:
 
 | `bot.rest.` | Methods |
 |---|---|
-| `application` | `edit`, `fetch`, `fetch_activity_instance`, `list_role_connection_metadata`, `update_role_connection_metadata` |
+| `application` | `edit`, `fetch`, `fetch_activity_instance`, `fetch_bot_application`, `list_role_connection_metadata`, `update_role_connection_metadata` |
 | `audit_log` | `list` |
 | `auto_moderation` | `create`, `delete`, `edit`, `fetch`, `list` |
 | `bans` | `bulk_create`, `create`, `fetch`, `list`, `remove` |

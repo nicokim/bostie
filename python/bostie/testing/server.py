@@ -195,6 +195,7 @@ class FakeDiscord(VoiceGateway):
         rest_routes: list[tuple[str, str, Handler]] = [
             ("GET", "/gateway/bot", self._gateway_bot),
             ("GET", "/applications/@me", self._application),
+            ("GET", "/oauth2/applications/@me", self._application),
             ("GET", "/applications/{application_id}/commands", self._commands),
             ("PUT", "/applications/{application_id}/commands", self._commands),
             *(
