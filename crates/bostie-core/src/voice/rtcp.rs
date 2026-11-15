@@ -165,4 +165,24 @@ pub(crate) mod tests {
             ]
         );
     }
+
+    #[test]
+    fn report_counts_cap_the_blocks_read_and_another_version_ends_parsing() {
+        let block = [11, 0, 5, 96, 0, 0];
+        let mut overcounted = receiver_report(7, &[block]);
+        overcounted[0] = 0x80 | 3;
+        let mut undercounted = receiver_report(8, &[block]);
+        undercounted[0] = 0x80;
+        let mut version_one = receiver_report(9, &[]);
+        version_one[0] = 0x40;
+        let after = receiver_report(10, &[]);
+
+        let packets = parse(&[overcounted, undercounted, version_one, after].concat());
+
+        let summary: Vec<(u32, u8, usize)> = packets
+            .iter()
+            .map(|packet| (packet.ssrc, packet.count, packet.reports.len()))
+            .collect();
+        assert_eq!(summary, [(7, 3, 1), (8, 0, 0)]);
+    }
 }

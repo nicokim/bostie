@@ -447,6 +447,25 @@ mod tests {
     }
 
     #[test]
+    fn a_new_equalizer_carries_on_from_the_state_of_the_one_it_replaces() {
+        let settings = filters(&[(1_000.0, 12.0)], 6.0, 1.0, 1.0);
+        let input = tone(1_000.0, 2);
+        let (first, second) = input.split_at(input.len() / 2);
+        let mut whole = input.clone();
+        Equalizer::new(&settings, None).unwrap().apply(&mut whole);
+
+        let mut before = Equalizer::new(&settings, None).unwrap();
+        let mut head = first.to_vec();
+        before.apply(&mut head);
+        let mut tail = second.to_vec();
+        Equalizer::new(&settings, Some(before))
+            .unwrap()
+            .apply(&mut tail);
+
+        assert_eq!([head, tail].concat(), whole);
+    }
+
+    #[test]
     fn speed_and_pitch_change_tempo_and_frequency_independently() {
         for (speed, pitch) in [(1.0, 1.0), (2.0, 1.0), (1.0, 2.0), (1.25, 1.25), (0.5, 1.0)] {
             let mut rate = Rate::new();

@@ -669,6 +669,38 @@ mod tests {
     }
 
     #[test]
+    fn filters_are_checked_against_their_bounds() {
+        let with = |bands: Vec<(f32, f32)>, bass, speed, pitch| Filters {
+            bands,
+            bass,
+            speed,
+            pitch,
+        };
+        let neutral = || with(Vec::new(), 0.0, 1.0, 1.0);
+
+        for filters in [
+            neutral(),
+            with(vec![(20.0, -24.0); 16], 24.0, 0.5, 2.0),
+            with(vec![(20_000.0, 24.0)], -24.0, 2.0, 0.5),
+        ] {
+            assert!(filters.validate().is_ok(), "{filters:?}");
+        }
+        for (filters, field) in [
+            (
+                with(vec![(100.0, 0.0); 17], 0.0, 1.0, 1.0),
+                "at most 16 bands",
+            ),
+            (with(vec![(19.9, 0.0)], 0.0, 1.0, 1.0), "band frequency"),
+            (with(vec![(100.0, 24.1)], 0.0, 1.0, 1.0), "band gain"),
+            (with(Vec::new(), -24.1, 1.0, 1.0), "bass"),
+            (with(Vec::new(), 0.0, 2.1, 1.0), "speed"),
+            (with(Vec::new(), 0.0, 1.0, 0.49), "pitch"),
+        ] {
+            assert!(rejection(filters.validate()).contains(field), "{filters:?}");
+        }
+    }
+
+    #[test]
     fn pcm_formats_are_checked_against_their_bounds() {
         let refused: [(u32, u8, &[&str]); 5] = [
             (8_016, 2, &["gcd(rate, 48000)", "8016"]),

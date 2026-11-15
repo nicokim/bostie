@@ -795,7 +795,6 @@ mod tests {
         assert!(!opus.passthrough().unwrap());
         assert_eq!(consumed(&fast), 960 * 11);
         assert!(mixer.sum.iter().all(|sample| (sample - 0.25).abs() < 1e-3));
-        assert!(fast.set_filters(filters(0.0, 3.0)).is_err());
     }
 
     fn stretched(fixture: &mut Fixture, value: f32, frames: usize) -> Arc<Sink> {
