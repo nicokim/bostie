@@ -681,13 +681,44 @@ def test_a_wait_takes_its_users_press_and_others_reach_the_route() -> None:
             member = payloads.fixture("events/INTERACTION_CREATE.command")["member"]
             update = await fake.interaction(3, press, member=member)
             assert await pressed == confirm["custom_id"]
-            with pytest.raises(TimeoutError):
-                async with asyncio.timeout(0.01):
-                    await bot.wait_for_modal("never")
 
         assert other.json["data"]["content"] == "expired"
         assert update.json["data"]["content"] == "banned"
         assert routed == [confirm["custom_id"].removeprefix("confirm:")]
+
+    run(scenario)
+
+
+def test_a_modal_wait_takes_the_submit_and_defers_it_with_its_own_settings() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=None)
+        async with running(bot, fake):
+            submitted = asyncio.create_task(
+                bot.wait_for_modal("form", ephemeral=True, auto_defer=0.0)
+            )
+            await settle()
+            answer = await fake.interaction(5, payloads.modal("form"))
+            assert (await submitted).custom_id == "form"
+
+        assert answer.json == {"type": 5, "data": {"flags": EPHEMERAL}}
+
+    run(scenario)
+
+
+def test_an_exception_from_a_waits_check_is_raised_by_the_wait() -> None:
+    def refuse(ctx: ComponentContext) -> bool:
+        raise LookupError(ctx.custom_id)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            pressed = asyncio.create_task(bot.wait_for_component("go", check=refuse))
+            await settle()
+            await fake.dispatch(
+                "INTERACTION_CREATE", payloads.interaction(3, payloads.button("go"))
+            )
+            with pytest.raises(LookupError, match="go"):
+                await pressed
 
     run(scenario)
 
