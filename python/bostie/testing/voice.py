@@ -23,6 +23,7 @@ FIRST_SSRC = 0x8000_0001
 DISCOVERY = struct.Struct(">HHI64sH")
 DISCOVERY_REQUEST = b"\x00\x01\x00\x46"
 RTP_HEADER = struct.Struct(">2xHII")
+RTCP_HEADER_SIZE = 8
 RTP_FIRST_BYTES = b"\x80\x78"
 RTP_EXTENDED_FIRST_BYTES = b"\x90\x78"
 RTP_ONE_BYTE_PROFILE = 0xBEDE
@@ -151,10 +152,7 @@ class VoiceGateway:
         extension: bytes | None = None,
     ) -> None:
         """Send Opus `packets` from whoever speaks on `ssrc` to the bot, all at once."""
-        session = self.voice_sessions[-1] if self.voice_sessions else None
-        address = None if session is None else session.address
-        if session is None or address is None or session.mode != AES_GCM:
-            raise RuntimeError("no AES-GCM voice session with a discovered address")
+        session, address = self._sealing()
         if extension is None:
             first, preamble, body = RTP_FIRST_BYTES, b"", b""
         else:
@@ -174,6 +172,22 @@ class VoiceGateway:
                 nonce + bytes(12 - NONCE_SIZE), body + payload, header
             )
             self._send_datagram(header + sealed + nonce, address)
+
+    async def send_rtcp(self, packet: bytes) -> None:
+        """Send one RTCP `packet` to the bot, sealed behind its 8-byte header."""
+        session, address = self._sealing()
+        header, body = packet[:RTCP_HEADER_SIZE], packet[RTCP_HEADER_SIZE:]
+        nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE, "little")
+        aead = AESGCM(session.secret_key)
+        sealed = aead.encrypt(nonce + bytes(12 - NONCE_SIZE), body, header)
+        self._send_datagram(header + sealed + nonce, address)
+
+    def _sealing(self) -> tuple[VoiceSession, Address]:
+        session = self.voice_sessions[-1] if self.voice_sessions else None
+        address = None if session is None else session.address
+        if session is None or address is None or session.mode != AES_GCM:
+            raise RuntimeError("no AES-GCM voice session with a discovered address")
+        return session, address
 
     async def next_voice_identify(self) -> Json:
         """Wait for the next voice Identify and return its `d`."""

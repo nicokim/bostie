@@ -377,6 +377,38 @@ def test_voice_ops_and_the_bot_voice_flags_reach_python_field_by_field() -> None
     run(scenario)
 
 
+def test_rtcp_reports_reach_listeners_with_the_users_of_their_ssrcs() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        async with started(fake) as bot:
+            vc = await bot.voice.connect(VOICE_ID)
+            assert bot.user is not None
+            own = fake.voice_sessions[-1].ssrc
+            await asyncio.gather(
+                bot.wait_for(voice.SpeakingUpdate), fake.speaking(FRIEND_ID, 4321, 1)
+            )
+            block = struct.pack(">6I", own, 0x40FF_FFFE, 70_000, 480, 7, 32_768)
+            report = struct.pack(">BBHI", 0x81, 201, 7, 4321) + block
+            received, _ = await asyncio.gather(
+                bot.wait_for(voice.RtcpPacket), fake.send_rtcp(report)
+            )
+
+            assert received == voice.RtcpPacket(
+                guild_id=vc.guild_id,
+                packet_type=201,
+                count=1,
+                ssrc=4321,
+                user_id=FRIEND_ID,
+                reports=(
+                    voice.ReceptionReport(
+                        own, bot.user.id, 0.25, -2, 70_000, 0.01, 7, 0.5
+                    ),
+                ),
+                data=block,
+            )
+
+    run(scenario)
+
+
 def test_a_queue_plays_two_files_back_to_back_without_a_gap() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
