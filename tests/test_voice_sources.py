@@ -160,6 +160,28 @@ def test_open_twice_keeps_one_handle_and_a_used_source_plays_once() -> None:
     run(scenario)
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        voice.File("a.ogg"),
+        voice.Bytes(b"OggS", hint="ogg"),
+        voice.Url("https://example.com/a.mp3", headers={"Authorization": "secret"}),
+    ],
+    ids=["file", "bytes", "url"],
+)
+def test_again_opens_a_fresh_source_of_the_same_audio(source: voice.Source) -> None:
+    async def scenario(bot: FakeBot) -> None:
+        await source.open(bot.voice)
+        await source.aclose()
+        again = source.again()
+        await again.open(bot.voice)
+        first, second = bot.core.sources
+        assert type(again) is type(source)
+        assert second.arguments == first.arguments
+
+    run(scenario)
+
+
 def test_seek_clears_what_was_read_ahead_and_continues_after_the_end() -> None:
     async def scenario(bot: FakeBot) -> None:
         source = voice.File("a.flac")
@@ -270,6 +292,20 @@ def test_ffmpeg_asks_for_48_khz_stereo_s16le_and_yields_100_ms_reads() -> None:
         await source.aclose()
         assert [len(chunk) for chunk in chunks] == [19_200, 19_200, 12_800]
         assert b"".join(chunks) == PCM_BYTES
+
+    run(scenario)
+
+
+def test_ffmpeg_again_runs_the_same_command_from_the_start() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        source = python_ffmpeg("import sys; sys.stdout.buffer.write(b'pcm' * 4000)")
+        await source.open(bot.voice)
+        played = await collect(source)
+        await source.aclose()
+        again = source.again()
+        await again.open(bot.voice)
+        assert await collect(again) == played
+        await again.aclose()
 
     run(scenario)
 
