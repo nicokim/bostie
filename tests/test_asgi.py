@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import msgspec
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from bostie import ASGIApp, Bot, Context, InteractionContextType
+from bostie.asgi import MAX_BODY
 from bostie.events import ApplicationAuthorized, Starting, Stopped
-from bostie.testing import FakeDiscord, payloads, run
+from bostie.testing import FakeDiscord, payloads, run, running
 
 KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 PUBLIC_KEY = KEY.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
@@ -19,18 +21,24 @@ WEBHOOK_EVENTS = Path(__file__).parent / "fixtures" / "webhook_events"
 type Message = dict[str, Any]
 
 
-async def post(app: ASGIApp, body: bytes, *, signed: bool = True) -> tuple[int, bytes]:
+async def post(
+    app: ASGIApp, *chunks: bytes, signed: bool = True, method: str = "POST"
+) -> tuple[int, bytes]:
     timestamp = b"1700000000"
+    body = b"".join(chunks)
     signature = KEY.sign(timestamp + body if signed else b"forged").hex().encode()
     scope = {
         "type": "http",
-        "method": "POST",
+        "method": method,
         "headers": [
             (b"x-signature-ed25519", signature),
             (b"x-signature-timestamp", timestamp),
         ],
     }
-    requests = [{"type": "http.request", "body": body, "more_body": False}]
+    requests = [
+        {"type": "http.request", "body": chunk, "more_body": index < len(chunks) - 1}
+        for index, chunk in enumerate(chunks)
+    ]
     sent: list[Message] = []
 
     async def receive() -> Message:
@@ -44,13 +52,21 @@ async def post(app: ASGIApp, body: bytes, *, signed: bool = True) -> tuple[int, 
     return start["status"], answer["body"]
 
 
-@contextlib.asynccontextmanager
-async def serving(app: ASGIApp) -> AsyncIterator[None]:
-    inbox: asyncio.Queue[Message] = asyncio.Queue()
-    outbox: asyncio.Queue[Message] = asyncio.Queue()
+type Queue = asyncio.Queue[Message]
+
+
+async def start_up(app: ASGIApp) -> tuple[Message, asyncio.Task[None], Queue, Queue]:
+    inbox: Queue = asyncio.Queue()
+    outbox: Queue = asyncio.Queue()
     lifespan = asyncio.create_task(app({"type": "lifespan"}, inbox.get, outbox.put))
     await inbox.put({"type": "lifespan.startup"})
-    assert (await outbox.get())["type"] == "lifespan.startup.complete"
+    return await outbox.get(), lifespan, inbox, outbox
+
+
+@contextlib.asynccontextmanager
+async def serving(app: ASGIApp) -> AsyncIterator[None]:
+    started, lifespan, inbox, outbox = await start_up(app)
+    assert started["type"] == "lifespan.startup.complete"
     try:
         yield
     finally:
@@ -129,5 +145,53 @@ def test_webhook_events_reach_listeners_with_the_apps_own_key() -> None:
             assert await post(app, event) == (204, b"")
             installed = await anext(authorized)
         assert installed.scopes == ("applications.commands",)
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("method", "chunks", "status"),
+    [("GET", [b"{}"], 405), ("POST", [b" " * MAX_BODY, b" "], 413)],
+)
+def test_the_endpoint_refuses_other_methods_and_bodies_over_4_mib(
+    method: str, chunks: list[bytes], status: int
+) -> None:
+    async def main() -> None:
+        app = ASGIApp(Bot(), public_key=PUBLIC_KEY)
+        assert await post(app, *chunks, method=method) == (status, b"")
+
+    asyncio.run(main())
+
+
+def test_a_failed_startup_is_reported_to_the_server() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        started, lifespan, _, _ = await start_up(ASGIApp(bot, token="wrong"))
+        await lifespan
+        assert started == {
+            "type": "lifespan.startup.failed",
+            "message": "401: Unauthorized",
+        }
+
+    run(scenario)
+
+
+def test_on_a_running_bot_the_app_reads_the_key_and_leaves_the_bot_running() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_sync=False)
+        application = payloads.fixture("rest/application_me")
+        async with running(bot, fake):
+            fake.fail(
+                "GET",
+                "/applications/@me",
+                200,
+                application | {"verify_key": PUBLIC_KEY},
+            )
+            app = ASGIApp(bot)
+            async with serving(app), bot.stream(ApplicationAuthorized) as authorized:
+                event = (WEBHOOK_EVENTS / "APPLICATION_AUTHORIZED.json").read_bytes()
+                assert await post(app, event) == (204, b"")
+                await anext(authorized)
+            assert bot.is_ready
 
     run(scenario)
