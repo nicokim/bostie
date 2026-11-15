@@ -810,19 +810,20 @@ class Bot(Router):
 
     async def _teardown(self) -> None:
         self._set_up = False
-        stopped = Stopped()
-        for waiter in self._waiters.get(Stopped.NAME, ()):
-            _resolve(waiter, stopped)
-        for listener in list(self.listeners.get(Stopped.NAME, ())):
-            await self._run_listener(listener, stopped, Stopped.NAME)
+        await self._emit_in_turn(Stopped(), raising=False)
 
     async def _setup(self) -> None:
         self._set_up = True
-        starting = Starting()
-        for waiter in self._waiters.get(Starting.NAME, ()):
-            _resolve(waiter, starting)
-        for listener in list(self.listeners.get(Starting.NAME, ())):
-            await listener.callback(starting)
+        await self._emit_in_turn(Starting(), raising=True)
+
+    async def _emit_in_turn(self, event: Starting | Stopped, *, raising: bool) -> None:
+        for waiter in self._waiters.get(event.NAME, ()):
+            _resolve(waiter, event)
+        for listener in list(self.listeners.get(event.NAME, ())):
+            if raising:
+                await listener.callback(event)
+            else:
+                await self._run_listener(listener, event, event.NAME)
 
     def _stop_ready_waiters(self) -> None:
         for future in self._ready_waiters:
