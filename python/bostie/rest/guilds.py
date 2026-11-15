@@ -2,6 +2,8 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal, TypedDict, Unpack, cast
 
+import msgspec
+
 from bostie.enums import (
     DefaultMessageNotificationLevel,
     ExplicitContentFilterLevel,
@@ -21,7 +23,6 @@ from bostie.models import (
     WelcomeScreen,
     WelcomeScreenChannel,
 )
-from bostie.models.base import Model
 from bostie.rest.base import ResourceGroup, each, wire
 
 if TYPE_CHECKING:
@@ -93,11 +94,11 @@ class GuildList(TypedDict, total=False):
     with_counts: bool
 
 
-class _PruneCount(Model, kw_only=True):
+class _PruneCount(msgspec.Struct):
     pruned: int
 
 
-class _Pruned(Model, kw_only=True):
+class _Pruned(msgspec.Struct):
     pruned: int | None
 
 
