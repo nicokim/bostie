@@ -21,11 +21,12 @@ def context(
     guild: int | None = 10,
     member: Permissions | None = P.SEND_MESSAGES,
     bot: Permissions = P.SEND_MESSAGES,
+    channel: int = 20,
 ) -> Any:
     return SimpleNamespace(
         user=SimpleNamespace(id=user),
         guild_id=guild,
-        channel_id=20,
+        channel_id=channel,
         interaction=SimpleNamespace(
             member=None if member is None else SimpleNamespace(permissions=member),
             app_permissions=bot,
@@ -72,3 +73,32 @@ def test_max_concurrency_refuses_until_a_run_is_released() -> None:
         one_per_user(context(user=1))
     one_per_user.release(context(user=1))
     assert one_per_user(context(user=1))
+
+
+def odd_user(ctx: Any) -> bool:
+    return bool(ctx.user.id % 2)
+
+
+@pytest.mark.parametrize(
+    ("per", "first", "second", "shared"),
+    [
+        ("guild", context(user=1), context(user=2), True),
+        ("guild", context(user=1, guild=None), context(user=2, guild=None), False),
+        ("channel", context(user=1), context(user=2), True),
+        ("channel", context(channel=20), context(channel=21), False),
+        (odd_user, context(user=1), context(user=3), True),
+        (odd_user, context(user=1), context(user=2), False),
+    ],
+)
+def test_limits_key_on_the_guild_or_dm_user_the_channel_or_your_own_key(
+    per: Any, first: Any, second: Any, shared: bool
+) -> None:
+    limit = MaxConcurrency(1, per=per)
+    assert limit(first)
+    try:
+        limit(second)
+    except MaxConcurrencyReached:
+        refused = True
+    else:
+        refused = False
+    assert refused is shared
