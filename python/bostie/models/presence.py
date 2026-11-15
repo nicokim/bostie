@@ -1,5 +1,3 @@
-import msgspec
-
 from bostie.enums import (
     ActivityFlags,
     ActivityType,
@@ -65,21 +63,11 @@ class ActivityAssets(Model, kw_only=True):
 class ActivitySecrets(Model, kw_only=True):
     """Rich Presence secrets, kept out of the repr."""
 
-    _join: str | None = msgspec.field(default=None, name="join")
-    _spectate: str | None = msgspec.field(default=None, name="spectate")
-    _match: str | None = msgspec.field(default=None, name="match")
+    HIDDEN = frozenset({"join", "spectate", "match"})
 
-    @property
-    def join(self) -> str | None:
-        return self._join
-
-    @property
-    def spectate(self) -> str | None:
-        return self._spectate
-
-    @property
-    def match(self) -> str | None:
-        return self._match
+    join: str | None = None
+    spectate: str | None = None
+    match: str | None = None
 
 
 class Activity(Model, kw_only=True):

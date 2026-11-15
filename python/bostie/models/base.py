@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from functools import cache
-from typing import Any, Protocol, cast, dataclass_transform, overload
+from typing import Any, ClassVar, Protocol, cast, dataclass_transform, overload
 
 import msgspec
 
@@ -14,10 +14,13 @@ HIDDEN_FIELDS = frozenset(
 
 
 def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
+    hidden = (
+        HIDDEN_FIELDS | struct.HIDDEN if isinstance(struct, Model) else HIDDEN_FIELDS
+    )
     return [
         (name, getattr(struct, name))
         for name in struct.__struct_fields__
-        if name not in HIDDEN_FIELDS and not name.startswith("_")
+        if name not in hidden and not name.startswith("_")
     ]
 
 
@@ -68,7 +71,12 @@ class MaybeSnowflake:
     field_specifiers=(msgspec.field,), kw_only_default=True, frozen_default=True
 )
 class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
-    """Base of the models bostie decodes from Discord payloads."""
+    """Base of the models bostie decodes from Discord payloads.
+
+    `HIDDEN` names fields of a subclass that its repr leaves out, such as secrets.
+    """
+
+    HIDDEN: ClassVar[frozenset[str]] = frozenset()
 
     raw_json: bytes | None = msgspec.field(default=None, name="__bostie_raw__")
 

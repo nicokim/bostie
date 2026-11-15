@@ -1,5 +1,3 @@
-import msgspec
-
 from bostie.enums import WebhookType
 from bostie.models.base import Model, Snowflake
 from bostie.models.user import User
@@ -23,6 +21,8 @@ class WebhookSourceChannel(Model, Snowflake, kw_only=True):
 class Webhook(Model, Snowflake, kw_only=True):
     """A webhook; `token` and `url` only come with incoming webhooks."""
 
+    HIDDEN = frozenset({"url"})
+
     id: int
     type: WebhookType
     guild_id: int | None = None
@@ -34,9 +34,4 @@ class Webhook(Model, Snowflake, kw_only=True):
     application_id: int | None
     source_guild: WebhookSourceGuild | None = None
     source_channel: WebhookSourceChannel | None = None
-    _url: str | None = msgspec.field(default=None, name="url")
-
-    @property
-    def url(self) -> str | None:
-        """The URL to execute the webhook with, its token included."""
-        return self._url
+    url: str | None = None
