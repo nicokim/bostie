@@ -102,9 +102,20 @@ def test_explicit_event_classes_and_raw_names() -> None:
     }
 
 
-def test_a_listener_needs_an_event_class() -> None:
-    with pytest.raises(TypeError, match="is not an event class"):
-        Router().listen(unannotated)
+async def no_parameter() -> None:
+    pass
+
+
+@pytest.mark.parametrize(
+    ("listener", "problem"),
+    [
+        (unannotated, "is not an event class"),
+        (no_parameter, "annotate the event parameter"),
+    ],
+)
+def test_a_listener_needs_an_event_class(listener: Any, problem: str) -> None:
+    with pytest.raises(TypeError, match=problem):
+        Router().listen(listener)
 
 
 def test_component_routes_prefer_exact_templates_then_registration_order() -> None:

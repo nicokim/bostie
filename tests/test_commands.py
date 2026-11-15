@@ -902,6 +902,14 @@ def test_context_menu_definition_errors_name_the_function(
         Router().user_command(name)(callback)
 
 
+def test_an_entry_point_takes_only_the_context() -> None:
+    async def launch(ctx: object, mode: str) -> None:
+        """Launch the activity."""
+
+    with pytest.raises(CommandDefinitionError, match="must take only the context"):
+        Router().entry_point("Launch")(launch)
+
+
 def run_on(kind: CommandType, target_id: str, resolved: Any) -> CommandInteraction:
     data = payloads.context_menu(kind, "Inspect", target_id, resolved)
     interaction = decode_interaction(msgspec.json.encode(payloads.interaction(2, data)))
