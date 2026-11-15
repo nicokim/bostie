@@ -2,11 +2,18 @@
 render_macros: true
 ---
 
+<div class="bostie-hero" markdown>
+<div class="bostie-hero__copy" markdown>
+
 # bostie
 
-![Bostie, a Boston Terrier, welcoming you with open arms](assets/mascot/bostie-welcoming.webp){ align=right width="180" loading=lazy }
-
 bostie is a Discord library for Python whose gateway, HTTP client and voice engine run in Rust. You write the bot in typed, async Python.
+
+</div>
+
+![Bostie, a Boston Terrier, welcoming you with open arms](assets/mascot/bostie-welcoming.webp){ .bostie-hero__mascot width="200" }
+
+</div>
 
 !!! warning "Pre-alpha"
     bostie's API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
