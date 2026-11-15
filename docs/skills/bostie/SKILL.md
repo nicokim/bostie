@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
 ## Components and modals
 
-- `bostie.ui` builds components as dictionaries. `ui.row` holds up to five buttons or one select menu: `ui.button(label, custom_id=...)`, `ui.link_button(label, url)`, `ui.string_select(custom_id, options)` with `ui.select_option(label, value)`, `ui.user_select`, `ui.role_select` and `ui.channel_select`.
+- Build components with `bostie.ui`, not the component models (`bostie.Button`, `bostie.ActionRow`), which hold decoded components for sending back and skip Discord's limit checks. `bostie.ui` builds components as dictionaries. `ui.row` holds up to five buttons or one select menu: `ui.button(label, custom_id=...)`, `ui.link_button(label, url)`, `ui.string_select(custom_id, options)` with `ui.select_option(label, value)`, `ui.user_select`, `ui.role_select` and `ui.channel_select`.
 - `@bot.on_component("thank:undo:{user_id:int}")` handles every custom id that fits the template, and the placeholders arrive as keyword arguments. Build the ids with the route's `.id(...)`, as `undo_thanks.id(user_id=...)` does above. State lives in the custom id, not in a Python object, so buttons keep working after a restart.
 - In a component handler, `ctx.update(...)` edits the message the component is on, and `ctx.values`, `ctx.users`, `ctx.roles` and `ctx.channels` hold what a select picked.
 - `ui.text`, `ui.section`, `ui.container`, `ui.media_gallery`, `ui.separator` and `ui.file` make a Components V2 message. Such a message has no `content` or `embeds`; bostie raises `ValueError` if you pass them, so put the text in `ui.text`.
