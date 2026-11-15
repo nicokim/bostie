@@ -1,8 +1,9 @@
 import os
 import warnings
 from collections.abc import Callable, Iterator
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from bostie.enums import OptionType
 
@@ -13,6 +14,15 @@ if TYPE_CHECKING:
 LIBRARY_DIRECTORY = str(Path(__file__).parent)
 TOKEN_VARIABLE = "BOSTIE_TOKEN"
 SUBCOMMAND_TYPES = (OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP)
+
+
+class Unset(Enum):
+    """The default of a setting that is inherited when left out and takes None."""
+
+    UNSET = "UNSET"
+
+
+UNSET: Final = Unset.UNSET
 
 
 def qualified_name(function: Callable[..., object]) -> str:

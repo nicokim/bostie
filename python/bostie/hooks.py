@@ -1,7 +1,7 @@
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, cast, overload
 
-from bostie._util import routers_from
+from bostie._util import UNSET, routers_from
 
 if TYPE_CHECKING:
     from bostie.context import AnyContext, AutocompleteContext
@@ -94,14 +94,16 @@ class Answering(ErrorHooks):
     def auto_defer(self) -> float | None:
         """Seconds before an unanswered use is deferred, as set here or above it."""
         for scope in self._scopes():
-            if "auto_defer" in scope:
-                return cast("float | None", scope["auto_defer"])
+            found = scope.get("auto_defer", UNSET)
+            if found is not UNSET:
+                return cast("float | None", found)
         return self.router.bot.auto_defer
 
     def _inherited(self, key: str, fallback: object) -> Any:
         for scope in self._scopes():
-            if key in scope:
-                return scope[key]
+            found = scope.get(key)
+            if found is not None:
+                return found
         return fallback
 
     def _scopes(self) -> list[Mapping[str, object]]:

@@ -12,7 +12,7 @@ Routers nest: `router.include(other)` works the same way, and including the oute
 
 ## Defaults
 
-`Router(**defaults)` sets defaults for the commands and routes registered on it:
+`Router(...)` takes defaults for the commands and routes registered on it, as keyword arguments:
 
 | Default | Applies to |
 |---|---|

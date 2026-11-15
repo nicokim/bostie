@@ -28,18 +28,6 @@ The decorators on [`Bot`][bostie.Bot] and [`Router`][bostie.Router] build these 
 
 ## Settings
 
-::: bostie.commands.CommandSettings
-
-::: bostie.commands.GroupSettings
-
-::: bostie.commands.SubgroupSettings
-
-::: bostie.commands.SubcommandSettings
-
-::: bostie.commands.ContextMenuSettings
-
-::: bostie.commands.EntryPointSettings
-
 ::: bostie.commands.CommandDefaults
 
 ::: bostie.custom_id.RouteSettings

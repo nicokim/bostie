@@ -10,7 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     TypeAliasType,
-    TypedDict,
     Union,
     Unpack,
     get_args,
@@ -18,18 +17,14 @@ from typing import (
     overload,
 )
 
-from bostie._util import qualified_name, routers_from, split_subcommands
+from bostie._util import UNSET, Unset, qualified_name, routers_from, split_subcommands
 from bostie.commands import (
     Check,
     Command,
     CommandCallback,
-    CommandSettings,
     ContextMenuCommand,
-    ContextMenuSettings,
     EntryPointCommand,
-    EntryPointSettings,
     Group,
-    GroupSettings,
     TargetType,
 )
 from bostie.custom_id import ComponentRoute, RouteSettings
@@ -43,7 +38,6 @@ from bostie.errors import CommandDefinitionError, StateError
 from bostie.events import BotEvent, Event, RawEvent
 from bostie.hooks import ErrorHook, ErrorHooks
 from bostie.models import CommandData, InteractionDataOption
-from bostie.models.base import check_keys
 from bostie.tasks import Task, TaskCallback
 from bostie.voice.events import VoiceEvent
 
@@ -75,31 +69,29 @@ class _Registry[K, V]:
     clashes: Callable[[K, Iterable[K]], bool] = lambda key, keys: key in keys
 
 
-class RouterDefaults(TypedDict, total=False):
-    """What a router's commands and routes use where they set nothing themselves.
-
-    A command or route looks at its own settings, then its routers' from the
-    nearest out, then the bot's.
-    """
-
-    ephemeral: bool
-    auto_defer: float | None
-    default_permissions: Permissions
-    nsfw: bool
-    contexts: Iterable[InteractionContextType]
-    integration_types: Iterable[ApplicationIntegrationType]
-
-
-ROUTER_DEFAULTS = RouterDefaults.__optional_keys__
-
-
 class Router(ErrorHooks):
     """Commands, listeners, routes and error hooks; a bot is a router."""
 
-    def __init__(self, **defaults: Unpack[RouterDefaults]) -> None:
+    def __init__(
+        self,
+        *,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+    ) -> None:
+        """Set what its commands and routes inherit where they set nothing."""
         super().__init__()
-        check_keys(defaults, ROUTER_DEFAULTS, "defaults")
-        self.defaults = defaults
+        self.defaults: dict[str, object] = {
+            "ephemeral": ephemeral,
+            "auto_defer": auto_defer,
+            "default_permissions": default_permissions,
+            "nsfw": nsfw,
+            "contexts": contexts,
+            "integration_types": integration_types,
+        }
         self.parent: Router | None = None
         self.commands: dict[CommandKey, Command | Group] = {}
         self.context_menus: dict[MenuKey, ContextMenuCommand | EntryPointCommand] = {}
@@ -123,54 +115,205 @@ class Router(ErrorHooks):
 
     @overload
     def command(
-        self, callback: None = None, /, **settings: Unpack[CommandSettings]
+        self,
+        callback: None = None,
+        /,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        guilds: Iterable[int] = (),
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Callable[[CommandCallback], Command]: ...
 
     def command(
         self,
         callback: CommandCallback | None = None,
         /,
-        **settings: Unpack[CommandSettings],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        guilds: Iterable[int] = (),
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Command | Callable[[CommandCallback], Command]:
         """Register a slash command, as `@router.command` or `@router.command(...)`."""
+        settings = {
+            "name": name,
+            "description": description,
+            "name_localizations": name_localizations,
+            "description_localizations": description_localizations,
+            "ephemeral": ephemeral,
+            "auto_defer": auto_defer,
+            "default_permissions": default_permissions,
+            "nsfw": nsfw,
+            "guilds": guilds,
+            "contexts": contexts,
+            "integration_types": integration_types,
+            "checks": checks,
+            "extra": extra,
+        }
 
         def register(callback: CommandCallback) -> Command:
-            command = Command(callback, router=self, **settings)
+            command = Command(callback, router=self, settings=settings)
             self._add(COMMANDS, _scope_key(command.name, command.guilds), command)
             return command
 
         return register if callback is None else register(callback)
 
     def group(
-        self, name: str, description: str, **settings: Unpack[GroupSettings]
+        self,
+        name: str,
+        description: str,
+        *,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        guilds: Iterable[int] = (),
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Group:
         """Register a slash command made of subcommands."""
-        group = Group(name, description, router=self, **settings)
+        group = Group(
+            name,
+            description,
+            router=self,
+            settings={
+                "name_localizations": name_localizations,
+                "description_localizations": description_localizations,
+                "default_permissions": default_permissions,
+                "nsfw": nsfw,
+                "guilds": guilds,
+                "contexts": contexts,
+                "integration_types": integration_types,
+                "checks": checks,
+                "extra": extra,
+            },
+        )
         self._add(COMMANDS, _scope_key(group.name, group.guilds), group)
         return group
 
     def user_command(
-        self, name: str, **settings: Unpack[ContextMenuSettings]
+        self,
+        name: str,
+        *,
+        name_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        guilds: Iterable[int] = (),
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         """Register `async def f(ctx, user: User)` in the context menu of users."""
-        return self._context_menu(CommandType.USER, name, settings)
+        return self._context_menu(
+            CommandType.USER,
+            name,
+            {
+                "name_localizations": name_localizations,
+                "ephemeral": ephemeral,
+                "auto_defer": auto_defer,
+                "default_permissions": default_permissions,
+                "nsfw": nsfw,
+                "guilds": guilds,
+                "contexts": contexts,
+                "integration_types": integration_types,
+                "checks": checks,
+                "extra": extra,
+            },
+        )
 
     def message_command(
-        self, name: str, **settings: Unpack[ContextMenuSettings]
+        self,
+        name: str,
+        *,
+        name_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        guilds: Iterable[int] = (),
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         """Register `async def f(ctx, message: Message)` in messages' context menu."""
-        return self._context_menu(CommandType.MESSAGE, name, settings)
+        return self._context_menu(
+            CommandType.MESSAGE,
+            name,
+            {
+                "name_localizations": name_localizations,
+                "ephemeral": ephemeral,
+                "auto_defer": auto_defer,
+                "default_permissions": default_permissions,
+                "nsfw": nsfw,
+                "guilds": guilds,
+                "contexts": contexts,
+                "integration_types": integration_types,
+                "checks": checks,
+                "extra": extra,
+            },
+        )
 
     def entry_point(
-        self, name: str, **settings: Unpack[EntryPointSettings]
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        default_permissions: Permissions | None = None,
+        nsfw: bool | None = None,
+        contexts: Iterable[InteractionContextType] | None = None,
+        integration_types: Iterable[ApplicationIntegrationType] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Callable[[CommandCallback], EntryPointCommand]:
         """Register `async def f(ctx)` as the entry point that opens the app's Activity.
 
         The app answers it, with `ctx.launch_activity()` or otherwise.
         """
+        settings = {
+            "description": description,
+            "name_localizations": name_localizations,
+            "description_localizations": description_localizations,
+            "ephemeral": ephemeral,
+            "auto_defer": auto_defer,
+            "default_permissions": default_permissions,
+            "nsfw": nsfw,
+            "contexts": contexts,
+            "integration_types": integration_types,
+            "checks": checks,
+            "extra": extra,
+        }
 
         def register(callback: CommandCallback) -> EntryPointCommand:
-            command = EntryPointCommand(name, callback, router=self, **settings)
+            command = EntryPointCommand(name, callback, router=self, settings=settings)
             self._add(CONTEXT_MENUS, (command.type, name, ()), command)
             return command
 
@@ -405,10 +548,12 @@ class Router(ErrorHooks):
         return listener
 
     def _context_menu(
-        self, type: TargetType, name: str, settings: ContextMenuSettings
+        self, type: TargetType, name: str, settings: Mapping[str, object]
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         def register(callback: CommandCallback) -> ContextMenuCommand:
-            command = ContextMenuCommand(type, name, callback, router=self, **settings)
+            command = ContextMenuCommand(
+                type, name, callback, router=self, settings=settings
+            )
             self._add(CONTEXT_MENUS, (type, *_scope_key(name, command.guilds)), command)
             return command
 

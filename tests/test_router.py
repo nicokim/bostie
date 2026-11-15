@@ -366,6 +366,3 @@ def test_router_defaults_apply_where_a_command_or_route_sets_nothing() -> None:
     payload = purge.payload("global")
     assert (payload["default_member_permissions"], payload["nsfw"]) == ("8", True)
     assert payload["contexts"] == [0]
-    unknown: dict[str, Any] = {"checks": []}
-    with pytest.raises(TypeError, match="checks"):
-        Router(**unknown)

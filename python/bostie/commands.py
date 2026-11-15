@@ -23,7 +23,6 @@ from typing import (
     Literal,
     TypedDict,
     Union,
-    Unpack,
     cast,
     get_args,
     get_origin,
@@ -31,7 +30,7 @@ from typing import (
     override,
 )
 
-from bostie._util import qualified_name, warn_user
+from bostie._util import UNSET, Unset, qualified_name, warn_user
 from bostie.enums import (
     ApplicationIntegrationType,
     ChannelType,
@@ -39,7 +38,6 @@ from bostie.enums import (
     EntryPointCommandHandlerType,
     InteractionContextType,
     OptionType,
-    Permissions,
 )
 from bostie.errors import CommandDefinitionError, OptionConversionError
 from bostie.hooks import Answering
@@ -59,7 +57,6 @@ from bostie.models import (
     User,
     WebhookMessage,
 )
-from bostie.models.base import check_keys
 from bostie.models.message import in_guild
 
 if TYPE_CHECKING:
@@ -76,19 +73,13 @@ __all__ = [
     "Command",
     "CommandCallback",
     "CommandDefaults",
-    "CommandSettings",
     "ContextMenuCommand",
-    "ContextMenuSettings",
     "Convert",
     "EntryPointCommand",
-    "EntryPointSettings",
     "Group",
-    "GroupSettings",
     "Option",
     "Range",
     "Scope",
-    "SubcommandSettings",
-    "SubgroupSettings",
     "autocomplete_choices",
 ]
 
@@ -173,80 +164,6 @@ class CommandDefaults(TypedDict, total=False):
 
     contexts: Iterable[InteractionContextType]
     integration_types: Iterable[ApplicationIntegrationType]
-
-
-class _TopLevelSettings(CommandDefaults, total=False):
-    default_permissions: Permissions
-    nsfw: bool
-    guilds: Iterable[int]
-    name_localizations: Mapping[str, str]
-    checks: Iterable[Check]
-    extra: Mapping[str, Any]
-
-
-class GroupSettings(_TopLevelSettings, total=False):
-    """Settings of a top-level command or group.
-
-    `guilds` registers it in those guilds only instead of globally, and
-    `contexts` and `integration_types` apply to global commands only.
-    Localizations map a locale such as "fr" to the text shown in it.
-    """
-
-    description_localizations: Mapping[str, str]
-
-
-class SubgroupSettings(TypedDict, total=False):
-    """Settings of a subcommand group inside a command.
-
-    `checks` run before the handler, after those of the routers and parents.
-    """
-
-    name_localizations: Mapping[str, str]
-    description_localizations: Mapping[str, str]
-    checks: Iterable[Check]
-    extra: Mapping[str, Any]
-
-
-class SubcommandSettings(SubgroupSettings, total=False):
-    """Settings of a subcommand; without `auto_defer` it follows the bot's."""
-
-    name: str
-    description: str
-    ephemeral: bool
-    auto_defer: float | None
-
-
-class CommandSettings(SubcommandSettings, GroupSettings, total=False):
-    """Settings of a top-level slash command."""
-
-
-class ContextMenuSettings(_TopLevelSettings, total=False):
-    """Settings of a user or message command; `auto_defer` defaults to the bot's."""
-
-    ephemeral: bool
-    auto_defer: float | None
-
-
-class EntryPointSettings(CommandDefaults, total=False):
-    """Settings of the app's entry point command, which is always global."""
-
-    description: str
-    default_permissions: Permissions
-    nsfw: bool
-    name_localizations: Mapping[str, str]
-    description_localizations: Mapping[str, str]
-    ephemeral: bool
-    auto_defer: float | None
-    checks: Iterable[Check]
-    extra: Mapping[str, Any]
-
-
-GROUP_SETTINGS = GroupSettings.__optional_keys__
-ENTRY_POINT_SETTINGS = EntryPointSettings.__optional_keys__
-SUBGROUP_SETTINGS = SubgroupSettings.__optional_keys__
-SUBCOMMAND_SETTINGS = SubcommandSettings.__optional_keys__
-COMMAND_SETTINGS = CommandSettings.__optional_keys__
-CONTEXT_MENU_SETTINGS = ContextMenuSettings.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,17 +283,17 @@ class _Registered(Answering):
         name: str,
         *,
         router: "Router",
-        settings: _TopLevelSettings | SubgroupSettings | EntryPointSettings,
+        settings: Mapping[str, Any],
     ) -> None:
         super().__init__(router, settings)
         self.type = type
         self.name = name
-        self.checks = tuple(settings.get("checks", ()))
-        self.name_localizations = dict(settings.get("name_localizations", {}))
+        self.checks = tuple(settings["checks"])
+        self.name_localizations = dict(settings["name_localizations"] or {})
         for localized in self.name_localizations.values():
             _check_name(localized, spaced=type is not CommandType.CHAT_INPUT)
-        self.guilds = tuple(cast("_TopLevelSettings", settings).get("guilds", ()))
-        self.extra = dict(settings.get("extra", {}))
+        self.guilds = tuple(settings.get("guilds", ()))
+        self.extra = dict(settings["extra"] or {})
 
     def payload(
         self, scope: Scope, defaults: CommandDefaults | None = None
@@ -416,14 +333,14 @@ class _Node(_Registered, ABC):
         *,
         router: "Router",
         parent: "Group | None",
-        settings: GroupSettings | SubgroupSettings,
+        settings: Mapping[str, Any],
     ) -> None:
         _check_name(name)
         _check_description(description)
         super().__init__(CommandType.CHAT_INPUT, name, router=router, settings=settings)
         self.description = description
         self.description_localizations = dict(
-            settings.get("description_localizations", {})
+            settings["description_localizations"] or {}
         )
         for localized in self.description_localizations.values():
             _check_description(localized)
@@ -468,17 +385,13 @@ class Command(_Node):
         *,
         router: "Router",
         parent: "Group | None" = None,
-        **settings: Unpack[CommandSettings],
+        settings: Mapping[str, Any],
     ) -> None:
-        check_keys(
-            settings,
-            COMMAND_SETTINGS if parent is None else SUBCOMMAND_SETTINGS,
-            "settings",
-        )
+        name = settings["name"]
         try:
             super().__init__(
-                settings.get("name", callback.__name__),
-                _command_description(callback, settings.get("description")),
+                callback.__name__ if name is None else name,
+                _command_description(callback, settings["description"]),
                 router=router,
                 parent=parent,
                 settings=settings,
@@ -575,13 +488,8 @@ class Group(_Node):
         *,
         router: "Router",
         parent: "Group | None" = None,
-        **settings: Unpack[GroupSettings],
+        settings: Mapping[str, Any],
     ) -> None:
-        check_keys(
-            settings,
-            GROUP_SETTINGS if parent is None else SUBGROUP_SETTINGS,
-            "settings",
-        )
         try:
             super().__init__(
                 name, description, router=router, parent=parent, settings=settings
@@ -591,15 +499,28 @@ class Group(_Node):
         self.commands: dict[str, Command | Group] = {}
 
     def group(
-        self, name: str, description: str, **settings: Unpack[SubgroupSettings]
+        self,
+        name: str,
+        description: str,
+        *,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> "Group":
         """Add a subcommand group; groups nest one level deep at most."""
         if self.parent is not None:
             raise CommandDefinitionError(
                 f"/{self.qualified_name} {name}: groups nest one level deep at most"
             )
+        settings = {
+            "name_localizations": name_localizations,
+            "description_localizations": description_localizations,
+            "checks": checks,
+            "extra": extra,
+        }
         return self._add(
-            Group(name, description, router=self.router, parent=self, **settings)
+            Group(name, description, router=self.router, parent=self, settings=settings)
         )
 
     @overload
@@ -607,20 +528,49 @@ class Group(_Node):
 
     @overload
     def command(
-        self, callback: None = None, /, **settings: Unpack[SubcommandSettings]
+        self,
+        callback: None = None,
+        /,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Callable[[CommandCallback], Command]: ...
 
     def command(
         self,
         callback: CommandCallback | None = None,
         /,
-        **settings: Unpack[SubcommandSettings],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        name_localizations: Mapping[str, str] | None = None,
+        description_localizations: Mapping[str, str] | None = None,
+        ephemeral: bool | None = None,
+        auto_defer: float | Unset | None = UNSET,
+        checks: Iterable[Check] = (),
+        extra: Mapping[str, Any] | None = None,
     ) -> Command | Callable[[CommandCallback], Command]:
         """Add a subcommand, as `@group.command` or `@group.command(name=...)`."""
+        settings = {
+            "name": name,
+            "description": description,
+            "name_localizations": name_localizations,
+            "description_localizations": description_localizations,
+            "ephemeral": ephemeral,
+            "auto_defer": auto_defer,
+            "checks": checks,
+            "extra": extra,
+        }
 
         def register(callback: CommandCallback) -> Command:
             return self._add(
-                Command(callback, router=self.router, parent=self, **settings)
+                Command(callback, router=self.router, parent=self, settings=settings)
             )
 
         return register if callback is None else register(callback)
@@ -653,9 +603,8 @@ class ContextMenuCommand(_Registered):
         callback: CommandCallback,
         *,
         router: "Router",
-        **settings: Unpack[ContextMenuSettings],
+        settings: Mapping[str, Any],
     ) -> None:
-        check_keys(settings, CONTEXT_MENU_SETTINGS, "settings")
         try:
             _check_name(name, spaced=True)
             self._target, self._models = _target(callback, TARGET_MODELS[type])
@@ -694,10 +643,9 @@ class EntryPointCommand(_Registered):
         callback: CommandCallback,
         *,
         router: "Router",
-        **settings: Unpack[EntryPointSettings],
+        settings: Mapping[str, Any],
     ) -> None:
-        check_keys(settings, ENTRY_POINT_SETTINGS, "settings")
-        description = _command_description(callback, settings.get("description"))
+        description = _command_description(callback, settings["description"])
         try:
             _check_name(name, spaced=True)
             _check_description(description)
@@ -711,7 +659,7 @@ class EntryPointCommand(_Registered):
         )
         self.description = description
         self.description_localizations = dict(
-            settings.get("description_localizations", {})
+            settings["description_localizations"] or {}
         )
         self.callback = callback
 

@@ -680,18 +680,6 @@ def test_groups_nest_one_level_and_names_stay_unique() -> None:
         role.group("color", "Again")
 
 
-@pytest.mark.parametrize("setting", ["default_permissions", "contexts", "nsfw"])
-def test_subcommands_cannot_set_top_level_settings(setting: str) -> None:
-    group = Router().group("admin", "Admin tools")
-    settings: dict[str, Any] = {setting: Permissions.ADMINISTRATOR}
-
-    async def handler(ctx: object) -> None:
-        pass
-
-    with pytest.raises(TypeError, match=setting):
-        group.command(**settings)(handler)
-
-
 def test_a_group_holds_at_most_25_subcommands() -> None:
     group = Router().group("many", "Many subcommands")
     for index in range(25):

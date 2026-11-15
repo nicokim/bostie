@@ -48,7 +48,6 @@ from bostie import (
 )
 from bostie._bridge import Bridge, StatusDelivery
 from bostie.checks import MaxConcurrency
-from bostie.commands import CommandSettings
 from bostie.events import (
     BotEvent,
     ChannelUpdate,
@@ -471,7 +470,7 @@ def test_a_subcommand_in_a_group_gets_its_resolved_member() -> None:
     ],
 )
 def test_a_commands_auto_defer_overrides_the_bots(
-    bot_delay: float | None, settings: CommandSettings, first: int
+    bot_delay: float | None, settings: dict[str, Any], first: int
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url, auto_defer=bot_delay)
