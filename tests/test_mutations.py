@@ -18,14 +18,19 @@ from bostie.events import (
     decode_event,
 )
 from bostie.models import (
+    SKU,
     ActionRow,
     ActiveThreads,
+    ActivityInstance,
+    Application,
+    ApplicationCommand,
     AuditLogPage,
     Ban,
     Channel,
     CommandInteraction,
     ComponentInteraction,
     CurrentUserGuild,
+    Entitlement,
     Guild,
     GuildOnboarding,
     GuildPreview,
@@ -33,23 +38,29 @@ from bostie.models import (
     GuildWidget,
     GuildWidgetSettings,
     IncidentsData,
+    Invite,
     Member,
     Message,
     Model,
     PartialMessage,
     ScheduledEventUser,
+    StickerPack,
     UnknownComponent,
     User,
     VanityURL,
     VoiceRegion,
     Webhook,
+    WebhookMessage,
     WelcomeScreen,
     decode,
 )
+from bostie.models.base import decoder
 from bostie.testing import payloads
+from bostie.webhook_events import WEBHOOK_EVENTS
 
 FIXTURES = payloads.FIXTURES
-REST_MODELS: dict[str, type[Model]] = {
+WEBHOOK_FIXTURES = Path(__file__).parent / "fixtures" / "webhook_events"
+REST_MODELS: dict[str, Any] = {
     "user": User,
     "member": Member,
     "channel": Channel,
@@ -73,6 +84,49 @@ REST_MODELS: dict[str, type[Model]] = {
     "active_threads": ActiveThreads,
     "webhook": Webhook,
     "webhook_follower": Webhook,
+    "application_me": Application,
+    "invite": Invite,
+    "sku": SKU,
+    "entitlement": Entitlement,
+    "sticker_pack": StickerPack,
+    "activity_instance": ActivityInstance,
+    "commands": tuple[ApplicationCommand, ...],
+    "interaction_callback": WebhookMessage,
+}
+PAYLOAD_AT = {"interaction_callback": ("resource", "message")}
+UNMODELLED_KEYS = {
+    f"{model}.{key}"
+    for model, keys in {
+        "Activity": "id",
+        "AvatarDecorationData": "expires_at",
+        "Channel": "newly_created",
+        "CommandData": "version",
+        "PartialEntitlement": "gift_code_flags promotion_id",
+        "Entitlement": "subscription_id",
+        "GameDirectMessage": "components",
+        "Guild": "activity_instances embedded_activities home_header hub_type "
+        "inventory_settings latest_onboarding_question_id lazy nsfw version",
+        "LobbyMessage": "edited_timestamp timestamp",
+        "Member": "unusual_dm_activity_until",
+        "PartialMember": "unusual_dm_activity_until",
+        "MemberUpdate": "unusual_dm_activity_until",
+        "Nameplate": "expires_at",
+        "PartialChannel": "recipients",
+        "PartialUser": "avatar_decoration_data clan collectibles discriminator "
+        "display_name_styles flags global_name primary_guild public_flags",
+        "User": "banner_color clan display_name_styles member",
+        "Ready": "_trace auth game_relationships geo_ordered_rtc_regions "
+        "guild_join_requests presences private_channels relationships "
+        "resume_gateway_url session_type user_settings v",
+        "Resumed": "_trace",
+        "Role": "description",
+        "ScheduledEvent": "sku_ids",
+        "SKU": "access_type dependent_sku_id features manifest_labels premium "
+        "release_date show_age_gate",
+        "TemplateGuild": "region",
+        "TemplateRole": "color",
+    }.items()
+    for key in keys.split()
 }
 ENUM_KEYS = {
     "type",
@@ -106,13 +160,24 @@ ENUM_KEYS = {
     "default_message_notifications",
     "explicit_content_filter",
     "premium_type",
+    "event_webhooks_status",
+    "integration_type",
+    "handler",
 }
-ENUM_LIST_KEYS = {"channel_types", "presets", "by_weekday", "by_month"}
+ENUM_LIST_KEYS = {
+    "channel_types",
+    "presets",
+    "by_weekday",
+    "by_month",
+    "integration_types",
+    "contexts",
+}
 FLAG_KEYS = {
     "flags",
     "flags_new",
     "permissions",
     "app_permissions",
+    "default_member_permissions",
     "allow",
     "deny",
     "public_flags",
@@ -152,31 +217,42 @@ def fixtures() -> Iterator[Any]:
         if event is not None:
             yield pytest.param(path, partial(event.decode, 0), id=path.stem)
     for name, model in REST_MODELS.items():
-        yield pytest.param(
-            FIXTURES / "rest" / f"{name}.json", partial(decode, model), id=name
+        rest = (
+            partial(decode, model) if isinstance(model, type) else decoder(model).decode
         )
+        yield pytest.param(FIXTURES / "rest" / f"{name}.json", rest, id=name)
+    for path in sorted(WEBHOOK_FIXTURES.glob("*.json")):
+        if (event := WEBHOOK_EVENTS.get(path.stem)) is not None:
+            yield pytest.param(
+                path, partial(event.decode, 0), id=f"webhook_{path.stem}"
+            )
 
 
 ALL_FIXTURES = list(fixtures())
 
 
 def load(path: Path) -> Any:
-    return msgspec.json.decode(path.read_bytes())
+    document = msgspec.json.decode(path.read_bytes())
+    webhook = path.parent == WEBHOOK_FIXTURES
+    for key in ("event", "data") if webhook else PAYLOAD_AT.get(path.stem, ()):
+        document = document[key]
+    return document
 
 
-def is_snowflake_map(value: dict[str, Any]) -> bool:
-    return bool(value) and all(key.isdigit() for key in value)
+def is_map(value: dict[str, Any], path: str) -> bool:
+    keyed = path.endswith("_localizations") or all(key.isdigit() for key in value)
+    return bool(value) and keyed
 
 
-def objects(value: Any) -> Iterator[dict[str, Any]]:
+def objects(value: Any, path: str = "$") -> Iterator[dict[str, Any]]:
     if isinstance(value, dict):
-        if not is_snowflake_map(value):
+        if not is_map(value, path):
             yield value
-        for item in value.values():
-            yield from objects(item)
+        for key, item in value.items():
+            yield from objects(item, f"{path}.{key}")
     elif isinstance(value, list):
         for item in value:
-            yield from objects(item)
+            yield from objects(item, path)
 
 
 def components(value: Any, inside: bool = False) -> Iterator[dict[str, Any]]:
@@ -194,7 +270,7 @@ def fields(value: Any, path: str = "$") -> Iterator[tuple[str, dict[str, Any], s
     if isinstance(value, dict):
         for key, item in value.items():
             where = f"{path}.{key}"
-            if not is_snowflake_map(value):
+            if not is_map(value, path):
                 yield where, value, key
             yield from fields(item, where)
     elif isinstance(value, list):
@@ -214,16 +290,58 @@ def walk(value: object) -> Iterator[object]:
         yield from walk(value.members)
     if isinstance(value, msgspec.Struct):
         for name in value.__struct_fields__:
-            public = name.lstrip("_")
-            yield from walk(
-                getattr(value, public if hasattr(type(value), public) else name)
-            )
+            yield from walk(attribute(value, name))
     elif isinstance(value, tuple | list):
         for item in value:
             yield from walk(item)
     elif isinstance(value, dict):
         for item in value.values():
             yield from walk(item)
+
+
+def attribute(struct: msgspec.Struct, name: str) -> object:
+    public = name.lstrip("_")
+    return getattr(struct, public if hasattr(type(struct), public) else name)
+
+
+def entity(event: events.Event, document: dict[str, Any]) -> object:
+    for field in msgspec.structs.fields(event):
+        child = attribute(event, field.name)
+        if isinstance(child, Model) and (
+            field.encode_name not in document or child.raw_json is event.raw_json
+        ):
+            return child
+    return None
+
+
+def unmodelled(value: object, document: Any) -> Iterator[tuple[type, str]]:
+    if isinstance(value, UnknownComponent):
+        return
+    if isinstance(value, msgspec.Struct) and isinstance(document, dict):
+        names = {
+            field.encode_name.lstrip("_"): field.name
+            for field in msgspec.structs.fields(value)
+        }
+        for key, name in names.items():
+            if key in document:
+                yield from unmodelled(attribute(value, name), document[key])
+        tag = value.__struct_config__.tag_field
+        rest = {key: item for key, item in document.items() if key not in {*names, tag}}
+        whole = entity(value, document) if isinstance(value, events.Event) else None
+        if whole is not None:
+            yield from unmodelled(whole, rest)
+        else:
+            yield from ((type(value), key) for key in rest)
+    elif isinstance(value, dict) and isinstance(document, dict):
+        for key, item in document.items():
+            yield from unmodelled(value.get(int(key) if key.isdigit() else key), item)
+    elif isinstance(value, tuple | list) and isinstance(document, list):
+        for inner, item in zip(value, document, strict=False):
+            yield from unmodelled(inner, item)
+
+
+def tuple_of(value: object) -> tuple[object, ...]:
+    return value if isinstance(value, tuple) else (value,)
 
 
 def decode_all(decoder: Decoder, document: Any) -> list[object]:
@@ -242,7 +360,7 @@ def failures(
     for where, container, key in list(fields(document)):
         original = container[key]
         collection = isinstance(original, list) or (
-            isinstance(original, dict) and is_snowflake_map(original)
+            isinstance(original, dict) and is_map(original, where)
         )
         if (collection and not collections) or (path.stem, where) in SHAPE_KEYS:
             continue
@@ -285,6 +403,20 @@ def test_unknown_keys_at_every_level_are_ignored(path: Path, decoder: Decoder) -
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
+def test_every_key_maps_to_a_field_of_its_model(path: Path, decoder: Decoder) -> None:
+    document = load(path)
+
+    decoded = decoder(msgspec.json.encode(document))
+
+    unexpected = {
+        f"{model.__name__}.{key}"
+        for model, key in unmodelled(decoded, document)
+        if not {f"{cls.__name__}.{key}" for cls in model.__mro__} & UNMODELLED_KEYS
+    }
+    assert unexpected == set()
+
+
+@pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
 def test_unknown_enum_values_and_flag_bits_are_kept(
     path: Path, decoder: Decoder
 ) -> None:
@@ -302,7 +434,14 @@ def test_unknown_enum_values_and_flag_bits_are_kept(
 
     decoded = decode_all(decoder, document)
 
-    enums = [value for value in decoded if isinstance(value, DiscordIntEnum)]
+    enums = [
+        value
+        for struct in decoded
+        if isinstance(struct, msgspec.Struct)
+        for field in msgspec.structs.fields(struct)
+        for value in tuple_of(getattr(struct, field.name))
+        if isinstance(value, DiscordIntEnum) and value is not field.default
+    ]
     flags = [value for value in decoded if isinstance(value, IntFlag)]
     assert all(value.name == "UNKNOWN_9999" for value in enums)
     assert all(value in (0, UNKNOWN_FLAGS) for value in flags)

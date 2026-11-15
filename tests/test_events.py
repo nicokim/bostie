@@ -9,7 +9,7 @@ import msgspec
 import pytest
 
 from bostie import Bot, events
-from bostie.enums import ApplicationFlags, ChannelType, MemberFlags, Status
+from bostie.enums import ChannelType, MemberFlags, Status
 from bostie.events import (
     EVENTS,
     AuditLogEntryCreate,
@@ -21,26 +21,19 @@ from bostie.events import (
     Event,
     GatewayRateLimited,
     GuildCreate,
-    GuildDelete,
     GuildUpdate,
     IntegrationCreate,
     InteractionCreate,
     MemberJoin,
-    MemberRemove,
     MemberUpdate,
     MessageCreate,
-    MessageDelete,
     PresenceUpdate,
     RawEvent,
-    ReactionAdd,
-    Ready,
     ScheduledEventCreate,
     SoundboardSoundCreate,
     StageInstanceCreate,
     SubscriptionCreate,
     ThreadCreate,
-    ThreadDelete,
-    ThreadListSync,
     ThreadMemberUpdate,
     TypingStart,
     UserUpdate,
@@ -243,15 +236,6 @@ def test_a_broken_guild_create_names_its_own_missing_field() -> None:
         GuildCreate.decode(0, msgspec.json.encode(without(document, "name")))
 
 
-def test_guild_delete_reads_the_guild_id_from_id() -> None:
-    outage = decode(GuildDelete, "GUILD_DELETE")
-    left = decode(GuildDelete, "GUILD_DELETE.left")
-
-    assert outage.guild_id == left.guild_id == 1335172792320131073
-    assert outage.unavailable is True
-    assert left.unavailable is False
-
-
 @pytest.mark.parametrize(
     ("event_type", "name", "entity", "model"),
     [
@@ -299,71 +283,6 @@ def test_thread_create_says_whether_it_is_new_or_the_bot_was_added() -> None:
     assert added.channel.type is ChannelType.PRIVATE_THREAD
     assert added.member is not None
     assert added.member.user_id == 1329027298099331073
-
-
-def test_member_remove_carries_only_the_user() -> None:
-    event = decode(MemberRemove, "GUILD_MEMBER_REMOVE")
-
-    assert event.guild_id == 1335172792320131073
-    assert event.user.username == "newcomer"
-
-
-def test_ready() -> None:
-    event = decode(Ready, "READY")
-
-    assert event.user.bot is True
-    assert [guild.id for guild in event.guilds] == [
-        1335172792320131073,
-        1335927767040131073,
-    ]
-    assert all(guild.unavailable for guild in event.guilds)
-    assert event.application.flags == 9084928
-    assert ApplicationFlags.APPLICATION_COMMAND_BADGE in event.application.flags
-    assert event.session_id == "70374e9c7263b9d5e16c4f418ff85dc1"
-
-
-def test_thread_delete_carries_only_the_ids_and_the_type() -> None:
-    event = decode(ThreadDelete, "THREAD_DELETE")
-
-    assert (event.id, event.guild_id, event.parent_id, event.type) == (
-        1564617159475331073,
-        1335172792320131073,
-        1382046656102531073,
-        ChannelType.PUBLIC_THREAD,
-    )
-
-
-def test_thread_list_sync_tells_channel_scope_from_guild_scope() -> None:
-    channels = decode(ThreadListSync, "THREAD_LIST_SYNC")
-    guild = decode(ThreadListSync, "THREAD_LIST_SYNC.guild")
-
-    assert channels.channel_ids == (1335173295636611073,)
-    assert guild.channel_ids is None
-    assert [thread.parent_id for thread in guild.threads] == [
-        1335173295636611073,
-        1382046656102531073,
-    ]
-
-
-def test_message_and_reaction_events() -> None:
-    created = decode(MessageCreate, "MESSAGE_CREATE")
-    reply = decode(MessageCreate, "MESSAGE_CREATE.rich").message.referenced_message
-    deleted = decode(MessageDelete, "MESSAGE_DELETE")
-    reaction = decode(ReactionAdd, "MESSAGE_REACTION_ADD")
-
-    assert created.message.guild_id == 1335172792320131073
-    assert created.message.channel_type is ChannelType.GUILD_TEXT
-    assert reply is not None
-    assert reply.jump_url == (
-        "https://discord.com/channels/1335172792320131073/"
-        "1335173295636611073/1564609610244030465"
-    )
-    assert created.message.member is not None
-    assert created.message.member.flags == MemberFlags.COMPLETED_ONBOARDING
-    assert deleted.id == created.message.id
-    assert reaction.emoji.animated is True
-    assert reaction.member is not None
-    assert reaction.message_author_id == 1329027298099331073
 
 
 def test_a_webhook_messages_author_needs_only_the_webhooks_identity() -> None:
@@ -425,17 +344,6 @@ def test_voice_session_start_times_read_unix_seconds() -> None:
 
     assert update.voice_start_time == started
     assert [channel.voice_start_time for channel in info.channels] == [started, None]
-
-
-def test_voice_events() -> None:
-    state = decode(VoiceStateUpdate, "VOICE_STATE_UPDATE").voice_state
-    server = decode(VoiceServerUpdate, "VOICE_SERVER_UPDATE")
-
-    assert state.session_id == "70374e9c7263b9d5e16c4f418ff85dc1"
-    assert state.self_deaf is True
-    assert state.member is not None
-    assert server.endpoint == "c-iad20-3a7f91c2.discord.media:443"
-    assert server.token == "8f3e2b9c1d7a4f60"
 
 
 def test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too(

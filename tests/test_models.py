@@ -17,24 +17,11 @@ from bostie.enums import (
     EmbedFlags,
     EmbedMediaFlags,
     EmbedType,
-    ExplicitContentFilterLevel,
     GuildFeature,
-    IntegrationType,
-    Locale,
     MessageActivityType,
     MessageFlags,
-    MessageReferenceType,
-    MessageType,
-    MFALevel,
     OptionType,
-    Permissions,
-    PremiumType,
-    Status,
-    SystemChannelFlags,
-    TeamMemberRole,
     UnfurledMediaItemFlags,
-    UserFlags,
-    WebhookEventType,
 )
 from bostie.file import File
 from bostie.models import (
@@ -53,15 +40,10 @@ from bostie.models import (
     ComponentInteractionMetadata,
     Container,
     ContentScanMetadata,
-    CurrentUser,
     Embed,
-    EmbedField,
     Entitlement,
     FileComponent,
     Guild,
-    GuildTemplate,
-    GuildWidget,
-    Integration,
     InteractionMetadata,
     MediaGallery,
     Member,
@@ -71,7 +53,6 @@ from bostie.models import (
     Model,
     PartialChannel,
     PartialEntitlement,
-    ReactionCountDetails,
     ResolvedMember,
     Role,
     Section,
@@ -85,7 +66,6 @@ from bostie.models import (
     SubmittedStringSelect,
     SubmittedTextDisplay,
     SubmittedTextInput,
-    TeamMember,
     TextDisplay,
     Thumbnail,
     UnknownComponent,
@@ -136,35 +116,6 @@ def test_nested_objects_have_no_raw_payload() -> None:
     assert message.referenced_message.raw is None
 
 
-def test_snowflakes_permissions_and_timestamps_are_typed() -> None:
-    member = decode(Member, payload("rest/member.json"))
-    guild = decode(Guild, payload("events/GUILD_UPDATE.json"))
-    interaction = decode(
-        CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
-    )
-
-    assert member.user.id == 820774541721731073
-    assert member.joined_at == datetime(2025, 4, 18, 19, 3, 11, 987000, tzinfo=UTC)
-    assert guild.owner_id == 308882807193731073
-    assert interaction.app_permissions == 4069281901182529
-    assert Permissions.ATTACH_FILES in interaction.app_permissions
-
-
-def test_a_guild_carries_its_settings_roles_and_expressions() -> None:
-    guild = decode(Guild, payload("rest/guild.json"))
-
-    assert guild.features[0] is GuildFeature.ANIMATED_ICON
-    assert guild.mfa_level is MFALevel.NONE
-    assert guild.explicit_content_filter is ExplicitContentFilterLevel.ALL_MEMBERS
-    assert guild.system_channel_flags == (
-        SystemChannelFlags.SUPPRESS_GUILD_REMINDER_NOTIFICATIONS
-    )
-    assert (guild.afk_timeout, guild.premium_subscription_count) == (300, 7)
-    assert guild.roles[0].name == "@everyone"
-    assert guild.emojis[0].name == "lyre"
-    assert guild.stickers[0].name == "lyre wave"
-
-
 def test_a_role_tag_sent_as_null_is_true_and_a_missing_one_false() -> None:
     tags = {"integration_id": "5", "premium_subscriber": None}
 
@@ -176,70 +127,6 @@ def test_a_role_tag_sent_as_null_is_true_and_a_missing_one_false() -> None:
     assert not booster.available_for_purchase
     assert not booster.guild_connections
     assert decode(Role, msgspec.json.encode(ROLE)).tags is None
-
-
-def test_a_template_types_the_guild_it_creates() -> None:
-    template = decode(GuildTemplate, payload("rest/guild_template.json"))
-
-    guild = template.serialized_source_guild
-    (everyone,) = guild.roles
-    category, general = guild.channels
-
-    assert (everyone.id, everyone.name) == (0, "@everyone")
-    assert Permissions.SEND_MESSAGES in everyone.permissions
-    assert category.type is ChannelType.GUILD_CATEGORY
-    assert (general.id, general.parent_id) == (2, category.id)
-    assert guild.system_channel_id == general.id
-
-
-def test_rich_message() -> None:
-    message = decode(Message, payload("events/MESSAGE_CREATE.rich.json"))
-
-    assert message.type is MessageType.REPLY
-    assert message.flags == MessageFlags.SUPPRESS_NOTIFICATIONS
-    assert message.nonce == "1564609631957942275"
-    assert [user.id for user in message.mentions] == [820774541721731073]
-    assert message.mention_roles == (1335174302269571073,)
-    assert [attachment.filename for attachment in message.attachments] == [
-        "waveform.png",
-        "SPOILER_notes.txt",
-    ]
-    assert message.attachments[0].width == 1280
-    first, second = message.embeds
-    assert first.timestamp == datetime(2026, 10, 27, 11, 59, tzinfo=UTC)
-    assert first.fields[1] == EmbedField(
-        name="Voice", value="DAVE (planned)", inline=True
-    )
-    assert second.video is not None
-    assert second.video.url == "https://www.youtube.com/embed/q3Vx8RmT2kZ"
-    assert [reaction.count for reaction in message.reactions] == [2, 1]
-    super_reaction = message.reactions[1]
-    assert super_reaction.emoji.id == 1345334752051331073
-    assert super_reaction.count_details == ReactionCountDetails(burst=1, normal=0)
-    assert super_reaction.burst_colors == ("#5865f2", "#eb459e")
-    assert message.sticker_items[0].name == "lyre wave"
-    assert message.message_reference is not None
-    assert message.referenced_message is not None
-    assert message.message_reference.message_id == message.referenced_message.id
-    assert message.jump_url == (
-        "https://discord.com/channels/1335172792320131073/"
-        "1335173295636611073/1564609632612253697"
-    )
-
-
-def test_a_forward_carries_the_forwarded_message_as_a_snapshot() -> None:
-    message = decode(Message, payload("events/MESSAGE_CREATE.forward.json"))
-
-    (snapshot,) = message.message_snapshots
-    forwarded = snapshot.message
-
-    assert message.message_reference is not None
-    assert message.message_reference.type is MessageReferenceType.FORWARD
-    assert forwarded.content.startswith("Release notes are out")
-    assert forwarded.attachments[0].filename == "SPOILER_notes.txt"
-    assert forwarded.mention_roles == (1335174302269571073,)
-    assert forwarded.sticker_items[0].name == "lyre wave"
-    assert forwarded.components == ()
 
 
 def test_interaction_metadata_decodes_by_type_and_keeps_unknown_types() -> None:
@@ -614,32 +501,6 @@ def test_obfuscation_is_read_from_the_flags_not_the_name() -> None:
 
     assert obfuscated.obfuscated
     assert not named_like_it.obfuscated
-
-
-def test_the_current_user_carries_its_account_settings() -> None:
-    user = decode(CurrentUser, payload("events/USER_UPDATE.json"))
-
-    assert (user.mfa_enabled, user.verified, user.email) == (True, True, None)
-    assert (user.locale, user.premium_type) == (Locale.ENGLISH_US, PremiumType.NONE)
-    assert type(user.locale) is Locale
-    assert user.flags == UserFlags(0)
-
-
-def test_documented_string_values_decode_into_their_enums() -> None:
-    app = json.loads(payload("rest/application_me.json"))
-    app["event_webhooks_types"] = ["APPLICATION_AUTHORIZED", "SOMETHING_NEW"]
-    member = {"membership_state": 2, "team_id": "1", "user": MESSAGE["author"]}
-
-    integration = decode(Integration, payload("events/INTEGRATION_UPDATE.json"))
-    widget = decode(GuildWidget, payload("rest/guild_widget.json"))
-    developer = decode(TeamMember, msgspec.json.encode(member | {"role": "developer"}))
-    webhooks = decode(Application, msgspec.json.encode(app)).event_webhooks_types
-
-    assert integration.type is IntegrationType.TWITCH
-    assert widget.members[0].status is Status.ONLINE
-    assert developer.role is TeamMemberRole.DEVELOPER
-    assert webhooks[0] is WebhookEventType.APPLICATION_AUTHORIZED
-    assert webhooks[1].name == "UNKNOWN_SOMETHING_NEW"
 
 
 def test_an_application_carries_its_guild() -> None:
