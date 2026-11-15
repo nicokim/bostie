@@ -1,19 +1,13 @@
-import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 import msgspec
 
-from bostie._bridge import Bridge
-from bostie._util import resolve_token
 from bostie.bot import Bot
-from bostie.client import _on_delivery
 from bostie.enums import InteractionType
 from bostie.errors import BostieError
 from bostie.events import InteractionCreate
-from bostie.http import HTTPClient
 from bostie.models.base import decoder
-from bostie.rest import REST
 from bostie.webhook_events import split_webhook_event, verify_signature
 
 MAX_BODY = 4 * 1024 * 1024
@@ -58,45 +52,20 @@ class ASGIApp:
 
     async def start(self) -> None:
         """Start the bot's REST if the bot is not running, sync its commands."""
-        bot = self.bot
-        if bot._bridge is None:
-            bridge = Bridge(
-                resolve_token(self._token),
-                bot._api_url,
-                _on_delivery,
-                http=bot._http_settings,
-            )
-            await bridge.__aenter__()
-            bot._bridge = bridge
-            bot._http = HTTPClient(bridge)
-            bot._rest = REST(
-                bot._http, bot._allowed_mentions, bot.cache, bot._deletions
-            )
-            self._owns_bot = True
-            try:
-                await self._prepare(bot)
-            except BaseException:
-                await self.close()
-                raise
-            bot._start_tasks()
-        elif self._public_key is None:
-            self._public_key = (await bot.rest.application.fetch()).verify_key
+        if self.bot.is_running:
+            if self._public_key is None:
+                self._public_key = (await self.bot.rest.application.fetch()).verify_key
+            return
+        application = await self.bot.open(self._token)
+        self._owns_bot = True
+        if self._public_key is None:
+            self._public_key = application.verify_key
 
     async def close(self) -> None:
         """Close the bot if `start()` started it."""
         if self._owns_bot:
             self._owns_bot = False
             await self.bot.close()
-
-    async def _prepare(self, bot: Bot) -> None:
-        application = await bot.rest.application.fetch()
-        bot._adopt(application)
-        if self._public_key is None:
-            self._public_key = application.verify_key
-        bot.user = bot.cache._current = await bot.rest.users.fetch_current()
-        await bot._setup()
-        if bot._auto_sync:
-            await bot._sync(always_put=False)
 
     async def _lifespan(self, receive: Receive, send: Send) -> None:
         while True:
@@ -137,17 +106,16 @@ class ASGIApp:
         ):
             await _respond(send, 401)
             return
-        received = asyncio.get_running_loop().time()
         kind = decoder(_Kind).decode(body)
         if kind.token is None:
             named = split_webhook_event(body)
             if named is not None:
-                self.bot._dispatch(0, 0, *named, received)
+                self.bot.deliver(*named)
             await _respond(send, 204)
         elif kind.type == InteractionType.PING:
             await _respond(send, 200, PONG)
         else:
-            self.bot._dispatch(0, 0, InteractionCreate.NAME, body, received)
+            self.bot.deliver(InteractionCreate.NAME, body)
             await _respond(send, 202)
 
 

@@ -38,7 +38,7 @@ When your program already runs an event loop, start the bot as a task:
 
 `await bot.wait_until_ready()` returns once `Started` was sent, at once if it was, and raises `StateError` if the bot stops first; awaiting the `start()` task then raises why. `bot.is_ready` says the same without waiting. The [web app example](../examples.md#web-app) runs a bot inside a web server's lifespan and posts messages from a web route.
 
-A bot that only answers interactions over HTTP needs no gateway: see [HTTP interactions](http-interactions.md). A script that only calls the REST API uses a [`RESTClient`](rest.md#without-a-bot).
+A bot that only answers interactions over HTTP needs no gateway: see [HTTP interactions](http-interactions.md). `await bot.open()` starts it that way and returns: it opens the HTTP client, fetches the application and the bot's user, sends `Starting`, syncs the commands, starts the background tasks and returns the application. `ASGIApp` calls it, and `close()` ends it. A script that only calls the REST API uses a [`RESTClient`](rest.md#without-a-bot).
 
 ## While it runs
 
@@ -47,6 +47,7 @@ A bot that only answers interactions over HTTP needs no gateway: see [HTTP inter
 | `bot.user` | the bot's `CurrentUser`, once connected |
 | `bot.application_id` | the app's id, once started |
 | `bot.latency` | the mean heartbeat round trip of the shards in seconds, or `None` |
+| `bot.is_running` | whether `start()` or `open()` runs the bot, until `close()` ends it |
 | `bot.is_ready` | whether `Started` was sent since the last `start()` |
 | `bot.rest`, `bot.http` | the [REST API](rest.md), once started |
 | `bot.gateway` | the [gateway shards](gateway.md#raw-gateway-commands), once connected |

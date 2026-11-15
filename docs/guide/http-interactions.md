@@ -10,9 +10,9 @@ Discord can send interactions to a URL of your app instead of the gateway, and i
 
 ## What it does
 
-When the server starts, through the ASGI lifespan, the app:
+When the server starts, through the ASGI lifespan, the app calls `bot.open()` unless the bot already runs on the gateway, which:
 
-1. opens the bot's HTTP client, unless the bot already runs on the gateway;
+1. opens the bot's HTTP client;
 2. fetches the application, for its id and the public key that signs Discord's requests, and the bot's user;
 3. sends `Starting`, syncs the commands, and starts the [background tasks](tasks.md).
 

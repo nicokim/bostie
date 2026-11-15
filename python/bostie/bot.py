@@ -365,6 +365,11 @@ class Bot(Router):
         return self._owner_ids
 
     @property
+    def is_running(self) -> bool:
+        """Whether `start()` or `open()` runs the bot, until `close()` ends it."""
+        return self._bridge is not None
+
+    @property
     def is_ready(self) -> bool:
         """Whether Started was sent since the last start(): every shard was ready."""
         return self._ready
@@ -387,6 +392,32 @@ class Bot(Router):
 
         The token defaults to the BOSTIE_TOKEN environment variable.
         """
+        bridge, token = self._open(token)
+        async with bridge:
+            try:
+                await self._connect(bridge, token)
+            except (TransportError, StateError):
+                if self._closing is None:
+                    raise
+            finally:
+                await self.close()
+
+    async def open(self, token: str | None = None) -> Application:
+        """Start REST, send Starting, sync commands and run tasks, with no gateway.
+
+        It returns the application; `close()` ends it. ASGIApp starts a bot this way.
+        """
+        bridge, _ = self._open(token)
+        await bridge.__aenter__()
+        try:
+            application = await self._prepare(fetch_user=True)
+        except BaseException:
+            await self.close()
+            raise
+        self._start_tasks()
+        return application
+
+    def _open(self, token: str | None) -> tuple[Bridge, str]:
         if self._bridge is not None:
             raise StateError("the bot is already running")
         try:
@@ -405,19 +436,23 @@ class Bot(Router):
         self._bridge = bridge
         self._replaying.clear()
         self._command_ids.clear()
-        async with bridge:
-            self._http = HTTPClient(bridge)
-            self._rest = REST(
-                self._http, self._allowed_mentions, self.cache, self._deletions
-            )
-            self._shards = None
-            try:
-                await self._connect(bridge, token)
-            except (TransportError, StateError):
-                if self._closing is None:
-                    raise
-            finally:
-                await self.close()
+        self._http = HTTPClient(bridge)
+        self._rest = REST(
+            self._http, self._allowed_mentions, self.cache, self._deletions
+        )
+        self._shards = None
+        return bridge, token
+
+    async def _prepare(self, *, fetch_user: bool) -> Application:
+        application = await self.rest.application.fetch()
+        self._adopt(application)
+        if fetch_user:
+            self.user = await self.rest.users.fetch_current()
+            self.cache.set_current_user(self.user)
+        await self._setup()
+        if self._auto_sync:
+            await self._sync(always_put=False)
+        return application
 
     async def _connect(self, bridge: Bridge, token: str) -> None:
         http = self.http
@@ -450,10 +485,7 @@ class Bot(Router):
             else None,
             small_guilds_complete=bool(self._intents & Intents.GUILD_PRESENCES),
         )
-        self._adopt(await self.rest.application.fetch())
-        await self._setup()
-        if self._auto_sync:
-            await self._sync(always_put=False)
+        await self._prepare(fetch_user=False)
         if resumed := shards.load_sessions():
             self._replaying |= resumed
             self.user = await self.rest.users.fetch_current()
@@ -583,6 +615,10 @@ class Bot(Router):
     def dispatch(self, event: LocalEvent) -> None:
         """Send an event of your own to its listeners, waiters and streams."""
         self._emit(event)
+
+    def deliver(self, name: str, data: bytes) -> None:
+        """Handle an event payload that came over HTTP as if the gateway sent it."""
+        self._dispatch(0, 0, name, data, asyncio.get_running_loop().time())
 
     async def update_presence(self, **options: Unpack[PresenceOptions]) -> None:
         """Change what the bot shows on every shard, and on sessions it starts later."""
