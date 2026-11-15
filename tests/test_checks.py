@@ -4,16 +4,27 @@ from typing import Any
 
 import pytest
 
-from bostie import Permissions
-from bostie.checks import Cooldown, MaxConcurrency, bot_has_permissions, has_permissions
+from bostie import Bot, Context, Permissions
+from bostie.checks import (
+    Cooldown,
+    MaxConcurrency,
+    bot_has_permissions,
+    has_permissions,
+    is_owner,
+)
 from bostie.errors import (
     BotMissingPermissions,
     CooldownActive,
     MaxConcurrencyReached,
     MissingPermissions,
 )
+from bostie.testing import FakeDiscord, payloads, run, running
+from bostie.testing.payloads import Json
 
 P = Permissions
+USER = int(payloads.interaction(2, {})["member"]["user"]["id"])
+APP_OWNER = int(payloads.fixture("rest/application_me")["owner"]["id"])
+TEAM_OWNER, ADMIN, READER, INVITED = 101, 102, 103, 104
 
 
 def context(
@@ -102,3 +113,61 @@ def test_limits_key_on_the_guild_or_dm_user_the_channel_or_your_own_key(
     else:
         refused = False
     assert refused is shared
+
+
+def team_member(user_id: int, role: str, state: int = 2) -> Json:
+    return {
+        "membership_state": state,
+        "team_id": "1",
+        "user": payloads.user(id=str(user_id)),
+        "role": role,
+    }
+
+
+TEAM = {
+    "icon": None,
+    "id": "1",
+    "name": "Crew",
+    "owner_user_id": str(TEAM_OWNER),
+    "members": [
+        team_member(ADMIN, "admin"),
+        team_member(USER, "developer"),
+        team_member(READER, "read_only"),
+        team_member(INVITED, "admin", state=1),
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    ("application", "owner_ids", "owners"),
+    [
+        ({}, None, {APP_OWNER}),
+        ({"team": TEAM}, None, {TEAM_OWNER, ADMIN, USER}),
+        ({"team": TEAM}, [USER], {USER}),
+        ({}, [], set()),
+    ],
+)
+def test_is_owner_lets_through_the_given_owners_or_the_apps(
+    application: Json, owner_ids: list[int] | None, owners: set[int]
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, owner_ids=owner_ids)
+
+        @bot.command(checks=[is_owner])
+        async def shutdown(ctx: Context) -> None:
+            """Stop the bot."""
+            await ctx.respond("Bye.")
+
+        app = payloads.fixture("rest/application_me") | application
+        fake.fail(
+            "GET", "/applications/@me", 200, app | {"id": str(fake.application_id)}
+        )
+        async with running(bot, fake):
+            answer = await fake.interaction(2, payloads.command("shutdown"))
+
+        assert bot.owner_ids == owners
+        assert answer.json["data"]["content"] == (
+            "Bye." if USER in owners else "Only the bot's owners can use this."
+        )
+
+    run(scenario)

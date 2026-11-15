@@ -53,7 +53,9 @@ from bostie.enums import (
     CommandType,
     Intents,
     InteractionContextType,
+    MembershipState,
     Status,
+    TeamMemberRole,
 )
 from bostie.errors import (
     CheckFailure,
@@ -147,6 +149,7 @@ CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
 )
 DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
+OWNER_ROLES = frozenset({TeamMemberRole.ADMIN, TeamMemberRole.DEVELOPER})
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
 type Node = Command | ContextMenuCommand | EntryPointCommand | ComponentRoute[...]
@@ -251,6 +254,7 @@ class Bot(Router):
         before_identify: Callable[[int], Awaitable[object]] | None = None,
         session_file: str | os.PathLike[str] | None = None,
         shutdown_grace: float = 0.0,
+        owner_ids: Iterable[int] | None = None,
     ) -> None:
         super().__init__()
         _check_cache_options(
@@ -289,6 +293,8 @@ class Bot(Router):
         self._before_identify = before_identify
         self._session_file = None if session_file is None else Path(session_file)
         self._shutdown_grace = shutdown_grace
+        self._given_owners = owner_ids is not None
+        self._owner_ids = frozenset(owner_ids or ())
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
             {
@@ -341,6 +347,11 @@ class Bot(Router):
     def latency(self) -> float | None:
         """Mean seconds from a heartbeat to its ACK over the shards, or None."""
         return None if self._gateway is None else self._gateway.latency
+
+    @property
+    def owner_ids(self) -> frozenset[int]:
+        """Who `checks.is_owner` lets through: the given ids, else the app's owners."""
+        return self._owner_ids
 
     @property
     def is_ready(self) -> bool:
@@ -658,6 +669,8 @@ class Bot(Router):
 
     def _adopt(self, application: Application) -> None:
         self.application_id = application.id
+        if not self._given_owners:
+            self._owner_ids = _owners(application)
         self._install_types = tuple(sorted(application.integration_types_config)) or (
             ApplicationIntegrationType.GUILD_INSTALL,
         )
@@ -1376,6 +1389,23 @@ def _described(interaction: Interaction) -> str:
             return f"custom_id {interaction.data.custom_id!r}"
         case UnknownInteraction():
             return f"type {interaction.type}"
+
+
+def _owners(application: Application) -> frozenset[int]:
+    team = application.team
+    if team is None:
+        return frozenset(() if application.owner is None else (application.owner.id,))
+    return frozenset(
+        {
+            team.owner_user_id,
+            *(
+                member.user.id
+                for member in team.members
+                if member.membership_state is MembershipState.ACCEPTED
+                and member.role in OWNER_ROLES
+            ),
+        }
+    )
 
 
 def _command_defaults(

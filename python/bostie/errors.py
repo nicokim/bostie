@@ -274,6 +274,13 @@ class BotMissingPermissions(CheckFailure):
         self.missing = missing
 
 
+class NotOwner(CheckFailure):
+    """The user is not one of the bot's owners."""
+
+    def __init__(self) -> None:
+        super().__init__("Only the bot's owners can use this.")
+
+
 class CooldownActive(CheckFailure):
     """A cooldown refused the use; another one may follow after `retry_after` s."""
 

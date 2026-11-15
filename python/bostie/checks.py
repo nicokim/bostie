@@ -9,6 +9,7 @@ from bostie.errors import (
     CooldownActive,
     MaxConcurrencyReached,
     MissingPermissions,
+    NotOwner,
 )
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ __all__ = [
     "Per",
     "bot_has_permissions",
     "has_permissions",
+    "is_owner",
 ]
 
 type AnyContext = Context | ComponentContext | ModalContext
@@ -50,6 +52,13 @@ def bot_has_permissions(permissions: Permissions) -> Callable[[Any], bool]:
         return True
 
     return check
+
+
+def is_owner(ctx: AnyContext) -> bool:
+    """A check that the user is one of `bot.owner_ids`."""
+    if ctx.user.id not in ctx.bot.owner_ids:
+        raise NotOwner
+    return True
 
 
 class Cooldown:

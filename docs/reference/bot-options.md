@@ -29,6 +29,7 @@ Every option of `Bot(...)`, all keyword-only. The guides explain each in context
 | `translate` | `None` | `f(text, locale)` returning a [translation](../guide/registration.md#translations) or `None` |
 | `auto_defer` | 2.5 | seconds after which an unanswered interaction is [deferred](../guide/responses.md#deferring); `None` turns it off |
 | `allowed_mentions` | `AllowedMentions(parse=("users", "roles"))` | which mentions can [ping](../guide/responses.md#allowed-mentions) by default |
+| `owner_ids` | `None` | the users [`is_owner`](../guide/checks.md#owners) lets through; `None` reads the app's owner or team |
 
 ## Cache
 
