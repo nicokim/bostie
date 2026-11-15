@@ -699,6 +699,24 @@ mod tests {
     }
 
     #[test]
+    fn a_lane_for_a_thread_that_died_gets_a_fresh_thread_in_its_place() {
+        let pool = PacerPool::new();
+        let (sender, receiver) = mpsc::channel();
+        drop(receiver);
+        pool.workers.lock().push(Worker {
+            sender,
+            load: Arc::default(),
+        });
+        let (lane, ticks) = recorder();
+
+        let placed = assign(&pool, lane);
+        take(&ticks, 1);
+
+        assert_eq!(placed, 0);
+        assert_eq!(threads(&pool), [1]);
+    }
+
+    #[test]
     fn a_lane_that_returns_false_leaves() {
         let pool = PacerPool::new();
         assign(&pool, Box::new(|_| false));
