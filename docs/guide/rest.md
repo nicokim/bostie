@@ -20,6 +20,14 @@
 
 `list` methods of endpoints that Discord pages return an async iterator, which fetches the next page as you go: `async for message in bot.rest.messages.list(channel_id, limit=500):`, as `/today` does above. Without `limit` it walks every item. `before`, `after` and `around` start somewhere else, at most one of them; they take an id or a `datetime`, which bostie turns into the id of that moment. Messages come newest first, or oldest first with `after`. A `list` method of an endpoint that Discord does not page is a coroutine that returns a tuple. `audit_log.list` yields whole `AuditLogPage` objects, with the users, webhooks and other objects the entries refer to.
 
+## The audit log
+
+`audit_log.list(guild_id)` yields `AuditLogPage` objects, and the gateway sends each new entry as an `AuditLogEntryCreate` event. An entry's `changes` hold one `AuditLogChange` per changed field, whose `new_value` and `old_value` have the type the changed object gives that field: `Permissions` for a role's `permissions`, a `datetime` for a member's `communication_disabled_until`, a tuple of `Overwrite` for a channel's `permission_overwrites`. Discord's exceptions follow its documentation: `$add` and `$remove` on a member's roles hold `AuditLogRole` objects, a webhook's `avatar_hash` and an invite's `channel_id` take the type of `avatar` and of an id, and a command permission change is keyed by the role, user or channel id and holds a `CommandPermission`. A key bostie does not know, or a value in a shape the field does not take, keeps its JSON value, and a value Discord leaves out is `None`.
+
+```python
+--8<-- "docs/snippets/rest/audit_log.py"
+```
+
 ## Errors
 
 A request that Discord answers with an error status raises an `HTTPException`: `BadRequest` for 400, `Forbidden` for 403, `NotFound` for 404, `ServerError` for 5xx. The exception has the `status`, Discord's `code` as a `JSONErrorCode`, its `message`, the per-field `errors`, and the raw `body`; its text lists every field error on its own line. `UnexpectedResponse` means Discord accepted the request but its answer did not decode; its message says whether the change took effect, and `error.raw` holds the answer.
