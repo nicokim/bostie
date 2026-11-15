@@ -236,9 +236,23 @@ impl Worker {
         };
         thread::Builder::new()
             .name(format!("bostie-voice-{index}"))
-            .spawn(move || pace(&receiver, &home, &Wall))
+            .spawn(move || {
+                #[cfg(target_os = "macos")]
+                run_in_real_time();
+                pace(&receiver, &home, &Wall);
+            })
             .map_err(CoreError::Runtime)?;
         Ok(Self { sender, load })
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_in_real_time() {
+    use crate::voice::types::{FRAME_48K, SAMPLE_RATE};
+    if let Err(error) =
+        audio_thread_priority::promote_current_thread_to_real_time(FRAME_48K, SAMPLE_RATE)
+    {
+        tracing::debug!(%error, "the voice pacer thread keeps its normal priority");
     }
 }
 
