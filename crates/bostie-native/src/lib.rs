@@ -426,6 +426,13 @@ impl NativeCore {
             .set_server_change_delay(GuildId::from(guild_id), delay)?)
     }
 
+    fn voice_stall_after(&self, guild_id: u64, after: f64) -> Result<()> {
+        let after = seconds("stall_after", after)?;
+        Ok(self
+            .voice()?
+            .set_stall_after(GuildId::from(guild_id), after)?)
+    }
+
     fn voice_speech_activity(&self, guild_id: u64, enabled: bool) -> Result<()> {
         Ok(self
             .voice()?
@@ -862,6 +869,8 @@ mod _native {
     const MIN_SPEECH_HANGOVER: f64 = types::SPEECH_HANGOVERS.start().as_secs_f64();
     #[pymodule_export]
     const MAX_SPEECH_HANGOVER: f64 = types::SPEECH_HANGOVERS.end().as_secs_f64();
+    #[pymodule_export]
+    const MIN_STALL_AFTER: f64 = types::FRAME.as_secs_f64();
     #[pymodule_export]
     const MAX_JITTER: f64 = types::MAX_JITTER.as_secs_f64();
     #[pymodule_export]

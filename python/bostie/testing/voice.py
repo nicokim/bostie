@@ -182,6 +182,11 @@ class VoiceGateway:
         sealed = aead.encrypt(nonce + bytes(12 - NONCE_SIZE), body, header)
         self._send_datagram(header + sealed + nonce, address)
 
+    async def send_datagram(self, data: bytes) -> None:
+        """Send `data` to the bot over UDP as it is, sealed with nothing."""
+        _, address = self._sealing()
+        self._send_datagram(data, address)
+
     def _sealing(self) -> tuple[VoiceSession, Address]:
         session = self.voice_sessions[-1] if self.voice_sessions else None
         address = None if session is None else session.address

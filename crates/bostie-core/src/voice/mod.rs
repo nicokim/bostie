@@ -57,7 +57,7 @@ pub use self::source::waveform::voice_message;
 pub use self::source::{Source, SourceRead};
 use self::tap::GatewayTap;
 use self::types::{
-    ConnectRequest, DisconnectReason, EncoderSettings, ReceiveOptions, SPEECH_HANGOVERS,
+    ConnectRequest, DisconnectReason, EncoderSettings, FRAME, ReceiveOptions, SPEECH_HANGOVERS,
     SinkOptions, SourceSpec, VoiceStatus,
 };
 use crate::error::CoreError;
@@ -371,6 +371,16 @@ impl Voice {
             )));
         }
         self.media(guild)?.set_speech_hangover(hangover);
+        Ok(())
+    }
+
+    pub fn set_stall_after(&self, guild: GuildId, after: Duration) -> Result<(), CoreError> {
+        if after < FRAME {
+            return Err(CoreError::InvalidRequest(format!(
+                "stall_after must be at least {FRAME:?}, got {after:?}"
+            )));
+        }
+        self.media(guild)?.set_stall_after(after);
         Ok(())
     }
 

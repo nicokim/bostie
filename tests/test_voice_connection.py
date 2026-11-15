@@ -245,6 +245,10 @@ def set_speech_hangover(vc: voice.VoiceConnection) -> None:
     vc.speech_hangover = 1.0
 
 
+def set_stall_after(vc: voice.VoiceConnection) -> None:
+    vc.stall_after = 1.0
+
+
 def set_speech_activity(vc: voice.VoiceConnection) -> None:
     vc.speech_activity = False
 
@@ -261,6 +265,7 @@ AFTER_THE_END: dict[str, Callable[[voice.VoiceConnection], object]] = {
     "receive": lambda vc: vc.receive(),
     "speech_hangover": set_speech_hangover,
     "speech_activity": set_speech_activity,
+    "stall_after": set_stall_after,
     "wait_until": lambda vc: vc.wait_until(voice.State.READY),
     "verification_code": lambda vc: vc.dave.verification_code(USER_ID),
 }

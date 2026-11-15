@@ -18,6 +18,7 @@ MIN_BUFFER = _native.MIN_BUFFER
 MAX_BUFFER = _native.MAX_BUFFER
 MIN_SPEECH_HANGOVER = _native.MIN_SPEECH_HANGOVER
 MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
+MIN_STALL_AFTER = _native.MIN_STALL_AFTER
 MAX_JITTER = _native.MAX_JITTER
 MAX_BANDS = _native.MAX_BANDS
 MIN_BAND_FREQUENCY = _native.MIN_BAND_FREQUENCY
@@ -45,6 +46,13 @@ def check_crossfade(seconds: float) -> float:
             f"crossfade must be from 0 to {MAX_BUFFER} seconds, got {seconds}"
         )
     return seconds
+
+
+def check_stall_after(seconds: float) -> None:
+    if not (math.isfinite(seconds) and seconds >= MIN_STALL_AFTER):
+        raise ValueError(
+            f"stall_after must be at least {MIN_STALL_AFTER} seconds, got {seconds}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +204,7 @@ class Defaults:
     stall: SinkStall = "hold"
     speech_hangover: float = 0.2
     speech_activity: bool = True
+    stall_after: float = 2.0
     receive_buffer: float = 2.0
     jitter: float = 0.1
     overflow: Overflow = "drop_oldest"
@@ -236,6 +245,7 @@ class Defaults:
                 f"speech_hangover must be from {MIN_SPEECH_HANGOVER} to "
                 f"{MAX_SPEECH_HANGOVER} seconds, got {self.speech_hangover}"
             )
+        check_stall_after(self.stall_after)
         if not MIN_BUFFER <= self.receive_buffer <= MAX_BUFFER:
             raise ValueError(
                 f"receive_buffer must be from {MIN_BUFFER} to {MAX_BUFFER} seconds, "

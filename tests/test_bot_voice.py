@@ -27,6 +27,7 @@ OTHER_ID = VOICE_ID + 1
 MEMBER_ID = "613374681415811073"
 FRIEND_ID = 1_100_000_000_000_000_001
 SILENCE = b"\xf8\xff\xfe"
+UNOPENABLE = b"\x80\x78" + struct.pack(">HII", 0, 0, 4321) + bytes(32)
 SILENT_TAIL = [SILENCE] * 5
 FRAMES_PER_SECOND = 50
 LOST_FROM, LOST_UNTIL = 20, 22
@@ -405,6 +406,40 @@ def test_rtcp_reports_reach_listeners_with_the_users_of_their_ssrcs() -> None:
                 ),
                 data=block,
             )
+
+    run(scenario)
+
+
+def test_a_receive_stall_travels_from_the_core_to_listeners_and_ends() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, voice=voice.Defaults(stall_after=0.05))
+        changes: asyncio.Queue[voice.MediaStalled | voice.MediaResumed] = (
+            asyncio.Queue()
+        )
+
+        @bot.listen
+        async def media(event: voice.MediaStalled | voice.MediaResumed) -> None:
+            changes.put_nowait(event)
+
+        async with running(bot, fake):
+            vc = await bot.voice.connect(VOICE_ID)
+            spoken = voice.OpusEncoder().encode(tone(0.2))
+            async with vc.receive(voice.PCM(16_000, 1)):
+                await fake.speaking(FRIEND_ID, 4321, 1)
+                await fake.send_datagram(UNOPENABLE)
+                stalled = await changes.get()
+                await fake.send_audio(4321, spoken)
+                resumed = await changes.get()
+
+        assert vc.stall_after == 0.05
+        assert isinstance(stalled, voice.MediaStalled)
+        assert isinstance(resumed, voice.MediaResumed)
+        assert (stalled.guild_id, stalled.direction) == (
+            GUILD_ID,
+            voice.Direction.RECEIVE,
+        )
+        assert resumed.direction is voice.Direction.RECEIVE
+        assert 0.05 <= stalled.duration <= resumed.duration
 
     run(scenario)
 

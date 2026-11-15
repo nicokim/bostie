@@ -70,6 +70,7 @@ def test_encoder_checks_its_bounds(
             {
                 "sink_buffer": 0.02,
                 "speech_hangover": 0.02,
+                "stall_after": 0.02,
                 "receive_buffer": 0.02,
                 "jitter": 0.0,
                 "stage": "request",
@@ -106,6 +107,9 @@ def test_encoder_checks_its_bounds(
         ({"speech_hangover": 0.019}, invalid("speech_hangover")),
         ({"speech_hangover": 10.1}, invalid("speech_hangover")),
         ({"speech_hangover": math.nan}, invalid("speech_hangover")),
+        ({"stall_after": 0.019}, invalid("stall_after")),
+        ({"stall_after": math.inf}, invalid("stall_after")),
+        ({"stall_after": math.nan}, invalid("stall_after")),
         ({"receive_buffer": 0.019}, invalid("receive_buffer")),
         ({"receive_buffer": 60.1}, invalid("receive_buffer")),
         ({"receive_buffer": math.nan}, invalid("receive_buffer")),

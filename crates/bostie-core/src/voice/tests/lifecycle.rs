@@ -275,6 +275,20 @@ async fn sinks_and_sources_never_share_an_id() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_stall_is_reported_after_one_frame_at_the_earliest() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+
+    let refused = harness
+        .voice
+        .set_stall_after(guild(), FRAME.saturating_sub(Duration::from_nanos(1)));
+    harness.voice.set_stall_after(guild(), FRAME).unwrap();
+
+    assert!(matches!(refused, Err(CoreError::InvalidRequest(_))));
+    assert_eq!(harness.media().stall_after(), FRAME);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_speech_hangover_is_checked_against_its_bounds() {
     let mut harness = Harness::start().await;
     harness.connected().await;

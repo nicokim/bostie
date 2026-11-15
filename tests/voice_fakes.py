@@ -492,6 +492,9 @@ class FakeCore:
     def voice_server_change_delay(self, guild_id: int, delay: float) -> None:
         self._record("voice_server_change_delay", guild_id, delay)
 
+    def voice_stall_after(self, guild_id: int, after: float) -> None:
+        self._record("voice_stall_after", guild_id, after)
+
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None:
         self._record("voice_speech_activity", guild_id, enabled)
 

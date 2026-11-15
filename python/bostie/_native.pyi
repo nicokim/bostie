@@ -24,6 +24,7 @@ __all__ = [
     "MIN_RATE",
     "MIN_SPEECH_HANGOVER",
     "MIN_SPEED",
+    "MIN_STALL_AFTER",
     "OPUS_APPLICATIONS",
     "OPUS_BANDWIDTHS",
     "OPUS_SIGNALS",
@@ -59,6 +60,7 @@ MIN_BUFFER: Final[float]
 MAX_BUFFER: Final[float]
 MIN_SPEECH_HANGOVER: Final[float]
 MAX_SPEECH_HANGOVER: Final[float]
+MIN_STALL_AFTER: Final[float]
 MAX_JITTER: Final[float]
 MAX_BANDS: Final[int]
 MIN_BAND_FREQUENCY: Final[float]
@@ -322,6 +324,7 @@ class Core:
     ) -> Receiver: ...
     def voice_speech_hangover(self, guild_id: int, hangover: float) -> None: ...
     def voice_server_change_delay(self, guild_id: int, delay: float) -> None: ...
+    def voice_stall_after(self, guild_id: int, after: float) -> None: ...
     def voice_speech_activity(self, guild_id: int, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 

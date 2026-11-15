@@ -30,11 +30,12 @@ A join that is not ready within `timeout` seconds raises `VoiceConnectError` wit
 | `stage` | `"listen"` | on a stage: `"listen"`, `"request"` to ask to speak, or `"speak"` |
 | `speech_hangover` | 0.2 | seconds of silence before a speaker counts as stopped, 0.02 to 10 |
 | `speech_activity` | `True` | whether speech start and stop events fire |
+| `stall_after` | 2.0 | seconds media may stop flowing before `MediaStalled` reports it, at least 0.02 |
 | `sink_buffer`, `stall` | 0.2, `"hold"` | the defaults of every [sink](sinks.md) |
 | `receive_buffer`, `jitter`, `overflow`, `receive_stall` | 2.0, 0.1, `"drop_oldest"`, `"wait"` | the defaults of every [receiver](receiving.md) |
 | `crossfade`, `history` | 0.0, 0 | the defaults of every [queue](playback.md#queues) |
 
-`connect()` takes `self_mute`, `self_deaf`, `timeout`, `server_change_delay`, `encoder`, `speaking_flags`, `stage`, `speech_hangover` and `speech_activity`. Invalid values raise `ValueError` when the `Defaults` is built. For annotations, the options of `connect()`, `move()`, `edit()` and `connect_external()` are the typed dictionaries `voice.ConnectOptions`, `voice.MoveOptions`, `voice.EditOptions` and `voice.ExternalConnectOptions`, and the string settings have the literal types `voice.StageRole`, `voice.SinkStall`, `voice.ReceiveStall`, `voice.Overflow`, `voice.Sample`, `voice.OpusApplication`, `voice.OpusBandwidth` and `voice.OpusSignal`. `ctx.voice` is a `voice.ContextVoice` and `bot.voice` a `voice.VoiceManager`.
+`connect()` takes `self_mute`, `self_deaf`, `timeout`, `server_change_delay`, `encoder`, `speaking_flags`, `stage`, `speech_hangover`, `speech_activity` and `stall_after`. Invalid values raise `ValueError` when the `Defaults` is built. For annotations, the options of `connect()`, `move()`, `edit()` and `connect_external()` are the typed dictionaries `voice.ConnectOptions`, `voice.MoveOptions`, `voice.EditOptions` and `voice.ExternalConnectOptions`, and the string settings have the literal types `voice.StageRole`, `voice.SinkStall`, `voice.ReceiveStall`, `voice.Overflow`, `voice.Sample`, `voice.OpusApplication`, `voice.OpusBandwidth` and `voice.OpusSignal`. `ctx.voice` is a `voice.ContextVoice` and `bot.voice` a `voice.VoiceManager`.
 
 ## The connection
 
@@ -50,7 +51,7 @@ A join that is not ready within `timeout` seconds raises `VoiceConnectError` wit
 | `latency` | a `Latency` with the WebSocket and UDP round trips in seconds, `None` until measured |
 | `dave` | the call's end-to-end encryption; see below |
 | `sinks` | the open sinks, oldest first |
-| `encoder`, `speaking_flags`, `speech_hangover`, `speech_activity` | settable while connected |
+| `encoder`, `speaking_flags`, `speech_hangover`, `speech_activity`, `stall_after` | settable while connected |
 
 - `await vc.move(channel_id)` moves to another voice or stage channel of the guild and returns once media flows there.
 - `await vc.edit(self_mute=..., self_deaf=...)` changes the bot's own mute or deafen and returns once Discord applied it.
@@ -91,6 +92,14 @@ Voice connections send their events through `@bot.listen`. Each is a `voice.Voic
 | `RtcpPacket` | `packet_type`, `count`, `ssrc`, `user_id`, `reports`, `data` | the voice server sent an RTCP packet; each `ReceptionReport` in `reports` has the `fraction_lost`, `lost`, `highest_sequence`, `jitter`, `last_sender_report` and `delay` of one stream |
 
 They live in `bostie.voice`. `SpeechStart` and `SpeechStop` fire only while `speech_activity` is on.
+
+## Stalled media
+
+```python
+--8<-- "docs/snippets/voice/media_stalls.py"
+```
+
+`MediaStalled` with `direction` `SEND` fires when audio waits in a sink but cannot leave for `stall_after` seconds, during a reconnect or a DAVE transition. With `RECEIVE`, packets reach an open receiver but none can be opened or played for that long. `MediaResumed` follows once media flows again, its `duration` counting from the start of the stall. `stall_after` is 2 seconds unless `voice.Defaults`, `connect(stall_after=...)` or `vc.stall_after` says otherwise.
 
 ## Leaving an empty channel
 

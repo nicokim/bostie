@@ -78,6 +78,7 @@ from bostie.voice.formats import (
     SinkOptions,
     SinkStall,
     StageRole,
+    check_stall_after,
 )
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.receiver import NativeReceiver, Receiver
@@ -189,6 +190,7 @@ class VoiceCore(Protocol):
     ) -> NativeReceiver: ...
     def voice_speech_hangover(self, guild_id: int, hangover: float) -> None: ...
     def voice_server_change_delay(self, guild_id: int, delay: float) -> None: ...
+    def voice_stall_after(self, guild_id: int, after: float) -> None: ...
     def voice_speech_activity(self, guild_id: int, *, enabled: bool) -> None: ...
     def voice_ssrcs(self, guild_id: int) -> dict[int, int]: ...
 
@@ -347,7 +349,11 @@ class VoiceManager:
         return self._connections.get(guild_id)
 
     async def connect(
-        self, channel_id: int, **options: Unpack[ConnectOptions]
+        self,
+        channel_id: int,
+        *,
+        stall_after: float | None = None,
+        **options: Unpack[ConnectOptions],
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
@@ -356,10 +362,12 @@ class VoiceManager:
         """
         user = self._running_user("bot.voice.connect()")
         settings = self._settings(options, CONNECT_OPTIONS)
+        if stall_after is not None:
+            settings = replace(settings, stall_after=stall_after)
         guild_id, channel = await self._voice_channel(channel_id)
         vc = self._connections.get(guild_id)
         if vc is not None:
-            await vc._connect_again(channel, options)
+            await vc._connect_again(channel, options, stall_after)
             return vc
         vc = VoiceConnection(self, guild_id, channel, settings)
         await vc._start(user.id)
@@ -539,6 +547,7 @@ class VoiceConnection:
         self._speaking_flags = settings.speaking_flags
         self._speech_hangover = settings.speech_hangover
         self._speech_activity = settings.speech_activity
+        self._stall_after = settings.stall_after
         self._speaking: dict[int, float] = {}
         self._speaking_view = MappingProxyType(self._speaking)
         self._speech_ssrcs: dict[int, int] = {}
@@ -648,6 +657,18 @@ class VoiceConnection:
         self._check_live()
         self._core().voice_speech_hangover(self.guild_id, seconds)
         self._speech_hangover = seconds
+
+    @property
+    def stall_after(self) -> float:
+        """Seconds media may stop flowing before MediaStalled reports it."""
+        return self._stall_after
+
+    @stall_after.setter
+    def stall_after(self, seconds: float) -> None:
+        check_stall_after(seconds)
+        self._check_live()
+        self._core().voice_stall_after(self.guild_id, seconds)
+        self._stall_after = seconds
 
     @property
     def speech_activity(self) -> bool:
@@ -952,6 +973,7 @@ class VoiceConnection:
             self._core().voice_speech_activity(
                 self.guild_id, enabled=settings.speech_activity
             )
+            self._core().voice_stall_after(self.guild_id, settings.stall_after)
         except BaseException:
             del self.manager._connections[self.guild_id]
             raise
@@ -962,7 +984,9 @@ class VoiceConnection:
                 self._core().voice_disconnect(self.guild_id)
             raise
 
-    async def _connect_again(self, channel: Channel, options: ConnectOptions) -> None:
+    async def _connect_again(
+        self, channel: Channel, options: ConnectOptions, stall_after: float | None
+    ) -> None:
         mute, deaf = self._requested
         if "stage" in options:
             self._settings = replace(self._settings, stage=options["stage"])
@@ -985,6 +1009,8 @@ class VoiceConnection:
             self._core().voice_server_change_delay(
                 self.guild_id, options["server_change_delay"]
             )
+        if stall_after is not None:
+            self.stall_after = stall_after
 
     async def _join(
         self,
@@ -1333,7 +1359,9 @@ class ContextVoice:
         """The bot's connection in this guild, or None."""
         return None if self._guild_id is None else self._manager.get(self._guild_id)
 
-    async def connect(self, **options: Unpack[ConnectOptions]) -> VoiceConnection:
+    async def connect(
+        self, *, stall_after: float | None = None, **options: Unpack[ConnectOptions]
+    ) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
         check_keys(options, CONNECT_OPTIONS, "options")
         if self._guild_id is None:
@@ -1344,7 +1372,9 @@ class ContextVoice:
                 f"user {self._user_id} is not in a voice channel of guild "
                 f"{self._guild_id}"
             )
-        return await self._manager.connect(channel_id, **options)
+        return await self._manager.connect(
+            channel_id, stall_after=stall_after, **options
+        )
 
     async def _channel_id(self, guild_id: int) -> int | None:
         bot = self._manager._bot

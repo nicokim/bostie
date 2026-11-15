@@ -73,7 +73,7 @@ struct Roster {
 pub(crate) struct Media {
     guild: GuildId,
     inbox: Arc<Inbox>,
-    stall_after: Duration,
+    stall_after: AtomicU64,
     arrival_limit: usize,
     pub transport: Mutex<Option<Arc<Transport>>>,
     gate: AtomicU8,
@@ -111,7 +111,7 @@ impl Media {
         Self {
             guild,
             inbox,
-            stall_after,
+            stall_after: AtomicU64::new(nanos(stall_after)),
             arrival_limit: receive.arrivals,
             transport: Mutex::new(None),
             gate: AtomicU8::new(SendMode::Hold as u8),
@@ -141,7 +141,11 @@ impl Media {
     }
 
     pub(crate) fn stall_after(&self) -> Duration {
-        self.stall_after
+        Duration::from_nanos(self.stall_after.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn set_stall_after(&self, after: Duration) {
+        self.stall_after.store(nanos(after), Ordering::Relaxed);
     }
 
     pub(crate) fn push(&self, delivery: Delivery) {
@@ -560,7 +564,7 @@ impl Lane {
             self.stall.ease();
             return;
         }
-        if let Some(duration) = self.stall.press(now, self.media.stall_after) {
+        if let Some(duration) = self.stall.press(now, self.media.stall_after()) {
             self.media.stalled(Direction::Send, true, duration);
         }
     }
