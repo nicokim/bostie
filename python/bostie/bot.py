@@ -17,7 +17,7 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Literal, Self, Unpack, cast, override
+from typing import Any, Literal, Self, cast, override
 
 import msgspec
 
@@ -79,15 +79,11 @@ from bostie.events import (
 )
 from bostie.gateway import (
     LARGE_THRESHOLD,
-    MEMBER_REQUEST,
-    PRESENCE_OPTIONS,
     REQUEST_CHANNEL_INFO,
     REQUEST_GUILD_MEMBERS,
     REQUEST_SOUNDBOARD_SOUNDS,
     REQUEST_TIMEOUT,
     GatewayClient,
-    MemberRequest,
-    PresenceOptions,
     Readiness,
     RequestedMembers,
     Shards,
@@ -103,7 +99,6 @@ from bostie.models import (
     SoundboardSound,
     VoiceChannelInfo,
 )
-from bostie.models.base import check_keys
 from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
@@ -258,12 +253,7 @@ class Bot(Router):
         self._owner_ids = frozenset(owner_ids or ())
         self._allowed_mentions = allowed_mentions
         self._presence = presence_fields(
-            {
-                "status": status,
-                "activities": activities,
-                "afk": afk,
-                "idle_since": idle_since,
-            }
+            status=status, activities=activities, afk=afk, idle_since=idle_since
         )
         self._http_settings = http_settings
         self._api_url = api_url
@@ -594,28 +584,51 @@ class Bot(Router):
         """Handle an event payload that came over HTTP as if the gateway sent it."""
         self._dispatch(0, 0, name, data, asyncio.get_running_loop().time())
 
-    async def update_presence(self, **options: Unpack[PresenceOptions]) -> None:
-        """Change what the bot shows on every shard, and on sessions it starts later."""
-        check_keys(options, PRESENCE_OPTIONS, "presence options")
-        self._presence |= presence_fields(options)
+    async def update_presence(
+        self,
+        *,
+        status: Status | None = None,
+        activities: Iterable[ActivityDict] | None = None,
+        afk: bool | None = None,
+        idle_since: datetime | Unset | None = UNSET,
+    ) -> None:
+        """Change what the bot shows on every shard, and on sessions it starts later.
+
+        A setting left out stays as it is.
+        """
+        self._presence |= presence_fields(
+            status=status, activities=activities, afk=afk, idle_since=idle_since
+        )
         if self._shards is not None:
             self._shards.update_presence(self._presence)
 
     async def request_members(
-        self, guild_id: int, **options: Unpack[MemberRequest]
+        self,
+        guild_id: int,
+        *,
+        query: str | None = None,
+        limit: int | None = None,
+        user_ids: Iterable[int] | None = None,
+        presences: bool = False,
+        timeout: float = REQUEST_TIMEOUT,
     ) -> RequestedMembers:
         """Ask the gateway for members of a guild and gather every chunk of the answer.
 
         Without `query` or `user_ids` it asks for every member. `timeout` bounds the
         wait for each chunk, 30 s by default, and raises TimeoutError when it ends.
         """
-        check_keys(options, MEMBER_REQUEST, "member request options")
-        request = member_request(guild_id, options, self._intents)
+        request = member_request(
+            guild_id,
+            self._intents,
+            query=query,
+            limit=limit,
+            user_ids=user_ids,
+            presences=presences,
+        )
         chunks: list[MembersChunk] = []
         key = (MembersChunk.NAME, request["nonce"])
-        wait = options.get("timeout", REQUEST_TIMEOUT)
         async with self._request(
-            guild_id, REQUEST_GUILD_MEMBERS, request, key, wait
+            guild_id, REQUEST_GUILD_MEMBERS, request, key, timeout
         ) as answers:
             async for answer in answers:
                 if isinstance(answer, GatewayRateLimited):

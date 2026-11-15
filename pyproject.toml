@@ -86,7 +86,7 @@ max-complexity = 12
 convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
-"python/bostie/voice/connection.py" = ["ASYNC109"]
+"python/bostie/{bot,voice/connection}.py" = ["ASYNC109"]  # timeout= is a setting with its own default (per member chunk, per voice join), not a bound on the whole call
 "python/bostie/{_bridge,bot,dispatch,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
 "python/bostie/voice/{player,recorder}.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
 "python/bostie/models/**" = ["RUF012"]  # msgspec copies an empty mutable default for each instance

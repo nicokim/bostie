@@ -7,12 +7,13 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import msgspec
 
 from bostie._aio import spawn
 from bostie._bridge import Bridge, StatusDelivery
+from bostie._util import UNSET, Unset
 from bostie.activity import ActivityDict
 from bostie.enums import Intents, Status
 from bostie.errors import (
@@ -47,43 +48,25 @@ CLOSE_ERRORS: dict[int, type[GatewayClosed]] = {
 log = logging.getLogger("bostie.gateway")
 
 
-class PresenceOptions(TypedDict, total=False):
-    """What the bot shows; `bot.update_presence()` keeps the options left out."""
-
-    status: Status
-    activities: Iterable[ActivityDict]
-    afk: bool
-    idle_since: datetime | None
-
-
-PRESENCE_OPTIONS = PresenceOptions.__optional_keys__
-
-
-def presence_fields(options: PresenceOptions) -> dict[str, Any]:
+def presence_fields(
+    *,
+    status: Status | None,
+    activities: Iterable[ActivityDict] | None,
+    afk: bool | None,
+    idle_since: datetime | Unset | None,
+) -> dict[str, Any]:
     fields: dict[str, Any] = {}
-    if "idle_since" in options:
-        since = options["idle_since"]
-        fields["since"] = None if since is None else int(since.timestamp() * 1000)
-    if "activities" in options:
-        fields["activities"] = list(options["activities"])
-    if "status" in options:
-        fields["status"] = options["status"]
-    if "afk" in options:
-        fields["afk"] = options["afk"]
+    if idle_since is not UNSET:
+        fields["since"] = (
+            None if idle_since is None else int(idle_since.timestamp() * 1000)
+        )
+    if activities is not None:
+        fields["activities"] = list(activities)
+    if status is not None:
+        fields["status"] = status
+    if afk is not None:
+        fields["afk"] = afk
     return fields
-
-
-class MemberRequest(TypedDict, total=False):
-    """What `bot.request_members()` asks for: `query` and `limit`, or `user_ids`."""
-
-    query: str
-    limit: int
-    user_ids: Iterable[int]
-    presences: bool
-    timeout: float
-
-
-MEMBER_REQUEST = MemberRequest.__optional_keys__
 
 
 class GatewaySession(msgspec.Struct, frozen=True, kw_only=True):
@@ -106,9 +89,14 @@ class RequestedMembers:
 
 
 def member_request(
-    guild_id: int, options: MemberRequest, intents: Intents
+    guild_id: int,
+    intents: Intents,
+    *,
+    query: str | None,
+    limit: int | None,
+    user_ids: Iterable[int] | None,
+    presences: bool,
 ) -> dict[str, Any]:
-    presences = options.get("presences", False)
     if presences and not intents & Intents.GUILD_PRESENCES:
         raise MissingIntent(
             "presences need Intents.GUILD_PRESENCES; add it to Bot(intents=...)"
@@ -118,15 +106,15 @@ def member_request(
         "presences": presences,
         "nonce": secrets.token_hex(16),
     }
-    if "user_ids" in options:
-        if "query" in options or "limit" in options:
+    if user_ids is not None:
+        if query is not None or limit is not None:
             raise ValueError("pass user_ids, or query and limit, not both")
-        request["user_ids"] = [str(user_id) for user_id in options["user_ids"]]
+        request["user_ids"] = [str(user_id) for user_id in user_ids]
         if len(request["user_ids"]) > MAX_REQUESTED_MEMBERS:
             raise ValueError("user_ids takes at most 100 users")
         return request
-    request["query"] = options.get("query", "")
-    request["limit"] = options.get("limit", 0)
+    request["query"] = "" if query is None else query
+    request["limit"] = 0 if limit is None else limit
     if not 0 <= request["limit"] <= MAX_REQUESTED_MEMBERS:
         raise ValueError(f"limit must be 0 to 100, got {request['limit']}")
     if not request["query"] and not intents & Intents.GUILD_MEMBERS:
