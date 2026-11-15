@@ -1,6 +1,6 @@
 [project]
 site_name = "bostie"
-site_url = "https://nicokim.github.io/bostie/"
+site_url = "https://bostie.dev/"
 repo_url = "https://github.com/nicokim/bostie"
 repo_name = "nicokim/bostie"
 site_description = "A Discord library for Python with a Rust core, built around reliable voice."

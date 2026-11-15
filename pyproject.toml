@@ -21,8 +21,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://nicokim.github.io/bostie/"
-Documentation = "https://nicokim.github.io/bostie/"
+Homepage = "https://bostie.dev/"
+Documentation = "https://bostie.dev/"
 Repository = "https://github.com/nicokim/bostie"
 Issues = "https://github.com/nicokim/bostie/issues"
 Changelog = "https://github.com/nicokim/bostie/releases"
