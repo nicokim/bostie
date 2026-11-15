@@ -25,7 +25,7 @@ class OpusEncoder:
         )
 
     def encode(self, data: Buffer) -> list[bytes]:
-        """Every complete packet so far; the remainder waits for the next call."""
+        """The complete packets so far; the rest waits for the next call."""
         return self._native.encode(memoryview(data).cast("B"))
 
     def flush(self) -> list[bytes]:

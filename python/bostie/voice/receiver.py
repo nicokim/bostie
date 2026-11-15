@@ -34,7 +34,7 @@ class ReceiverStats:
 
 
 class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
-    """A bounded async iterator over received audio; one per subscriber."""
+    """A bounded async iterator over received audio, one for each subscriber."""
 
     def __init__(
         self,

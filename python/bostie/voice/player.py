@@ -378,7 +378,7 @@ class Queue:
         self._gate.set()
 
     def stop(self) -> None:
-        """End every track and close the sink; later adds play again."""
+        """End every track and close the sink; tracks added later play again."""
         sink = self._sink
         for entry in tuple(self._entries):
             self._end(entry, EndReason.STOPPED)

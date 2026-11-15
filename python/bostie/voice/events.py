@@ -82,7 +82,7 @@ class UserJoin(VoiceEvent, kw_only=True):
 
 
 class UserLeave(VoiceEvent, kw_only=True):
-    """A user left the call; in a receiver, `offset` is where on its clock."""
+    """A user left the call; from a receiver, `offset` is the time on its clock."""
 
     NAME = "voice.user_leave"
 

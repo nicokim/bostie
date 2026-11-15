@@ -80,7 +80,7 @@ class Source(ABC):
 
     @abstractmethod
     async def open(self, manager: "VoiceManager") -> None:
-        """Prepare the source; `vc.play()` calls it, or pass `bot.voice` yourself."""
+        """Prepare the source; `vc.play()` calls this, or call it with `bot.voice`."""
 
     def __aiter__(self) -> Self:
         return self
@@ -245,7 +245,7 @@ class Url(_DecodedSource):
 
 
 class Stream(Source):
-    """Chunks of any async iterable, already in `format`; not seekable."""
+    """Chunks from any async iterable, already in `format`; it cannot seek."""
 
     def __init__(self, items: AsyncIterable[bytes], format: Format) -> None:
         self._items = items
@@ -284,7 +284,7 @@ class Stream(Source):
 
 
 class FFmpeg(Source):
-    """The output of an ffmpeg command, read as 48 kHz stereo s16le; not seekable."""
+    """The output of an ffmpeg command, read as 48 kHz stereo s16le; it cannot seek."""
 
     def __init__(self, args: Sequence[str], *, executable: str = "ffmpeg") -> None:
         self._args = tuple(args)

@@ -144,15 +144,15 @@ class Recorder:
 
     @property
     def files(self) -> Mapping[int | None, Path]:
-        """The files written so far, by user id; None keys a mixed recording."""
+        """The files written so far by user id; a mixed recording's key is None."""
         return MappingProxyType(self._files)
 
     def stats(self) -> "ReceiverStats":
-        """The receiver's counters; dropped means the disk fell behind for too long."""
+        """The receiver's counters; it drops frames when the disk falls behind."""
         return self._rx.stats()
 
     async def stop(self) -> dict[int | None, Path]:
-        """Stop once heard audio is queued or the wait gives up; return the files."""
+        """Write the audio heard so far, then stop and return the files."""
         await self._halt()
         return await self.wait()
 

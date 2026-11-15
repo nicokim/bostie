@@ -112,7 +112,7 @@ type VoiceDelivery = (
 
 
 class EditOptions(TypedDict, total=False):
-    """The bot's own mute and deafen; each left out stays as it is."""
+    """The bot's own mute and deafen; any you leave out stays as it is."""
 
     self_mute: bool
     self_deaf: bool
@@ -152,7 +152,7 @@ EDIT_OPTIONS = EditOptions.__optional_keys__
 
 @dataclass(frozen=True, slots=True)
 class Dave:
-    """The call's end-to-end encryption; `protocol_version` 0 means none."""
+    """The call's end-to-end encryption, off when `protocol_version` is 0."""
 
     protocol_version: int
     epoch: int | None
@@ -525,7 +525,7 @@ class VoiceConnection:
 
     @property
     def speech_activity(self) -> bool:
-        """Whether speech events fire; off with no receiver, nothing is decrypted."""
+        """Whether speech events fire; off, audio is only decrypted for receivers."""
         return self._speech_activity
 
     @speech_activity.setter
@@ -739,7 +739,7 @@ class VoiceConnection:
         )
 
     def stop(self) -> None:
-        """Close every sink, so nothing plays; their tracks end STOPPED."""
+        """Close every sink so that nothing plays; their tracks end with STOPPED."""
         for sink in tuple(self._sinks):
             sink.close()
 
@@ -796,7 +796,7 @@ class VoiceConnection:
         self._core().voice_reconnect(self.guild_id)
 
     async def disconnect(self) -> None:
-        """Leave the channel; returns once the connection ended, at most 2 s later."""
+        """Leave the channel and return once the connection ended, within 2 s."""
         if self._state is State.DISCONNECTED:
             return
         self._core().voice_disconnect(self.guild_id)

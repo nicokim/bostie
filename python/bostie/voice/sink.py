@@ -25,7 +25,7 @@ MIN_PIECE = 0.02
 
 @dataclass(frozen=True, slots=True)
 class SinkStats:
-    """A sink's counters; `position` is its playhead in seconds, as markers count."""
+    """A sink's counters in seconds; `position` is the playhead markers use."""
 
     sent: float
     position: float
