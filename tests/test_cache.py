@@ -213,7 +213,7 @@ def test_guild_children_follow_their_create_update_and_delete(
     assert held(cache) == before
 
 
-def test_a_soundboard_sounds_update_carries_the_old_ones_and_an_answer_replaces_all(
+def test_soundboard_updates_carry_the_old_sounds_and_answers_replace_them(
     cache: Cache,
 ) -> None:
     before = cache.soundboard_sound(AIRHORN)

@@ -289,7 +289,7 @@ async def ping(ctx: object) -> None:
         ({"integration_types": [1]}, ("ping",)),
     ],
 )
-def test_a_global_command_naming_no_contexts_or_install_types_wants_the_defaults(
+def test_global_commands_without_contexts_or_install_types_want_defaults(
     stored: dict[str, Any], changed: tuple[str, ...]
 ) -> None:
     command = Router().command()(ping)

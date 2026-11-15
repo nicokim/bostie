@@ -256,9 +256,7 @@ async def packet_size(fake: FakeDiscord, vc: voice.VoiceConnection) -> float:
     return sum(sizes) / len(sizes)
 
 
-def test_the_bitrate_follows_the_channel_across_a_move_until_the_encoder_sets_one() -> (
-    None
-):
+def test_the_bitrate_follows_each_channel_until_the_encoder_sets_one() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         guild = payloads.guild()
         guild["channels"].append(add_voice_channel(fake, OTHER_ID, bitrate=16_000))

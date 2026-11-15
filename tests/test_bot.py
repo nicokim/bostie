@@ -1856,7 +1856,7 @@ def test_soundboard_and_channel_info_requests_return_their_guilds_answer() -> No
     run(scenario)
 
 
-def test_stream_queues_matching_events_until_its_block_ends() -> None:
+def test_stream_queues_the_events_that_pass_its_check() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
         async with running(bot, fake):

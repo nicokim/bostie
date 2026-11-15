@@ -272,7 +272,7 @@ async def numpy_style(
 
 
 @pytest.mark.parametrize("callback", [google_style, numpy_style])
-def test_option_descriptions_come_from_the_docstring_after_hints_and_options(
+def test_hints_and_options_describe_an_option_before_the_docstring(
     callback: CommandCallback,
 ) -> None:
     command = Router().command(callback)
@@ -516,7 +516,7 @@ def test_contexts_and_install_types_reach_the_global_scope_only() -> None:
     assert not {"contexts", "integration_types"} & installed.payload("guild").keys()
 
 
-def test_command_payload() -> None:
+def test_a_command_payload_carries_its_permissions_and_nsfw_flag() -> None:
     router = Router()
 
     @router.command(default_permissions=Permissions.MANAGE_ROLES, nsfw=True)

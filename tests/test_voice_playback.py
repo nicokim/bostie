@@ -1037,7 +1037,7 @@ def test_removed_and_cleared_tracks_end_without_playing() -> None:
     run(scenario)
 
 
-def test_a_track_controls_its_queue_only_while_it_is_current() -> None:
+def test_pause_and_seek_act_only_on_the_current_track() -> None:
     async def scenario(clock: Clock) -> None:
         vc = FakeConnection(clock)
         q = queue(vc)

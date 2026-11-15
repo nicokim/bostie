@@ -235,7 +235,7 @@ def test_leaving_the_block_closes_and_ends_a_wait_without_another_read() -> None
     run(scenario, voice=True)
 
 
-def test_a_cancelled_wait_loses_no_item() -> None:
+def test_a_wait_after_a_cancelled_one_still_wakes() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
             vc = await connected(bot, fake)

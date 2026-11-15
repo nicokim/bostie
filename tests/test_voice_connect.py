@@ -259,7 +259,7 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
     run(scenario, voice=True)
 
 
-def test_a_second_connect_keeps_the_connection_and_applies_only_its_options() -> None:
+def test_a_second_connect_keeps_the_connection_and_applies_its_options() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         encoder = voice.EncoderSettings(application="voip")
         async with started(fake) as bot:

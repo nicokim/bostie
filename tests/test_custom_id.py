@@ -40,7 +40,7 @@ def route(template: str) -> ComponentRoute[...]:
         ("{n:int}1{x}", "12121x", {"n": 1212, "x": "x"}),
     ],
 )
-def test_match(
+def test_a_template_matches_a_custom_id_or_returns_none(
     template: str, custom_id: str, expected: dict[str, str | int] | None
 ) -> None:
     assert route(template).match(custom_id) == expected
@@ -62,7 +62,7 @@ def test_a_near_miss_on_many_placeholders_is_refused_at_once() -> None:
     "template",
     ["{a}{b}", "x:{a b}", "x:{a:float}", "x{", "x}", "{a}:{a}"],
 )
-def test_invalid_templates(template: str) -> None:
+def test_an_invalid_template_is_refused_by_name(template: str) -> None:
     with pytest.raises(ValueError, match=re.escape(repr(template))):
         route(template)
 
@@ -76,7 +76,9 @@ def test_invalid_templates(template: str) -> None:
         ({"tag": "x" * 92, "up": -5}, f"vote:{'x' * 92}:-5"),
     ],
 )
-def test_id_round_trips(params: dict[str, str | int], custom_id: str) -> None:
+def test_an_id_built_from_params_matches_back_to_them(
+    params: dict[str, str | int], custom_id: str
+) -> None:
     vote = route("vote:{tag}:{up:int}")
 
     assert vote.id(**params) == custom_id

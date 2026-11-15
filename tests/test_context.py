@@ -321,7 +321,7 @@ def test_selects_give_the_users_members_roles_and_channels_picked() -> None:
 
 
 @pytest.mark.parametrize("from_component", [False, True])
-def test_a_modal_submit_updates_and_auto_defers_only_the_message_it_came_from(
+def test_a_modal_submit_defers_and_updates_only_its_own_message(
     from_component: bool,
 ) -> None:
     clicked = payloads.fixture("events/INTERACTION_CREATE.button")["message"]

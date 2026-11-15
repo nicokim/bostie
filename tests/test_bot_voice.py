@@ -194,7 +194,7 @@ def test_a_second_of_pcm_plays_as_fifty_opus_packets_and_five_silent_ones() -> N
     run(scenario)
 
 
-def test_an_opus_sinks_stats_reach_python_field_by_field() -> None:
+def test_an_opus_sinks_stats_reach_python() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
             vc = await bot.voice.connect(VOICE_ID)

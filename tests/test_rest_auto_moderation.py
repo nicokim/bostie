@@ -10,7 +10,7 @@ from bostie import (
 from bostie.testing import FakeDiscord, payloads, run, running
 
 
-def test_a_rule_goes_out_with_only_the_metadata_its_types_use() -> None:
+def test_a_rule_goes_out_without_the_metadata_fields_left_unset() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
         rule = payloads.fixture("events/AUTO_MODERATION_RULE_CREATE")

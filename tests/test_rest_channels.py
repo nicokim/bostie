@@ -91,7 +91,7 @@ def test_a_created_dm_channel_is_kept_for_its_recipient() -> None:
 
 
 @pytest.mark.parametrize("source", ["rest", "context"])
-def test_typing_shows_once_or_again_every_nine_seconds_until_its_block_ends(
+def test_typing_shows_once_or_every_nine_seconds_until_its_block_ends(
     source: Literal["rest", "context"],
 ) -> None:
     async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
