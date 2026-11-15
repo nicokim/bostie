@@ -37,7 +37,7 @@ Escaping is one layer; [`allowed_mentions`](responses.md#allowed-mentions) decid
 
 ## CDN URLs
 
-`bostie.cdn` builds the URLs of images Discord stores. Each takes the ids and the image hash from a model, plus `size`, a power of two from 16 to 4096, and `format`, one of `"png"`, `"jpg"`, `"jpeg"`, `"webp"` (the default) or `"gif"`. An animated image, whose hash starts with `a_`, stays animated in WebP or GIF; `"gif"` for a still image, or a size off the list, raises `ValueError`.
+`bostie.cdn` builds the URLs of images Discord stores. Each takes the ids and the image hash from a model, plus `size`, a power of two from 16 to 4096, and `format`, one of `"png"`, `"jpg"`, `"jpeg"`, `"webp"` (the default) or `"gif"`. An animated image, whose hash starts with `a_`, stays animated in WebP or GIF; `"gif"` for a still image, or a size off the list, raises `ValueError`. `await bot.http.read(url)` downloads one, as the [REST guide](rest.md#downloading-files) explains.
 
 | Function | Image |
 |---|---|

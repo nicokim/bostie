@@ -103,6 +103,10 @@ impl NativeCore {
         Ok(ticket.into())
     }
 
+    fn download(&self, url: &str) -> Result<u64> {
+        Ok(self.0.download(url)?.into())
+    }
+
     fn gateway_identify_limit(
         &self,
         remaining: u32,

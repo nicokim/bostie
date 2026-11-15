@@ -167,6 +167,16 @@ impl Rest {
         }
     }
 
+    pub(crate) async fn download(&self, ticket: Ticket, url: Url) -> Delivery {
+        let mut retries = Retries::new(self.limits);
+        loop {
+            match self.fetch(ticket, &url, &mut retries).await {
+                ControlFlow::Break(delivery) => return delivery,
+                ControlFlow::Continue(wait) => tokio::time::sleep(wait).await,
+            }
+        }
+    }
+
     pub(crate) async fn fetch_gateway_url(&self) -> Option<String> {
         let request = RestRequest::parse(
             "GET",
@@ -289,7 +299,15 @@ impl Rest {
         }
         let response = match builder.send().await {
             Ok(response) => response,
-            Err(error) => return after_transport_error(ticket, request, error, retries),
+            Err(error) => {
+                return after_transport_error(
+                    ticket,
+                    &request.method,
+                    &request.endpoint.path,
+                    error,
+                    retries,
+                );
+            }
         };
         let status = response.status();
         let limits = ResponseLimits::parse(status, response.headers(), Instant::now());
@@ -332,7 +350,40 @@ impl Rest {
                     body,
                 })
             }
-            Err(error) => after_transport_error(ticket, request, error, retries),
+            Err(error) => after_transport_error(
+                ticket,
+                &request.method,
+                &request.endpoint.path,
+                error,
+                retries,
+            ),
+        }
+    }
+
+    async fn fetch(
+        &self,
+        ticket: Ticket,
+        url: &Url,
+        retries: &mut Retries,
+    ) -> ControlFlow<Delivery, Duration> {
+        let response = match self.client.get(url.clone()).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                return after_transport_error(ticket, &Method::GET, url.path(), error, retries);
+            }
+        };
+        let status = response.status();
+        if let Some(wait) = retries.after_response(&Method::GET, status, None) {
+            tracing::debug!(path = url.path(), %status, ?wait, "retrying the download");
+            return ControlFlow::Continue(wait);
+        }
+        match response.bytes().await {
+            Ok(body) => ControlFlow::Break(Delivery::Response {
+                ticket,
+                status: status.as_u16(),
+                body,
+            }),
+            Err(error) => after_transport_error(ticket, &Method::GET, url.path(), error, retries),
         }
     }
 
@@ -383,15 +434,16 @@ fn within_reach(bucket: Bucket, max_wait: Duration) -> bool {
 
 fn after_transport_error(
     ticket: Ticket,
-    request: &RestRequest,
+    method: &Method,
+    route: &str,
     error: reqwest::Error,
     retries: &mut Retries,
 ) -> ControlFlow<Delivery, Duration> {
     let error = error.without_url();
-    match retries.after_error(&request.method, error.is_connect()) {
+    match retries.after_error(method, error.is_connect()) {
         Some(wait) => {
             tracing::debug!(
-                route = %request.endpoint.path,
+                route,
                 error = %describe(&error),
                 ?wait,
                 "retrying"
@@ -837,6 +889,42 @@ pub(crate) mod tests {
 
         assert_eq!(got, 200);
         assert_eq!(server.next().await.path, format!("{api_url}/users/@me"));
+    }
+
+    #[tokio::test]
+    async fn downloads_skip_the_token_go_through_the_proxy_and_retry_server_errors() {
+        let mut server = Server::start(vec![
+            reply("503 Service Unavailable", &[], ""),
+            reply("200 OK", &[], "PNG"),
+        ])
+        .await;
+        let proxy = Proxy::parse(server.url.trim_end_matches("/api/v10")).unwrap();
+        let (bell, _receiver) = bell::pair().unwrap();
+        let global_limit = NonZeroU16::new(50).unwrap();
+        let inbox = Arc::new(Inbox::new(bell));
+        let api_url = "http://discord.invalid/api/v10";
+        let rest = Rest::new(
+            Auth::Bot("token"),
+            api_url,
+            global_limit,
+            inbox,
+            LIMITS,
+            Some(&proxy),
+        )
+        .unwrap();
+        let file = "http://cdn.invalid/attachments/1/2/a.png?ex=1";
+
+        let got = status(
+            rest.download(Ticket::from(1), Url::parse(file).unwrap())
+                .await,
+        );
+
+        assert_eq!(got, (200, Bytes::from_static(b"PNG")));
+        for _ in 0..2 {
+            let sent = server.next().await;
+            assert_eq!(sent.path, file);
+            assert!(!sent.headers.contains_key("authorization"));
+        }
     }
 
     #[tokio::test]

@@ -1,15 +1,19 @@
+import asyncio
 import math
 import mimetypes
+import os
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode, urlsplit
 
 import msgspec
 
+from bostie.enums import AttachmentFlags
 from bostie.errors import (
     BadRequest,
     BostieError,
@@ -23,6 +27,7 @@ from bostie.errors import (
 )
 from bostie.file import File
 from bostie.models.base import encoder
+from bostie.models.message import Attachment
 
 if TYPE_CHECKING:
     from bostie._bridge import Bridge
@@ -134,6 +139,36 @@ class HTTPClient:
             **params,
         )
         return msgspec.json.decode(body) if body else None
+
+    async def read(self, source: Attachment | str) -> bytes:
+        """Download an attachment or a CDN URL, with no token and no rate limits."""
+        url = source if isinstance(source, str) else source.url
+        status, data = await self._bridge.download(url)
+        if status >= HTTPStatus.BAD_REQUEST:
+            raise _status_error(status, data, bot_route=False)
+        return data
+
+    async def save(
+        self, source: Attachment | str, path: str | os.PathLike[str]
+    ) -> None:
+        """Download an attachment or a CDN URL into the file at `path`."""
+        data = await self.read(source)
+        await asyncio.to_thread(Path(path).write_bytes, data)
+
+    async def to_file(self, source: Attachment | str) -> File:
+        """Download an attachment or a CDN URL as a File to upload again."""
+        data = await self.read(source)
+        if isinstance(source, str):
+            return File(unquote(PurePosixPath(urlsplit(source).path).name), data)
+        return File(
+            source.filename,
+            data,
+            description=source.description,
+            spoiler=AttachmentFlags.IS_SPOILER in source.flags,
+            title=source.title,
+            duration_secs=source.duration_secs,
+            waveform=source.waveform,
+        )
 
     async def _decoded[T](
         self,

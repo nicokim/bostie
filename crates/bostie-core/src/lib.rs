@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use parking_lot::Mutex;
+use reqwest::Url;
 use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
@@ -120,6 +121,24 @@ impl Core {
     }
 
     pub fn request(&self, request: RestRequest) -> Result<Ticket, CoreError> {
+        self.submit(move |rest, ticket| async move { rest.execute(ticket, request).await })
+    }
+
+    pub fn download(&self, url: &str) -> Result<Ticket, CoreError> {
+        let url = Url::parse(url)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https"))
+            .ok_or_else(|| {
+                CoreError::InvalidRequest("a download needs an http or https URL".to_owned())
+            })?;
+        self.submit(move |rest, ticket| async move { rest.download(ticket, url).await })
+    }
+
+    fn submit<F, Fut>(&self, work: F) -> Result<Ticket, CoreError>
+    where
+        F: FnOnce(Arc<Rest>, Ticket) -> Fut,
+        Fut: Future<Output = Delivery> + Send + 'static,
+    {
         self.owner.check()?;
         let ticket = Ticket::from(self.next_ticket.fetch_add(1, Ordering::Relaxed));
 
@@ -128,8 +147,9 @@ impl Core {
             return Err(CoreError::Closed);
         };
         let pending = PendingTicket::new(ticket, Arc::clone(&self.inbox), Arc::clone(&self.tasks));
+        let work = work(rest, ticket);
         let task = self.runtime.spawn(async move {
-            pending.resolve(rest.execute(ticket, request).await);
+            pending.resolve(work.await);
         });
         table.running.insert(ticket, task.abort_handle());
         Ok(ticket)

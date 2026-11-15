@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, Literal, Self
+from urllib.parse import unquote
 
 import msgspec
 from aiohttp import BodyPartReader, WSCloseCode, WSMsgType, hdrs, web
@@ -21,6 +22,7 @@ from bostie.testing.payloads import Json, is_object
 from bostie.testing.voice import VoiceGateway
 
 API = "/api/v10"
+CDN = "/cdn"
 ROUTE_LIMIT = 5
 ROUTE_WINDOW = 1.0
 MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
@@ -123,6 +125,7 @@ class FakeDiscord(VoiceGateway):
     `voice=True` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
     `mute`, `deaf` and `suppress` go into every voice state the fake sends for
     the bot. `ready_guilds` are the guild ids READY lists, each on its own shard.
+    `cdn_requests` records the downloads of `cdn_file` URLs.
     """
 
     def __init__(
@@ -164,6 +167,8 @@ class FakeDiscord(VoiceGateway):
         self.guild_commands: dict[str, list[Json]] = {}
         self.put_count = 0
         self.requests: list[Recorded] = []
+        self.cdn_requests: list[Recorded] = []
+        self._cdn_files: dict[str, bytes] = {}
         self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
         self.connections: list[Connection] = []
         self._heartbeat_interval = heartbeat_interval
@@ -180,9 +185,7 @@ class FakeDiscord(VoiceGateway):
         self._responses: dict[str, dict[str, Json]] = {}
         self._callback_waiters: dict[str, asyncio.Future[Recorded]] = {}
         self.voice_order: Order = voice_order
-        self.mute = False
-        self.deaf = False
-        self.suppress = False
+        self.mute = self.deaf = self.suppress = False
         self.voice_states: dict[tuple[str, str], Json] = {}
         self._voice = voice
         self._voice_state_updates: asyncio.Queue[Any] = asyncio.Queue()
@@ -237,6 +240,7 @@ class FakeDiscord(VoiceGateway):
         routes = [
             web.get("/gateway", self._gateway),
             web.get("/gateway-resume", self._gateway),
+            web.get(CDN + "/{path:.+}", self._cdn),
         ]
         if self._voice:
             rest_routes += [
@@ -410,6 +414,11 @@ class FakeDiscord(VoiceGateway):
                 ),
             )
         )
+
+    def cdn_file(self, path: str, data: bytes) -> str:
+        """Serve `data` at a CDN path like `attachments/1/2/a.png`; return its URL."""
+        self._cdn_files[unquote(path)] = data
+        return f"{self.api_url.removesuffix(API)}{CDN}/{path}"
 
     def hold(self, method: str, route_prefix: str) -> asyncio.Event:
         """Keep the next matching request waiting until the returned event is set."""
@@ -679,6 +688,13 @@ class FakeDiscord(VoiceGateway):
 
     async def _gateway_bot(self, _request: web.Request) -> web.Response:
         return _json(payloads.fixture("rest/gateway_bot") | {"url": self.gateway_url})
+
+    async def _cdn(self, request: web.Request) -> web.Response:
+        self.cdn_requests.append(await _record(request))
+        data = self._cdn_files.get(request.match_info["path"])
+        if data is None:
+            return web.Response(status=404, text="404: Not Found")
+        return web.Response(body=data, content_type="application/octet-stream")
 
     async def _application(self, _request: web.Request) -> web.Response:
         application = payloads.fixture("rest/application_me")

@@ -34,6 +34,8 @@ Interaction types are Discord's numbers: 2 for a command, 3 for a component, 4 f
 
 `fake.requests` lists every REST request as a `Recorded`, with `method`, `path` (relative to the API base), `query`, `headers`, `json` and, for uploads, `parts`. A `Recorded` answer to an interaction has the callback body in `json`, as above. `fake.gateway_received` is a queue of the payloads the bot sent on the gateway, and `fake.connections` the gateway connections, `Connection` objects with their `received` payloads, `shard` and `close_code`.
 
+`fake.cdn_file(path, data)` serves `data` at a CDN URL it returns, for an attachment or asset the bot downloads, and `fake.cdn_requests` records those downloads.
+
 The fake keeps the state those routes need, and tests can read or seed it: `fake.guilds`, `fake.channels`, `fake.users`, `fake.members`, `fake.messages`, `fake.commands` and `fake.guild_commands`, with `fake.put_count` for command syncs. `fake.ready_guilds` sets the guild ids `READY` lists.
 
 ## Failures and timing

@@ -44,7 +44,7 @@ The Rust client tracks every route's rate limit bucket and Discord's global limi
 | `connect_timeout` | 10.0 | seconds to open a connection |
 | `read_timeout` | 60.0 | seconds to wait for an answer |
 | `rate_limiter` | `True` | `False` sends at once and only waits out the 429s that come back, for use behind a rate-limit proxy |
-| `proxy` | `None` | an HTTP or HTTPS proxy URL for every request, `voice.Url` audio included, credentials included as in `http://user:password@host:3128` |
+| `proxy` | `None` | an HTTP or HTTPS proxy URL for every request, `voice.Url` audio and CDN downloads included, credentials included as in `http://user:password@host:3128` |
 
 A 429 is retried after the delay Discord gives, if that is within `max_rate_limit_wait`. A 500, 502, 503, 504 or 524, or a connection that broke, is retried `retries` times for every method but `POST`, which might have taken effect; a connection that never opened is retried for every method.
 
@@ -53,6 +53,22 @@ Discord bans an IP that sends 10 000 invalid requests (401, 403, 429) in 10 minu
 ## Any endpoint
 
 `bot.http.request(method, route, **params)` sends any request through the same client and returns the decoded JSON, or `None` for an empty answer. The route keeps its placeholders, which keyword arguments fill: `await bot.http.request("GET", "/channels/{channel_id}/pins", channel_id=123)`. It takes `json=`, `files=` for a multipart upload, `form=` for named form fields, `urlencoded=` for a form-urlencoded body, `query=` and `reason=`, and raises the same exceptions.
+
+## Downloading files
+
+Attachments and images live on Discord's CDN, not behind the API, so a download sends no token and spends no rate limit. `bot.http` fetches them through the same Rust client, with its timeouts, retries and `proxy`:
+
+| Method | Does |
+|---|---|
+| `read(source)` | returns the bytes |
+| `save(source, path)` | writes them to the file at `path` |
+| `to_file(source)` | returns a `File` to upload again; from an `Attachment` it keeps the file name, description, title, spoiler and voice message details, from a URL the last part of its path names it |
+
+`source` is an `Attachment`, or a URL such as the [`bostie.cdn`](formatting.md) helpers build. A missing file raises `NotFound`.
+
+```python
+--8<-- "docs/snippets/rest/downloads.py"
+```
 
 ## Without a bot
 

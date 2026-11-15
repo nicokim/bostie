@@ -2,14 +2,16 @@ import asyncio
 from collections import UserList
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
 import msgspec
 import pytest
 
+from bostie import Attachment, RESTClient, testing
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie.enums import JSONErrorCode
+from bostie.enums import AttachmentFlags, JSONErrorCode
 from bostie.errors import (
     BadRequest,
     Forbidden,
@@ -21,6 +23,7 @@ from bostie.errors import (
 )
 from bostie.file import File
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
+from bostie.models import decode
 from bostie.testing import FakeDiscord, Part
 from bostie.testing.server import ROUTE_LIMIT
 
@@ -355,3 +358,47 @@ def test_an_oauth2_error_reads_as_its_id_and_description() -> None:
         assert raised.value.code is JSONErrorCode.GENERAL_ERROR
 
     run(scenario)
+
+
+def test_attachments_and_cdn_urls_download_without_the_token(tmp_path: Path) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        voice = fake.cdn_file("attachments/1/2/voice.ogg", b"OggS")
+        avatar = fake.cdn_file("avatars/1/my%20face.png", b"PNG")
+        attachment = decode(
+            Attachment,
+            msgspec.json.encode(
+                {
+                    "id": "2",
+                    "filename": "voice.ogg",
+                    "description": "hello",
+                    "size": 4,
+                    "url": voice,
+                    "proxy_url": voice,
+                    "flags": AttachmentFlags.IS_SPOILER,
+                    "duration_secs": 1.5,
+                    "waveform": "AAE=",
+                }
+            ),
+        )
+        async with RESTClient(fake.token, api_url=fake.api_url) as client:
+            uploaded = await client.http.to_file(attachment)
+            renamed = await client.http.to_file(avatar)
+            await client.http.save(attachment, tmp_path / "copy.ogg")
+            with pytest.raises(NotFound):
+                await client.http.read(f"{avatar}.missing")
+
+        assert uploaded == File(
+            "voice.ogg",
+            b"OggS",
+            description="hello",
+            spoiler=True,
+            duration_secs=1.5,
+            waveform=b"\x00\x01",
+        )
+        assert renamed == File("my face.png", b"PNG")
+        assert (tmp_path / "copy.ogg").read_bytes() == b"OggS"
+        assert len(fake.cdn_requests) == 4
+        assert all("authorization" not in sent.headers for sent in fake.cdn_requests)
+        assert fake.requests == []
+
+    testing.run(scenario)

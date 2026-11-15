@@ -123,6 +123,15 @@ class Bridge:
         ticket = self.core.request(
             method, route, params, query, body, content_type, reason
         )
+        return await self._answer(loop, ticket)
+
+    async def download(self, url: str) -> tuple[int, bytes]:
+        loop = self._running_loop()
+        return await self._answer(loop, self.core.download(url))
+
+    async def _answer(
+        self, loop: asyncio.AbstractEventLoop, ticket: int
+    ) -> tuple[int, bytes]:
         future: asyncio.Future[tuple[int, bytes]] = loop.create_future()
         self._waiting[ticket] = future
         try:
