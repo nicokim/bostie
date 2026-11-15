@@ -7,8 +7,7 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::error::CoreError;
-pub use crate::ids::Handle;
-use crate::ids::{ChannelId, GuildId, ShardId, UserId};
+use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub(crate) const NANOS_PER_SECOND: u128 = 1_000_000_000;

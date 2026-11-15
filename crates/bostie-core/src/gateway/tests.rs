@@ -339,7 +339,7 @@ impl Harness {
             None,
         );
         let rest = Arc::new(rest.unwrap());
-        let tap = Arc::new(GatewayTap::new());
+        let tap = Arc::new(GatewayTap::default());
         let gateway = Gateway::with_tuning(
             Handle::current(),
             Arc::clone(&inbox),

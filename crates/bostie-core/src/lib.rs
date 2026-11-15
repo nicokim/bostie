@@ -19,12 +19,11 @@ use std::sync::{Arc, Weak};
 
 use parking_lot::Mutex;
 use reqwest::Url;
-use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
 pub use crate::gateway::{Gateway, IdentifyLimit, SavedSession};
-pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
+pub use crate::ids::{ChannelId, GuildId, Handle, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind, LogSink};
 pub use crate::rest::{Auth, HttpSettings, RestRequest};
 pub use crate::signature::verify_signature;
@@ -55,7 +54,7 @@ pub fn versions() -> Vec<(&'static str, String)> {
 
 pub struct Core {
     next_ticket: AtomicU64,
-    runtime: Handle,
+    runtime: tokio::runtime::Handle,
     inbox: Arc<Inbox>,
     tasks: Arc<Mutex<TaskTable>>,
     gateway: Arc<Gateway>,
@@ -84,7 +83,7 @@ impl Core {
                 http,
                 proxy.as_ref(),
             )?);
-            let tap = Arc::new(GatewayTap::new());
+            let tap = Arc::new(GatewayTap::default());
             let gateway = Arc::new(Gateway::new(
                 runtime.clone(),
                 Arc::clone(&inbox),

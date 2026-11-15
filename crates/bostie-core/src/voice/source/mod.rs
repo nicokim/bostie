@@ -49,7 +49,6 @@ pub enum SourceRead {
 }
 
 pub struct Source {
-    id: Handle,
     shared: Arc<SourceShared>,
 }
 
@@ -140,11 +139,11 @@ impl Source {
                 decoding.stop(failure);
             })
             .map_err(CoreError::Runtime)?;
-        Ok(Self { id, shared })
+        Ok(Self { shared })
     }
 
     pub fn id(&self) -> Handle {
-        self.id
+        self.shared.id
     }
 
     pub fn info(&self) -> Result<Option<SourceInfo>, CoreError> {
@@ -221,7 +220,7 @@ impl Source {
     fn open_state(&self) -> Result<MutexGuard<'_, SourceState>, CoreError> {
         let state = self.shared.state.lock();
         if state.closed {
-            return Err(CoreError::SourceClosed(self.id));
+            return Err(CoreError::SourceClosed(self.shared.id));
         }
         Ok(state)
     }

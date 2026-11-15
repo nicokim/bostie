@@ -11,12 +11,11 @@ use std::time::Duration;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{
-    ConnectRequest, Handle, Overflow, ReceiveOptions, ReceiveStall, SampleFormat, SourceSpec,
-    StallPolicy,
+    ConnectRequest, Overflow, ReceiveOptions, ReceiveStall, SampleFormat, SourceSpec, StallPolicy,
 };
 use bostie_core::{
-    Auth, ChannelId, Core, CoreError, Delivery, Gateway, GuildId, HttpSettings, IdentifyLimit,
-    RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
+    Auth, ChannelId, Core, CoreError, Delivery, Gateway, GuildId, Handle, HttpSettings,
+    IdentifyLimit, RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;

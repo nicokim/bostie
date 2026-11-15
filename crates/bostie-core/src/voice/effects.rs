@@ -6,9 +6,10 @@ use rubato::{
     WindowFunction,
 };
 
-use crate::voice::types::{CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters};
+use crate::voice::types::{CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters, SAMPLE_RATE};
 
-const RATE: f32 = 48_000.0;
+#[expect(clippy::cast_precision_loss)]
+const RATE: f32 = SAMPLE_RATE as f32;
 const BASS_HZ: f32 = 100.0;
 const HOP: usize = FRAME_SAMPLES;
 const WINDOW: usize = 2 * HOP;

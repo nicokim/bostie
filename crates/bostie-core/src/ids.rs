@@ -19,39 +19,18 @@ impl From<Ticket> for u64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ShardId(u32);
-
-impl From<u32> for ShardId {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
-}
-
-impl From<ShardId> for u32 {
-    fn from(shard: ShardId) -> Self {
-        shard.0
-    }
-}
-
-impl fmt::Display for ShardId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-macro_rules! u64_ids {
-    ($($name:ident),+) => {$(
+macro_rules! ids {
+    ($inner:ty => $($name:ident),+) => {$(
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub struct $name(u64);
+        pub struct $name($inner);
 
-        impl From<u64> for $name {
-            fn from(value: u64) -> Self {
+        impl From<$inner> for $name {
+            fn from(value: $inner) -> Self {
                 Self(value)
             }
         }
 
-        impl From<$name> for u64 {
+        impl From<$name> for $inner {
             fn from(id: $name) -> Self {
                 id.0
             }
@@ -65,4 +44,5 @@ macro_rules! u64_ids {
     )+};
 }
 
-u64_ids!(GuildId, ChannelId, UserId, Handle);
+ids!(u32 => ShardId);
+ids!(u64 => GuildId, ChannelId, UserId, Handle);

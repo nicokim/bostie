@@ -1,5 +1,7 @@
 use std::ops::RangeInclusive;
 
+use crate::voice::rtcp;
+
 pub(crate) const HEADER_LEN: usize = 12;
 pub(crate) const PAYLOAD_TYPE: u8 = 120;
 
@@ -12,7 +14,6 @@ pub(crate) const ONE_BYTE_PROFILE: u16 = 0xBEDE;
 const CSRC_COUNT: u8 = 0x0F;
 const PAYLOAD_TYPE_BITS: u8 = 0x7F;
 const RTCP_PAYLOAD_TYPES: RangeInclusive<u8> = 72..=78;
-const RTCP_HEADER_LEN: usize = 8;
 const CSRC_LEN: usize = 4;
 const EXTENSION_PREAMBLE_LEN: usize = 4;
 const EXTENSION_WORD_LEN: usize = 4;
@@ -52,7 +53,7 @@ pub(crate) fn classify(packet: &[u8]) -> Kind {
     let payload_type = second & PAYLOAD_TYPE_BITS;
     if payload_type == PAYLOAD_TYPE && packet.len() >= HEADER_LEN {
         Kind::Rtp
-    } else if RTCP_PAYLOAD_TYPES.contains(&payload_type) && packet.len() >= RTCP_HEADER_LEN {
+    } else if RTCP_PAYLOAD_TYPES.contains(&payload_type) && packet.len() >= rtcp::HEADER_LEN {
         Kind::Rtcp
     } else {
         Kind::Other

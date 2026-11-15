@@ -415,7 +415,7 @@ impl Harness {
         let pace = pace.unwrap_or_else(|| Arc::<ManualPacer>::clone(&pacer));
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::new(bell));
-        let tap = Arc::new(GatewayTap::new());
+        let tap = Arc::new(GatewayTap::default());
         let recorder = Arc::new(Recorder::default());
         let send: GatewaySend = {
             let recorder = Arc::clone(&recorder);

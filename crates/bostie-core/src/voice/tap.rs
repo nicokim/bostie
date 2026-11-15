@@ -89,10 +89,6 @@ pub(crate) struct GatewayTap {
 }
 
 impl GatewayTap {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn has_guilds(&self) -> bool {
         !self.guilds.read().is_empty()
     }
@@ -260,7 +256,7 @@ mod tests {
     }
 
     fn registered() -> (GatewayTap, watch::Receiver<Snapshot>) {
-        let tap = GatewayTap::new();
+        let tap = GatewayTap::default();
         let receiver = tap.register(GuildId::from(GUILD), shard(0), UserId::from(USER));
         (tap, receiver)
     }
@@ -387,7 +383,7 @@ mod tests {
 
     #[test]
     fn a_session_start_bumps_only_the_entries_of_that_shard() {
-        let tap = GatewayTap::new();
+        let tap = GatewayTap::default();
         let first = tap.register(GuildId::from(GUILD), shard(0), UserId::from(USER));
         let second = tap.register(GuildId::from(OTHER_GUILD), shard(1), UserId::from(USER));
 
@@ -400,7 +396,7 @@ mod tests {
 
     #[test]
     fn registering_after_a_session_start_does_not_count_it() {
-        let tap = GatewayTap::new();
+        let tap = GatewayTap::default();
         tap.session_started(shard(0));
 
         let receiver = tap.register(GuildId::from(GUILD), shard(0), UserId::from(USER));
