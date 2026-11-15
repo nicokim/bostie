@@ -315,6 +315,10 @@ class Cache:
         self._stage_instances.clear()
         self._sounds.clear()
 
+    def set_current_user(self, user: CurrentUser) -> None:
+        """Note the bot's own user where no READY brought it, as on a resume."""
+        self._current = user
+
     def apply[E: Event](self, event: E) -> E:
         """Update the cache; return the event with its `old` or removed object."""
         handler = self._handlers.get(type(event))
@@ -371,7 +375,7 @@ class Cache:
         if self._all_members:
             members = event.members
         else:
-            me = None if self._current is None else event._member(self._current.id)
+            me = None if self._current is None else event.member(self._current.id)
             members = () if me is None else (me,)
         self._members[guild_id] = {
             member.user.id: _stored(member) for member in members
@@ -713,10 +717,11 @@ class Cache:
             dm = Channel(
                 id=message.channel_id, type=ChannelType.DM, recipients=(message.author,)
             )
-            self._store_dm(dm)
+            self.store_dm(dm)
         return None
 
-    def _store_dm(self, channel: Channel) -> None:
+    def store_dm(self, channel: Channel) -> None:
+        """Keep a DM channel, such as one REST opened, within `max_dm_channels`."""
         if not self._max_dm_channels or channel.type is not ChannelType.DM:
             return
         user_id = channel.recipients[0].id

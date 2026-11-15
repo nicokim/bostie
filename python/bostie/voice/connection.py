@@ -214,11 +214,6 @@ MOVE_OPTIONS = MoveOptions.__optional_keys__
 EDIT_OPTIONS = EditOptions.__optional_keys__
 
 
-class _HasCore(Protocol):
-    @property
-    def core(self) -> VoiceCore: ...
-
-
 class VoiceHost(Protocol):
     @property
     def user(self) -> User | None: ...
@@ -229,9 +224,7 @@ class VoiceHost(Protocol):
     @property
     def gateway(self) -> GatewayClient: ...
     @property
-    def _intents(self) -> Intents: ...
-    @property
-    def _bridge(self) -> _HasCore | None: ...
+    def intents(self) -> Intents: ...
     @property
     def rest(self) -> REST: ...
     async def wait_for[E: Event](
@@ -240,7 +233,7 @@ class VoiceHost(Protocol):
     def stream[E: Event](
         self, event: type[E], *, check: Callable[[E], bool] | None = None
     ) -> contextlib.AbstractAsyncContextManager[AsyncIterator[E]]: ...
-    def _emit(self, event: VoiceEvent) -> None: ...
+    def dispatch(self, event: VoiceEvent) -> None: ...
 
 
 class _Woken(Protocol):
@@ -314,9 +307,15 @@ class ExternalVoice:
 class VoiceManager:
     """The bot's voice connections, at most one per guild."""
 
-    def __init__(self, bot: VoiceHost, defaults: Defaults) -> None:
+    def __init__(
+        self,
+        bot: VoiceHost,
+        defaults: Defaults,
+        core: Callable[[], VoiceCore | None],
+    ) -> None:
         self.defaults = defaults
         self._bot = bot
+        self._running_core = core
         self._connections: dict[int, VoiceConnection] = {}
         self._handles: dict[int, _Woken] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -433,7 +432,8 @@ class VoiceManager:
         for task in self._tasks:
             task.cancel()
 
-    def _handle(self, delivery: VoiceDelivery) -> None:
+    def handle(self, delivery: VoiceDelivery) -> None:
+        """Apply a voice delivery from the core to its connection, sink or receiver."""
         match delivery:
             case ("voice_wake", handle):
                 target = self._handles.get(handle)
@@ -450,19 +450,19 @@ class VoiceManager:
 
     def _running_user(self, call: str) -> User:
         user = self._bot.user
-        if user is None or self._bot._bridge is None:
+        if user is None or self._running_core() is None:
             raise StateError(f"{call} needs a running bot")
-        if not self._bot._intents & Intents.GUILD_VOICE_STATES:
+        if not self._bot.intents & Intents.GUILD_VOICE_STATES:
             raise MissingIntent(
                 "voice needs Intents.GUILD_VOICE_STATES; add it to Bot(intents=...)"
             )
         return user
 
     def _core(self) -> VoiceCore:
-        bridge = self._bot._bridge
-        if bridge is None:
+        core = self._running_core()
+        if core is None:
             raise StateError("voice needs a running bot")
-        return bridge.core
+        return core
 
     def _settings(
         self, options: ExternalConnectOptions, allowed: frozenset[str]
@@ -1291,7 +1291,7 @@ class VoiceConnection:
         self.manager._handles.pop(receiver._handle, None)
 
     def _emit(self, event: VoiceEvent) -> None:
-        self.manager._bot._emit(event)
+        self.manager._bot.dispatch(event)
 
     def _core(self) -> VoiceCore:
         return self.manager._core()

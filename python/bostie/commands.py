@@ -444,7 +444,8 @@ class _Node(_Registered, ABC):
             "options": self._options(),
         }
 
-    def _as_option(self) -> dict[str, Any]:
+    def option_payload(self) -> dict[str, Any]:
+        """The JSON of this subcommand or group as an option of its parent."""
         return {
             "type": self._option_type,
             "name": self.name,
@@ -639,7 +640,7 @@ class Group(_Node):
 
     @override
     def _options(self) -> list[dict[str, Any]]:
-        return [node._as_option() for node in self.commands.values()]
+        return [node.option_payload() for node in self.commands.values()]
 
 
 class ContextMenuCommand(_Registered):

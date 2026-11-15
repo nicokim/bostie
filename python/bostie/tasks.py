@@ -4,15 +4,13 @@ from collections.abc import Callable, Coroutine, Iterable
 from datetime import UTC, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
-from bostie.errors import StateError
-
 if TYPE_CHECKING:
-    from bostie.bot import Bot
     from bostie.router import Router
 
 type TaskCallback = Callable[[], Coroutine[Any, Any, None]]
 type TaskHook = Callable[[], Coroutine[Any, Any, None]]
 type TaskFailed = Callable[["Task", Exception], None]
+type Changed = Callable[[], None]
 
 
 class Task:
@@ -28,9 +26,11 @@ class Task:
         seconds: float | None,
         times: dt.time | Iterable[dt.time],
         router: "Router",
+        changed: Changed,
     ) -> None:
         self.callback = callback
         self.router = router
+        self._changed = changed
         self.seconds, self.times = _schedule(seconds, times)
         self._count = 0
         self._stopped = False
@@ -47,15 +47,20 @@ class Task:
         """How many runs ended since the task last started."""
         return self._count
 
+    @property
+    def stopped(self) -> bool:
+        """Whether `stop()` keeps the task from running until `start()`."""
+        return self._stopped
+
     def start(self) -> None:
         """Run the task while the bot is ready, from now if it is; undoes `stop()`."""
         self._stopped = False
-        self._sync()
+        self._changed()
 
     def stop(self) -> None:
         """Cancel the task, run or wait, and keep it from starting until `start()`."""
         self._stopped = True
-        self._sync()
+        self._changed()
 
     def restart(self) -> None:
         """Cancel the task and start it anew, its count from 0."""
@@ -134,13 +139,6 @@ class Task:
             failed(self, error)
             return False
         return True
-
-    def _sync(self) -> None:
-        try:
-            bot: Bot = self.router.bot
-        except StateError:
-            return
-        bot._run_tasks()
 
 
 def next_time(times: Iterable[time], after: datetime) -> datetime:

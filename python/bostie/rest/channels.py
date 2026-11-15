@@ -166,7 +166,7 @@ class Channels(ResourceGroup):
             "/users/@me/channels",
             json=wire(options, ChannelCreateDm),
         )
-        self._cache._store_dm(channel)
+        self._cache.store_dm(channel)
         return channel
 
     async def create_group_dm(self, **options: Unpack[ChannelCreateGroupDm]) -> Channel:

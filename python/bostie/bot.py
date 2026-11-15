@@ -25,7 +25,7 @@ import msgspec
 from bostie import fmt, sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie._util import qualified_name, resolve_token, split_subcommands
+from bostie._util import qualified_name, resolve_token, routers_from
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
 from bostie.checks import MaxConcurrency
@@ -49,7 +49,6 @@ from bostie.context import (
 from bostie.custom_id import ANSWER_SETTINGS, AnswerSettings, ComponentRoute
 from bostie.enums import (
     ApplicationIntegrationType,
-    CommandType,
     Intents,
     InteractionContextType,
     MembershipState,
@@ -115,7 +114,6 @@ from bostie.models import (
     AllowedMentions,
     Application,
     AutocompleteInteraction,
-    CommandData,
     CommandInteraction,
     ComponentInteraction,
     CurrentUser,
@@ -278,7 +276,9 @@ class Bot(Router):
             presences=presences,
             max_dm_channels=max_dm_channels,
         )
-        self.voice = VoiceManager(self, voice)
+        self.voice = VoiceManager(
+            self, voice, lambda: None if self._bridge is None else self._bridge.core
+        )
         self.lookup = Lookup(self)
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
@@ -353,6 +353,11 @@ class Bot(Router):
     def latency(self) -> float | None:
         """Mean seconds from a heartbeat to its ACK over the shards, or None."""
         return None if self._shards is None else self._shards.latency
+
+    @property
+    def intents(self) -> Intents:
+        """The gateway intents the bot was created with."""
+        return self._intents
 
     @property
     def owner_ids(self) -> frozenset[int]:
@@ -451,8 +456,8 @@ class Bot(Router):
             await self._sync(always_put=False)
         if resumed := shards.load_sessions():
             self._replaying |= resumed
-            user = await self.rest.users.fetch_current()
-            self.user = self.cache._current = user
+            self.user = await self.rest.users.fetch_current()
+            self.cache.set_current_user(self.user)
         shards.filter(self._dispatch_names())
         shards.identify_limit(info["session_start_limit"])
         if self._before_identify is not None:
@@ -575,7 +580,7 @@ class Bot(Router):
                 del self._waiters[event.NAME]
                 self._refresh_filter()
 
-    def dispatch(self, event: BotEvent) -> None:
+    def dispatch(self, event: LocalEvent) -> None:
         """Send an event of your own to its listeners, waiters and streams."""
         self._emit(event)
 
@@ -888,7 +893,7 @@ class Bot(Router):
                 | "voice_rtcp",
                 *_,
             ):
-                self.voice._handle(delivery)
+                self.voice.handle(delivery)
 
     async def _approve_identify(self, shard_id: int, request: int) -> None:
         if self._before_identify is not None:
@@ -951,7 +956,7 @@ class Bot(Router):
     def _run_tasks(self) -> None:
         if not self._tasks_on:
             return
-        wanted = {task for task in self.tasks.values() if not task._stopped}
+        wanted = {task for task in self.tasks.values() if not task.stopped}
         for task in self._running_tasks.keys() - wanted:
             self._running_tasks.pop(task).cancel()
         for task in wanted - self._running_tasks.keys():
@@ -1134,6 +1139,7 @@ class Bot(Router):
                 "received": received,
                 "ephemeral": settings.get("ephemeral", False),
                 "allowed_mentions": self._allowed_mentions,
+                "deletions": self._deletions,
             }
             ctx = (
                 ComponentContext(interaction, self, **answer)
@@ -1188,6 +1194,7 @@ class Bot(Router):
             received=received,
             ephemeral=route.ephemeral,
             allowed_mentions=self._allowed_mentions,
+            deletions=self._deletions,
         )
         return self._run_handler(ctx, route, route.handler, params.copy)
 
@@ -1197,7 +1204,7 @@ class Bot(Router):
         data = interaction.data
         command: Command | ContextMenuCommand | EntryPointCommand
         options: tuple[InteractionDataOption, ...] = ()
-        found = self._command(data)
+        found = self.match_command(data)
         if found is not None:
             command, options = found
         elif (
@@ -1212,6 +1219,7 @@ class Bot(Router):
             received=received,
             ephemeral=command.ephemeral,
             allowed_mentions=self._allowed_mentions,
+            deletions=self._deletions,
         )
         arguments: Arguments = dict
         if isinstance(command, Command):
@@ -1220,23 +1228,10 @@ class Bot(Router):
             arguments = partial(command.bind, interaction)
         return self._run_handler(ctx, command, command.callback, arguments)
 
-    def _command(
-        self, data: CommandData
-    ) -> tuple[Command, tuple[InteractionDataOption, ...]] | None:
-        if data.type is not CommandType.CHAT_INPUT:
-            return None
-        names, options = split_subcommands(data.options)
-        node: Command | Group | None = scoped(
-            self.commands, (data.name,), data.guild_id
-        )
-        for name in names:
-            node = node.commands.get(name) if isinstance(node, Group) else None
-        return (node, options) if isinstance(node, Command) else None
-
     def _autocomplete_handler(
         self, interaction: AutocompleteInteraction, received: float
     ) -> Coroutine[Any, Any, None] | None:
-        found = self._command(interaction.data)
+        found = self.match_command(interaction.data)
         if found is None:
             return None
         command, options = found
@@ -1255,7 +1250,7 @@ class Bot(Router):
         arguments: Arguments,
     ) -> None:
         passed: list[Check] = []
-        routers = [*node.router._chain()][::-1]
+        routers = [*routers_from(node.router)][::-1]
         timer = self._defer_when_slow(ctx, node.auto_defer)
         try:
             for check in _checks(node, routers):
@@ -1317,7 +1312,7 @@ class Bot(Router):
     ) -> None:
         try:
             result = await function(ctx, focused.value)
-            await ctx._respond(autocomplete_choices(result, function, focused.type))
+            await ctx.respond(autocomplete_choices(result, function, focused.type))
         except Exception as error:
             await self._handle_error(ctx, command, function, error)
 
@@ -1407,7 +1402,7 @@ async def _answer_failure(
     try:
         if isinstance(ctx, AutocompleteContext):
             if ctx.state is ResponseState.PENDING:
-                await ctx._respond([])
+                await ctx.respond([])
         elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
             await ctx.respond(answer, ephemeral=True)
         elif ctx.state is ResponseState.DEFERRED:

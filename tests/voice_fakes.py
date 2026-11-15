@@ -564,10 +564,12 @@ class FakeBot:
             shard_count=1,
             shard_ids=[0],
         )
-        self._intents = intents
+        self.intents = intents
         self.events: list[VoiceEvent] = []
-        self.voice = VoiceManager(self, defaults)
-        self.core.handle = self.voice._handle
+        self.voice = VoiceManager(
+            self, defaults, lambda: None if self._bridge is None else self.core
+        )
+        self.core.handle = self.voice.handle
         self._waiters: list[
             tuple[type[Event], Callable[[Any], bool] | None, asyncio.Future[Event]]
         ] = []
@@ -575,7 +577,7 @@ class FakeBot:
             tuple[type[Event], Callable[[Any], bool] | None, asyncio.Queue[Event]]
         ] = []
 
-    def _emit(self, event: VoiceEvent) -> None:
+    def dispatch(self, event: VoiceEvent) -> None:
         self.events.append(event)
 
     async def wait_for[E: Event](
@@ -614,7 +616,7 @@ class FakeBot:
         finally:
             self._streams.remove(streamer)
 
-    def dispatch(self, event: Event) -> None:
+    def feed(self, event: Event) -> None:
         for kind, check, queue in list(self._streams):
             if isinstance(event, kind) and (check is None or check(event)):
                 queue.put_nowait(event)
@@ -628,7 +630,7 @@ class FakeBot:
 
     def deliver(self, delivery: VoiceDelivery) -> None:
         self.core.track(delivery)
-        self.voice._handle(delivery)
+        self.voice.handle(delivery)
 
     def events_of[V: VoiceEvent](self, kind: type[V]) -> list[V]:
         return [event for event in self.events if isinstance(event, kind)]

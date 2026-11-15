@@ -367,7 +367,7 @@ def test_speech_updates_speaking_before_its_event_and_disconnect_stops_it(
         vc = await connected(bot)
         seen: list[tuple[voice.VoiceEvent, dict[int, float]]] = []
         monkeypatch.setattr(
-            bot, "_emit", lambda event: seen.append((event, dict(vc.speaking)))
+            bot, "dispatch", lambda event: seen.append((event, dict(vc.speaking)))
         )
         now = time.monotonic()
         with monkeypatch.context() as frozen:

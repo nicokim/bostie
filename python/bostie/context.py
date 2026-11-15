@@ -256,10 +256,12 @@ class _ReplyingContext[
         received: float,
         ephemeral: bool,
         allowed_mentions: AllowedMentions,
+        deletions: set[asyncio.Task[None]],
     ) -> None:
         super().__init__(interaction, bot, received=received)
         self._ephemeral = ephemeral
         self._allowed_mentions = allowed_mentions
+        self._deletions = deletions
 
     def typing(self) -> "Typing":
         """Typing in the interaction's channel, awaited once or kept in `async with`."""
@@ -413,7 +415,7 @@ class _ReplyingContext[
     def _delete_later(self, delay: float | None, message_id: int | None) -> None:
         if delay is not None:
             delete_later(
-                self.bot._deletions, delay, functools.partial(self.delete, message_id)
+                self._deletions, delay, functools.partial(self.delete, message_id)
             )
 
     def _ensure_answered(self, action: str) -> None:
@@ -747,12 +749,13 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
         """
         data = self.interaction.data
         _, leaves = split_subcommands(data.options)
-        found = self.bot._command(data)
+        found = self.bot.match_command(data)
         if found is None:
             return {option.name: option.value for option in leaves}
         return found[0].filled(leaves, data.resolved)
 
-    async def _respond(self, choices: list[dict[str, Any]]) -> None:
+    async def respond(self, choices: list[dict[str, Any]]) -> None:
+        """Answer with these Discord choice objects; autocomplete results go here."""
         async with self._lock:
             self._ensure_alive()
             if self.state is not ResponseState.PENDING:

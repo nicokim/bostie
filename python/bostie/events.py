@@ -127,8 +127,8 @@ class _GuildCreatePayload(Guild, kw_only=True):
     stage_instances: tuple[StageInstance, ...]
     guild_scheduled_events: tuple[ScheduledEvent, ...]
     soundboard_sounds: tuple[SoundboardSound, ...]
-    _members: msgspec.Raw = msgspec.field(name="members")
-    _presences: msgspec.Raw = msgspec.field(name="presences")
+    members_json: msgspec.Raw = msgspec.field(name="members")
+    presences_json: msgspec.Raw = msgspec.field(name="presences")
 
 
 class GuildCreate(Event, kw_only=True):
@@ -160,7 +160,8 @@ class GuildCreate(Event, kw_only=True):
         )
         return presences
 
-    def _member(self, user_id: int) -> Member | None:
+    def member(self, user_id: int) -> Member | None:
+        """The member with this user id, decoding no other member."""
         needle = str(user_id).encode()
         for item in decoder(tuple[msgspec.Raw, ...]).decode(self._members):
             if needle in bytes(item):
@@ -189,8 +190,8 @@ class GuildCreate(Event, kw_only=True):
             stage_instances=payload.stage_instances,
             guild_scheduled_events=payload.guild_scheduled_events,
             soundboard_sounds=payload.soundboard_sounds,
-            _members=payload._members,
-            _presences=payload._presences,
+            _members=payload.members_json,
+            _presences=payload.presences_json,
         )
 
 

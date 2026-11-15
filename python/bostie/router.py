@@ -18,7 +18,7 @@ from typing import (
     overload,
 )
 
-from bostie._util import qualified_name
+from bostie._util import qualified_name, routers_from, split_subcommands
 from bostie.commands import (
     Check,
     Command,
@@ -42,6 +42,7 @@ from bostie.enums import (
 from bostie.errors import CommandDefinitionError, ErrorHook, StateError
 from bostie.events import BotEvent, Event, RawEvent
 from bostie.hooks import ErrorHooks
+from bostie.models import CommandData, InteractionDataOption
 from bostie.models.base import check_keys
 from bostie.tasks import Task, TaskCallback
 from bostie.voice.events import VoiceEvent
@@ -210,14 +211,14 @@ class Router(ErrorHooks):
 
     def remove_listener(self, listener: ListenerCallback) -> None:
         """Stop calling `listener` for every event it listens to here."""
-        for router in self._chain():
+        for router in routers_from(self):
             for name, listeners in list(router.listeners.items()):
                 kept = [kept for kept in listeners if kept.callback != listener]
                 if kept:
                     router.listeners[name] = kept
                 else:
                     del router.listeners[name]
-            router._registered()
+        self._registered()
 
     def listen_raw[L: ListenerCallback](self, *names: str) -> Callable[[L], L]:
         """Register a listener that gets a RawEvent for each of these dispatch names."""
@@ -254,7 +255,13 @@ class Router(ErrorHooks):
         """
 
         def register(callback: TaskCallback) -> Task:
-            task = Task(callback, seconds=seconds, times=time, router=self)
+            task = Task(
+                callback,
+                seconds=seconds,
+                times=time,
+                router=self,
+                changed=self._registered,
+            )
             self._add(TASKS, task.callback, task)
             return task
 
@@ -286,7 +293,7 @@ class Router(ErrorHooks):
         """
         if isinstance(router, str):
             router = _module_router(importlib.import_module(router))
-        if router.parent is not None or router in self._chain():
+        if router.parent is not None or router in routers_from(self):
             raise ValueError("a router can be included once, and never into itself")
         for registry in REGISTRIES:
             for key in registry.of(router):
@@ -312,7 +319,7 @@ class Router(ErrorHooks):
         removed = {
             id(listener) for kept in router.listeners.values() for listener in kept
         }
-        for ancestor in self._chain():
+        for ancestor in routers_from(self):
             for registry in REGISTRIES:
                 owned = registry.of(ancestor)
                 for key, value in registry.of(router).items():
@@ -326,7 +333,7 @@ class Router(ErrorHooks):
                     ancestor.listeners[event] = kept
                 else:
                     del ancestor.listeners[event]
-            ancestor._registered()
+        self._registered()
         router.parent = None
         if name is not None:
             for module in _submodules(name):
@@ -359,9 +366,23 @@ class Router(ErrorHooks):
         """The modal route for a custom_id and its placeholder values, or None."""
         return _match(self.modal_routes, custom_id)
 
+    def match_command(
+        self, data: CommandData
+    ) -> tuple[Command, tuple[InteractionDataOption, ...]] | None:
+        """The slash command `data` invokes, with its own options, or None."""
+        if data.type is not CommandType.CHAT_INPUT:
+            return None
+        names, options = split_subcommands(data.options)
+        node: Command | Group | None = scoped(
+            self.commands, (data.name,), data.guild_id
+        )
+        for name in names:
+            node = node.commands.get(name) if isinstance(node, Group) else None
+        return (node, options) if isinstance(node, Command) else None
+
     def find_error_handlers(self, error: BaseException) -> Iterator[ErrorHook[Any]]:
         """Hooks for `error`: this router's nearest match first, then each parent's."""
-        for router in self._chain():
+        for router in routers_from(self):
             handler = router.error_handler(error)
             if handler is not None:
                 yield handler
@@ -382,12 +403,6 @@ class Router(ErrorHooks):
                 Listener(listener, None if event.NAME == RAW_EVENT_NAME else event),
             )
         return listener
-
-    def _chain(self) -> Iterator["Router"]:
-        router: Router | None = self
-        while router is not None:
-            yield router
-            router = router.parent
 
     def _context_menu(
         self, type: TargetType, name: str, settings: ContextMenuSettings
@@ -415,22 +430,26 @@ class Router(ErrorHooks):
         return register
 
     def _check[K](self, registry: _Registry[K, Any], key: K) -> None:
-        if any(registry.clashes(key, registry.of(router)) for router in self._chain()):
+        if any(
+            registry.clashes(key, registry.of(router)) for router in routers_from(self)
+        ):
             raise registry.taken(key)
 
     def _add[K](self, registry: _Registry[K, Any], key: K, value: object) -> None:
         self._check(registry, key)
-        for router in self._chain():
+        for router in routers_from(self):
             registry.of(router)[key] = value
-            router._registered()
+        self._registered()
 
     def _add_listener(self, name: str, listener: Listener) -> None:
-        for router in self._chain():
+        for router in routers_from(self):
             router.listeners.setdefault(name, []).append(listener)
-            router._registered(listener)
+        self._registered(listener)
 
     def _registered(self, listener: Listener | None = None) -> None:
-        pass
+        if self.parent is not None:
+            parent: Router = self.parent
+            parent._registered(listener)
 
 
 COMMANDS: _Registry[CommandKey, Command | Group] = _Registry(

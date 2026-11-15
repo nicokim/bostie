@@ -270,6 +270,7 @@ def test_selects_give_the_users_members_roles_and_channels_picked() -> None:
             "received": 0.0,
             "ephemeral": False,
             "allowed_mentions": AllowedMentions(),
+            "deletions": set(),
         }
         component = ComponentContext(
             decode(ComponentInteraction, encode(select)), bot, **options
