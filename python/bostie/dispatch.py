@@ -79,10 +79,7 @@ class Claim[C: ComponentContext | ModalContext]:
 
 
 class Interactions:
-    """The bot's interaction pipeline: claims, then routes, commands and autocomplete.
-
-    It runs checks, hooks and the handler, defers a slow answer, and answers failures.
-    """
+    """Runs each interaction's claim or handler, with its checks, hooks and errors."""
 
     def __init__(
         self,

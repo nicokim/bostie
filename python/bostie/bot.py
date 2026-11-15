@@ -369,10 +369,7 @@ class Bot(Router):
                 await self.close()
 
     async def open(self, token: str | None = None) -> Application:
-        """Start REST, send Starting, sync commands and run tasks, with no gateway.
-
-        It returns the application; `close()` ends it. ASGIApp starts a bot this way.
-        """
+        """Start REST, send Starting, sync commands and run tasks, with no gateway."""
         bridge, _ = self._open(token)
         await bridge.__aenter__()
         try:

@@ -71,10 +71,7 @@ class MaybeSnowflake:
     field_specifiers=(msgspec.field,), kw_only_default=True, frozen_default=True
 )
 class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
-    """Base of the models bostie decodes from Discord payloads.
-
-    `HIDDEN` names fields of a subclass that its repr leaves out, such as secrets.
-    """
+    """Base of the models bostie decodes; `HIDDEN` names fields their repr omits."""
 
     HIDDEN: ClassVar[frozenset[str]] = frozenset()
 
