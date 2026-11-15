@@ -1,8 +1,8 @@
-<img src="docs/assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
+<img src="https://bostie.dev/assets/brand/bostie-logo.svg" alt="bostie logo" width="120">
 
 # bostie
 
-<img src="docs/assets/mascot/bostie-wave.gif" alt="Bostie, a Boston Terrier, waving" width="160" align="right">
+<img src="https://bostie.dev/assets/mascot/bostie-wave.gif" alt="Bostie, a Boston Terrier, waving" width="160" align="right">
 
 A Discord library for Python with a Rust core, built around reliable voice.
 
@@ -46,28 +46,26 @@ bot.run()
 
 ## Install
 
-You need Python 3.12 or newer, Rust 1.95 or newer ([rustup.rs](https://rustup.rs)) and [CMake](https://cmake.org/download/). Clone the repository and install the clone into your bot's environment:
-
 ```sh
-pip install path/to/bostie
+pip install bostie
 ```
 
-The first install compiles the Rust core and libopus, which takes a few minutes. `python -m bostie` prints the installed version.
+The wheels come with the Rust core and libopus compiled, for Python 3.12 and newer on Linux, macOS and Windows. `python -m bostie` prints the installed version. [Install](https://bostie.dev/install/) covers the testing extra, free-threaded Python and building from source.
 
 ## Documentation
 
-- [Quickstart](docs/quickstart.md): create the application and run a first bot.
-- Guides: [slash commands](docs/guide/commands.md), [answering interactions](docs/guide/responses.md), [components](docs/guide/components.md), [events](docs/guide/events.md), [REST](docs/guide/rest.md), [testing](docs/guide/testing.md) and more.
-- [Voice](docs/voice/index.md): connections and DAVE, playback, raw audio, receiving and recording.
-- [Reference](docs/reference/bot-options.md): every `Bot` option, every event, and the API.
-- [Examples](examples/): complete bots, each type-checked in CI.
+- [Quickstart](https://bostie.dev/quickstart/): create the application and run a first bot.
+- Guides: [slash commands](https://bostie.dev/guide/commands/), [answering interactions](https://bostie.dev/guide/responses/), [components](https://bostie.dev/guide/components/), [events](https://bostie.dev/guide/events/), [REST](https://bostie.dev/guide/rest/), [testing](https://bostie.dev/guide/testing/) and more.
+- [Voice](https://bostie.dev/voice/): connections and DAVE, playback, raw audio, receiving and recording.
+- [Reference](https://bostie.dev/reference/bot-options/): every `Bot` option, every event, and the API.
+- [Examples](https://github.com/nicokim/bostie/tree/main/examples): complete bots, each type-checked in CI.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains the setup and the checks a pull request must pass. Report security problems as [SECURITY.md](SECURITY.md) describes.
+[CONTRIBUTING.md](https://github.com/nicokim/bostie/blob/main/CONTRIBUTING.md) explains the setup and the checks a pull request must pass. Report security problems as [SECURITY.md](https://github.com/nicokim/bostie/blob/main/SECURITY.md) describes.
 
 ## License
 
-Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option.
+Licensed under either of [Apache License 2.0](https://github.com/nicokim/bostie/blob/main/LICENSE-APACHE) or [MIT](https://github.com/nicokim/bostie/blob/main/LICENSE-MIT), at your option.
 
 bostie is not affiliated with Discord Inc.
