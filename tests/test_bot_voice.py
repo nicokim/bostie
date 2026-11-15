@@ -12,7 +12,7 @@ import pytest
 
 from bostie import Bot, Context, ShardNotRunning, voice
 from bostie.enums import SpeakingFlags
-from bostie.gateway import GatewayClient
+from bostie.gateway import Shards
 from bostie.testing import FakeDiscord, Packet, payloads, running
 from bostie.testing.payloads import Json
 from bostie.voice import DisconnectReason, EndReason, NotInVoice, SinkClosed, State
@@ -505,13 +505,13 @@ def test_voice_listeners_and_waiters_stay_out_of_the_gateway_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     filters: list[list[str] | None] = []
-    send_filter = GatewayClient._filter
+    send_filter = Shards.filter
 
-    def record(gateway: GatewayClient, names: Iterable[str] | None) -> None:
+    def record(gateway: Shards, names: Iterable[str] | None) -> None:
         filters.append(None if names is None else list(names))
         send_filter(gateway, names)
 
-    monkeypatch.setattr(GatewayClient, "_filter", record)
+    monkeypatch.setattr(Shards, "filter", record)
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url, cache=False)

@@ -104,6 +104,7 @@ from bostie.gateway import (
     PresenceOptions,
     Readiness,
     RequestedMembers,
+    Shards,
     member_request,
     presence_fields,
 )
@@ -215,7 +216,7 @@ class Bot(Router):
     _bridge: Bridge | None = None
     _http: HTTPClient | None = None
     _rest: REST | None = None
-    _gateway: GatewayClient | None = None
+    _shards: Shards | None = None
     _closing: asyncio.Task[None] | None = None
     _readiness: Readiness | None = None
     _set_up = False
@@ -340,14 +341,17 @@ class Bot(Router):
     @property
     def gateway(self) -> GatewayClient:
         """The gateway connection, for any opcode; it exists once `start()` runs."""
-        if self._gateway is None:
+        return self._running_shards()
+
+    def _running_shards(self) -> Shards:
+        if self._shards is None:
             raise StateError("bot.gateway exists once the bot has started")
-        return self._gateway
+        return self._shards
 
     @property
     def latency(self) -> float | None:
         """Mean seconds from a heartbeat to its ACK over the shards, or None."""
-        return None if self._gateway is None else self._gateway.latency
+        return None if self._shards is None else self._shards.latency
 
     @property
     def owner_ids(self) -> frozenset[int]:
@@ -400,7 +404,7 @@ class Bot(Router):
             self._rest = REST(
                 self._http, self._allowed_mentions, self.cache, self._deletions
             )
-            self._gateway = None
+            self._shards = None
             try:
                 await self._connect(bridge, token)
             except (TransportError, StateError):
@@ -417,7 +421,7 @@ class Bot(Router):
             if isinstance(self._shard_count, int)
             else int(info["shards"])
         )
-        self._gateway = gateway = GatewayClient(
+        self._shards = shards = Shards(
             bridge,
             token,
             intents=self._intents,
@@ -428,9 +432,9 @@ class Bot(Router):
             large_threshold=self._large_threshold,
             session_file=self._session_file,
         )
-        self._unready = set(gateway.shard_ids)
+        self._unready = set(shards.shard_ids)
         self._readiness = Readiness(
-            gateway.shard_ids,
+            shards.shard_ids,
             self._shard_ready,
             guilds=bool(self._intents & Intents.GUILDS),
             timeout=self._guild_ready_timeout,
@@ -444,15 +448,15 @@ class Bot(Router):
         await self._setup()
         if self._auto_sync:
             await self._sync(always_put=False)
-        if resumed := gateway._load_sessions():
+        if resumed := shards.load_sessions():
             self._replaying |= resumed
             user = await self.rest.users.fetch_current()
             self.user = self.cache._current = user
-        gateway._filter(self._dispatch_names())
-        gateway._identify_limit(info["session_start_limit"])
+        shards.filter(self._dispatch_names())
+        shards.identify_limit(info["session_start_limit"])
         if self._before_identify is not None:
-            gateway._gate_identifies()
-        await gateway._start(info["url"], self._presence)
+            shards.gate_identifies()
+        await shards.start(info["url"], self._presence)
 
     async def close(self) -> None:
         """Disconnect, cancel running handlers after `shutdown_grace`, close the bridge.
@@ -578,8 +582,8 @@ class Bot(Router):
         """Change what the bot shows on every shard, and on sessions it starts later."""
         check_keys(options, PRESENCE_OPTIONS, "presence options")
         self._presence |= presence_fields(options)
-        if self._gateway is not None:
-            self._gateway._update_presence(self._presence)
+        if self._shards is not None:
+            self._shards.update_presence(self._presence)
 
     async def request_members(
         self, guild_id: int, **options: Unpack[MemberRequest]
@@ -739,8 +743,8 @@ class Bot(Router):
             if stopping := self._tasks - running:
                 await asyncio.wait(stopping, timeout=TASK_CANCEL_TIMEOUT)
         await self.voice.close()
-        if self._gateway is not None:
-            await self._gateway.close()
+        if self._shards is not None:
+            await self._shards.close()
         if self._readiness is not None:
             self._readiness.close()
         loops = set(self._running_tasks.values())
@@ -807,8 +811,8 @@ class Bot(Router):
         return sorted(names)
 
     def _refresh_filter(self) -> None:
-        if self._gateway is not None:
-            self._gateway._filter(self._dispatch_names())
+        if self._shards is not None:
+            self._shards.filter(self._dispatch_names())
 
     @override
     def _registered(self, listener: Listener | None = None) -> None:
@@ -849,7 +853,7 @@ class Bot(Router):
                 else:
                     self._replaying.discard(shard_id)
                     self._end_session(shard_id)
-                self.gateway._handle(delivery)
+                self._running_shards().handle(delivery)
                 self._emit(
                     ShardDisconnect(
                         shard_id=shard_id, code=code, reason=reason, resuming=resuming
@@ -858,15 +862,15 @@ class Bot(Router):
             case ("identify", shard_id, request):
                 spawn(self._tasks, self._approve_identify(shard_id, request))
             case ("stopped", shard_id, code, reason, _):
-                self.gateway._handle(delivery)
+                self._running_shards().handle(delivery)
                 self._emit(ShardStop(shard_id=shard_id, code=code, reason=reason))
             case ("backpressure", shard_id, queued_bytes):
-                self.gateway._handle(delivery)
+                self._running_shards().handle(delivery)
                 self._emit(
                     ShardBackpressure(shard_id=shard_id, queued_bytes=queued_bytes)
                 )
             case ("invalid_requests", *_):
-                self.gateway._handle(delivery)
+                self._running_shards().handle(delivery)
             case (
                 "voice_state"
                 | "voice_moved"
@@ -894,7 +898,7 @@ class Bot(Router):
                     "before_identify raised for shard %d; it identifies anyway",
                     shard_id,
                 )
-        self.gateway._approve_identify(shard_id, request)
+        self._running_shards().approve_identify(shard_id, request)
 
     def _end_session(self, shard_id: int) -> None:
         if self._readiness is None or not self._readiness.ended(shard_id):

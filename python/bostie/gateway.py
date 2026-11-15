@@ -161,7 +161,7 @@ class Shard:
 
 
 class GatewayClient:
-    """The bot's gateway shards: identify, route commands, reconnect and close."""
+    """The bot's gateway shards: send commands, reconnect, and measure latency."""
 
     def __init__(
         self,
@@ -202,77 +202,6 @@ class GatewayClient:
         """The shard Discord sends this guild's events to."""
         return (guild_id >> 22) % self.shard_count
 
-    def _identify_limit(self, session_start_limit: Mapping[str, Any]) -> None:
-        self._bridge.core.gateway_identify_limit(
-            session_start_limit["remaining"],
-            session_start_limit["total"],
-            session_start_limit["reset_after"] / 1000,
-            session_start_limit["max_concurrency"],
-        )
-
-    def _gate_identifies(self) -> None:
-        self._bridge.core.gateway_gate_identifies()
-
-    def _approve_identify(self, shard_id: int, request: int) -> None:
-        with contextlib.suppress(StateError):
-            self._bridge.core.gateway_approve_identify(shard_id, request)
-
-    def _load_sessions(self) -> frozenset[int]:
-        path = self._session_file
-        if path is None or not path.exists():
-            return frozenset()
-        data = path.read_bytes()
-        path.unlink()
-        try:
-            sessions = decoder(tuple[GatewaySession, ...]).decode(data)
-        except msgspec.DecodeError:
-            log.warning("%s holds no gateway sessions, so every shard identifies", path)
-            return frozenset()
-        self._resuming = {
-            session.shard_id: session
-            for session in sessions
-            if session.shard_count == self.shard_count
-            and session.shard_id in self._shards
-        }
-        return frozenset(self._resuming)
-
-    async def _start(self, url: str, presence: Mapping[str, Any]) -> None:
-        stopped = self._bridge.create_future()
-        for shard_id in self._shards:
-            identify = self._identify(shard_id, presence)
-            saved = self._resuming.pop(shard_id, None)
-            resume = (
-                None
-                if saved is None
-                else (saved.session_id, saved.seq, saved.resume_url)
-            )
-            self._bridge.core.gateway_start(shard_id, url, identify, resume)
-            self._running.add(shard_id)
-        self._stopped = stopped
-        await asyncio.shield(stopped)
-
-    def _update_presence(self, presence: Mapping[str, Any]) -> None:
-        for shard_id in self._running:
-            identify = self._identify(shard_id, presence)
-            self._bridge.core.gateway_identify(shard_id, identify)
-            self._shards[shard_id].send(PRESENCE_UPDATE, presence)
-
-    def _identify(self, shard_id: int, presence: Mapping[str, Any]) -> bytes:
-        return encoder.encode(
-            {
-                "token": self._token,
-                "intents": self._intents,
-                "properties": {
-                    "os": sys.platform,
-                    "browser": "bostie",
-                    "device": "bostie",
-                },
-                "large_threshold": self._large_threshold,
-                "shard": [shard_id, self.shard_count],
-                "presence": presence,
-            }
-        )
-
     def send(self, op: int, d: Any = None) -> None:
         """Send a gateway command to the shards it belongs to.
 
@@ -299,13 +228,98 @@ class GatewayClient:
             case _:
                 self.shard(0).send(op, d)
 
-    def _filter(self, names: Iterable[str] | None) -> None:
-        self._bridge.core.gateway_filter(None if names is None else list(names))
-
     def reconnect(self) -> None:
         """Drop every shard's connection and resume its session on a new one."""
         for shard_id in self._running:
             self._shards[shard_id].reconnect()
+
+    @property
+    def latency(self) -> float | None:
+        """Mean seconds from a heartbeat to its ACK over shards that measured one."""
+        measured = [
+            latency
+            for shard in self._shards.values()
+            if (latency := shard.latency) is not None
+        ]
+        return sum(measured) / len(measured) if measured else None
+
+
+class Shards(GatewayClient):
+    """The bot's controls over its shards: start, identify, filter and close."""
+
+    def identify_limit(self, session_start_limit: Mapping[str, Any]) -> None:
+        self._bridge.core.gateway_identify_limit(
+            session_start_limit["remaining"],
+            session_start_limit["total"],
+            session_start_limit["reset_after"] / 1000,
+            session_start_limit["max_concurrency"],
+        )
+
+    def gate_identifies(self) -> None:
+        self._bridge.core.gateway_gate_identifies()
+
+    def approve_identify(self, shard_id: int, request: int) -> None:
+        with contextlib.suppress(StateError):
+            self._bridge.core.gateway_approve_identify(shard_id, request)
+
+    def load_sessions(self) -> frozenset[int]:
+        path = self._session_file
+        if path is None or not path.exists():
+            return frozenset()
+        data = path.read_bytes()
+        path.unlink()
+        try:
+            sessions = decoder(tuple[GatewaySession, ...]).decode(data)
+        except msgspec.DecodeError:
+            log.warning("%s holds no gateway sessions, so every shard identifies", path)
+            return frozenset()
+        self._resuming = {
+            session.shard_id: session
+            for session in sessions
+            if session.shard_count == self.shard_count
+            and session.shard_id in self._shards
+        }
+        return frozenset(self._resuming)
+
+    async def start(self, url: str, presence: Mapping[str, Any]) -> None:
+        stopped = self._bridge.create_future()
+        for shard_id in self._shards:
+            identify = self._identify(shard_id, presence)
+            saved = self._resuming.pop(shard_id, None)
+            resume = (
+                None
+                if saved is None
+                else (saved.session_id, saved.seq, saved.resume_url)
+            )
+            self._bridge.core.gateway_start(shard_id, url, identify, resume)
+            self._running.add(shard_id)
+        self._stopped = stopped
+        await asyncio.shield(stopped)
+
+    def update_presence(self, presence: Mapping[str, Any]) -> None:
+        for shard_id in self._running:
+            identify = self._identify(shard_id, presence)
+            self._bridge.core.gateway_identify(shard_id, identify)
+            self._shards[shard_id].send(PRESENCE_UPDATE, presence)
+
+    def _identify(self, shard_id: int, presence: Mapping[str, Any]) -> bytes:
+        return encoder.encode(
+            {
+                "token": self._token,
+                "intents": self._intents,
+                "properties": {
+                    "os": sys.platform,
+                    "browser": "bostie",
+                    "device": "bostie",
+                },
+                "large_threshold": self._large_threshold,
+                "shard": [shard_id, self.shard_count],
+                "presence": presence,
+            }
+        )
+
+    def filter(self, names: Iterable[str] | None) -> None:
+        self._bridge.core.gateway_filter(None if names is None else list(names))
 
     async def close(self) -> None:
         """Close every shard and wait up to 2 s for them to end.
@@ -328,17 +342,7 @@ class GatewayClient:
         if self._session_file is not None and self._saved:
             self._session_file.write_bytes(encoder.encode(list(self._saved.values())))
 
-    @property
-    def latency(self) -> float | None:
-        """Mean seconds from a heartbeat to its ACK over shards that measured one."""
-        measured = [
-            latency
-            for shard in self._shards.values()
-            if (latency := shard.latency) is not None
-        ]
-        return sum(measured) / len(measured) if measured else None
-
-    def _handle(self, delivery: StatusDelivery) -> None:
+    def handle(self, delivery: StatusDelivery) -> None:
         match delivery:
             case ("disconnected", shard_id, code, reason, resuming):
                 cause = reason if code is None else f"{reason} (close code {code})"

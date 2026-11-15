@@ -19,7 +19,7 @@ from bostie.errors import (
     StateError,
     TransportError,
 )
-from bostie.gateway import GatewayClient
+from bostie.gateway import Shards
 from bostie.http import HTTPSettings
 from bostie.testing import FakeDiscord
 
@@ -275,10 +275,10 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
 
         async with FakeDiscord() as fake:
             async with Bridge(fake.token, fake.api_url, explode) as running:
-                gateway = GatewayClient(
+                gateway = Shards(
                     running, fake.token, intents=513, shard_count=1, shard_ids=[0]
                 )
-                started = asyncio.ensure_future(gateway._start(fake.gateway_url, {}))
+                started = asyncio.ensure_future(gateway.start(fake.gateway_url, {}))
                 await exploded.wait()
                 assert (await me(running))[0] == 200
             with pytest.raises(TransportError, match="stopped"):

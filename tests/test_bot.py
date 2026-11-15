@@ -75,7 +75,7 @@ from bostie.events import (
     ThreadMembersUpdate,
     UserUpdate,
 )
-from bostie.gateway import GatewayClient
+from bostie.gateway import Shards
 from bostie.sync import SyncResult
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
@@ -894,13 +894,13 @@ def test_the_dispatch_filter_follows_listeners_waiters_and_the_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     filters: list[list[str] | None] = []
-    send_filter = GatewayClient._filter
+    send_filter = Shards.filter
 
-    def record(gateway: GatewayClient, names: Iterable[str] | None) -> None:
+    def record(gateway: Shards, names: Iterable[str] | None) -> None:
         filters.append(None if names is None else list(names))
         send_filter(gateway, names)
 
-    monkeypatch.setattr(GatewayClient, "_filter", record)
+    monkeypatch.setattr(Shards, "filter", record)
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url, cache=False)
@@ -1763,9 +1763,7 @@ def test_shard_stops_and_backpressure_reach_listeners(
     async def main() -> None:
         bot = Bot()
         bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
-        bot._gateway = GatewayClient(
-            bridge, "token", intents=0, shard_count=2, shard_ids=[1]
-        )
+        bot._shards = Shards(bridge, "token", intents=0, shard_count=2, shard_ids=[1])
         async with bot.stream(type(event)) as events:
             bot._on_gateway(delivery, 0.0)
             assert await anext(events) == event
