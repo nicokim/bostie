@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, TypedDict, Unpack, overload, override
+from typing import TYPE_CHECKING, Any, Unpack, overload, override
 
 import msgspec
 
@@ -120,17 +120,10 @@ class ReplyEditParts(EditParts, total=False):
     ephemeral: bool
 
 
-class DeferOptions(TypedDict, total=False):
-    """Without `ephemeral`, the command's setting applies."""
-
-    ephemeral: bool
-
-
 type AnyReplyParts = ReplyParts | ReplyEditParts
 
 REPLY_PARTS = ReplyParts.__optional_keys__
 REPLY_EDIT_PARTS = ReplyEditParts.__optional_keys__
-DEFER_OPTIONS = DeferOptions.__optional_keys__
 
 
 class _InteractionContext[
@@ -298,15 +291,16 @@ class _ReplyingContext[
         self._delete_later(delete_after, None if original else message.id)
         return message
 
-    async def defer(self, **options: Unpack[DeferOptions]) -> None:
+    async def defer(self, *, ephemeral: bool | None = None) -> None:
         """Show "thinking…" and answer later with `respond`."""
-        check_keys(options, DEFER_OPTIONS, "options")
         async with self._lock:
             self._ensure_alive()
             if self.state is ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
             if self.state is ResponseState.PENDING:
-                await self._defer(ephemeral=options.get("ephemeral", self._ephemeral))
+                await self._defer(
+                    ephemeral=self._ephemeral if ephemeral is None else ephemeral
+                )
 
     @overload
     async def edit(self, /, **parts: Unpack[ReplyEditParts]) -> M: ...

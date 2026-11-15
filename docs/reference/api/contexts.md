@@ -16,8 +16,6 @@
 
 ::: bostie.context.ReplyEditParts
 
-::: bostie.context.DeferOptions
-
 ::: bostie.models.message.MessageParts
 
 ::: bostie.models.message.EditParts
