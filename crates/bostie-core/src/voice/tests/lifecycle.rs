@@ -2,45 +2,50 @@ use super::*;
 use crate::voice::source::tests::fixture;
 use crate::voice::testkit::sfu::Packet;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Offered {
+    Nothing,
+    State,
+    Server,
+    SilentDiscovery,
+    FailingDiscovery,
+    EndpointlessServerAfterReady,
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_connect_timeout_names_what_is_missing() {
-    let short = Duration::from_millis(300);
-    let long = Duration::from_secs(1);
+    let short = Duration::from_millis(150);
+    let long = Duration::from_millis(400);
     for (offered, timeout, missing) in [
         (
-            "nothing",
+            Offered::Nothing,
             short,
             "voice_events: no VOICE_STATE_UPDATE or VOICE_SERVER_UPDATE arrived for the channel",
         ),
         (
-            "state",
+            Offered::State,
             short,
             "voice_events: no VOICE_SERVER_UPDATE with an endpoint arrived",
         ),
         (
-            "server",
+            Offered::Server,
             short,
             "voice_events: no VOICE_STATE_UPDATE arrived for the channel",
         ),
+        (Offered::SilentDiscovery, long, "no progress within"),
         (
-            "a server that never answers discovery",
-            short,
-            "no progress within",
-        ),
-        (
-            "a server whose discovery fails",
+            Offered::FailingDiscovery,
             long,
             "ip discovery: no answer from",
         ),
         (
-            "an endpointless server after ready",
+            Offered::EndpointlessServerAfterReady,
             long,
             "server_unavailable: no VOICE_SERVER_UPDATE with an endpoint arrived",
         ),
     ] {
-        let slow = offered == "a server that never answers discovery";
         let mut harness = Harness::tuned(|tuning| {
-            if slow {
+            if offered == Offered::SilentDiscovery {
                 tuning.discovery_interval = WAIT;
             }
         })
@@ -53,17 +58,17 @@ async fn a_connect_timeout_names_what_is_missing() {
             })
             .unwrap();
         match offered {
-            "state" => harness.state(Some(CHANNEL)),
-            "server" => harness.fresh_server().await,
-            "nothing" => {}
-            "an endpointless server after ready" => {
+            Offered::Nothing => {}
+            Offered::State => harness.state(Some(CHANNEL)),
+            Offered::Server => harness.fresh_server().await,
+            Offered::SilentDiscovery | Offered::FailingDiscovery => {
+                harness.server.sfu.ignore_discoveries(usize::MAX);
+                harness.announce().await;
+            }
+            Offered::EndpointlessServerAfterReady => {
                 harness.announce().await;
                 harness.until(VoiceStatus::Ready).await;
                 harness.offer_server(guild(), "gone", None);
-            }
-            _ => {
-                harness.server.sfu.ignore_discoveries(usize::MAX);
-                harness.announce().await;
             }
         }
 
@@ -72,10 +77,10 @@ async fn a_connect_timeout_names_what_is_missing() {
         assert_eq!(
             (reason, code),
             (DisconnectReason::Timeout, None),
-            "{offered}"
+            "{offered:?}"
         );
-        assert!(detail.contains(missing), "{offered}: {detail}");
-        if offered == "nothing" {
+        assert!(detail.contains(missing), "{offered:?}: {detail}");
+        if offered == Offered::Nothing {
             assert_eq!(harness.leaves(), 1);
         }
     }

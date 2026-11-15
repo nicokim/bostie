@@ -1,18 +1,20 @@
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_move_by_someone_else_reconnects_and_keeps_the_sinks() {
+async fn a_move_by_someone_else_reconnects_and_keeps_held_audio_for_the_new_server() {
     let mut harness = Harness::start().await;
     harness.connected().await;
     let sink = harness.sink(pcm(), StallPolicy::Hold);
-    sink.write(&tone(FRAME_SAMPLES * 10)).unwrap();
+    sink.write(&tone(FRAME_SAMPLES * 20)).unwrap();
 
     harness.state(Some(OTHER_CHANNEL));
     let moved = harness.wait_for(moved).await;
     let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
+    harness.tick(5);
+    let kept = queued_frames(&sink);
     harness.fresh_server().await;
     harness.until(VoiceStatus::Ready).await;
-    harness.tick(2);
+    harness.tick(1);
     harness.server.collect().await;
 
     assert_eq!(moved, (CHANNEL, OTHER_CHANNEL, false));
@@ -20,7 +22,9 @@ async fn a_move_by_someone_else_reconnects_and_keeps_the_sinks() {
     assert_eq!(harness.server.count(op::IDENTIFY), 2);
     assert_eq!(harness.server.count(op::RESUME), 0);
     assert!(!sink.is_closed());
-    assert_eq!(harness.server.sfu.wait_packets(2, WAIT).len(), 2);
+    assert_eq!(kept, 20 * 960);
+    assert_eq!(harness.server.sfu.wait_packets(1, WAIT).len(), 1);
+    assert_eq!(queued_frames(&sink), 19 * 960);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -95,12 +99,12 @@ async fn a_terminated_call_then_a_new_server_connects_to_it() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_terminated_call_waits_the_server_change_delay_even_past_the_timeout() {
-    let delay = Duration::from_millis(1_500);
+    let delay = Duration::from_millis(400);
     let mut harness = Harness::start().await;
     harness
         .voice
         .connect(&ConnectRequest {
-            timeout: Duration::from_secs(1),
+            timeout: Duration::from_millis(200),
             server_change_delay: delay,
             ..Harness::request()
         })
@@ -305,26 +309,6 @@ async fn the_last_leave_arriving_after_a_new_connect_is_not_a_removal() {
     harness.state(None);
     let (reason, _, _) = harness.ended().await;
     assert_eq!(reason, DisconnectReason::Removed);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn across_a_move_a_hold_sink_keeps_its_audio_for_the_new_server() {
-    let mut harness = Harness::start().await;
-    harness.connected().await;
-    let hold = harness.sink(pcm(), StallPolicy::Hold);
-    hold.write(&tone(FRAME_SAMPLES * 20)).unwrap();
-
-    harness.state(Some(OTHER_CHANNEL));
-    harness.until(VoiceStatus::Reconnecting).await;
-    harness.tick(5);
-    let kept = queued_frames(&hold);
-    harness.fresh_server().await;
-    harness.until(VoiceStatus::Ready).await;
-    harness.tick(1);
-
-    assert_eq!(kept, 20 * 960);
-    assert_eq!(harness.server.sfu.wait_packets(1, WAIT).len(), 1);
-    assert_eq!(queued_frames(&hold), 19 * 960);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
