@@ -13,6 +13,7 @@ from bostie.enums import (
     Intents,
     InteractionContextType,
     InteractionType,
+    MessageActivityType,
     MessageFlags,
     MessageReferenceType,
     MessageType,
@@ -145,7 +146,9 @@ def test_default_intents_exclude_privileged_ones() -> None:
         (ApplicationFlags.GATEWAY_MESSAGE_CONTENT_LIMITED, 1 << 19),
         (ApplicationFlags.APPLICATION_COMMAND_BADGE, 1 << 23),
         (MessageReferenceType.FORWARD, 1),
+        (MessageActivityType.STREAM_REQUEST, 6),
     ],
+    ids=lambda value: getattr(value, "name", str(value)),
 )
 def test_values_match_the_docs(member: int, value: int) -> None:
     assert member == value

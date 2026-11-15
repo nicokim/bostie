@@ -561,6 +561,7 @@ class MessageActivityType(DiscordIntEnum):
     SPECTATE = 2
     LISTEN = 3
     JOIN_REQUEST = 5
+    STREAM_REQUEST = 6
 
 
 class MessageReferenceType(DiscordIntEnum):
