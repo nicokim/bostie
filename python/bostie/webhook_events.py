@@ -14,6 +14,7 @@ from bostie.events import (
     LobbyMessageCreate,
     LobbyMessageDelete,
     LobbyMessageUpdate,
+    QuestUserEnrollment,
     RawEvent,
     decode_event,
 )
@@ -27,6 +28,7 @@ WEBHOOK_EVENTS: dict[str, type[Event]] = {
         EntitlementCreate,
         EntitlementUpdate,
         EntitlementDelete,
+        QuestUserEnrollment,
         LobbyMessageCreate,
         LobbyMessageUpdate,
         LobbyMessageDelete,

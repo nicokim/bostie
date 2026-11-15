@@ -133,6 +133,7 @@ Discord sends these only to the app's Webhook Events URL, which [`ASGIApp`](../g
 |---|---|---|
 | `ApplicationAuthorized` | `APPLICATION_AUTHORIZED` | `integration_type`, `user`, `scopes`, `guild` |
 | `ApplicationDeauthorized` | `APPLICATION_DEAUTHORIZED` | `user` |
+| `QuestUserEnrollment` | `QUEST_USER_ENROLLMENT` | |
 | `LobbyMessageCreate` | `LOBBY_MESSAGE_CREATE` | `message` |
 | `LobbyMessageUpdate` | `LOBBY_MESSAGE_UPDATE` | `message` |
 | `LobbyMessageDelete` | `LOBBY_MESSAGE_DELETE` | `id`, `lobby_id` |

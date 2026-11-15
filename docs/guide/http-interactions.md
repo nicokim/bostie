@@ -37,6 +37,7 @@ Served alone, the app has no gateway connection: no gateway events, no cache upd
 | `ApplicationAuthorized` | a user added the app to a guild or to their account |
 | `ApplicationDeauthorized` | a user removed the app, or its OAuth2 tokens ended |
 | `EntitlementCreate`, `EntitlementUpdate`, `EntitlementDelete` | an entitlement changed |
+| `QuestUserEnrollment` | a user was added to a Quest; Discord documents it but does not send it to apps yet |
 | `LobbyMessageCreate`, `LobbyMessageUpdate`, `LobbyMessageDelete` | a message was sent, edited or deleted in a Social SDK lobby |
 | `GameDirectMessageCreate`, `GameDirectMessageUpdate`, `GameDirectMessageDelete` | a direct message in a Social SDK session changed |
 

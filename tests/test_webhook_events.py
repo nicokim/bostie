@@ -15,6 +15,7 @@ from bostie.events import (
     LobbyMessageCreate,
     LobbyMessageDelete,
     LobbyMessageUpdate,
+    QuestUserEnrollment,
     RawEvent,
 )
 
@@ -31,6 +32,7 @@ def payload(name: str) -> bytes:
         ApplicationAuthorized,
         ApplicationDeauthorized,
         EntitlementCreate,
+        QuestUserEnrollment,
         LobbyMessageCreate,
         LobbyMessageUpdate,
         LobbyMessageDelete,
@@ -51,7 +53,9 @@ def test_every_documented_webhook_event_decodes_to_its_class(
 
 
 def test_a_ping_has_no_event_and_an_unmodelled_type_comes_raw() -> None:
+    future = {"type": 1, "event": {"type": "BOSTIE_FUTURE", "data": {"a": 1}}}
+
     assert decode_webhook_event(payload("PING")) is None
-    quest = decode_webhook_event(payload("QUEST_USER_ENROLLMENT"))
-    assert isinstance(quest, RawEvent)
-    assert (quest.name, quest.raw) == ("QUEST_USER_ENROLLMENT", {})
+    event = decode_webhook_event(json.dumps(future).encode())
+    assert isinstance(event, RawEvent)
+    assert (event.name, event.raw) == ("BOSTIE_FUTURE", {"a": 1})

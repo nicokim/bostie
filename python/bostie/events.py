@@ -886,6 +886,12 @@ class ApplicationDeauthorized(Event, kw_only=True):
     user: User
 
 
+class QuestUserEnrollment(Event, kw_only=True):
+    """A user was added to a Quest; Discord does not send it to apps yet."""
+
+    NAME = "QUEST_USER_ENROLLMENT"
+
+
 class _LobbyMessageEvent(Event, kw_only=True):
     message: LobbyMessage
 
