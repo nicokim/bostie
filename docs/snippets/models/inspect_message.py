@@ -30,6 +30,7 @@ async def inspect(ctx: Context, message: Message | WebhookMessage) -> None:
         fields=(
             EmbedField(name="Sent by", value=sender),
             EmbedField(name="Type", value=kind),
+            EmbedField(name="Deletable", value=str(message.type.deletable)),
             EmbedField(name="Created", value=fmt.timestamp(snowflake_time(message.id))),
             EmbedField(name="Raw keys", value=", ".join(sorted(message.raw or {}))),
         ),

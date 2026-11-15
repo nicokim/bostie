@@ -152,3 +152,17 @@ def test_default_intents_exclude_privileged_ones() -> None:
 )
 def test_values_match_the_docs(member: int, value: int) -> None:
     assert member == value
+
+
+def test_only_the_types_the_docs_mark_undeletable_are_undeletable() -> None:
+    undeletable = {kind for kind in MessageType if not kind.deletable}
+
+    assert undeletable == {
+        MessageType.RECIPIENT_ADD,
+        MessageType.RECIPIENT_REMOVE,
+        MessageType.CALL,
+        MessageType.CHANNEL_NAME_CHANGE,
+        MessageType.CHANNEL_ICON_CHANGE,
+        MessageType.THREAD_STARTER_MESSAGE,
+    }
+    assert MessageType(99).deletable

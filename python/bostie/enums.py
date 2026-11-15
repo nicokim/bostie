@@ -124,6 +124,23 @@ class MessageType(DiscordIntEnum):
     PURCHASE_NOTIFICATION = 44
     POLL_RESULT = 46
 
+    @property
+    def deletable(self) -> bool:
+        """Whether Discord lets a message of this type be deleted at all."""
+        return self not in UNDELETABLE_MESSAGES
+
+
+UNDELETABLE_MESSAGES = frozenset(
+    {
+        MessageType.RECIPIENT_ADD,
+        MessageType.RECIPIENT_REMOVE,
+        MessageType.CALL,
+        MessageType.CHANNEL_NAME_CHANGE,
+        MessageType.CHANNEL_ICON_CHANGE,
+        MessageType.THREAD_STARTER_MESSAGE,
+    }
+)
+
 
 class InteractionType(DiscordIntEnum):
     PING = 1

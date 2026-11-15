@@ -64,4 +64,4 @@ Discord ids encode when the object was created. `bostie.snowflake_time(id)` retu
 
 ## Enums
 
-`bostie` exports Discord's enums and flags: `ChannelType`, `MessageType`, `Permissions`, `Intents`, `MessageFlags`, `Locale`, `ButtonStyle` and the others in the [enums reference](../reference/api/enums.md). Flags combine with `|` and test with `in`: `Permissions.SEND_MESSAGES in member_permissions`. `JSONErrorCode` names Discord's error codes, as `HTTPException.code` reports them.
+`bostie` exports Discord's enums and flags: `ChannelType`, `MessageType`, `Permissions`, `Intents`, `MessageFlags`, `Locale`, `ButtonStyle` and the others in the [enums reference](../reference/api/enums.md). Flags combine with `|` and test with `in`: `Permissions.SEND_MESSAGES in member_permissions`. `message.type.deletable` says whether Discord lets a message of that type be deleted: the group DM and call notices, channel name and icon changes, and a thread's starter message cannot be. `JSONErrorCode` names Discord's error codes, as `HTTPException.code` reports them.
