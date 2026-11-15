@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0](https://github.com/nicokim/bostie/compare/v0.0.1...v0.1.0) (2026-11-15)
+## [0.1.0](https://github.com/nicokim/bostie/releases/tag/v0.1.0) (2026-11-15)
 
 
 ### Features
