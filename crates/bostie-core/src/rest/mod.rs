@@ -3,7 +3,7 @@ mod ratelimit;
 mod request;
 mod settings;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::num::NonZeroU16;
 use std::ops::ControlFlow;
 use std::pin::pin;
@@ -179,16 +179,7 @@ impl Rest {
     }
 
     pub(crate) async fn fetch_gateway_url(&self) -> Option<String> {
-        let request = RestRequest::parse(
-            "GET",
-            "/gateway",
-            &HashMap::new(),
-            Vec::new(),
-            None,
-            None,
-            None,
-        )
-        .ok()?;
+        let request = RestRequest::get("/gateway").ok()?;
         let Delivery::Response {
             status: 200, body, ..
         } = self.execute(Ticket::INTERNAL, request).await
@@ -536,7 +527,7 @@ impl Retries {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::VecDeque;
+    use std::collections::{HashMap, VecDeque};
     use std::iter;
 
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};

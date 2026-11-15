@@ -308,16 +308,7 @@ mod tests {
     }
 
     fn me() -> RestRequest {
-        RestRequest::parse(
-            "GET",
-            "/users/@me",
-            &HashMap::new(),
-            Vec::new(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
+        RestRequest::get("/users/@me").unwrap()
     }
 
     fn wait_for_deliveries(core: &Core, receiver: &BellReceiver) -> Vec<Delivery> {

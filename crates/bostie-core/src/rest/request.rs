@@ -23,6 +23,28 @@ pub(super) enum RouteClass {
 }
 
 impl RouteClass {
+    fn of(route: &str, placeholders: &[&str]) -> Self {
+        if route.starts_with("/interactions/") {
+            Self::Callback
+        } else if placeholders.contains(&INTERACTION_TOKEN) {
+            Self::Interaction
+        } else if placeholders.contains(&"webhook_token") {
+            Self::Webhook
+        } else if matches!(
+            route,
+            "/gateway"
+                | "/oauth2/token"
+                | "/oauth2/token/revoke"
+                | "/partner-sdk/token"
+                | "/partner-sdk/child-token"
+                | "/partner-sdk/provisional-accounts/unmerge"
+        ) {
+            Self::Anonymous
+        } else {
+            Self::Bot
+        }
+    }
+
     pub(super) fn waits_for_the_global_gate(self) -> bool {
         !matches!(self, Self::Callback | Self::Interaction)
     }
@@ -49,18 +71,7 @@ impl RestRequest {
         content_type: Option<String>,
         reason: Option<String>,
     ) -> Result<Self, CoreError> {
-        let (method, limiter_method) = match method {
-            "GET" => (Method::GET, LimiterMethod::Get),
-            "POST" => (Method::POST, LimiterMethod::Post),
-            "PUT" => (Method::PUT, LimiterMethod::Put),
-            "PATCH" => (Method::PATCH, LimiterMethod::Patch),
-            "DELETE" => (Method::DELETE, LimiterMethod::Delete),
-            _ => {
-                return Err(CoreError::InvalidRequest(format!(
-                    "unsupported method {method:?}"
-                )));
-            }
-        };
+        let (method, limiter_method) = methods(method)?;
         let template = route
             .strip_prefix('/')
             .filter(|_| !route.contains('?'))
@@ -106,52 +117,22 @@ impl RestRequest {
             )));
         }
 
-        let class = if route.starts_with("/interactions/") {
-            RouteClass::Callback
-        } else if placeholders.contains(&INTERACTION_TOKEN) {
-            RouteClass::Interaction
-        } else if placeholders.contains(&"webhook_token") {
-            RouteClass::Webhook
-        } else if matches!(
-            route,
-            "/gateway"
-                | "/oauth2/token"
-                | "/oauth2/token/revoke"
-                | "/partner-sdk/token"
-                | "/partner-sdk/child-token"
-                | "/partner-sdk/provisional-accounts/unmerge"
-        ) {
-            RouteClass::Anonymous
-        } else {
-            RouteClass::Bot
-        };
-
-        let mut headers = HeaderMap::new();
-        if let Some(content_type) = content_type {
-            headers.insert(CONTENT_TYPE, header_value(content_type)?);
-        } else if body.is_some() {
-            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        }
-        if let Some(reason) = reason {
-            let encoded = utf8_percent_encode(&reason, NON_ALPHANUMERIC).to_string();
-            headers.insert(
-                HeaderName::from_static("x-audit-log-reason"),
-                header_value(encoded)?,
-            );
-        }
-
         Ok(Self {
             method,
-            class,
+            class: RouteClass::of(route, &placeholders),
+            headers: headers(body.is_some(), content_type, reason)?,
             endpoint: Endpoint {
                 method: limiter_method,
                 path: key.join("/"),
             },
-            headers,
             body: body.map(Bytes::from),
             segments,
             query,
         })
+    }
+
+    pub(crate) fn get(route: &str) -> Result<Self, CoreError> {
+        Self::parse("GET", route, &HashMap::new(), Vec::new(), None, None, None)
     }
 
     pub(super) fn url(&self, base: &Url) -> Url {
@@ -164,6 +145,40 @@ impl RestRequest {
         }
         url
     }
+}
+
+fn methods(method: &str) -> Result<(Method, LimiterMethod), CoreError> {
+    match method {
+        "GET" => Ok((Method::GET, LimiterMethod::Get)),
+        "POST" => Ok((Method::POST, LimiterMethod::Post)),
+        "PUT" => Ok((Method::PUT, LimiterMethod::Put)),
+        "PATCH" => Ok((Method::PATCH, LimiterMethod::Patch)),
+        "DELETE" => Ok((Method::DELETE, LimiterMethod::Delete)),
+        _ => Err(CoreError::InvalidRequest(format!(
+            "unsupported method {method:?}"
+        ))),
+    }
+}
+
+fn headers(
+    has_body: bool,
+    content_type: Option<String>,
+    reason: Option<String>,
+) -> Result<HeaderMap, CoreError> {
+    let mut headers = HeaderMap::new();
+    if let Some(content_type) = content_type {
+        headers.insert(CONTENT_TYPE, header_value(content_type)?);
+    } else if has_body {
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    }
+    if let Some(reason) = reason {
+        let encoded = utf8_percent_encode(&reason, NON_ALPHANUMERIC).to_string();
+        headers.insert(
+            HeaderName::from_static("x-audit-log-reason"),
+            header_value(encoded)?,
+        );
+    }
+    Ok(headers)
 }
 
 fn placeholder(segment: &str) -> Result<Option<&str>, CoreError> {
