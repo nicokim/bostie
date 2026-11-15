@@ -164,3 +164,4 @@ include_dir = "docs/snippets/assistants"
 [project.extra.languages]
 fr = "Français"
 ja = "日本語"
+ko = "한국어"
