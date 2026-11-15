@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 _READ_LIMIT = 256
 
-type Item = Frame | Packet | SpeechStart | SpeechStop | UserLeave
+type _Item = Frame | Packet | SpeechStart | SpeechStop | UserLeave
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +69,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
         self._handle = handle
         self._woken = handle.woken
         self._on_close = on_close
-        self._items: deque[tuple[float, Item]] = deque()
+        self._items: deque[tuple[float, _Item]] = deque()
         self._stats = ReceiverStats(0, 0, 0)
         self._closed_reason: ClosedReason | None = None
 
@@ -184,7 +184,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
         return ReceiverStats(*self._native.stats())
 
 
-def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, Item]:
+def _convert(item: "ReceivedItem", now: float, guild_id: int) -> tuple[float, _Item]:
     match item:
         case (
             "frame",

@@ -102,7 +102,7 @@ type _ConnectionDelivery = (
     | _native.VoiceDeafDelivery
     | _native.VoiceRtcpDelivery
 )
-type VoiceDelivery = (
+type _VoiceDelivery = (
     _ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
 )
 
@@ -308,7 +308,7 @@ class VoiceManager:
         for vc in connections:
             vc.end("the bot closed")
 
-    def _handle(self, delivery: VoiceDelivery) -> None:
+    def _handle(self, delivery: _VoiceDelivery) -> None:
         """Pass a voice delivery from the core to its connection or handle."""
         match delivery:
             case ("voice_wake", handle):

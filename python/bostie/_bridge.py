@@ -18,7 +18,7 @@ from bostie.errors import (
 from bostie.http import DEFAULT_HTTP, HTTPSettings
 
 if TYPE_CHECKING:
-    from bostie.voice.connection import VoiceDelivery
+    from bostie.voice.connection import _VoiceDelivery
 
 API_URL = "https://discord.com/api/v10"
 API_URL_VARIABLE = "BOSTIE_API_URL"
@@ -41,7 +41,7 @@ type GatewayDelivery = (
     | StatusDelivery
     | _native.InvalidRequestsDelivery
     | _native.IdentifyDelivery
-    | VoiceDelivery
+    | _VoiceDelivery
 )
 type OnGateway = Callable[[GatewayDelivery, float], object]
 
