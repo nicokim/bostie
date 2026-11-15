@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{CoreError, describe};
+use crate::proxy::{Proxy, client_builder};
 
 const USER_AGENT: &str = concat!("bostie/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -21,15 +22,17 @@ const RESUME_ATTEMPTS: u32 = 3;
 pub struct Http {
     runtime: Handle,
     client: OnceLock<reqwest::Client>,
+    proxy: Option<Proxy>,
     piece: usize,
     retry: Duration,
 }
 
 impl Http {
-    pub fn new(runtime: Handle, buffer: usize, retry: Duration) -> Self {
+    pub fn new(runtime: Handle, buffer: usize, retry: Duration, proxy: Option<Proxy>) -> Self {
         Self {
             runtime,
             client: OnceLock::new(),
+            proxy,
             piece: (buffer / HTTP_PIECES).max(1),
             retry,
         }
@@ -41,7 +44,7 @@ impl Http {
         }
         let client = {
             let _context = self.runtime.enter();
-            reqwest::Client::builder()
+            client_builder(self.proxy.as_ref())?
                 .user_agent(USER_AGENT)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(READ_TIMEOUT)
@@ -751,6 +754,19 @@ mod tests {
             env!("CARGO_PKG_VERSION")
         )));
         assert!(!request.contains("authorization"));
+    }
+
+    #[test]
+    fn a_url_goes_through_the_configured_proxy_in_absolute_form() {
+        let server = Server::start(Vec::new(), false);
+        let proxy = Proxy::parse(&server.base).unwrap();
+        let runtime = crate::runtime::shared().unwrap();
+        let http = Http::new(runtime, 1024, Duration::ZERO, Some(proxy));
+        let mut media = HttpMedia::new(&http, "http://audio.invalid/tone.ogg", &[]).unwrap();
+
+        media.connect().unwrap();
+
+        assert!(server.received()[0].starts_with("get http://audio.invalid/tone.ogg http/1.1\r\n"));
     }
 
     #[test]

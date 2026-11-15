@@ -63,6 +63,7 @@ use self::types::{
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
+use crate::proxy::Proxy;
 use crate::runtime::Owner;
 
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
@@ -123,6 +124,7 @@ impl Voice {
         inbox: Arc<Inbox>,
         tap: Arc<GatewayTap>,
         send: GatewaySend,
+        proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
         Self::build(
             runtime,
@@ -131,6 +133,7 @@ impl Voice {
             send,
             Arc::new(PacerPool::new()),
             Tuning::default(),
+            proxy,
         )
     }
 
@@ -141,6 +144,7 @@ impl Voice {
         send: GatewaySend,
         pacer: Arc<dyn Pace>,
         tuning: Tuning,
+        proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
         Ok(Self {
             shared: Arc::new(Shared {
@@ -149,7 +153,12 @@ impl Voice {
                 send,
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 pacer,
-                http: Http::new(runtime.clone(), tuning.http_buffer, tuning.http_retry),
+                http: Http::new(
+                    runtime.clone(),
+                    tuning.http_buffer,
+                    tuning.http_retry,
+                    proxy,
+                ),
                 tuning,
                 next_handle: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),

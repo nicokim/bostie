@@ -28,7 +28,7 @@ use self::request::RouteClass;
 use crate::error::{CoreError, describe};
 use crate::ids::Ticket;
 use crate::inbox::{Delivery, FailureKind, Inbox};
-use crate::proxy::Proxy;
+use crate::proxy::{Proxy, client_builder};
 
 const USER_AGENT: &str = concat!(
     "DiscordBot (https://pypi.org/project/bostie, ",
@@ -100,11 +100,7 @@ impl Rest {
             .filter(|url| matches!(url.scheme(), "http" | "https"))
             .ok_or_else(|| CoreError::InvalidRequest(format!("invalid api url {api_url:?}")))?;
         let authorization = auth.header()?;
-        let builder = match proxy {
-            Some(proxy) => reqwest::Client::builder().proxy(proxy.for_requests()?),
-            None => reqwest::Client::builder().no_proxy(),
-        };
-        let client = builder
+        let client = client_builder(proxy)?
             .user_agent(USER_AGENT)
             .connect_timeout(limits.connect_timeout)
             .read_timeout(limits.read_timeout)

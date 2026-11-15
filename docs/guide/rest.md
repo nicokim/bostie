@@ -36,7 +36,7 @@ The Rust client tracks every route's rate limit bucket and Discord's global limi
 | `connect_timeout` | 10.0 | seconds to open a connection |
 | `read_timeout` | 60.0 | seconds to wait for an answer |
 | `rate_limiter` | `True` | `False` sends at once and only waits out the 429s that come back, for use behind a rate-limit proxy |
-| `proxy` | `None` | an HTTP or HTTPS proxy URL for every request, credentials included as in `http://user:password@host:3128` |
+| `proxy` | `None` | an HTTP or HTTPS proxy URL for every request, `voice.Url` audio included, credentials included as in `http://user:password@host:3128` |
 
 A 429 is retried after the delay Discord gives, if that is within `max_rate_limit_wait`. A 500, 502, 503, 504 or 524, or a connection that broke, is retried `retries` times for every method but `POST`, which might have taken effect; a connection that never opened is retried for every method.
 

@@ -428,6 +428,7 @@ impl Harness {
             send,
             pace,
             tuning,
+            None,
         )
         .unwrap();
         Self {

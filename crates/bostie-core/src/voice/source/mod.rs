@@ -372,6 +372,7 @@ pub(crate) mod tests {
                     crate::runtime::shared().unwrap(),
                     HTTP_BUFFER,
                     Duration::ZERO,
+                    None,
                 ),
                 next: 1,
             }

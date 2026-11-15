@@ -93,13 +93,14 @@ impl Core {
                 auth.bot_token().unwrap_or_default(),
                 Arc::downgrade(&rest),
                 Arc::clone(&tap),
-                proxy,
+                proxy.clone(),
             )?);
             let voice = Voice::new(
                 runtime.clone(),
                 Arc::clone(&inbox),
                 tap,
                 gateway_send(Arc::downgrade(&gateway)),
+                proxy,
             )?;
             (rest, gateway, voice)
         };

@@ -10,7 +10,7 @@ use crate::error::{CoreError, describe};
 const MAX_ANSWER_HEAD: usize = 8 * 1024;
 
 #[derive(Clone)]
-pub(crate) struct Proxy {
+pub struct Proxy {
     url: Url,
     authorization: Option<String>,
 }
@@ -32,10 +32,6 @@ impl Proxy {
             format!("Basic {}", STANDARD.encode(credentials))
         });
         Ok(Self { url, authorization })
-    }
-
-    pub(crate) fn for_requests(&self) -> Result<reqwest::Proxy, CoreError> {
-        reqwest::Proxy::all(self.url.as_str()).map_err(CoreError::HttpClient)
     }
 
     pub(crate) async fn tunnel(&self, host: &str, port: u16) -> Result<TcpStream, String> {
@@ -76,6 +72,14 @@ impl Proxy {
             String::from_utf8_lossy(line)
         ))
     }
+}
+
+pub(crate) fn client_builder(proxy: Option<&Proxy>) -> Result<reqwest::ClientBuilder, CoreError> {
+    Ok(match proxy {
+        Some(proxy) => reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all(proxy.url.as_str()).map_err(CoreError::HttpClient)?),
+        None => reqwest::Client::builder().no_proxy(),
+    })
 }
 
 #[cfg(test)]
