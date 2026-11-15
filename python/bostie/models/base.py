@@ -26,6 +26,12 @@ def redacted_repr(self: msgspec.Struct) -> str:
     return f"{type(self).__name__}({shown})"
 
 
+class TypeTag(msgspec.Struct, gc=False):
+    """A payload's `type` field alone, read before choosing its model."""
+
+    type: int | None = None
+
+
 class _Identified(Protocol):
     @property
     def id(self) -> int: ...

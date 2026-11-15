@@ -24,7 +24,15 @@ from bostie.enums import (
 )
 from bostie.file import File
 from bostie.models.application import PartialApplication
-from bostie.models.base import Builder, Model, Snowflake, check_keys, decode, decoder
+from bostie.models.base import (
+    Builder,
+    Model,
+    Snowflake,
+    TypeTag,
+    check_keys,
+    decode,
+    decoder,
+)
 from bostie.models.channel import Channel, PartialChannel, ThreadMember
 from bostie.models.components import (
     Component,
@@ -362,12 +370,8 @@ INTERACTION_METADATA: dict[int, type[InteractionMetadata]] = {
 }
 
 
-class _Typed(msgspec.Struct, gc=False):
-    type: int | None = None
-
-
 def decode_interaction_metadata(data: bytes) -> InteractionMetadata:
-    kind = decoder(_Typed).decode(data).type
+    kind = decoder(TypeTag).decode(data).type
     model = INTERACTION_METADATA.get(kind or 0, InteractionMetadata)
     metadata: InteractionMetadata = decoder(model).decode(data)
     return metadata

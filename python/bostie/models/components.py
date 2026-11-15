@@ -1,5 +1,5 @@
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Literal, Self, cast
 
 import msgspec
@@ -11,7 +11,14 @@ from bostie.enums import (
     ContentScanMetadataFlags,
     UnfurledMediaItemFlags,
 )
-from bostie.models.base import Builder, MaybeSnowflake, Model, Snowflake, decoder
+from bostie.models.base import (
+    Builder,
+    MaybeSnowflake,
+    Model,
+    Snowflake,
+    TypeTag,
+    decoder,
+)
 from bostie.models.expressions import Emoji
 
 CUSTOM_EMOJI = re.compile(r"(?:(a)?:)?(\w+):(\d+)", re.ASCII)
@@ -345,10 +352,6 @@ type KnownSubmitted = (
 type SubmittedComponent = KnownSubmitted | UnknownComponent
 
 
-class _ComponentTag(msgspec.Struct):
-    type: int | None = None
-
-
 def decode_components(raws: Iterable[msgspec.Raw]) -> tuple[Component, ...]:
     """Decode components; those of unknown type or shape become `UnknownComponent`."""
     return tuple(_decode_component(raw) for raw in raws)
@@ -360,24 +363,26 @@ def decode_submitted(raws: Iterable[msgspec.Raw]) -> tuple[SubmittedComponent, .
 
 
 def _decode_component(raw: msgspec.Raw) -> Component:
-    try:
-        component: KnownComponent = decoder(KnownComponent.__value__).decode(raw)
-    except msgspec.ValidationError:
-        return UnknownComponent(type=_component_type(raw), raw=raw)
-    return component
+    known: msgspec.json.Decoder[KnownComponent] = decoder(KnownComponent.__value__)
+    return _known_or_unknown(known.decode, raw)
 
 
 def _decode_submitted(raw: msgspec.Raw) -> SubmittedComponent:
+    known: msgspec.json.Decoder[KnownSubmitted] = decoder(KnownSubmitted.__value__)
+    return _known_or_unknown(known.decode, raw)
+
+
+def _known_or_unknown[C](
+    decode: Callable[[msgspec.Raw], C], raw: msgspec.Raw
+) -> C | UnknownComponent:
     try:
-        component: KnownSubmitted = decoder(KnownSubmitted.__value__).decode(raw)
+        return decode(raw)
     except msgspec.ValidationError:
         return UnknownComponent(type=_component_type(raw), raw=raw)
-    return component
 
 
 def _component_type(raw: msgspec.Raw) -> int | None:
     try:
-        tag: int | None = decoder(_ComponentTag).decode(raw).type
+        return decoder(TypeTag).decode(raw).type
     except msgspec.ValidationError:
         return None
-    return tag
