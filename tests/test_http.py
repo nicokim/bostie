@@ -119,6 +119,18 @@ def test_error_statuses_raise_with_discords_code_message_and_errors(
     run(scenario)
 
 
+def test_an_error_page_that_is_not_json_raises_by_its_status() -> None:
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        fake.fail("GET", "/users/@me", 502, "<html>")
+
+        with pytest.raises(ServerError) as raised:
+            await http.request("GET", "/users/@me")
+
+        assert (raised.value.status, raised.value.body) == (502, b'"<html>"')
+
+    run(scenario, http=HTTPSettings(retries=0))
+
+
 @pytest.mark.parametrize("scope", ["shared", "global"])
 def test_a_rate_limit_longer_than_bostie_waits_raises_rate_limited(
     scope: Literal["shared", "global"],
