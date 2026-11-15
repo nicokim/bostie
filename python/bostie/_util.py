@@ -1,6 +1,6 @@
 import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -8,6 +8,7 @@ from bostie.enums import OptionType
 
 if TYPE_CHECKING:
     from bostie.models import InteractionDataOption
+    from bostie.router import Router
 
 LIBRARY_DIRECTORY = str(Path(__file__).parent)
 TOKEN_VARIABLE = "BOSTIE_TOKEN"
@@ -41,3 +42,11 @@ def split_subcommands(
         names.append(options[0].name)
         options = options[0].options
     return names, options
+
+
+def routers_from(router: "Router") -> Iterator["Router"]:
+    """`router`, then each router it is included in, out to the bot."""
+    current: Router | None = router
+    while current is not None:
+        yield current
+        current = current.parent

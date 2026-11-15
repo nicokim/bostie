@@ -3,8 +3,8 @@ from collections.abc import Callable, Coroutine, Iterable
 from functools import cache
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 
-from bostie.commands import Check, _auto_defer, _inherited
-from bostie.hooks import ErrorHooks
+from bostie.commands import Check
+from bostie.hooks import Answering
 from bostie.models.base import check_keys
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ ANSWER_SETTINGS = AnswerSettings.__optional_keys__
 ROUTE_SETTINGS = RouteSettings.__optional_keys__
 
 
-class ComponentRoute[**P](ErrorHooks):
+class ComponentRoute[**P](Answering):
     """A component or modal handler for a custom_id template like "vote:{up:int}"."""
 
     def __init__(
@@ -43,7 +43,7 @@ class ComponentRoute[**P](ErrorHooks):
         router: "Router",
         **settings: Unpack[RouteSettings],
     ) -> None:
-        super().__init__()
+        super().__init__(router, settings)
         check_keys(settings, ROUTE_SETTINGS, "settings")
         pieces = PLACEHOLDER.split(template)
         literals = pieces[::2]
@@ -57,25 +57,13 @@ class ComponentRoute[**P](ErrorHooks):
             raise ValueError(f"{template!r} repeats a placeholder name")
         self.template = template
         self.handler = handler
-        self.router = router
         self.checks = tuple(settings.get("checks", ()))
-        self._settings = settings
         self.names = names
         self._literals = literals
         self._kinds = tuple(kind for _, kind in placeholders)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, None]:
         return self.handler(*args, **kwargs)
-
-    @property
-    def ephemeral(self) -> bool:
-        """Whether answers are ephemeral unless a call says; set here or on a router."""
-        return bool(_inherited(self._settings, "ephemeral", self.router, False))
-
-    @property
-    def auto_defer(self) -> float | None:
-        """Seconds before an unanswered use is deferred; the bot's unless set here."""
-        return _auto_defer(self._settings, self.router)
 
     def id(self, **params: str | int) -> str:
         """Build a custom_id that fits in 100 characters and parses back to `params`."""

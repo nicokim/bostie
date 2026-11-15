@@ -1,7 +1,11 @@
-from collections.abc import Callable
-from typing import Any, overload
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, cast, overload
 
+from bostie._util import routers_from
 from bostie.errors import ErrorHook
+
+if TYPE_CHECKING:
+    from bostie.router import Router
 
 
 class ErrorHooks:
@@ -66,3 +70,37 @@ class ErrorHooks:
         for exception_type in exception_types:
             self.error_handlers[exception_type] = handler
         return handler
+
+
+class Answering(ErrorHooks):
+    """A command or route, and the answer settings it inherits from its routers."""
+
+    def __init__(self, router: "Router", settings: Mapping[str, object]) -> None:
+        super().__init__()
+        self.router = router
+        self._settings = settings
+
+    @property
+    def ephemeral(self) -> bool:
+        """Whether answers are ephemeral unless a call says; set here or on a router."""
+        return bool(self._inherited("ephemeral", False))
+
+    @property
+    def auto_defer(self) -> float | None:
+        """Seconds before an unanswered use is deferred; the bot's unless set here."""
+        for scope in self._scopes():
+            if "auto_defer" in scope:
+                return cast("float | None", scope["auto_defer"])
+        return self.router.bot.auto_defer
+
+    def _inherited(self, key: str, fallback: object) -> Any:
+        for scope in self._scopes():
+            if key in scope:
+                return scope[key]
+        return fallback
+
+    def _scopes(self) -> list[Mapping[str, object]]:
+        return [
+            self._settings,
+            *(router.defaults for router in routers_from(self.router)),
+        ]
