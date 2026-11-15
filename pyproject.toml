@@ -70,6 +70,7 @@ ignore = [
     "INP001",  # tests/ is a pytest rootdir, not a package
     "ISC001",  # conflicts with ruff format
     "N818",    # exception names follow the Discord library convention (HTTPException, Forbidden)
+    "PLC0415", # imports inside functions are fine; python/bostie/voice/ruff.toml bans them for the voice layers
     "PLR0913", # every knob is a keyword argument by design; PLR0917 still caps positionals
     "S105",    # "token" is a Discord domain word, not a secret
     "TRY003",  # messages are built at the raise site
@@ -84,20 +85,7 @@ max-complexity = 12
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
 
-[tool.ruff.lint.flake8-tidy-imports]
-banned-module-level-imports = [
-    "bostie.voice.connection",
-    "bostie.voice.receiver",
-    "bostie.voice.sink",
-    "bostie.voice.sources",
-]
-
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
-"bostie._bridge".msg = "voice layers use only the public voice API"
-"bostie._native".msg = "voice layers use only the public voice API"
-
 [tool.ruff.lint.per-file-ignores]
-"!python/bostie/voice/{player,utterances,recorder,_ogg}.py" = ["TID251", "TID253", "PLC0415"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 "python/bostie/{_bridge,bot,dispatch,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
 "python/bostie/voice/{player,recorder}.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player

@@ -1,0 +1,20 @@
+# The voice layers (player, recorder, utterances) use only the public voice API; the files listed at the end bind the core.
+extend = "../../../pyproject.toml"
+
+[lint]
+extend-select = ["PLC0415"]
+
+[lint.flake8-tidy-imports]
+banned-module-level-imports = [
+    "bostie.voice.connection",
+    "bostie.voice.receiver",
+    "bostie.voice.sink",
+    "bostie.voice.sources",
+]
+
+[lint.flake8-tidy-imports.banned-api]
+"bostie._bridge".msg = "voice layers use only the public voice API"
+"bostie._native".msg = "voice layers use only the public voice API"
+
+[lint.extend-per-file-ignores]
+"{__init__,_link,connection,encoder,events,formats,message,receiver,sink,sources}.py" = ["TID251", "TID253", "PLC0415"]
