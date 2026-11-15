@@ -271,6 +271,7 @@ dependencies = [
  "proptest",
  "reqwest",
  "rubato",
+ "serde",
  "sonic-rs",
  "symphonia",
  "thiserror",

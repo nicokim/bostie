@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use bytes::Bytes;
+use serde::Serialize;
 use sonic_rs::{JsonValueTrait, LazyValue, PointerTree, Value};
 
 use crate::error::CoreError;
@@ -14,6 +15,18 @@ const READY_KEYS: [&str; 2] = ["session_id", "resume_gateway_url"];
 
 static ENVELOPE: LazyLock<PointerTree> = LazyLock::new(|| tree(&ENVELOPE_KEYS));
 static READY: LazyLock<PointerTree> = LazyLock::new(|| tree(&READY_KEYS));
+
+#[derive(Serialize)]
+struct Command<T> {
+    op: u8,
+    d: T,
+}
+
+pub(crate) fn command(op: u8, d: impl Serialize) -> Bytes {
+    sonic_rs::to_vec(&Command { op, d })
+        .map(Bytes::from)
+        .unwrap_or_default()
+}
 
 pub(crate) fn tree(keys: &[&str]) -> PointerTree {
     let mut tree = PointerTree::new();

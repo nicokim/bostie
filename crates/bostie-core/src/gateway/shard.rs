@@ -6,6 +6,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use reqwest::Url;
+use serde::Serialize;
 use tokio::net::TcpStream;
 use tokio::sync::{Notify, mpsc};
 use tokio::time::{Instant, sleep, sleep_until, timeout};
@@ -15,7 +16,7 @@ use tokio_websockets::{
 use tracing::debug;
 
 use super::close::{self, CloseAction};
-use super::envelope::{self, Forward, Frame};
+use super::envelope::{self, Forward, Frame, command};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
 use super::{SavedSession, Shared};
@@ -27,6 +28,8 @@ use crate::latency::Latency;
 use crate::proxy::Proxy;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
+const HEARTBEAT: u8 = 1;
+const RESUME: u8 = 6;
 const NORMAL_CLOSE: u16 = 1000;
 const SESSION_KEEPING_CLOSE: u16 = 4000;
 const GATEWAY_QUERY: &str = "v=10&encoding=json&compress=zstd-stream";
@@ -41,6 +44,13 @@ pub(super) fn gateway_url(text: &str) -> Option<Url> {
     }
     url.set_query(Some(GATEWAY_QUERY));
     Some(url)
+}
+
+#[derive(Serialize)]
+struct ResumeData<'a> {
+    token: &'a str,
+    session_id: &'a str,
+    seq: u64,
 }
 
 pub(super) struct Signals {
@@ -442,11 +452,8 @@ impl Shard {
     }
 
     async fn send_heartbeat(&self, connection: &mut Connection) -> Result<(), Ending> {
-        let payload = match &self.session {
-            Some(session) => format!(r#"{{"op":1,"d":{}}}"#, session.seq),
-            None => r#"{"op":1,"d":null}"#.to_owned(),
-        };
-        connection.send(Bytes::from(payload)).await?;
+        let seq = self.session.as_ref().map(|session| session.seq);
+        connection.send(command(HEARTBEAT, seq)).await?;
         if let Some(heartbeat) = &mut connection.heartbeat {
             heartbeat.sent_at = Some(Instant::now());
         }
@@ -579,12 +586,12 @@ impl Shard {
             return Ok(());
         };
         debug!(shard = %self.id, seq = session.seq, "resuming");
-        let resume = sonic_rs::json!({
-            "op": 6,
-            "d": {"token": &*self.shared.token, "session_id": &session.id, "seq": session.seq},
-        });
-        let payload = sonic_rs::to_vec(&resume).map_err(|error| Ending::Lost(error.to_string()))?;
-        connection.send(Bytes::from(payload)).await
+        let resume = ResumeData {
+            token: &self.shared.token,
+            session_id: &session.id,
+            seq: session.seq,
+        };
+        connection.send(command(RESUME, resume)).await
     }
 
     fn on_heartbeat_ack(&self, connection: &mut Connection) {

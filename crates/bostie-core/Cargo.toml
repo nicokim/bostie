@@ -21,6 +21,7 @@ parking_lot.workspace = true
 percent-encoding.workspace = true
 reqwest.workspace = true
 rubato.workspace = true
+serde.workspace = true
 sonic-rs.workspace = true
 symphonia.workspace = true
 thiserror.workspace = true

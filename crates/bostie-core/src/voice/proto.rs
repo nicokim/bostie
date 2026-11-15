@@ -1,14 +1,15 @@
-use std::borrow::Cow;
 use std::fmt;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 use std::time::Duration;
 
 use bytes::Bytes;
-use sonic_rs::{JsonValueTrait, LazyValue, PointerTree, Value};
+use serde::{Serialize, Serializer};
+use sonic_rs::{JsonValueTrait, LazyValue, PointerTree};
 
 use super::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp};
 use super::ws::WS_MAX_MESSAGE;
+use crate::gateway::command;
 use crate::ids::{ChannelId, GuildId, UserId};
 
 pub(crate) mod op {
@@ -347,36 +348,119 @@ fn heartbeat_interval(value: &LazyValue<'_>) -> Option<Duration> {
     Duration::try_from_secs_f64(millis / 1000.0).ok()
 }
 
-pub(crate) fn identify(server: GuildId, user: UserId, session_id: &str, token: &str) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"server_id":"{server}","user_id":"{user}","session_id":{},"token":{},"max_dave_protocol_version":{MAX_DAVE_PROTOCOL_VERSION}}}}}"#,
-        op::IDENTIFY,
-        quoted(session_id),
-        quoted(token),
-    ))
+#[derive(Serialize)]
+struct IdentifyData<'a> {
+    server_id: String,
+    user_id: String,
+    session_id: &'a str,
+    token: &'a str,
+    max_dave_protocol_version: u16,
 }
 
-pub(crate) fn select_protocol(ip: IpAddr, port: u16, mode: &str) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"protocol":"udp","data":{{"address":"{ip}","port":{port},"mode":{}}}}}}}"#,
+#[derive(Serialize)]
+struct SelectProtocolData<'a> {
+    protocol: &'static str,
+    data: UdpData<'a>,
+}
+
+#[derive(Serialize)]
+struct UdpData<'a> {
+    address: IpAddr,
+    port: u16,
+    mode: &'a str,
+}
+
+#[derive(Serialize)]
+struct HeartbeatData {
+    t: u64,
+    seq_ack: SeqAckNumber,
+}
+
+#[derive(Serialize)]
+struct SpeakingData {
+    speaking: u8,
+    delay: u8,
+    ssrc: u32,
+}
+
+#[derive(Serialize)]
+struct ResumeData<'a> {
+    server_id: String,
+    session_id: &'a str,
+    token: &'a str,
+    seq_ack: SeqAckNumber,
+}
+
+#[derive(Serialize)]
+struct TransitionData {
+    transition_id: u16,
+}
+
+#[derive(Serialize)]
+struct VoiceStateData {
+    guild_id: String,
+    channel_id: Option<String>,
+    self_mute: bool,
+    self_deaf: bool,
+}
+
+struct SeqAckNumber(Option<u64>);
+
+impl Serialize for SeqAckNumber {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Some(seq) => serializer.serialize_u64(seq),
+            None => serializer.serialize_i8(-1),
+        }
+    }
+}
+
+pub(crate) fn identify(server: GuildId, user: UserId, session_id: &str, token: &str) -> Bytes {
+    command(
+        op::IDENTIFY,
+        IdentifyData {
+            server_id: server.to_string(),
+            user_id: user.to_string(),
+            session_id,
+            token,
+            max_dave_protocol_version: MAX_DAVE_PROTOCOL_VERSION,
+        },
+    )
+}
+
+pub(crate) fn select_protocol(address: IpAddr, port: u16, mode: &str) -> Bytes {
+    command(
         op::SELECT_PROTOCOL,
-        quoted(mode),
-    ))
+        SelectProtocolData {
+            protocol: "udp",
+            data: UdpData {
+                address,
+                port,
+                mode,
+            },
+        },
+    )
 }
 
 pub(crate) fn heartbeat(t: u64, seq_ack: Option<u64>) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"t":{t},"seq_ack":{}}}}}"#,
+    command(
         op::HEARTBEAT,
-        seq_ack_number(seq_ack),
-    ))
+        HeartbeatData {
+            t,
+            seq_ack: SeqAckNumber(seq_ack),
+        },
+    )
 }
 
 pub(crate) fn speaking(flags: u8, ssrc: u32) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"speaking":{flags},"delay":0,"ssrc":{ssrc}}}}}"#,
+    command(
         op::SPEAKING,
-    ))
+        SpeakingData {
+            speaking: flags,
+            delay: 0,
+            ssrc,
+        },
+    )
 }
 
 pub(crate) fn resume(
@@ -385,27 +469,26 @@ pub(crate) fn resume(
     token: &str,
     seq_ack: Option<u64>,
 ) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"server_id":"{server}","session_id":{},"token":{},"seq_ack":{}}}}}"#,
+    command(
         op::RESUME,
-        quoted(session_id),
-        quoted(token),
-        seq_ack_number(seq_ack),
-    ))
+        ResumeData {
+            server_id: server.to_string(),
+            session_id,
+            token,
+            seq_ack: SeqAckNumber(seq_ack),
+        },
+    )
 }
 
 pub(crate) fn transition_ready(transition_id: u16) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"transition_id":{transition_id}}}}}"#,
-        op::DAVE_TRANSITION_READY,
-    ))
+    command(op::DAVE_TRANSITION_READY, TransitionData { transition_id })
 }
 
 pub(crate) fn invalid_commit_welcome(transition_id: u16) -> Bytes {
-    Bytes::from(format!(
-        r#"{{"op":{},"d":{{"transition_id":{transition_id}}}}}"#,
+    command(
         op::DAVE_MLS_INVALID_COMMIT_WELCOME,
-    ))
+        TransitionData { transition_id },
+    )
 }
 
 pub(crate) fn key_package(key_package: &[u8]) -> Bytes {
@@ -422,18 +505,15 @@ pub(crate) fn voice_state_update(
     self_mute: bool,
     self_deaf: bool,
 ) -> Bytes {
-    let channel = channel.map_or_else(|| "null".to_owned(), |channel| format!(r#""{channel}""#));
-    Bytes::from(format!(
-        r#"{{"op":{MAIN_GATEWAY_VOICE_STATE_UPDATE},"d":{{"guild_id":"{guild}","channel_id":{channel},"self_mute":{self_mute},"self_deaf":{self_deaf}}}}}"#,
-    ))
-}
-
-fn quoted(text: &str) -> String {
-    Value::from(Cow::Borrowed(text)).to_string()
-}
-
-fn seq_ack_number(seq_ack: Option<u64>) -> String {
-    seq_ack.map_or_else(|| "-1".to_owned(), |seq| seq.to_string())
+    command(
+        MAIN_GATEWAY_VOICE_STATE_UPDATE,
+        VoiceStateData {
+            guild_id: guild.to_string(),
+            channel_id: channel.map(|channel| channel.to_string()),
+            self_mute,
+            self_deaf,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -442,6 +522,7 @@ mod tests {
 
     use proptest::collection::vec;
     use proptest::prelude::*;
+    use sonic_rs::Value;
 
     use super::*;
 
