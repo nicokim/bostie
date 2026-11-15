@@ -2,10 +2,10 @@ from collections.abc import Buffer
 from dataclasses import replace
 
 from bostie import _native
-from bostie.voice.formats import DEFAULT_PCM, PCM, EncoderSettings
+from bostie.voice.formats import _DEFAULT_PCM, PCM, EncoderSettings
 
-DEFAULT_BITRATE = 64_000
-DEFAULT_ENCODER = EncoderSettings()
+_DEFAULT_BITRATE = 64_000
+_DEFAULT_ENCODER = EncoderSettings()
 
 
 class OpusEncoder:
@@ -15,13 +15,13 @@ class OpusEncoder:
     """
 
     def __init__(
-        self, format: PCM = DEFAULT_PCM, *, encoder: EncoderSettings = DEFAULT_ENCODER
+        self, format: PCM = _DEFAULT_PCM, *, encoder: EncoderSettings = _DEFAULT_ENCODER
     ) -> None:
         self._native = _native.OpusEncoder(
             rate=format.rate,
             channels=format.channels,
             sample=format.sample,
-            encoder=replace(encoder, bitrate=encoder.bitrate or DEFAULT_BITRATE),
+            encoder=replace(encoder, bitrate=encoder.bitrate or _DEFAULT_BITRATE),
         )
 
     def encode(self, data: Buffer) -> list[bytes]:

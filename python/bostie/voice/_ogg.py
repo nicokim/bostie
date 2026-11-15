@@ -2,14 +2,14 @@ import math
 import struct
 import zlib
 
-from bostie.voice.formats import SAMPLE_RATE
+from bostie.voice.formats import _SAMPLE_RATE
 
-PAGE_SAMPLES = SAMPLE_RATE
+PAGE_SAMPLES = _SAMPLE_RATE
 MAX_SEGMENTS = 255
 MAX_PACKET = MAX_SEGMENTS * 255 - 1
 BEGINNING_OF_STREAM = 0x02
 END_OF_STREAM = 0x04
-OPUS_HEAD = struct.pack("<8sBBHIhB", b"OpusHead", 1, 2, 0, SAMPLE_RATE, 0, 0)
+OPUS_HEAD = struct.pack("<8sBBHIhB", b"OpusHead", 1, 2, 0, _SAMPLE_RATE, 0, 0)
 OPUS_TAGS = struct.pack("<8sI6sI", b"OpusTags", 6, b"bostie", 0)
 REVERSED_BITS = bytes(int(f"{value:08b}"[::-1], 2) for value in range(256))
 

@@ -10,21 +10,21 @@ from typing import TYPE_CHECKING, Self, override
 from urllib.parse import urlsplit
 
 from bostie.errors import SourceError, StateError
-from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE, Format, Opus
+from bostie.voice.formats import _SAMPLE_BYTES, _SAMPLE_RATE, PCM, Format, Opus
 
 if TYPE_CHECKING:
     from bostie import _native
     from bostie.voice._link import Handle
     from bostie.voice.connection import VoiceManager
 
-PLAYS_ONCE = "a Source plays once; create a new one"
-NATIVE_PCM = PCM(SAMPLE_RATE, 2, "f32le")
-FFMPEG_PCM = PCM(SAMPLE_RATE, 2, "s16le")
-FFMPEG_READ = FFMPEG_PCM.rate // 10 * FFMPEG_PCM.channels * SAMPLE_BYTES["s16le"]
-FFMPEG_OUTPUT = (
-    *("-f", FFMPEG_PCM.sample),
-    *("-ar", str(FFMPEG_PCM.rate)),
-    *("-ac", str(FFMPEG_PCM.channels)),
+_PLAYS_ONCE = "a Source plays once; create a new one"
+_NATIVE_PCM = PCM(_SAMPLE_RATE, 2, "f32le")
+_FFMPEG_PCM = PCM(_SAMPLE_RATE, 2, "s16le")
+_FFMPEG_READ = _FFMPEG_PCM.rate // 10 * _FFMPEG_PCM.channels * _SAMPLE_BYTES["s16le"]
+_FFMPEG_OUTPUT = (
+    *("-f", _FFMPEG_PCM.sample),
+    *("-ar", str(_FFMPEG_PCM.rate)),
+    *("-ac", str(_FFMPEG_PCM.channels)),
     *("-loglevel", "error"),
 )
 
@@ -105,7 +105,7 @@ class Source(ABC):
 
     def _check_unused(self) -> None:
         if self._done:
-            raise StateError(PLAYS_ONCE)
+            raise StateError(_PLAYS_ONCE)
 
 
 class _DecodedSource(Source):
@@ -123,7 +123,7 @@ class _DecodedSource(Source):
         self._check_unused()
         native, handle = self._native, self._handle
         if native is None or handle is None:
-            link = manager.link
+            link = manager._link
             native = self._native = self._create(link.core())
             handle = self._handle = link.open(native.id)
         while (info := native.info()) is None:
@@ -134,7 +134,7 @@ class _DecodedSource(Source):
             self._check_unused()
         kind, self._duration, self._seekable = info
         self._tags = Tags(*native.tags())
-        self._format = Opus() if kind == "opus" else NATIVE_PCM
+        self._format = Opus() if kind == "opus" else _NATIVE_PCM
 
     @override
     async def __anext__(self) -> bytes:
@@ -307,7 +307,7 @@ class FFmpeg(Source):
         process = self._process = await asyncio.create_subprocess_exec(
             path,
             *self._args,
-            *FFMPEG_OUTPUT,
+            *_FFMPEG_OUTPUT,
             "pipe:1",
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
@@ -315,7 +315,7 @@ class FFmpeg(Source):
         )
         if process.stderr is not None:
             self._errors = asyncio.create_task(_last_line(process.stderr))
-        self._format = FFMPEG_PCM
+        self._format = _FFMPEG_PCM
 
     @override
     async def __anext__(self) -> bytes:
@@ -325,7 +325,7 @@ class FFmpeg(Source):
         if self._done:
             raise StopAsyncIteration
         try:
-            return await process.stdout.readexactly(FFMPEG_READ)
+            return await process.stdout.readexactly(_FFMPEG_READ)
         except asyncio.IncompleteReadError as end:
             if end.partial:
                 return end.partial

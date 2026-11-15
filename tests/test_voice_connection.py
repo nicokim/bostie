@@ -427,7 +427,7 @@ def test_close_ends_a_connection_the_core_has_not_ended_yet(
 
 def test_deliveries_for_unknown_handles_and_guilds_are_ignored() -> None:
     voices = Bot().voice
-    voices.handle(("voice_wake", 12345))
-    voices.handle(("voice_marker", 12345, 1, True))
-    voices.handle(("voice_state", 999, "ready", None, None, ""))
+    voices._handle(("voice_wake", 12345))
+    voices._handle(("voice_marker", 12345, 1, True))
+    voices._handle(("voice_state", 999, "ready", None, None, ""))
     assert voices.connections == ()

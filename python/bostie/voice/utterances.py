@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
-from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE
+from bostie.voice.formats import _SAMPLE_BYTES, _SAMPLE_RATE, PCM
 from bostie.voice.frames import Frame
 
 if TYPE_CHECKING:
@@ -38,8 +38,8 @@ class _Speech:
             user_id,
             bytes(self.data),
             self.offset,
-            (self.end - self.offset) / SAMPLE_RATE,
-            self.lost / SAMPLE_RATE,
+            (self.end - self.offset) / _SAMPLE_RATE,
+            self.lost / _SAMPLE_RATE,
         )
 
 
@@ -61,10 +61,10 @@ def utterances(
             "or given a level"
         )
     grouping = _Grouping(
-        silence=round(min_silence * SAMPLE_RATE),
-        longest=round(max_length * SAMPLE_RATE),
+        silence=round(min_silence * _SAMPLE_RATE),
+        longest=round(max_length * _SAMPLE_RATE),
         pause=rx.jitter + min_silence,
-        width=format.channels * SAMPLE_BYTES[format.sample],
+        width=format.channels * _SAMPLE_BYTES[format.sample],
         rate=format.rate,
         level=level,
     )
@@ -183,7 +183,7 @@ class _Grouping:
             speech = None
         if speech is None:
             speech = self.speaking[user] = _Speech(frame.offset, frame.offset)
-        gap = max(frame.offset - speech.end, 0) * self.rate // SAMPLE_RATE
+        gap = max(frame.offset - speech.end, 0) * self.rate // _SAMPLE_RATE
         speech.data += bytes(gap * self.width)
         speech.data += frame.data
         if self.level is not None:

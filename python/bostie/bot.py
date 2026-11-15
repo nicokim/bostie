@@ -896,7 +896,7 @@ class Bot(Router):
             case ("invalid_requests", count):
                 warn_invalid_requests(count)
             case _:
-                self.voice.handle(delivery)
+                self.voice._handle(delivery)
 
     async def _approve_identify(self, shard_id: int, request: int) -> None:
         if self._before_identify is not None:

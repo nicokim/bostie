@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any, Final, Self
 
 from bostie.errors import BostieError, BufferFull, SinkClosed
 from bostie.voice.formats import (
-    NO_FILTERS,
-    SAMPLE_BYTES,
-    SAMPLE_RATE,
+    _NO_FILTERS,
+    _SAMPLE_BYTES,
+    _SAMPLE_RATE,
     Filters,
     Format,
     Opus,
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from bostie import _native
     from bostie.voice._link import Handle
 
-MIN_PIECE = 0.02
+_MIN_PIECE = 0.02
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +66,7 @@ class Sink:
         stall: SinkStall,
         volume: float,
         crossfade: float = 0.0,
-        filters: Filters = NO_FILTERS,
+        filters: Filters = _NO_FILTERS,
         on_audio: Callable[[], None],
         on_close: Callable[["Sink"], None],
     ) -> None:
@@ -80,11 +80,11 @@ class Sink:
         self._on_audio = on_audio
         self._on_close = on_close
         self._volume = volume
-        self._filters = NO_FILTERS
+        self._filters = _NO_FILTERS
         self._piece = _piece_bytes(format, buffer)
         self._stats = SinkStats(0.0, 0.0, 0, 0, 0.0, 0)
         self._playing = False
-        if filters != NO_FILTERS:
+        if filters != _NO_FILTERS:
             self.filters = filters
 
     @property
@@ -212,18 +212,18 @@ class Sink:
             self._on_audio()
 
     def _marker(self, id: int, position: int) -> Marker:
-        return Marker(id, position / SAMPLE_RATE, self._handle.marker(id))
+        return Marker(id, position / _SAMPLE_RATE, self._handle.marker(id))
 
     def _read_stats(self) -> SinkStats:
         sent, consumed, underruns, held_ticks, dropped, passthrough = (
             self._native.stats()
         )
         return SinkStats(
-            sent / SAMPLE_RATE,
-            consumed / SAMPLE_RATE,
+            sent / _SAMPLE_RATE,
+            consumed / _SAMPLE_RATE,
             underruns,
             held_ticks,
-            dropped / SAMPLE_RATE,
+            dropped / _SAMPLE_RATE,
             passthrough,
         )
 
@@ -231,5 +231,5 @@ class Sink:
 def _piece_bytes(format: Format, buffer: float) -> int:
     if isinstance(format, Opus):
         return 0
-    frames = int(format.rate * max(MIN_PIECE, buffer / 4))
-    return frames * format.channels * SAMPLE_BYTES[format.sample]
+    frames = int(format.rate * max(_MIN_PIECE, buffer / 4))
+    return frames * format.channels * _SAMPLE_BYTES[format.sample]

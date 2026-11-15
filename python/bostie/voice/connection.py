@@ -41,7 +41,7 @@ from bostie.events import VoiceServerUpdate, VoiceStateUpdate
 from bostie.models import Channel, User
 from bostie.voice import player
 from bostie.voice._link import CoreLink, Handle
-from bostie.voice.encoder import DEFAULT_BITRATE
+from bostie.voice.encoder import _DEFAULT_BITRATE
 from bostie.voice.events import (
     DaveTransition,
     MediaResumed,
@@ -57,10 +57,10 @@ from bostie.voice.events import (
     VoiceEvent,
 )
 from bostie.voice.formats import (
-    DEFAULT_PCM,
-    NO_FILTERS,
+    _DEFAULT_PCM,
+    _NO_FILTERS,
+    _STAGE_ROLES,
     PCM,
-    STAGE_ROLES,
     Defaults,
     EncoderSettings,
     Filters,
@@ -73,8 +73,8 @@ from bostie.voice.formats import (
     ReceiveStall,
     SinkStall,
     StageRole,
-    check_choice,
-    check_stall_after,
+    _check_choice,
+    _check_stall_after,
 )
 from bostie.voice.frames import Frame, Packet
 from bostie.voice.receiver import Receiver
@@ -84,12 +84,12 @@ if TYPE_CHECKING:
     from bostie.bot import Bot
     from bostie.voice.sources import Source
 
-log = logging.getLogger("bostie.voice")
+_log = logging.getLogger("bostie.voice")
 
 VOICE_STATE_UPDATE = 4
-VOICE_CHANNELS = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
+_VOICE_CHANNELS = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
 
-type ConnectionDelivery = (
+type _ConnectionDelivery = (
     _native.VoiceStateDelivery
     | _native.VoiceMovedDelivery
     | _native.VoiceDaveDelivery
@@ -103,7 +103,7 @@ type ConnectionDelivery = (
     | _native.VoiceRtcpDelivery
 )
 type VoiceDelivery = (
-    ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
+    _ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
 )
 
 
@@ -185,16 +185,6 @@ class VoiceManager:
         self._link = CoreLink(core)
         self._bot = bot
         self._connections: dict[int, _Connection] = {}
-
-    @property
-    def bot(self) -> "Bot":
-        """The bot these connections belong to."""
-        return self._bot
-
-    @property
-    def link(self) -> CoreLink:
-        """The bot's core as bostie's sinks, receivers and sources reach it."""
-        return self._link
 
     @property
     def connections(self) -> tuple["VoiceConnection", ...]:
@@ -318,7 +308,7 @@ class VoiceManager:
         for vc in connections:
             vc.end("the bot closed")
 
-    def handle(self, delivery: VoiceDelivery) -> None:
+    def _handle(self, delivery: VoiceDelivery) -> None:
         """Pass a voice delivery from the core to its connection or handle."""
         match delivery:
             case ("voice_wake", handle):
@@ -357,8 +347,8 @@ class VoiceConnection:
     ) -> None:
         self.guild_id = guild_id
         self.manager = manager
-        self._bot = manager.bot
-        self._link = manager.link
+        self._bot = manager._bot
+        self._link = manager._link
         self._settings = settings
         self._channel_id = channel.id
         self._stage_channel = channel.type is ChannelType.GUILD_STAGE_VOICE
@@ -498,7 +488,7 @@ class VoiceConnection:
 
     @stall_after.setter
     def stall_after(self, seconds: float) -> None:
-        check_stall_after(seconds)
+        _check_stall_after(seconds)
         self._check_live()
         self._core().voice_stall_after(self.guild_id, seconds)
         self._stall_after = seconds
@@ -516,12 +506,12 @@ class VoiceConnection:
 
     def sink(
         self,
-        format: Format = DEFAULT_PCM,
+        format: Format = _DEFAULT_PCM,
         *,
         volume: float = 1.0,
         after: Sink | None = None,
         crossfade: float = 0.0,
-        filters: Filters = NO_FILTERS,
+        filters: Filters = _NO_FILTERS,
         buffer: float | None = None,
         stall: SinkStall | None = None,
     ) -> Sink:
@@ -536,7 +526,7 @@ class VoiceConnection:
             raise ValueError("after must be a sink of this connection")
         buffer = self._settings.sink_buffer if buffer is None else buffer
         stall = self._settings.stall if stall is None else stall
-        pcm = DEFAULT_PCM if isinstance(format, Opus) else format
+        pcm = _DEFAULT_PCM if isinstance(format, Opus) else format
         native = self._core().voice_sink(
             self.guild_id,
             kind="opus" if isinstance(format, Opus) else "pcm",
@@ -607,7 +597,7 @@ class VoiceConnection:
     @overload
     def receive(
         self,
-        format: PCM | Opus = DEFAULT_PCM,
+        format: PCM | Opus = _DEFAULT_PCM,
         *,
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
@@ -622,7 +612,7 @@ class VoiceConnection:
     @overload
     def receive(
         self,
-        format: PCM | Opus = DEFAULT_PCM,
+        format: PCM | Opus = _DEFAULT_PCM,
         *,
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
@@ -637,7 +627,7 @@ class VoiceConnection:
     @overload
     def receive(
         self,
-        format: PCM | Opus = DEFAULT_PCM,
+        format: PCM | Opus = _DEFAULT_PCM,
         *,
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
@@ -651,7 +641,7 @@ class VoiceConnection:
     ) -> Receiver[Frame | SpeechStart | SpeechStop | UserLeave]: ...
     def receive(
         self,
-        format: ReceiveFormat = DEFAULT_PCM,
+        format: ReceiveFormat = _DEFAULT_PCM,
         *,
         users: Iterable[int] | None = None,
         exclude: Iterable[int] = (),
@@ -674,7 +664,7 @@ class VoiceConnection:
         jitter = settings.jitter if jitter is None else jitter
         overflow = settings.overflow if overflow is None else overflow
         stall = settings.receive_stall if stall is None else stall
-        pcm = DEFAULT_PCM if isinstance(format, Opus | Packets) else format
+        pcm = _DEFAULT_PCM if isinstance(format, Opus | Packets) else format
         native = self._core().voice_receive(
             self.guild_id,
             kind=(
@@ -724,7 +714,7 @@ class VoiceConnection:
         source: "Source",
         *,
         volume: float = 1.0,
-        filters: Filters = NO_FILTERS,
+        filters: Filters = _NO_FILTERS,
         meta: Any = None,
         buffer: float | None = None,
         stall: SinkStall | None = None,
@@ -788,7 +778,7 @@ class VoiceConnection:
 
     async def stage(self, role: StageRole) -> None:
         """Listen, ask to speak, or speak on this stage channel."""
-        check_choice("stage", role, STAGE_ROLES)
+        _check_choice("stage", role, _STAGE_ROLES)
         self._check_live()
         if not self._stage_channel:
             raise ValueError(f"channel {self._channel_id} is not a stage channel")
@@ -907,25 +897,25 @@ class VoiceConnection:
         )
 
     def _bitrate(self, encoder: EncoderSettings) -> int:
-        return encoder.bitrate or self._channel_bitrate or DEFAULT_BITRATE
+        return encoder.bitrate or self._channel_bitrate or _DEFAULT_BITRATE
 
     def _audio_started(self) -> None:
         if self._warned or not (self._mute or self._suppress):
             return
         self._warned = True
         if self._mute:
-            log.warning(
+            _log.warning(
                 "nobody hears the bot in guild %d: it is server muted", self.guild_id
             )
         else:
-            log.warning(
+            _log.warning(
                 "nobody hears the bot in guild %d: it is suppressed on this stage; "
                 "use vc.stage('request')",
                 self.guild_id,
             )
 
     def _warn_deafened(self) -> None:
-        log.warning(
+        _log.warning(
             "a moderator deafened the bot in guild %d, so Discord sends it no audio",
             self.guild_id,
         )
@@ -1037,7 +1027,7 @@ class _Connection(VoiceConnection):
         if "stall_after" in options:
             self.stall_after = options["stall_after"]
 
-    def apply(self, delivery: ConnectionDelivery) -> None:
+    def apply(self, delivery: _ConnectionDelivery) -> None:
         """Update the connection from a delivery of the core and emit its event."""
         match delivery:
             case ("voice_state", _, status, reason, code, detail):
@@ -1062,7 +1052,7 @@ class _Connection(VoiceConnection):
             case _:
                 self._announce(delivery)
 
-    def _announce(self, delivery: ConnectionDelivery) -> None:
+    def _announce(self, delivery: _ConnectionDelivery) -> None:
         match delivery:
             case ("voice_dave", _, version, epoch, transition):
                 self._emit(
@@ -1187,7 +1177,7 @@ class _Connection(VoiceConnection):
         try:
             _, channel = await _voice_channel(self._bot, channel_id)
         except (BostieError, ValueError):
-            log.warning(
+            _log.warning(
                 "could not read channel %d to follow its bitrate",
                 channel_id,
                 exc_info=True,
@@ -1270,7 +1260,7 @@ class ContextVoice:
         )
 
     async def _channel_id(self, guild_id: int) -> int | None:
-        bot = self._manager.bot
+        bot = self._manager._bot
         if bot.cache.guild(guild_id) is not None:
             cached = bot.cache.voice_state(guild_id, self._user_id)
             return None if cached is None else cached.channel_id
@@ -1289,7 +1279,7 @@ def _given(**options: object) -> dict[str, Any]:
 
 async def _voice_channel(bot: "Bot", channel_id: int) -> tuple[int, Channel]:
     channel = bot.cache.channel(channel_id) or await bot.rest.channels.fetch(channel_id)
-    if channel.guild_id is None or channel.type not in VOICE_CHANNELS:
+    if channel.guild_id is None or channel.type not in _VOICE_CHANNELS:
         raise ValueError(f"channel {channel_id} is not a voice or stage channel")
     return channel.guild_id, channel
 

@@ -12,18 +12,18 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Self
 from bostie.errors import Empty, ReceiverClosed
 from bostie.voice._ogg import END_OF_STREAM, MAX_PACKET, OggStream
 from bostie.voice.encoder import OpusEncoder
-from bostie.voice.formats import DEFAULT_PCM, PCM, SAMPLE_BYTES, SAMPLE_RATE, Opus
+from bostie.voice.formats import _DEFAULT_PCM, _SAMPLE_BYTES, _SAMPLE_RATE, PCM, Opus
 from bostie.voice.frames import Frame
 
 if TYPE_CHECKING:
     from bostie.voice.connection import VoiceConnection
     from bostie.voice.receiver import Receiver, ReceiverStats
 
-log = logging.getLogger("bostie.voice")
+_log = logging.getLogger("bostie.voice")
 
-SILENCE = b"\xf8\xff\xfe"
-SAMPLES_PER_PACKET = 960
-TEMPLATE_FIELDS = frozenset({"guild_id", "user_id"})
+_SILENCE = b"\xf8\xff\xfe"
+_SAMPLES_PER_PACKET = 960
+_TEMPLATE_FIELDS = frozenset({"guild_id", "user_id"})
 
 
 class _OggFile:
@@ -36,11 +36,11 @@ class _OggFile:
         stream = self.stream
         if self.encoder is not None:
             for packet in self.encoder.encode(frame.data):
-                stream.add(packet, SAMPLES_PER_PACKET)
+                stream.add(packet, _SAMPLES_PER_PACKET)
         elif not frame.lost and len(frame.data) <= MAX_PACKET:
             if align:
-                gap = round((frame.offset - stream.granule) / SAMPLES_PER_PACKET)
-                stream.add(SILENCE, SAMPLES_PER_PACKET, max(gap, 0))
+                gap = round((frame.offset - stream.granule) / _SAMPLES_PER_PACKET)
+                stream.add(_SILENCE, _SAMPLES_PER_PACKET, max(gap, 0))
             stream.add(frame.data, frame.samples)
         return stream.take()
 
@@ -51,7 +51,7 @@ class _OggFile:
     def close(self) -> None:
         with self.file:
             for packet in [] if self.encoder is None else self.encoder.flush():
-                self.stream.add(packet, SAMPLES_PER_PACKET)
+                self.stream.add(packet, _SAMPLES_PER_PACKET)
             self.stream.flush(END_OF_STREAM)
             self.file.write(self.stream.take())
 
@@ -59,18 +59,18 @@ class _OggFile:
 class _WavFile:
     def __init__(self, file: BinaryIO, format: PCM) -> None:
         self.file = file
-        self.width = format.channels * SAMPLE_BYTES[format.sample]
+        self.width = format.channels * _SAMPLE_BYTES[format.sample]
         self.rate = format.rate
         self.end = 0
         self.wav = wave.Wave_write(file)
         self.wav.setnchannels(format.channels)
-        self.wav.setsampwidth(SAMPLE_BYTES[format.sample])
+        self.wav.setsampwidth(_SAMPLE_BYTES[format.sample])
         self.wav.setframerate(format.rate)
 
     def add(self, frame: Frame, *, align: bool) -> bytes:
         gap = max(frame.offset - self.end, 0) if align else 0
         self.end = frame.offset + frame.samples
-        return bytes(gap * self.rate // SAMPLE_RATE * self.width) + frame.data
+        return bytes(gap * self.rate // _SAMPLE_RATE * self.width) + frame.data
 
     def write(self, data: bytes) -> None:
         self.wav.writeframesraw(data)
@@ -99,7 +99,7 @@ class Recorder:
         include_self: bool = False,
         align: bool = True,
         mix: bool = False,
-        format: PCM = DEFAULT_PCM,
+        format: PCM = _DEFAULT_PCM,
         buffer: float = 30.0,
         jitter: float = 0.3,
         max_duration: float | None = None,
@@ -117,12 +117,12 @@ class Recorder:
         self._wav = self._template.endswith(".wav")
         if self._wav and format.sample != "s16le":
             raise ValueError(f"a WAV recording takes s16le samples, got {format}")
-        self._format = format if self._wav else DEFAULT_PCM
+        self._format = format if self._wav else _DEFAULT_PCM
         self._guild_id = vc.guild_id
         self._align = align
         self._mix = mix
         self._max_duration = max_duration
-        self._end = math.inf if max_duration is None else max_duration * SAMPLE_RATE
+        self._end = math.inf if max_duration is None else max_duration * _SAMPLE_RATE
         self._room = math.inf if max_size is None else max_size
         self._files: dict[int | None, Path] = {}
         self._writers: dict[int | None, _OggFile | _WavFile] = {}
@@ -259,7 +259,7 @@ class Recorder:
     def _fail(self, error: Exception) -> None:
         if self._error is None:
             self._error = error
-            log.error("recording to %s failed", self._template, exc_info=error)
+            _log.error("recording to %s failed", self._template, exc_info=error)
 
 
 def _template(path: str | os.PathLike[str], *, mix: bool) -> str:
@@ -278,7 +278,7 @@ def _template(path: str | os.PathLike[str], *, mix: bool) -> str:
         raise ValueError(
             f"path must contain {{user_id}} to give each user a file, got {template!r}"
         )
-    if not fields <= TEMPLATE_FIELDS:
+    if not fields <= _TEMPLATE_FIELDS:
         raise ValueError(
             f"path may use only {{guild_id}} and {{user_id}}, got {template!r}"
         )

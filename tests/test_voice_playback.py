@@ -16,7 +16,7 @@ from bostie.errors import (
 from bostie.testing import settle
 from bostie.voice import player
 from bostie.voice.formats import (
-    DEFAULT_PCM,
+    _DEFAULT_PCM,
     PCM,
     Defaults,
     EncoderSettings,
@@ -254,7 +254,7 @@ class FakeConnection:
 
     def sink(
         self,
-        format: Format = DEFAULT_PCM,
+        format: Format = _DEFAULT_PCM,
         *,
         volume: float = 1.0,
         after: FakeSink | None = None,
@@ -286,7 +286,7 @@ class FakeSource:
         name: str,
         length: int,
         *,
-        format: Format = DEFAULT_PCM,
+        format: Format = _DEFAULT_PCM,
         probe: float = 0.0,
         open_error: Exception | None = None,
         error_at: int | None = None,

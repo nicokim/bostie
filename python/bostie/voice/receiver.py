@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from bostie.voice._link import Handle
     from bostie.voice.connection import VoiceConnection
 
-READ_LIMIT = 256
+_READ_LIMIT = 256
 
 type Item = Frame | Packet | SpeechStart | SpeechStop | UserLeave
 
@@ -139,7 +139,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
             if self.closed:
                 raise StopAsyncIteration
             read = self._read()
-            if read == READ_LIMIT:
+            if read == _READ_LIMIT:
                 await asyncio.sleep(0)
             elif not read and not self.closed:
                 await self._woken.wait()
@@ -158,7 +158,7 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
 
     def _read(self) -> int:
         now = time.monotonic()
-        batch = self._native.read(READ_LIMIT)
+        batch = self._native.read(_READ_LIMIT)
         if batch is None or (
             not batch and self._connection.state is State.DISCONNECTED
         ):

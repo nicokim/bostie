@@ -7,25 +7,25 @@ from typing import Literal, get_args
 from bostie import _native
 from bostie.enums import SpeakingFlags
 
-SAMPLE_RATE = _native.SAMPLE_RATE
-MIN_RATE = _native.MIN_RATE
-MAX_RATE = _native.MAX_RATE
-MAX_RESAMPLER_BLOCK = _native.MAX_RESAMPLER_BLOCK
-MIN_BITRATE = _native.MIN_BITRATE
-MAX_BITRATE = _native.MAX_BITRATE
-MAX_COMPLEXITY = _native.MAX_COMPLEXITY
-MIN_BUFFER = _native.MIN_BUFFER
-MAX_BUFFER = _native.MAX_BUFFER
-MIN_SPEECH_HANGOVER = _native.MIN_SPEECH_HANGOVER
-MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
-MIN_STALL_AFTER = _native.MIN_STALL_AFTER
-MAX_JITTER = _native.MAX_JITTER
-MAX_BANDS = _native.MAX_BANDS
-MIN_BAND_FREQUENCY = _native.MIN_BAND_FREQUENCY
-MAX_BAND_FREQUENCY = _native.MAX_BAND_FREQUENCY
-MAX_GAIN = _native.MAX_GAIN
-MIN_SPEED = _native.MIN_SPEED
-MAX_SPEED = _native.MAX_SPEED
+_SAMPLE_RATE = _native.SAMPLE_RATE
+_MIN_RATE = _native.MIN_RATE
+_MAX_RATE = _native.MAX_RATE
+_MAX_RESAMPLER_BLOCK = _native.MAX_RESAMPLER_BLOCK
+_MIN_BITRATE = _native.MIN_BITRATE
+_MAX_BITRATE = _native.MAX_BITRATE
+_MAX_COMPLEXITY = _native.MAX_COMPLEXITY
+_MIN_BUFFER = _native.MIN_BUFFER
+_MAX_BUFFER = _native.MAX_BUFFER
+_MIN_SPEECH_HANGOVER = _native.MIN_SPEECH_HANGOVER
+_MAX_SPEECH_HANGOVER = _native.MAX_SPEECH_HANGOVER
+_MIN_STALL_AFTER = _native.MIN_STALL_AFTER
+_MAX_JITTER = _native.MAX_JITTER
+_MAX_BANDS = _native.MAX_BANDS
+_MIN_BAND_FREQUENCY = _native.MIN_BAND_FREQUENCY
+_MAX_BAND_FREQUENCY = _native.MAX_BAND_FREQUENCY
+_MAX_GAIN = _native.MAX_GAIN
+_MIN_SPEED = _native.MIN_SPEED
+_MAX_SPEED = _native.MAX_SPEED
 DECODE_RATES = frozenset(_native.DECODE_RATES)
 
 type Overflow = Literal["drop_oldest", "drop_newest"]
@@ -37,28 +37,28 @@ type OpusSignal = Literal["auto", "voice", "music"]
 type Sample = Literal["s16le", "f32le"]
 type StageRole = Literal["listen", "request", "speak"]
 
-SAMPLE_BYTES: dict[Sample, int] = {"s16le": 2, "f32le": 4}
-STAGE_ROLES: tuple[StageRole, ...] = get_args(StageRole.__value__)
+_SAMPLE_BYTES: dict[Sample, int] = {"s16le": 2, "f32le": 4}
+_STAGE_ROLES: tuple[StageRole, ...] = get_args(StageRole.__value__)
 
 
-def check_choice(name: str, value: object, allowed: Sequence[object]) -> None:
+def _check_choice(name: str, value: object, allowed: Sequence[object]) -> None:
     if value not in allowed:
         *most, last = map(repr, allowed)
         raise ValueError(f"{name} must be {', '.join(most)} or {last}, got {value!r}")
 
 
-def check_crossfade(seconds: float) -> float:
-    if not 0.0 <= seconds <= MAX_BUFFER:
+def _check_crossfade(seconds: float) -> float:
+    if not 0.0 <= seconds <= _MAX_BUFFER:
         raise ValueError(
-            f"crossfade must be from 0 to {MAX_BUFFER} seconds, got {seconds}"
+            f"crossfade must be from 0 to {_MAX_BUFFER} seconds, got {seconds}"
         )
     return seconds
 
 
-def check_stall_after(seconds: float) -> None:
-    if not (math.isfinite(seconds) and seconds >= MIN_STALL_AFTER):
+def _check_stall_after(seconds: float) -> None:
+    if not (math.isfinite(seconds) and seconds >= _MIN_STALL_AFTER):
         raise ValueError(
-            f"stall_after must be at least {MIN_STALL_AFTER} seconds, got {seconds}"
+            f"stall_after must be at least {_MIN_STALL_AFTER} seconds, got {seconds}"
         )
 
 
@@ -66,26 +66,27 @@ def check_stall_after(seconds: float) -> None:
 class PCM:
     """Raw audio samples, interleaved, little endian."""
 
-    rate: int = SAMPLE_RATE
+    rate: int = _SAMPLE_RATE
     channels: Literal[1, 2] = 2
     sample: Sample = "s16le"
 
     def __post_init__(self) -> None:
-        if not MIN_RATE <= self.rate <= MAX_RATE:
+        if not _MIN_RATE <= self.rate <= _MAX_RATE:
             raise ValueError(
-                f"sample rate must be from {MIN_RATE} to {MAX_RATE} Hz, got {self.rate}"
+                f"sample rate must be from {_MIN_RATE} to {_MAX_RATE} Hz, "
+                f"got {self.rate}"
             )
-        if SAMPLE_RATE // math.gcd(self.rate, SAMPLE_RATE) > MAX_RESAMPLER_BLOCK:
+        if _SAMPLE_RATE // math.gcd(self.rate, _SAMPLE_RATE) > _MAX_RESAMPLER_BLOCK:
             raise ValueError(
-                f"sample rate {self.rate} Hz does not resample to {SAMPLE_RATE} Hz "
-                f"in 20 ms blocks: {SAMPLE_RATE} / gcd(rate, {SAMPLE_RATE}) must be "
-                f"at most {MAX_RESAMPLER_BLOCK}"
+                f"sample rate {self.rate} Hz does not resample to {_SAMPLE_RATE} Hz "
+                f"in 20 ms blocks: {_SAMPLE_RATE} / gcd(rate, {_SAMPLE_RATE}) must be "
+                f"at most {_MAX_RESAMPLER_BLOCK}"
             )
-        check_choice("channels", self.channels, (1, 2))
-        check_choice("sample", self.sample, _native.SAMPLES)
+        _check_choice("channels", self.channels, (1, 2))
+        _check_choice("sample", self.sample, _native.SAMPLES)
 
 
-DEFAULT_PCM = PCM()
+_DEFAULT_PCM = PCM()
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,22 +122,26 @@ class EncoderSettings:
     signal_type: OpusSignal = "auto"
 
     def __post_init__(self) -> None:
-        if self.bitrate is not None and not MIN_BITRATE <= self.bitrate <= MAX_BITRATE:
+        if (
+            self.bitrate is not None
+            and not _MIN_BITRATE <= self.bitrate <= _MAX_BITRATE
+        ):
             raise ValueError(
-                f"bitrate must be from {MIN_BITRATE} to {MAX_BITRATE} bits per second, "
+                f"bitrate must be from {_MIN_BITRATE} to {_MAX_BITRATE} "
+                "bits per second, "
                 f"got {self.bitrate}"
             )
-        check_choice("application", self.application, _native.OPUS_APPLICATIONS)
+        _check_choice("application", self.application, _native.OPUS_APPLICATIONS)
         if not 0.0 <= self.packet_loss <= 1.0:
             raise ValueError(
                 f"packet loss must be a fraction from 0 to 1, got {self.packet_loss}"
             )
-        if not 0 <= self.complexity <= MAX_COMPLEXITY:
+        if not 0 <= self.complexity <= _MAX_COMPLEXITY:
             raise ValueError(
-                f"complexity must be from 0 to {MAX_COMPLEXITY}, got {self.complexity}"
+                f"complexity must be from 0 to {_MAX_COMPLEXITY}, got {self.complexity}"
             )
-        check_choice("bandwidth", self.bandwidth, _native.OPUS_BANDWIDTHS)
-        check_choice("signal_type", self.signal_type, _native.OPUS_SIGNALS)
+        _check_choice("bandwidth", self.bandwidth, _native.OPUS_BANDWIDTHS)
+        _check_choice("signal_type", self.signal_type, _native.OPUS_SIGNALS)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -153,33 +158,33 @@ class Filters:
     pitch: float = 1.0
 
     def __post_init__(self) -> None:
-        if len(self.equalizer) > MAX_BANDS:
+        if len(self.equalizer) > _MAX_BANDS:
             raise ValueError(
-                f"equalizer takes at most {MAX_BANDS} bands, got {len(self.equalizer)}"
+                f"equalizer takes at most {_MAX_BANDS} bands, got {len(self.equalizer)}"
             )
         for frequency, gain in self.equalizer.items():
-            if not MIN_BAND_FREQUENCY <= frequency <= MAX_BAND_FREQUENCY:
+            if not _MIN_BAND_FREQUENCY <= frequency <= _MAX_BAND_FREQUENCY:
                 raise ValueError(
-                    f"equalizer frequencies must be from {MIN_BAND_FREQUENCY:g} to "
-                    f"{MAX_BAND_FREQUENCY:g} Hz, got {frequency}"
+                    f"equalizer frequencies must be from {_MIN_BAND_FREQUENCY:g} to "
+                    f"{_MAX_BAND_FREQUENCY:g} Hz, got {frequency}"
                 )
             _check_gain("equalizer gains", gain)
         _check_gain("bass", self.bass)
         for name, value in (("speed", self.speed), ("pitch", self.pitch)):
-            if not MIN_SPEED <= value <= MAX_SPEED:
+            if not _MIN_SPEED <= value <= _MAX_SPEED:
                 raise ValueError(
-                    f"{name} must be from {MIN_SPEED:g} to {MAX_SPEED:g}, got {value}"
+                    f"{name} must be from {_MIN_SPEED:g} to {_MAX_SPEED:g}, got {value}"
                 )
 
 
 def _check_gain(name: str, gain: float) -> None:
-    if not -MAX_GAIN <= gain <= MAX_GAIN:
+    if not -_MAX_GAIN <= gain <= _MAX_GAIN:
         raise ValueError(
-            f"{name} must be from -{MAX_GAIN:g} to {MAX_GAIN:g} dB, got {gain}"
+            f"{name} must be from -{_MAX_GAIN:g} to {_MAX_GAIN:g} dB, got {gain}"
         )
 
 
-NO_FILTERS = Filters()
+_NO_FILTERS = Filters()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -219,33 +224,33 @@ class Defaults:
             )
         if not self.speaking_flags:
             raise ValueError("speaking_flags must set at least one flag")
-        check_choice("stage", self.stage, STAGE_ROLES)
-        if not MIN_BUFFER <= self.sink_buffer <= MAX_BUFFER:
+        _check_choice("stage", self.stage, _STAGE_ROLES)
+        if not _MIN_BUFFER <= self.sink_buffer <= _MAX_BUFFER:
             raise ValueError(
-                f"sink_buffer must be from {MIN_BUFFER} to {MAX_BUFFER} seconds, "
+                f"sink_buffer must be from {_MIN_BUFFER} to {_MAX_BUFFER} seconds, "
                 f"got {self.sink_buffer}"
             )
-        check_choice("stall", self.stall, _native.SINK_STALLS)
-        if not MIN_SPEECH_HANGOVER <= self.speech_hangover <= MAX_SPEECH_HANGOVER:
+        _check_choice("stall", self.stall, _native.SINK_STALLS)
+        if not _MIN_SPEECH_HANGOVER <= self.speech_hangover <= _MAX_SPEECH_HANGOVER:
             raise ValueError(
-                f"speech_hangover must be from {MIN_SPEECH_HANGOVER} to "
-                f"{MAX_SPEECH_HANGOVER} seconds, got {self.speech_hangover}"
+                f"speech_hangover must be from {_MIN_SPEECH_HANGOVER} to "
+                f"{_MAX_SPEECH_HANGOVER} seconds, got {self.speech_hangover}"
             )
-        check_stall_after(self.stall_after)
-        if not MIN_BUFFER <= self.receive_buffer <= MAX_BUFFER:
+        _check_stall_after(self.stall_after)
+        if not _MIN_BUFFER <= self.receive_buffer <= _MAX_BUFFER:
             raise ValueError(
-                f"receive_buffer must be from {MIN_BUFFER} to {MAX_BUFFER} seconds, "
+                f"receive_buffer must be from {_MIN_BUFFER} to {_MAX_BUFFER} seconds, "
                 f"got {self.receive_buffer}"
             )
-        if not 0.0 <= self.jitter <= MAX_JITTER:
+        if not 0.0 <= self.jitter <= _MAX_JITTER:
             raise ValueError(
-                f"jitter must be from 0 to {MAX_JITTER} seconds, got {self.jitter}"
+                f"jitter must be from 0 to {_MAX_JITTER} seconds, got {self.jitter}"
             )
-        check_choice("overflow", self.overflow, _native.OVERFLOWS)
-        check_crossfade(self.crossfade)
+        _check_choice("overflow", self.overflow, _native.OVERFLOWS)
+        _check_crossfade(self.crossfade)
         if self.history < 0:
             raise ValueError(f"history must be at least 0, got {self.history}")
-        check_choice("receive_stall", self.receive_stall, _native.RECEIVE_STALLS)
+        _check_choice("receive_stall", self.receive_stall, _native.RECEIVE_STALLS)
 
 
 @dataclass(frozen=True, slots=True)

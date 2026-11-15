@@ -11,17 +11,17 @@ from typing import TYPE_CHECKING, Any, Literal
 from bostie._aio import spawn
 from bostie.enums import EndReason, State
 from bostie.errors import SinkClosed, SourceError, StateError, VoiceNotConnected
-from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
+from bostie.voice.encoder import _DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.formats import (
-    NO_FILTERS,
+    _NO_FILTERS,
     PCM,
     EncoderSettings,
     Filters,
     Format,
     Opus,
     SinkStall,
-    check_choice,
-    check_crossfade,
+    _check_choice,
+    _check_crossfade,
 )
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from bostie.voice.sink import Marker, Sink
     from bostie.voice.sources import Source
 
-log = logging.getLogger("bostie.voice")
+_log = logging.getLogger("bostie.voice")
 
 type Loop = Literal["track", "queue"] | None
 
@@ -53,7 +53,7 @@ class _Stage(Enum):
     ENDED = auto()
 
 
-WRITTEN_STAGES = frozenset({_Stage.WRITING, _Stage.WRITTEN})
+_WRITTEN_STAGES = frozenset({_Stage.WRITING, _Stage.WRITTEN})
 
 
 @dataclass(eq=False, slots=True)
@@ -77,7 +77,7 @@ class _Entry:
 
     @property
     def written(self) -> bool:
-        return self.stage in WRITTEN_STAGES
+        return self.stage in _WRITTEN_STAGES
 
     def unwrite(self) -> None:
         if self.written:
@@ -190,7 +190,7 @@ class Queue:
         vc: "VoiceConnection",
         *,
         volume: float = 1.0,
-        filters: Filters = NO_FILTERS,
+        filters: Filters = _NO_FILTERS,
         crossfade: float | None = None,
         history: int | None = None,
         buffer: float | None = None,
@@ -198,7 +198,7 @@ class Queue:
     ) -> None:
         defaults = vc.manager.defaults
         self.vc = vc
-        self.crossfade = check_crossfade(
+        self.crossfade = _check_crossfade(
             defaults.crossfade if crossfade is None else crossfade
         )
         if history is not None and history < 0:
@@ -279,7 +279,7 @@ class Queue:
 
     @loop.setter
     def loop(self, mode: Loop) -> None:
-        check_choice("loop", mode, ("track", "queue", None))
+        _check_choice("loop", mode, ("track", "queue", None))
         if mode == self._loop:
             return
         self._loop = mode
@@ -718,7 +718,7 @@ class Queue:
         try:
             await entry.source.aclose()
         except Exception:
-            log.exception("closing %r failed", entry.source)
+            _log.exception("closing %r failed", entry.source)
 
     def _lost(self) -> None:
         ended = self.vc.state is State.DISCONNECTED
@@ -746,7 +746,7 @@ async def play(
     source: "Source",
     *,
     volume: float = 1.0,
-    filters: Filters = NO_FILTERS,
+    filters: Filters = _NO_FILTERS,
     meta: Any = None,
     buffer: float | None = None,
     stall: SinkStall | None = None,
@@ -772,7 +772,7 @@ async def broadcast(
     source: "Source",
     connections: Iterable["VoiceConnection"],
     *,
-    encoder: EncoderSettings = DEFAULT_ENCODER,
+    encoder: EncoderSettings = _DEFAULT_ENCODER,
     stall: SinkStall = "drop",
 ) -> None:
     """Play one source on every given connection, encoding PCM once.
