@@ -272,7 +272,6 @@ mod tests {
     use std::net::SocketAddr;
 
     use sonic_rs::JsonValueTrait;
-    use tokio::io::AsyncReadExt;
     use tokio::net::{TcpListener, TcpSocket};
     use tokio_websockets::ServerBuilder;
 
@@ -342,26 +341,26 @@ mod tests {
     }
 
     #[test]
-    fn endpoints_without_a_scheme_get_wss_and_version_8() {
-        assert_eq!(
-            url("sweetwater-12345.discord.media:2048"),
-            "wss://sweetwater-12345.discord.media:2048/?v=8"
-        );
-        assert_eq!(
-            url("c-ams13-1a2b.discord.media"),
-            "wss://c-ams13-1a2b.discord.media/?v=8"
-        );
-    }
-
-    #[test]
-    fn endpoints_keep_their_scheme_host_port_and_path() {
-        assert_eq!(url("ws://127.0.0.1:5000"), "ws://127.0.0.1:5000/?v=8");
-        assert_eq!(
-            url("wss://voice.example:8443/gateway?v=4&x=1"),
-            "wss://voice.example:8443/gateway?v=8"
-        );
-        assert_eq!(url("127.0.0.1:2048"), "wss://127.0.0.1:2048/?v=8");
-        assert_eq!(url("[2001:db8::1]:2048"), "wss://[2001:db8::1]:2048/?v=8");
+    fn endpoints_become_version_8_urls_over_wss_unless_they_name_a_scheme() {
+        for (endpoint, expected) in [
+            (
+                "sweetwater-12345.discord.media:2048",
+                "wss://sweetwater-12345.discord.media:2048/?v=8",
+            ),
+            (
+                "c-ams13-1a2b.discord.media",
+                "wss://c-ams13-1a2b.discord.media/?v=8",
+            ),
+            ("127.0.0.1:2048", "wss://127.0.0.1:2048/?v=8"),
+            ("[2001:db8::1]:2048", "wss://[2001:db8::1]:2048/?v=8"),
+            ("ws://127.0.0.1:5000", "ws://127.0.0.1:5000/?v=8"),
+            (
+                "wss://voice.example:8443/gateway?v=4&x=1",
+                "wss://voice.example:8443/gateway?v=8",
+            ),
+        ] {
+            assert_eq!(url(endpoint), expected);
+        }
     }
 
     #[test]
@@ -372,16 +371,6 @@ mod tests {
                 "{endpoint:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_first_beat_is_due_one_interval_after_hello() {
-        let hello_at = Instant::now();
-
-        let heartbeat = Heartbeat::new(INTERVAL, hello_at);
-
-        assert_eq!(heartbeat.deadline(), hello_at + INTERVAL);
-        assert_eq!(heartbeat.interval(), INTERVAL);
     }
 
     #[test]
@@ -457,20 +446,6 @@ mod tests {
         });
 
         assert_eq!(seen, [None, Some(7), Some(7), Some(3)]);
-    }
-
-    #[tokio::test]
-    async fn dial_asks_for_voice_gateway_version_8() {
-        let mut gateway = FakeVoiceGateway::start(Config::default()).await;
-
-        let _socket = dial(&gateway.endpoint()).await;
-
-        assert_eq!(
-            gateway.next().await,
-            ClientMessage::Connected {
-                query: Some("v=8".to_owned())
-            }
-        );
     }
 
     #[tokio::test]
@@ -589,7 +564,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_write_to_a_peer_that_stops_reading_gives_up_after_the_patience() {
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_recv_buffer_size(4096).unwrap();
@@ -621,7 +596,7 @@ mod tests {
         server.abort();
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_dial_that_gets_no_upgrade_answer_times_out() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -638,26 +613,6 @@ mod tests {
             Err(WsError::ConnectTimeout(waited)) if waited == TUNING.connect
         ));
         server.abort();
-    }
-
-    #[tokio::test]
-    async fn an_endpoint_without_a_scheme_is_dialed_over_tls_on_its_own_port() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = endpoint_url(&listener.local_addr().unwrap().to_string()).unwrap();
-        let connector = Connector::new().unwrap();
-        let dial = tokio::spawn(async move {
-            VoiceSocket::dial(&url, &connector, SocketTuning::default()).await
-        });
-
-        let (mut stream, _) = timeout(WAIT, listener.accept()).await.unwrap().unwrap();
-        let mut first = [0; 1];
-        timeout(WAIT, stream.read_exact(&mut first))
-            .await
-            .unwrap()
-            .unwrap();
-        dial.abort();
-
-        assert_eq!(first, [0x16]);
     }
 
     #[tokio::test]

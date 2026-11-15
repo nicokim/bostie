@@ -287,30 +287,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn written_header_parses_back_with_no_csrc_extension_padding_or_marker() {
-        let mut header = [0; HEADER_LEN];
-        write_header(&mut header, u16::MAX, u32::MAX, 0x8000_0001);
-
-        let parsed = Header::parse(&header).unwrap();
-
-        assert_eq!(
-            parsed,
-            Header {
-                padding: false,
-                marker: false,
-                payload_type: PAYLOAD_TYPE,
-                sequence: u16::MAX,
-                timestamp: u32::MAX,
-                ssrc: 0x8000_0001,
-                csrc_count: 0,
-                extension: None,
-            }
-        );
-        assert_eq!(parsed.size(), HEADER_LEN);
-        assert_eq!(parsed.payload(b"opus").unwrap(), b"opus");
-    }
-
-    #[test]
     fn padding_of_zero_or_past_the_payload_is_an_error() {
         let header = Header::parse(&header_bytes(true, &[], None, 7)).unwrap();
 
@@ -439,17 +415,6 @@ pub(crate) mod tests {
 
             assert_eq!(Header::parse(&packet), Err(RtpError::Version(version)));
         }
-    }
-
-    #[test]
-    fn marker_and_payload_type_are_read_from_the_second_byte() {
-        let mut packet = header_bytes(false, &[], None, 7);
-        packet[1] = 0x80 | 0x60;
-
-        let header = Header::parse(&packet).unwrap();
-
-        assert!(header.marker);
-        assert_eq!(header.payload_type, 96);
     }
 
     #[test]

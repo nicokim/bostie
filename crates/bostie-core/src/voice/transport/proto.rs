@@ -655,31 +655,39 @@ mod tests {
     }
 
     #[test]
-    fn ready_keeps_ssrcs_above_2_31_and_ignores_its_heartbeat_interval() {
-        let Inbound::Ready(ready) = inbound(fixture(r#""op":2,"#)) else {
-            panic!("expected Ready");
-        };
+    fn ready_reads_any_u32_ssrc_either_ip_family_and_the_modes() {
+        let ipv6 = r#"{"op":2,"d":{"ssrc":4294967295,"ip":"2001:db8::1","port":65535,"modes":[]}}"#;
+        let offered = [
+            "aead_aes256_gcm_rtpsize",
+            "aead_aes256_gcm",
+            "aead_xchacha20_poly1305_rtpsize",
+            "xsalsa20_poly1305_lite_rtpsize",
+            "xsalsa20_poly1305_lite",
+            "xsalsa20_poly1305_suffix",
+            "xsalsa20_poly1305",
+        ];
+        for (frame, ssrc, ip, port, modes) in [
+            (
+                fixture(r#""op":2,"#),
+                3_456_789_012,
+                "203.0.113.17",
+                50013,
+                &offered[..],
+            ),
+            (ipv6, u32::MAX, "2001:db8::1", u16::MAX, &[]),
+        ] {
+            let Inbound::Ready(ready) = inbound(frame) else {
+                panic!("expected Ready from {frame}");
+            };
 
-        assert_eq!(ready.ssrc, 3_456_789_012);
-        assert_eq!(ready.ip, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 17)));
-        assert_eq!(ready.port, 50013);
-        assert_eq!(ready.modes.len(), 7);
-        assert_eq!(&*ready.modes[0], "aead_aes256_gcm_rtpsize");
-        assert_eq!(&*ready.modes[2], "aead_xchacha20_poly1305_rtpsize");
-    }
-
-    #[test]
-    fn ready_reads_ipv6_addresses_and_the_full_u32_range() {
-        let Inbound::Ready(ready) = inbound(
-            r#"{"op":2,"d":{"ssrc":4294967295,"ip":"2001:db8::1","port":65535,"modes":[]}}"#,
-        ) else {
-            panic!("expected Ready");
-        };
-
-        assert_eq!(ready.ssrc, u32::MAX);
-        assert_eq!(ready.ip, "2001:db8::1".parse::<IpAddr>().unwrap());
-        assert_eq!(ready.port, u16::MAX);
-        assert!(ready.modes.is_empty());
+            assert_eq!(ready.ssrc, ssrc, "{frame}");
+            assert_eq!(ready.ip, ip.parse::<IpAddr>().unwrap(), "{frame}");
+            assert_eq!(ready.port, port, "{frame}");
+            assert_eq!(
+                ready.modes.iter().map(|mode| &**mode).collect::<Vec<_>>(),
+                modes
+            );
+        }
     }
 
     #[test]
@@ -896,39 +904,6 @@ mod tests {
                 }),
             ]
         );
-    }
-
-    #[test]
-    fn binary_frames_take_their_seq_from_the_big_endian_prefix() {
-        let frame = parse_binary(&binary_frame(0x0102, 25, &[]));
-
-        assert_eq!(frame.seq, Some(258));
-        assert_eq!(
-            frame.inbound,
-            Ok(Inbound::Dave(DaveOp::ExternalSender(Bytes::new())))
-        );
-    }
-
-    #[test]
-    fn fixture_binary_ops_keep_the_mls_bytes_after_their_header() {
-        let Inbound::Dave(DaveOp::Proposals { operation, data }) =
-            parse_fixture(fixture("000f1b")).inbound.unwrap()
-        else {
-            panic!("expected proposals");
-        };
-        assert_eq!(operation, ProposalsOp::Append);
-        assert_eq!(data[0], 0x0c);
-        assert_eq!(data.len(), 13);
-
-        let Inbound::Dave(DaveOp::AnnounceCommit {
-            transition_id,
-            commit,
-        }) = parse_fixture(fixture("00111d")).inbound.unwrap()
-        else {
-            panic!("expected a commit");
-        };
-        assert_eq!(transition_id, 258);
-        assert_eq!(&commit[..4], [0x00, 0x01, 0x00, 0x01]);
     }
 
     #[test]

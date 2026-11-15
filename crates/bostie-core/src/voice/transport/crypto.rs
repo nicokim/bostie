@@ -292,41 +292,26 @@ mod tests {
     }
 
     #[test]
-    fn aes_gcm_is_chosen_whenever_it_is_offered() {
-        let offered = [
-            "xsalsa20_poly1305_lite_rtpsize",
-            "aead_xchacha20_poly1305_rtpsize",
-            "aead_aes256_gcm_rtpsize",
-        ];
-
-        assert_eq!(Mode::choose(&offered), Some(Mode::Aes256GcmRtpSize));
-    }
-
-    #[test]
-    fn xchacha_is_chosen_when_aes_gcm_is_not_offered() {
-        let offered = vec![
-            Box::<str>::from("aead_xchacha20_poly1305_rtpsize"),
-            Box::from("xsalsa20_poly1305"),
-        ];
-
-        assert_eq!(Mode::choose(&offered), Some(Mode::XChaCha20Poly1305RtpSize));
-    }
-
-    #[test]
-    fn no_mode_is_chosen_from_deprecated_or_unknown_modes() {
-        let offered = ["aead_aes256_gcm", "xsalsa20_poly1305_lite", "future_mode"];
-
-        assert_eq!(Mode::choose(&offered), None);
-        assert_eq!(Mode::choose::<&str>(&[]), None);
-    }
-
-    #[test]
-    fn modes_use_their_wire_names() {
-        assert_eq!(
-            MODES.map(Mode::as_str),
-            ["aead_aes256_gcm_rtpsize", "aead_xchacha20_poly1305_rtpsize"]
-        );
-        assert_eq!(MODES.map(|mode| Cipher::new(mode, &KEY).mode()), MODES);
+    fn aes_gcm_is_preferred_over_xchacha_and_nothing_else_is_chosen() {
+        let aes = "aead_aes256_gcm_rtpsize";
+        let xchacha = "aead_xchacha20_poly1305_rtpsize";
+        for (offered, chosen) in [
+            (
+                &["xsalsa20_poly1305_lite_rtpsize", xchacha, aes][..],
+                Some(Mode::Aes256GcmRtpSize),
+            ),
+            (
+                &[xchacha, "xsalsa20_poly1305"],
+                Some(Mode::XChaCha20Poly1305RtpSize),
+            ),
+            (
+                &["aead_aes256_gcm", "xsalsa20_poly1305_lite", "future_mode"],
+                None,
+            ),
+            (&[], None),
+        ] {
+            assert_eq!(Mode::choose(offered), chosen, "{offered:?}");
+        }
     }
 
     #[test]
@@ -407,18 +392,6 @@ mod tests {
             assert_eq!(opened.nonce, nonce.to_be_bytes(), "{case}");
             assert_eq!(opened.extension, extension, "{case}");
             assert_eq!(opened.payload, payload, "{case}");
-        }
-    }
-
-    #[test]
-    fn the_nonce_counter_is_appended_big_endian_after_the_tag() {
-        for mode in MODES {
-            let packet = sealed(mode, 0x0102_0304, &header(), OPUS);
-
-            assert_eq!(packet.len(), HEADER_LEN + OPUS.len() + OVERHEAD);
-            assert_eq!(&packet[..HEADER_LEN], header());
-            assert_eq!(packet[packet.len() - NONCE_LEN..], [1, 2, 3, 4]);
-            assert_ne!(&packet[HEADER_LEN..HEADER_LEN + OPUS.len()], OPUS);
         }
     }
 

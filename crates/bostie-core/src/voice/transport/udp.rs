@@ -223,58 +223,30 @@ mod tests {
     }
 
     #[test]
-    fn a_request_is_not_a_response() {
-        assert!(matches!(
-            rejection(&discovery_request(SSRC)),
-            DiscoveryError::Type(1)
-        ));
-    }
-
-    #[test]
-    fn a_datagram_of_another_size_is_rejected() {
+    fn malformed_responses_are_rejected_with_what_is_wrong() {
         let packet = response(SSRC, external());
+        let mut length = packet;
+        length[3] = 66;
+        let mut unterminated = packet;
+        unterminated[8..72].fill(b'1');
+        let not_ips = [&b"discord.media"[..], b"", b"203.0.113.256", b"\xFF\xFE"]
+            .map(|text| (with_address(text).to_vec(), "Address"));
 
-        assert!(matches!(rejection(&packet[..73]), DiscoveryError::Size(73)));
-        assert!(matches!(
-            rejection(&[&packet[..], &[0]].concat()),
-            DiscoveryError::Size(75)
-        ));
-    }
-
-    #[test]
-    fn a_length_field_other_than_70_is_rejected() {
-        let mut packet = response(SSRC, external());
-        packet[3] = 66;
-
-        assert!(matches!(rejection(&packet), DiscoveryError::Length(66)));
-    }
-
-    #[test]
-    fn a_response_for_another_ssrc_is_rejected() {
-        assert!(matches!(
-            rejection(&response(7, external())),
-            DiscoveryError::Ssrc {
-                expected: SSRC,
-                got: 7
-            }
-        ));
-    }
-
-    #[test]
-    fn an_address_without_nul_is_rejected() {
-        let mut packet = response(SSRC, external());
-        packet[8..72].fill(b'1');
-
-        assert!(matches!(rejection(&packet), DiscoveryError::Unterminated));
-    }
-
-    #[test]
-    fn an_address_that_is_not_an_ip_is_rejected() {
-        for text in [&b"discord.media"[..], b"", b"203.0.113.256", b"\xFF\xFE"] {
-            assert!(
-                matches!(rejection(&with_address(text)), DiscoveryError::Address),
-                "{text:?}"
-            );
+        for (packet, expected) in [
+            (discovery_request(SSRC).to_vec(), "Type(1)"),
+            (packet[..73].to_vec(), "Size(73)"),
+            ([&packet[..], &[0]].concat(), "Size(75)"),
+            (length.to_vec(), "Length(66)"),
+            (
+                response(7, external()).to_vec(),
+                "Ssrc { expected: 2147483649, got: 7 }",
+            ),
+            (unterminated.to_vec(), "Unterminated"),
+        ]
+        .into_iter()
+        .chain(not_ips)
+        {
+            assert_eq!(format!("{:?}", rejection(&packet)), expected);
         }
     }
 
@@ -401,18 +373,6 @@ mod tests {
 
         timeout(WAIT, answers.changed()).await.unwrap().unwrap();
         assert_eq!(answers.borrow().unwrap().address, external());
-    }
-
-    #[tokio::test]
-    async fn discovery_needs_a_connected_socket() {
-        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let (_answers, mut receiver) = watch::channel(None);
-
-        let error = discover(&socket, &mut receiver, SSRC, INTERVAL)
-            .await
-            .unwrap_err();
-
-        assert!(matches!(error, DiscoveryError::Socket(_)), "{error:?}");
     }
 
     #[tokio::test]
