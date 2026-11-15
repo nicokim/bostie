@@ -21,7 +21,7 @@ use crate::voice::types::{
     Application, Bandwidth, DaveOp, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp,
     ReceiveFormat, ReceiveStall, ReceiveTuning, SampleFormat, SignalType, SinkFormat, StallPolicy,
 };
-use crate::voice::ws::Timeouts;
+use crate::voice::ws::SocketTuning;
 
 mod e2ee;
 mod lifecycle;
@@ -44,8 +44,8 @@ const TIMEOUT: Duration = Duration::from_secs(30);
 const AES: &str = "aead_aes256_gcm_rtpsize";
 const XCHACHA: &str = "aead_xchacha20_poly1305_rtpsize";
 
-fn tuning() -> Tuning {
-    Tuning {
+fn tuning() -> VoiceTuning {
+    VoiceTuning {
         connection: ConnectionTuning {
             move_window: WAIT,
             resume_backoff: Duration::from_millis(10),
@@ -55,7 +55,7 @@ fn tuning() -> Tuning {
             speaking_coalesce: Duration::from_millis(20),
             discovery_interval: Duration::from_millis(50),
             stall_after: Duration::from_millis(100),
-            ws: Timeouts {
+            ws: SocketTuning {
                 connect: Duration::from_secs(1),
                 close: Duration::from_millis(200),
             },
@@ -408,7 +408,7 @@ impl Harness {
     async fn build(
         change: impl FnOnce(&mut Config),
         pace: Option<Arc<dyn Pace>>,
-        tuning: Tuning,
+        tuning: VoiceTuning,
     ) -> Self {
         crate::init_test_tracing();
         let pacer = Arc::new(ManualPacer::new());

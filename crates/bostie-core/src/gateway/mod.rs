@@ -3,10 +3,10 @@ mod envelope;
 mod identify;
 mod inflate;
 mod limiter;
-mod limits;
 mod shard;
 #[cfg(test)]
 mod tests;
+mod tuning;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,8 +24,8 @@ use tokio_websockets::Connector;
 pub(crate) use self::envelope::{command, tree};
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
-use self::limits::Limits;
 use self::shard::{Shard, ShardSession, Signals};
+use self::tuning::GatewayTuning;
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
@@ -61,7 +61,7 @@ struct GatewayShared {
     identify_gated: AtomicBool,
     rest: Weak<Rest>,
     tap: Arc<GatewayTap>,
-    limits: Limits,
+    tuning: GatewayTuning,
 }
 
 struct ShardHandle {
@@ -85,17 +85,25 @@ impl Gateway {
         tap: Arc<GatewayTap>,
         proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
-        Self::with_limits(runtime, inbox, token, rest, tap, proxy, Limits::default())
+        Self::with_tuning(
+            runtime,
+            inbox,
+            token,
+            rest,
+            tap,
+            proxy,
+            GatewayTuning::default(),
+        )
     }
 
-    fn with_limits(
+    fn with_tuning(
         runtime: Handle,
         inbox: Arc<Inbox>,
         token: &str,
         rest: Weak<Rest>,
         tap: Arc<GatewayTap>,
         proxy: Option<Proxy>,
-        limits: Limits,
+        tuning: GatewayTuning,
     ) -> Result<Self, CoreError> {
         Ok(Self {
             runtime,
@@ -106,11 +114,11 @@ impl Gateway {
                 connector: Connector::new().map_err(CoreError::Tls)?,
                 proxy,
                 filter: RwLock::new(None),
-                identify: IdentifyGate::new(limits.identify_spacing),
+                identify: IdentifyGate::new(tuning.identify_spacing),
                 identify_gated: AtomicBool::new(false),
                 rest,
                 tap,
-                limits,
+                tuning,
             }),
             shards: Mutex::new(HashMap::new()),
         })

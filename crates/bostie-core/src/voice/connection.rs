@@ -18,7 +18,7 @@ use super::receiver::Ended;
 use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
-use super::ws::Timeouts;
+use super::ws::SocketTuning;
 use crate::backoff::backoff;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
@@ -37,7 +37,7 @@ pub(crate) struct ConnectionTuning {
     pub(crate) speaking_coalesce: Duration,
     pub(crate) discovery_interval: Duration,
     pub(crate) stall_after: Duration,
-    pub(crate) ws: Timeouts,
+    pub(crate) ws: SocketTuning,
     pub(crate) receive: ReceiveTuning,
 }
 
@@ -52,7 +52,7 @@ impl Default for ConnectionTuning {
             speaking_coalesce: Duration::from_millis(200),
             discovery_interval: Duration::from_secs(1),
             stall_after: Duration::from_secs(2),
-            ws: Timeouts::default(),
+            ws: SocketTuning::default(),
             receive: ReceiveTuning::default(),
         }
     }

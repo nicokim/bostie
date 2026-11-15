@@ -16,12 +16,12 @@ use super::types::VOICE_GATEWAY_VERSION;
 pub(crate) const WS_MAX_MESSAGE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Timeouts {
+pub(crate) struct SocketTuning {
     pub(crate) connect: Duration,
     pub(crate) close: Duration,
 }
 
-impl Default for Timeouts {
+impl Default for SocketTuning {
     fn default() -> Self {
         Self {
             connect: Duration::from_secs(10),
@@ -30,7 +30,7 @@ impl Default for Timeouts {
     }
 }
 
-impl Timeouts {
+impl SocketTuning {
     pub(crate) fn patience(self, heartbeat: Option<&Heartbeat>) -> Duration {
         heartbeat.map_or(self.connect, Heartbeat::interval)
     }
@@ -97,7 +97,7 @@ impl VoiceSocket {
     pub(crate) async fn dial(
         url: &Url,
         connector: &Connector,
-        timeouts: Timeouts,
+        tuning: SocketTuning,
     ) -> Result<Self, WsError> {
         let Ok(builder) = ClientBuilder::new().uri(url.as_str()) else {
             return Err(WsError::Endpoint(url.as_str().into()));
@@ -105,13 +105,13 @@ impl VoiceSocket {
         let builder = builder
             .connector(connector)
             .limits(Limits::default().max_payload_len(Some(WS_MAX_MESSAGE)));
-        let Ok(connected) = timeout(timeouts.connect, builder.connect()).await else {
-            return Err(WsError::ConnectTimeout(timeouts.connect));
+        let Ok(connected) = timeout(tuning.connect, builder.connect()).await else {
+            return Err(WsError::ConnectTimeout(tuning.connect));
         };
         let (stream, _) = connected?;
         Ok(Self {
             stream,
-            close_timeout: timeouts.close,
+            close_timeout: tuning.close,
             oversized: false,
         })
     }
@@ -283,7 +283,7 @@ mod tests {
 
     const INTERVAL: Duration = Duration::from_millis(13_750);
     const WAIT: Duration = Duration::from_secs(5);
-    const TIMEOUTS: Timeouts = Timeouts {
+    const TUNING: SocketTuning = SocketTuning {
         connect: Duration::from_millis(100),
         close: Duration::from_millis(200),
     };
@@ -294,7 +294,7 @@ mod tests {
 
     async fn dial(endpoint: &str) -> VoiceSocket {
         let url = endpoint_url(endpoint).unwrap();
-        VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS)
+        VoiceSocket::dial(&url, &Connector::Plain, TUNING)
             .await
             .unwrap()
     }
@@ -443,8 +443,8 @@ mod tests {
     fn write_patience_is_the_connect_timeout_then_the_interval() {
         let heartbeat = Heartbeat::new(INTERVAL, Instant::now());
 
-        assert_eq!(TIMEOUTS.patience(None), TIMEOUTS.connect);
-        assert_eq!(TIMEOUTS.patience(Some(&heartbeat)), INTERVAL);
+        assert_eq!(TUNING.patience(None), TUNING.connect);
+        assert_eq!(TUNING.patience(Some(&heartbeat)), INTERVAL);
     }
 
     #[test]
@@ -631,11 +631,11 @@ mod tests {
         });
         let url = endpoint_url(&format!("ws://{address}")).unwrap();
 
-        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS).await;
+        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TUNING).await;
 
         assert!(matches!(
             dialed,
-            Err(WsError::ConnectTimeout(waited)) if waited == TIMEOUTS.connect
+            Err(WsError::ConnectTimeout(waited)) if waited == TUNING.connect
         ));
         server.abort();
     }
@@ -645,10 +645,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = endpoint_url(&listener.local_addr().unwrap().to_string()).unwrap();
         let connector = Connector::new().unwrap();
-        let dial =
-            tokio::spawn(
-                async move { VoiceSocket::dial(&url, &connector, Timeouts::default()).await },
-            );
+        let dial = tokio::spawn(async move {
+            VoiceSocket::dial(&url, &connector, SocketTuning::default()).await
+        });
 
         let (mut stream, _) = timeout(WAIT, listener.accept()).await.unwrap().unwrap();
         let mut first = [0; 1];
@@ -667,7 +666,7 @@ mod tests {
         let address = refusing.local_addr().unwrap();
         let url = endpoint_url(&format!("ws://{address}")).unwrap();
 
-        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TIMEOUTS).await;
+        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TUNING).await;
 
         assert!(matches!(dialed, Err(WsError::Socket(_))));
     }

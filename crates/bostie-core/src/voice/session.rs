@@ -112,9 +112,9 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
         return SessionEnd::Failed("there is no voice session to resume".to_owned());
     };
     let shared = Arc::clone(&conn.shared);
-    let timeouts = conn.tuning.ws;
+    let socket_tuning = conn.tuning.ws;
     let socket = match conn
-        .interruptible(VoiceSocket::dial(&url, &shared.connector, timeouts))
+        .interruptible(VoiceSocket::dial(&url, &shared.connector, socket_tuning))
         .await
     {
         Ok(Ok(socket)) => socket,

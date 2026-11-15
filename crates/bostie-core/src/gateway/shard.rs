@@ -272,12 +272,12 @@ impl Shard {
     pub(super) async fn run(mut self) {
         let mut delay = Duration::ZERO;
         loop {
-            let limits = &self.shared.limits;
+            let tuning = &self.shared.tuning;
             let backoff = self
                 .failures
                 .checked_sub(1)
                 .map_or(Duration::ZERO, |attempt| {
-                    backoff(limits.backoff_base, limits.backoff_max, attempt)
+                    backoff(tuning.backoff_base, tuning.backoff_max, attempt)
                 });
             if !self.idle(delay.saturating_add(backoff)).await
                 || !self.await_identify_budget().await
@@ -338,7 +338,7 @@ impl Shard {
         let fetched = tokio::select! {
             biased;
             () = self.signals.close.notified() => return false,
-            fetched = timeout(self.shared.limits.connect_timeout, rest.fetch_gateway_url()) => fetched.ok().flatten(),
+            fetched = timeout(self.shared.tuning.connect_timeout, rest.fetch_gateway_url()) => fetched.ok().flatten(),
         };
         if let Some(url) = fetched.as_deref().and_then(gateway_url) {
             debug!(shard = %self.id, %url, "refreshed the gateway URL");
@@ -350,8 +350,8 @@ impl Shard {
     }
 
     async fn connect_and_serve(&mut self) -> ShardEnding {
-        let limits = &self.shared.limits;
-        let Some(inflater) = Inflater::new(limits.max_decompressed) else {
+        let tuning = &self.shared.tuning;
+        let Some(inflater) = Inflater::new(tuning.max_decompressed) else {
             return ShardEnding::Lost("zstd could not allocate a decompression context".to_owned());
         };
         let url = self
@@ -364,19 +364,19 @@ impl Shard {
             biased;
             () = self.signals.close.notified() => return ShardEnding::Stop,
             () = self.signals.reconnect.notified() => return ShardEnding::Requested,
-            connected = timeout(limits.connect_timeout, connect(url, &self.shared.connector, self.shared.proxy.as_ref())) => match connected {
+            connected = timeout(tuning.connect_timeout, connect(url, &self.shared.connector, self.shared.proxy.as_ref())) => match connected {
                 Ok(Ok(socket)) => socket,
                 Ok(Err(error)) => return ShardEnding::Unreachable(error),
-                Err(_) => return ShardEnding::Unreachable(format!("no connection within {:?}", limits.connect_timeout)),
+                Err(_) => return ShardEnding::Unreachable(format!("no connection within {:?}", tuning.connect_timeout)),
             },
         };
         let mut connection = ShardConnection {
             socket,
             signals: Arc::clone(&self.signals),
-            hello_timeout: limits.hello_timeout,
-            close_timeout: limits.close_timeout,
+            hello_timeout: tuning.hello_timeout,
+            close_timeout: tuning.close_timeout,
             inflater,
-            hello_deadline: Instant::now() + limits.hello_timeout,
+            hello_deadline: Instant::now() + tuning.hello_timeout,
             heartbeat: None,
             limiter: None,
             identify_at: None,
@@ -708,7 +708,7 @@ impl Shard {
                 };
                 self.disconnected(None, reason.to_owned());
                 if self.session.is_none() {
-                    let delay = &self.shared.limits.invalid_session_delay;
+                    let delay = &self.shared.tuning.invalid_session_delay;
                     let (shortest, longest) = (*delay.start(), *delay.end());
                     return Some(
                         shortest + longest.saturating_sub(shortest).mul_f64(fastrand::f64()),

@@ -535,13 +535,13 @@ mod tests {
 
     use super::*;
     use crate::voice::proto;
-    use crate::voice::ws::{Received, Timeouts, VoiceSocket, endpoint_url};
+    use crate::voice::ws::{Received, SocketTuning, VoiceSocket, endpoint_url};
 
     const PATIENCE: Duration = Duration::from_secs(1);
 
     async fn dial(gateway: &FakeVoiceGateway) -> VoiceSocket {
         let url = endpoint_url(&gateway.endpoint()).unwrap();
-        VoiceSocket::dial(&url, &Connector::Plain, Timeouts::default())
+        VoiceSocket::dial(&url, &Connector::Plain, SocketTuning::default())
             .await
             .unwrap()
     }

@@ -20,7 +20,7 @@ use zstd_safe::CCtx;
 use super::close::{CloseAction, classify};
 use super::envelope::tests::fixture;
 use super::inflate::tests::{compress, discord_compressor};
-use super::limits::Limits;
+use super::tuning::GatewayTuning;
 use super::{Gateway, IdentifyLimit, SavedSession};
 use crate::bell::{self, BellReceiver};
 use crate::error::CoreError;
@@ -28,7 +28,7 @@ use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::proxy::Proxy;
 use crate::rest::Rest;
-use crate::rest::tests::{LIMITS as REST_LIMITS, NO_REPLY, Server, reply};
+use crate::rest::tests::{NO_REPLY, SETTINGS as REST_SETTINGS, Server, reply};
 use crate::voice::tap::GatewayTap;
 
 const TOKEN: &str = "test-token";
@@ -39,7 +39,7 @@ const NEVER: Duration = Duration::from_secs(3600);
 const SLOW_HEARTBEAT: u64 = 41_250;
 const QUIET_HEARTBEAT: u64 = 24 * 60 * 60 * 1000;
 const INBOX_LIMIT: usize = 64 * 1024;
-const LIMITS: Limits = Limits {
+const TUNING: GatewayTuning = GatewayTuning {
     connect_timeout: Duration::from_secs(2),
     hello_timeout: Duration::from_secs(1),
     close_timeout: Duration::from_millis(200),
@@ -304,16 +304,16 @@ impl Drop for Harness {
 
 impl Harness {
     fn new(zstd: bool) -> Self {
-        Self::limited(zstd, LIMITS)
+        Self::limited(zstd, TUNING)
     }
 
-    fn limited(zstd: bool, limits: Limits) -> Self {
+    fn limited(zstd: bool, tuning: GatewayTuning) -> Self {
         let refusing = crate::refusing_socket();
         let api_url = format!("http://{}/api/v10", address_of(&refusing));
         Self::with(
             FakeGateway::start(zstd),
             &api_url,
-            limits,
+            tuning,
             Some(refusing),
             None,
         )
@@ -322,7 +322,7 @@ impl Harness {
     fn with(
         fake: FakeGateway,
         api_url: &str,
-        limits: Limits,
+        tuning: GatewayTuning,
         refusing_api: Option<TcpSocket>,
         proxy: Option<Proxy>,
     ) -> Self {
@@ -335,19 +335,19 @@ impl Harness {
             api_url,
             global_limit,
             Arc::clone(&inbox),
-            REST_LIMITS,
+            REST_SETTINGS,
             None,
         );
         let rest = Arc::new(rest.unwrap());
         let tap = Arc::new(GatewayTap::new());
-        let gateway = Gateway::with_limits(
+        let gateway = Gateway::with_tuning(
             Handle::current(),
             Arc::clone(&inbox),
             TOKEN,
             Arc::downgrade(&rest),
             Arc::clone(&tap),
             proxy,
-            limits,
+            tuning,
         )
         .unwrap();
         Self {
@@ -615,11 +615,11 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
     let fake = FakeGateway::start(false);
     let gateway = format!(r#"{{"url":"{}"}}"#, fake.url());
     let mut api = Server::start(vec![NO_REPLY, reply("200 OK", &[], &gateway)]).await;
-    let limits = Limits {
+    let tuning = GatewayTuning {
         connect_timeout: Duration::from_millis(500),
-        ..LIMITS
+        ..TUNING
     };
-    let mut harness = Harness::with(fake, &api.url, limits, None, None);
+    let mut harness = Harness::with(fake, &api.url, tuning, None, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
 
@@ -649,7 +649,7 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
 #[tokio::test]
 async fn a_failed_reconnect_resumes_on_the_base_url_without_refreshing_it() {
     let mut api = Server::start(Vec::new()).await;
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, LIMITS, None, None);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, TUNING, None, None);
     let closed = crate::refusing_socket();
     let dead = address_of(&closed).to_string();
     harness.start();
@@ -682,11 +682,11 @@ async fn a_failed_reconnect_resumes_on_the_base_url_without_refreshing_it() {
 #[tokio::test]
 async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
     let mut api = Server::start(vec![NO_REPLY]).await;
-    let limits = Limits {
+    let tuning = GatewayTuning {
         connect_timeout: NEVER,
-        ..LIMITS
+        ..TUNING
     };
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, limits, None, None);
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, tuning, None, None);
     let closed = crate::refusing_socket();
     let refusing = format!("ws://{}", address_of(&closed));
     harness
@@ -706,12 +706,12 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
 #[tokio::test]
 async fn reconnect_and_invalid_session_requests_resume_or_identify() {
     let delay = Duration::from_millis(100);
-    let limits = Limits {
+    let tuning = GatewayTuning {
         close_timeout: Duration::ZERO,
         invalid_session_delay: delay..=delay,
-        ..LIMITS
+        ..TUNING
     };
-    let mut harness = Harness::limited(false, limits);
+    let mut harness = Harness::limited(false, tuning);
     let mut peer = harness.ready(SLOW_HEARTBEAT).await;
 
     peer.send(fixture(RECONNECT)).await;
@@ -749,11 +749,11 @@ async fn frames_before_ready_reconnect_without_a_session() {
         (RECONNECT, "reconnect requested by Discord"),
         (INVALID_SESSION_RESUMABLE, "invalid session (resumable)"),
     ] {
-        let limits = Limits {
+        let tuning = GatewayTuning {
             hello_timeout: NEVER,
-            ..LIMITS
+            ..TUNING
         };
-        let mut harness = Harness::limited(false, limits);
+        let mut harness = Harness::limited(false, tuning);
         harness.start();
         let mut peer = harness.fake.accept().await;
 
@@ -802,12 +802,12 @@ async fn close_codes_resume_reidentify_or_stop_as_the_table_says() {
 #[tokio::test]
 async fn a_dropped_connection_resumes_without_backing_off() {
     for zstd in [false, true] {
-        let limits = Limits {
+        let tuning = GatewayTuning {
             backoff_base: NEVER,
             backoff_max: NEVER,
-            ..LIMITS
+            ..TUNING
         };
-        let mut harness = Harness::limited(zstd, limits);
+        let mut harness = Harness::limited(zstd, tuning);
         let peer = harness.ready(SLOW_HEARTBEAT).await;
 
         drop(peer);
@@ -830,7 +830,7 @@ async fn refused_connections_back_off_longer_each_time() {
     }
 
     let gaps: Vec<Duration> = arrivals.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    assert!(gaps[4] >= LIMITS.backoff_base * 4, "{gaps:?}");
+    assert!(gaps[4] >= TUNING.backoff_base * 4, "{gaps:?}");
 }
 
 #[tokio::test]
@@ -1449,7 +1449,7 @@ async fn a_proxied_shard_tunnels_with_connect_and_the_proxy_credentials() {
     let address = fake.address;
     let refusing = crate::refusing_socket();
     let api_url = format!("http://{}/api/v10", address_of(&refusing));
-    let mut harness = Harness::with(fake, &api_url, LIMITS, Some(refusing), proxy.ok());
+    let mut harness = Harness::with(fake, &api_url, TUNING, Some(refusing), proxy.ok());
 
     harness.ready(41_250).await;
 

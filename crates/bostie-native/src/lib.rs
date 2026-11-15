@@ -75,7 +75,7 @@ impl NativeCore {
             (Some(token), true) => Auth::Bearer(token),
         };
         let http = HttpSettings {
-            max_retry_wait: seconds("max_rate_limit_wait", max_rate_limit_wait)?,
+            max_rate_limit_wait: seconds("max_rate_limit_wait", max_rate_limit_wait)?,
             retries,
             connect_timeout: seconds("connect_timeout", connect_timeout)?,
             read_timeout: seconds("read_timeout", read_timeout)?,

@@ -71,14 +71,14 @@ const COMMAND_QUEUE: usize = 32;
 const LOG_EVERY: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Tuning {
+pub(crate) struct VoiceTuning {
     pub(crate) connection: ConnectionTuning,
     pub(crate) source_prefetch: Duration,
     pub(crate) http_buffer: usize,
     pub(crate) http_retry: Duration,
 }
 
-impl Default for Tuning {
+impl Default for VoiceTuning {
     fn default() -> Self {
         Self {
             connection: ConnectionTuning::default(),
@@ -101,7 +101,7 @@ struct VoiceShared {
     connector: Connector,
     pacer: Arc<dyn Pace>,
     http: Http,
-    tuning: Tuning,
+    tuning: VoiceTuning,
     next_handle: AtomicU64,
     connections: Mutex<HashMap<GuildId, ConnectionHandle>>,
     sources: Mutex<Vec<Weak<Source>>>,
@@ -130,7 +130,7 @@ impl Voice {
             tap,
             send,
             Arc::new(PacerPool::new()),
-            Tuning::default(),
+            VoiceTuning::default(),
             proxy,
         )
     }
@@ -141,7 +141,7 @@ impl Voice {
         tap: Arc<GatewayTap>,
         send: GatewaySend,
         pacer: Arc<dyn Pace>,
-        tuning: Tuning,
+        tuning: VoiceTuning,
         proxy: Option<Proxy>,
     ) -> Result<Self, CoreError> {
         Ok(Self {

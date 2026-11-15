@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
-pub(super) struct Limits {
+pub(super) struct GatewayTuning {
     pub(super) connect_timeout: Duration,
     pub(super) hello_timeout: Duration,
     pub(super) close_timeout: Duration,
@@ -13,7 +13,7 @@ pub(super) struct Limits {
     pub(super) max_decompressed: usize,
 }
 
-impl Default for Limits {
+impl Default for GatewayTuning {
     fn default() -> Self {
         Self {
             connect_timeout: Duration::from_secs(10),
