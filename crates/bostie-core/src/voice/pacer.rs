@@ -47,14 +47,10 @@ impl Default for PacerTuning {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Seat(Arc<AtomicUsize>);
+#[derive(Clone, Default)]
+struct Seat(Arc<()>);
 
 impl Seat {
-    fn take(&self, thread: usize) {
-        self.0.store(thread, Ordering::Relaxed);
-    }
-
     fn is(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
@@ -86,7 +82,7 @@ struct Home {
 struct Assignment {
     seat: Seat,
     lane: LaneFn,
-    after: Option<AfterFn>,
+    after: AfterFn,
     cost: u64,
 }
 
@@ -122,8 +118,7 @@ impl PacerPool {
         }
     }
 
-    fn place(&self, assignment: Assignment) -> Result<Seat, CoreError> {
-        let seat = assignment.seat.clone();
+    fn place(&self, assignment: Assignment) -> Result<(), CoreError> {
         let mut workers = self.workers.lock();
         let index = self.placement.place(&workers);
         deliver(
@@ -133,20 +128,13 @@ impl PacerPool {
             assignment,
             self.placement,
         )
-        .map_err(|(error, _)| error)?;
-        Ok(seat)
+        .map_err(|(error, _)| error)
     }
 }
 
 impl Pace for PacerPool {
     fn assign_pair(&self, lane: LaneFn, after: AfterFn) -> Result<(), CoreError> {
-        self.place(Assignment::new(lane, Some(after))).map(drop)
-    }
-}
-
-impl Default for PacerPool {
-    fn default() -> Self {
-        Self::new()
+        self.place(Assignment::new(lane, after))
     }
 }
 
@@ -214,7 +202,6 @@ fn deliver(
         let lost = io::Error::other("the voice pacer lost a thread");
         return Err((CoreError::Runtime(lost), assignment));
     };
-    assignment.seat.take(index);
     worker.load.lanes.fetch_add(1, Ordering::Relaxed);
     let Err(mpsc::SendError(assignment)) = worker.sender.send(assignment) else {
         return Ok(());
@@ -305,7 +292,6 @@ impl Home {
             }
             Err((error, assignment)) => {
                 tracing::warn!(%error, "a voice connection could not move to a lighter pacer thread");
-                assignment.seat.take(self.index);
                 assignment.join(lanes, afters);
             }
         }
@@ -313,7 +299,7 @@ impl Home {
 }
 
 impl Assignment {
-    fn new(lane: LaneFn, after: Option<AfterFn>) -> Self {
+    fn new(lane: LaneFn, after: AfterFn) -> Self {
         Self {
             seat: Seat::default(),
             lane,
@@ -323,13 +309,11 @@ impl Assignment {
     }
 
     fn join(self, lanes: &mut Vec<(Seat, LaneFn)>, afters: &mut Vec<After>) {
-        if let Some(call) = self.after {
-            afters.push(After {
-                seat: self.seat.clone(),
-                call,
-                cost: self.cost,
-            });
-        }
+        afters.push(After {
+            seat: self.seat.clone(),
+            call: self.after,
+            cost: self.cost,
+        });
         lanes.push((self.seat, self.lane));
     }
 
@@ -341,7 +325,7 @@ impl Assignment {
         Some(Self {
             seat,
             lane,
-            after: Some(call),
+            after: call,
             cost,
         })
     }
@@ -539,8 +523,12 @@ mod tests {
         }
     }
 
+    fn alone(lane: LaneFn) -> Assignment {
+        Assignment::new(lane, Box::new(|_, _| false))
+    }
+
     fn pace_on(clock: &Synthetic, lanes: Vec<LaneFn>) -> Sender<Assignment> {
-        let lanes = lanes.into_iter().map(|lane| Assignment::new(lane, None));
+        let lanes = lanes.into_iter().map(alone);
         pace_loaded(clock, lanes.collect(), Arc::default())
     }
 
@@ -596,12 +584,15 @@ mod tests {
         (lane, receiver)
     }
 
-    fn assign(pool: &PacerPool, lane: LaneFn) -> usize {
-        thread(&pool.place(Assignment::new(lane, None)).unwrap())
-    }
-
-    fn thread(seat: &Seat) -> usize {
-        seat.0.load(Ordering::Relaxed)
+    fn assign(pool: &PacerPool, mut lane: LaneFn) -> usize {
+        let (sender, placed) = mpsc::channel();
+        let named: LaneFn = Box::new(move |tick| {
+            drop(sender.send(thread::current().name().map(str::to_owned)));
+            lane(tick)
+        });
+        pool.place(alone(named)).unwrap();
+        let name = placed.recv_timeout(PATIENCE).unwrap().unwrap();
+        name.trim_start_matches("bostie-voice-").parse().unwrap()
     }
 
     fn threads(pool: &PacerPool) -> Vec<usize> {
@@ -771,9 +762,7 @@ mod tests {
         let synthetic = Synthetic::new();
         let origin = synthetic.now();
         let (sender, receiver) = mpsc::channel();
-        sender
-            .send(Assignment::new(Box::new(|_| false), None))
-            .unwrap();
+        sender.send(alone(Box::new(|_| false))).unwrap();
         let (sleeps, slept) = mpsc::sync_channel(0);
         let clock = Watched {
             clock: synthetic,
@@ -816,10 +805,10 @@ mod tests {
         let (sender, receiver) = mpsc::channel();
         let (first, _first_ticks) = recorder();
         let (second, second_ticks) = synthetic_recorder(&synthetic, usize::MAX, Duration::ZERO);
-        sender.send(Assignment::new(first, None)).unwrap();
+        sender.send(alone(first)).unwrap();
         let clock = Handing {
             clock: synthetic,
-            handover: Mutex::new(Some((sender, Assignment::new(second, None)))),
+            handover: Mutex::new(Some((sender, alone(second)))),
         };
         let home = home_alone(origin, Arc::default());
         thread::spawn(move || pace(&receiver, &home, &clock));
@@ -843,7 +832,7 @@ mod tests {
         clock.advance(Duration::from_millis(5));
         let (lane, ticks) = synthetic_recorder(&clock, usize::MAX, Duration::ZERO);
 
-        pacer.send(Assignment::new(lane, None)).unwrap();
+        pacer.send(alone(lane)).unwrap();
         let (tick, _) = take(&ticks, 1)[0];
 
         assert_eq!(
@@ -920,7 +909,7 @@ mod tests {
                         .send((Call::After(index), tick.now, Some(deadline)))
                         .is_ok()
                 });
-                Assignment::new(lane, Some(after))
+                Assignment::new(lane, after)
             })
             .collect();
         let _pacer = pace_loaded(&clock, assignments, Arc::default());
@@ -951,7 +940,7 @@ mod tests {
         let (sender, ticks) = mpsc::sync_channel(0);
         let assignment = Assignment::new(
             Box::new(|_| false),
-            Some(Box::new(move |tick, _| sender.send(tick.now).is_ok())),
+            Box::new(move |tick, _| sender.send(tick.now).is_ok()),
         );
         let _pacer = pace_loaded(&clock, vec![assignment], Arc::default());
 
@@ -981,7 +970,7 @@ mod tests {
         };
         let load = Arc::new(Load::default());
         load.lanes.store(1, Ordering::Relaxed);
-        let assignment = Assignment::new(lane, Some(after));
+        let assignment = Assignment::new(lane, after);
         let _pacer = pace_loaded(&clock, vec![assignment], Arc::clone(&load));
 
         wait_until(|| load.lanes() == 0);
@@ -1071,38 +1060,37 @@ mod tests {
         let (sender, calls) = mpsc::channel();
         let thread_name = || thread::current().name().unwrap_or_default().to_owned();
         let receive_work = phase(1) / 2 + Duration::from_millis(1);
-        let seats: Vec<Seat> = (0..2)
-            .map(|connection| {
-                let (lane_calls, after_calls) = (sender.clone(), sender.clone());
-                let mut sent = 0_u32;
-                let lane: LaneFn = Box::new(move |_| {
-                    sent += 1;
-                    lane_calls
-                        .send((connection, Some(sent), thread_name()))
-                        .is_ok()
-                });
-                let after: AfterFn = Box::new(move |_, _| {
-                    thread::sleep(receive_work);
-                    after_calls.send((connection, None, thread_name())).is_ok()
-                });
-                pool.place(Assignment::new(lane, Some(after))).unwrap()
-            })
-            .collect();
-
-        wait_until(|| thread(&seats[0]) != thread(&seats[1]));
-        let moved = usize::from(thread(&seats[1]) == 1);
-        let mut moved_calls: Vec<(Option<u32>, String)> = Vec::new();
-        while moved_calls
-            .iter()
-            .filter(|(sent, name)| sent.is_some() && name == "bostie-voice-1")
-            .count()
-            < 3
-        {
-            let (connection, sent, name) = calls.recv_timeout(PATIENCE).unwrap();
-            if connection == moved {
-                moved_calls.push((sent, name));
-            }
+        for connection in 0..2 {
+            let (lane_calls, after_calls) = (sender.clone(), sender.clone());
+            let mut sent = 0_u32;
+            let lane: LaneFn = Box::new(move |_| {
+                sent += 1;
+                lane_calls
+                    .send((connection, Some(sent), thread_name()))
+                    .is_ok()
+            });
+            let after: AfterFn = Box::new(move |_, _| {
+                thread::sleep(receive_work);
+                after_calls.send((connection, None, thread_name())).is_ok()
+            });
+            pool.place(Assignment::new(lane, after)).unwrap();
         }
+
+        let mut by_connection: [Vec<(Option<u32>, String)>; 2] = Default::default();
+        let moved_calls = loop {
+            let (connection, sent, name) = calls.recv_timeout(PATIENCE).unwrap();
+            by_connection[connection].push((sent, name));
+            let settled = |calls: &&Vec<(Option<u32>, String)>| {
+                calls
+                    .iter()
+                    .filter(|(sent, name)| sent.is_some() && name == "bostie-voice-1")
+                    .count()
+                    >= 3
+            };
+            if let Some(moved) = by_connection.iter().find(settled) {
+                break moved.clone();
+            }
+        };
 
         let names: Vec<&str> = moved_calls.iter().map(|(_, name)| name.as_str()).collect();
         assert!(names.is_sorted(), "{names:?}");
