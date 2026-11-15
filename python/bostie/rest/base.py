@@ -129,7 +129,7 @@ def each[T](
     return decode_each
 
 
-def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, object]:
+def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, Any]:
     """`options` checked against the TypedDict `shape`, ready for the wire.
 
     A File becomes a data URI, and Permissions at any depth their string of bits.

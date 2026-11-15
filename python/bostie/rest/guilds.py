@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal, TypedDict, Unpack, cast
+from typing import Literal, TypedDict, Unpack
 
 import msgspec
 
@@ -24,9 +24,6 @@ from bostie.models import (
     WelcomeScreenChannel,
 )
 from bostie.rest.base import ResourceGroup, each, wire
-
-if TYPE_CHECKING:
-    from bostie.http import Query
 
 
 class GuildBeginPrune(TypedDict, total=False):
@@ -263,7 +260,7 @@ class Guilds(BearerGuilds):
         return await self._http.send(
             "GET",
             "/guilds/{guild_id}/widget.png",
-            query=cast("Query", wire(options, GuildFetchWidgetImage)),
+            query=wire(options, GuildFetchWidgetImage),
             guild_id=guild_id,
         )
 

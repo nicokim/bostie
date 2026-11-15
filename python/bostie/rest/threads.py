@@ -13,7 +13,7 @@ from bostie.models import (
     Embed,
     ThreadMember,
 )
-from bostie.models.base import Model, check_keys
+from bostie.models.base import Model
 from bostie.models.message import message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
@@ -71,9 +71,6 @@ class ThreadListArchived(TypedDict, total=False):
 class ThreadListJoinedPrivateArchived(TypedDict, total=False):
     before: int | datetime
     limit: int
-
-
-FORUM_THREAD_MESSAGE = ForumThreadMessage.__optional_keys__
 
 
 class Threads(ResourceGroup):
@@ -224,10 +221,10 @@ class Threads(ResourceGroup):
     ) -> Channel:
         """Start a forum or media thread with its first message."""
         body = wire(options, ThreadStartInForum)
-        parts = dict(options["message"])
-        check_keys(parts, FORUM_THREAD_MESSAGE, "message parts")
         body["message"], files = message_body(
-            None, parts, mentions=self._allowed_mentions
+            None,
+            wire(options["message"], ForumThreadMessage),
+            mentions=self._allowed_mentions,
         )
         return await self._call(
             Channel,

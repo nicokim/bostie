@@ -26,8 +26,8 @@ from bostie.models import (
     WebhookMessage,
     decode_message,
 )
-from bostie.models.base import check_keys, decoder
-from bostie.models.message import EDIT_PARTS, in_guild, message_body
+from bostie.models.base import decoder
+from bostie.models.message import in_guild, message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -88,7 +88,6 @@ class MessageSearch(TypedDict, total=False):
     include_nsfw: bool
 
 
-MESSAGE_CREATE = MessageCreate.__optional_keys__
 BULK_DELETE_MAX = 100
 BULK_DELETABLE_FOR = timedelta(days=14) - timedelta(minutes=1)
 
@@ -158,9 +157,11 @@ class Messages(ResourceGroup):
 
         `delete_after` deletes it that many seconds later, unless the bot stops first.
         """
-        check_keys(parts, MESSAGE_CREATE, "message parts")
         body, files = message_body(
-            content, parts, reply_to=reply_to, mentions=self._allowed_mentions
+            content,
+            wire(parts, MessageCreate),
+            reply_to=reply_to,
+            mentions=self._allowed_mentions,
         )
         message = await self._call(
             Message,
@@ -185,8 +186,9 @@ class Messages(ResourceGroup):
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        check_keys(parts, EDIT_PARTS, "message parts")
-        body, files = message_body(None, parts, mentions=self._allowed_mentions)
+        body, files = message_body(
+            None, wire(parts, EditParts), mentions=self._allowed_mentions
+        )
         message = await self._call(
             decode_message,
             "PATCH",

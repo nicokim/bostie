@@ -2,7 +2,6 @@ from typing import Required, TypedDict, Unpack
 
 from bostie.file import File
 from bostie.models import Sticker, StickerPack
-from bostie.models.base import check_keys
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -29,13 +28,13 @@ class Stickers(ResourceGroup):
         **options: Unpack[StickerCreate],
     ) -> Sticker:
         """Upload a PNG, APNG, GIF or Lottie JSON `file` as a guild sticker."""
-        keys = StickerCreate.__required_keys__ | StickerCreate.__optional_keys__
-        check_keys(options, keys, "options")
+        fields = dict(options)
+        file = fields.pop("file")
         return await self._call(
             Sticker,
             "POST",
             "/guilds/{guild_id}/stickers",
-            form=options,
+            form=wire(fields, StickerCreate) | {"file": file},
             reason=reason,
             guild_id=guild_id,
         )

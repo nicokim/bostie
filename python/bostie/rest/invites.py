@@ -11,7 +11,6 @@ from bostie.models import (
     TargetUsersJob,
     decode_invite,
 )
-from bostie.models.base import check_keys
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -158,9 +157,13 @@ class Invites(ResourceGroup):
         self, code: str, /, **options: Unpack[InviteUpdateTargetUsers]
     ) -> None:
         """Replace who may accept the invite with the users of a CSV file."""
-        check_keys(options, InviteUpdateTargetUsers.__required_keys__, "options")
+        fields = dict(options)
+        file = fields.pop("target_users_file")
         await self._http.send(
-            "PUT", "/invites/{code}/target-users", form=options, code=code
+            "PUT",
+            "/invites/{code}/target-users",
+            form=wire(fields, InviteUpdateTargetUsers) | {"target_users_file": file},
+            code=code,
         )
 
 

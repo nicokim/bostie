@@ -9,7 +9,6 @@ from bostie.models import (
     Webhook,
     WebhookMessage,
 )
-from bostie.models.base import check_keys
 from bostie.models.message import message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
@@ -58,12 +57,6 @@ class WebhookExecuteCompatible(TypedDict, total=False):
     wait: bool
 
 
-WEBHOOK_MESSAGE_IN = WebhookMessageIn.__optional_keys__
-WEBHOOK_EXECUTE_COMPATIBLE = WebhookExecuteCompatible.__optional_keys__
-WEBHOOK_EXECUTE = WebhookExecute.__optional_keys__
-WEBHOOK_EDIT_MESSAGE = WebhookEditMessage.__optional_keys__
-
-
 class Webhooks(ResourceGroup):
     async def create(
         self,
@@ -95,11 +88,10 @@ class Webhooks(ResourceGroup):
         /,
         **options: Unpack[WebhookMessageIn],
     ) -> None:
-        check_keys(options, WEBHOOK_MESSAGE_IN, "options")
         await self._http.send(
             "DELETE",
             "/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}",
-            query={"thread_id": options.get("thread_id")},
+            query=wire(options, WebhookMessageIn),
             webhook_id=webhook_id,
             webhook_token=webhook_token,
             message_id=message_id,
@@ -142,12 +134,12 @@ class Webhooks(ResourceGroup):
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        check_keys(parts, WEBHOOK_EDIT_MESSAGE, "message parts")
+        given = wire(parts, WebhookEditMessage)
         query = {
-            "thread_id": parts.pop("thread_id", None),
-            "with_components": parts.pop("with_components", None),
+            "thread_id": given.pop("thread_id", None),
+            "with_components": given.pop("with_components", None),
         }
-        body, files = message_body(None, parts, mentions=self._allowed_mentions)
+        body, files = message_body(None, given, mentions=self._allowed_mentions)
         message = await self._call(
             WebhookMessage,
             "PATCH",
@@ -186,13 +178,13 @@ class Webhooks(ResourceGroup):
         **parts: Unpack[WebhookExecute],
     ) -> WebhookMessage:
         """Send a message through the webhook and return it once Discord saved it."""
-        check_keys(parts, WEBHOOK_EXECUTE, "message parts")
+        given = wire(parts, WebhookExecute)
         query = {
             "wait": True,
-            "thread_id": parts.pop("thread_id", None),
-            "with_components": parts.pop("with_components", None),
+            "thread_id": given.pop("thread_id", None),
+            "with_components": given.pop("with_components", None),
         }
-        body, files = message_body(content, parts, mentions=self._allowed_mentions)
+        body, files = message_body(content, given, mentions=self._allowed_mentions)
         message = await self._call(
             WebhookMessage,
             "POST",
@@ -214,12 +206,11 @@ class Webhooks(ResourceGroup):
         **options: Unpack[WebhookExecuteCompatible],
     ) -> None:
         """Post a GitHub webhook event payload, as GitHub would."""
-        check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
         await self._http.send(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}/github",
             json=payload,
-            query={"thread_id": options.get("thread_id"), "wait": options.get("wait")},
+            query=wire(options, WebhookExecuteCompatible),
             webhook_id=webhook_id,
             webhook_token=webhook_token,
         )
@@ -233,12 +224,11 @@ class Webhooks(ResourceGroup):
         **options: Unpack[WebhookExecuteCompatible],
     ) -> None:
         """Post a message in Slack's incoming webhook format."""
-        check_keys(options, WEBHOOK_EXECUTE_COMPATIBLE, "options")
         await self._http.send(
             "POST",
             "/webhooks/{webhook_id}/{webhook_token}/slack",
             json=payload,
-            query={"thread_id": options.get("thread_id"), "wait": options.get("wait")},
+            query=wire(options, WebhookExecuteCompatible),
             webhook_id=webhook_id,
             webhook_token=webhook_token,
         )
