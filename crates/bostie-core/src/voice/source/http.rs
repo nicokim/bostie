@@ -389,11 +389,11 @@ fn content_type(headers: &HeaderMap) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::net::{TcpListener, TcpStream};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, mpsc};
+    use std::net::TcpStream;
+    use std::sync::mpsc;
 
     use super::*;
+    use crate::testkit;
     use crate::voice::source::SourceKind;
     use crate::voice::source::tests::{
         Harness, fixture, frames, read_to_end, samples, wait_for_info,
@@ -407,25 +407,16 @@ mod tests {
 
     impl Server {
         fn start(body: Vec<u8>, ranges: bool) -> Self {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let base = format!("http://{}", listener.local_addr().unwrap());
             let (sender, requests) = mpsc::channel();
-            let body = Arc::new(body);
-            let served = Arc::new(AtomicUsize::new(0));
-            thread::spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(mut stream) = stream else { return };
-                    let body = Arc::clone(&body);
-                    let sender = sender.clone();
-                    let attempt = served.fetch_add(1, Ordering::Relaxed);
-                    thread::spawn(move || {
-                        let head = read_head(&mut stream);
-                        drop(sender.send(head.clone()));
-                        answer(&mut stream, &head, &body, ranges, attempt);
-                    });
-                }
+            let address = testkit::serve(move |request, stream| {
+                let head = request.head.to_ascii_lowercase();
+                drop(sender.send(head.clone()));
+                answer(stream, &head, &body, ranges, request.attempt);
             });
-            Self { base, requests }
+            Self {
+                base: format!("http://{address}"),
+                requests,
+            }
         }
 
         fn url(&self, path: &str) -> String {
@@ -435,18 +426,6 @@ mod tests {
         fn received(&self) -> Vec<String> {
             self.requests.try_iter().collect()
         }
-    }
-
-    fn read_head(stream: &mut TcpStream) -> String {
-        let mut head = Vec::new();
-        let mut byte = [0; 1];
-        while !head.ends_with(b"\r\n\r\n") {
-            if stream.read(&mut byte).unwrap_or(0) == 0 {
-                break;
-            }
-            head.push(byte[0]);
-        }
-        String::from_utf8_lossy(&head).to_ascii_lowercase()
     }
 
     fn answer(stream: &mut TcpStream, head: &str, body: &[u8], ranges: bool, attempt: usize) {

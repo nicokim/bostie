@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::iter;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -9,6 +9,7 @@ use twilight_http_ratelimiting::{Endpoint, Method as LimiterMethod};
 
 use super::*;
 use crate::bell::{self, BellReceiver};
+use crate::testkit;
 
 const PATIENCE: Duration = Duration::from_secs(5);
 pub(crate) const SETTINGS: HttpSettings = HttpSettings {
@@ -88,20 +89,13 @@ async fn answer(
 }
 
 async fn read_request(stream: &mut BufReader<TcpStream>) -> Option<Captured> {
-    let mut line = String::new();
-    if stream.read_line(&mut line).await.ok()? == 0 {
-        return None;
-    }
-    let path = line.split(' ').nth(1)?.to_owned();
-    let mut headers = HashMap::new();
-    loop {
-        line.clear();
-        stream.read_line(&mut line).await.ok()?;
-        let Some((name, value)) = line.trim_end().split_once(':') else {
-            break;
-        };
-        headers.insert(name.to_ascii_lowercase(), value.trim().to_owned());
-    }
+    let head = testkit::read_head_async(stream).await?;
+    let mut lines = head.lines();
+    let path = lines.next()?.split(' ').nth(1)?.to_owned();
+    let headers: HashMap<String, String> = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
     let length = headers
         .get("content-length")
         .map_or(0, |length| length.parse().unwrap());

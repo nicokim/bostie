@@ -348,10 +348,11 @@ fn skip_id3(mut segment: Bytes) -> Bytes {
 mod tests {
     use std::collections::HashMap;
     use std::io::Write;
-    use std::net::{TcpListener, TcpStream};
+    use std::net::TcpStream;
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::testkit;
     use crate::voice::source::SourceKind;
     use crate::voice::source::tests::{Harness, fixture, frames, read_to_end};
     use crate::voice::types::SourceSpec;
@@ -368,23 +369,16 @@ mod tests {
 
     impl Site {
         fn start() -> Self {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let base = format!("http://{}", listener.local_addr().unwrap());
             let pages = Pages::default();
             let moved = ByPath::default();
             let types = ByPath::default();
             let served = Arc::clone(&pages);
             let redirects = Arc::clone(&moved);
             let typed = Arc::clone(&types);
-            thread::spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(stream) = stream else { return };
-                    let pages = Arc::clone(&served);
-                    let moved = Arc::clone(&redirects);
-                    let types = Arc::clone(&typed);
-                    thread::spawn(move || answer(stream, &pages, &moved, &types));
-                }
+            let address = testkit::serve(move |request, stream| {
+                answer(stream, request.path(), &served, &redirects, &typed);
             });
+            let base = format!("http://{address}");
             Self {
                 base,
                 pages,
@@ -422,26 +416,15 @@ mod tests {
         }
     }
 
-    fn answer(mut stream: TcpStream, pages: &Pages, moved: &ByPath, types: &ByPath) {
-        let mut head = Vec::new();
-        let mut byte = [0; 1];
-        while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
-            head.push(byte[0]);
-        }
-        let head = String::from_utf8_lossy(&head);
-        let path = head
-            .split_whitespace()
-            .nth(1)
-            .unwrap_or_default()
-            .to_owned();
-        if let Some(to) = moved.lock().unwrap().get(&path) {
+    fn answer(stream: &mut TcpStream, path: &str, pages: &Pages, moved: &ByPath, types: &ByPath) {
+        if let Some(to) = moved.lock().unwrap().get(path) {
             let response = format!(
                 "HTTP/1.1 302 Found\r\nlocation: {to}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
             );
             drop(stream.write_all(response.as_bytes()));
             return;
         }
-        let body = pages.lock().unwrap().get_mut(&path).map(|bodies| {
+        let body = pages.lock().unwrap().get_mut(path).map(|bodies| {
             if bodies.len() > 1 {
                 bodies.pop_front().unwrap()
             } else {
@@ -451,7 +434,7 @@ mod tests {
         let mime = types
             .lock()
             .unwrap()
-            .get(&path)
+            .get(path)
             .map(|mime| format!("content-type: {mime}\r\n"))
             .unwrap_or_default();
         let response = match body {

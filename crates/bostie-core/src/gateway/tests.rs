@@ -9,7 +9,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use sonic_rs::{JsonValueTrait, Value};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
+use tokio::io::{AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
@@ -29,6 +29,7 @@ use crate::inbox::{Delivery, Inbox};
 use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::rest::tests::{NO_REPLY, SETTINGS as REST_SETTINGS, Server, reply};
+use crate::testkit;
 use crate::voice::tap::GatewayTap;
 
 const TOKEN: &str = "test-token";
@@ -1430,11 +1431,7 @@ async fn a_proxied_shard_tunnels_with_connect_and_the_proxy_credentials() {
     let (heads, mut connects) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         let (mut client, _) = listener.accept().await.unwrap();
-        let mut head = Vec::new();
-        while !head.ends_with(b"\r\n\r\n") {
-            head.push(client.read_u8().await.unwrap());
-        }
-        let head = String::from_utf8(head).unwrap();
+        let head = testkit::read_head_async(&mut client).await.unwrap();
         let mut upstream = TcpStream::connect(head.split(' ').nth(1).unwrap())
             .await
             .unwrap();

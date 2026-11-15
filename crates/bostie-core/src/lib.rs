@@ -10,6 +10,8 @@ pub(crate) mod rest;
 mod runtime;
 mod signature;
 mod tasks;
+#[cfg(test)]
+mod testkit;
 pub mod voice;
 
 use std::collections::HashMap;
@@ -235,9 +237,7 @@ fn refusing_socket() -> tokio::net::TcpSocket {
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
     use std::sync::mpsc;
-    use std::thread;
     use std::time::Duration;
 
     use bytes::Bytes;
@@ -261,23 +261,8 @@ mod tests {
         )
     }
 
-    fn read_request_head(stream: &mut TcpStream) {
-        let mut head = Vec::new();
-        let mut byte = [0; 1];
-        while !head.ends_with(b"\r\n\r\n") {
-            stream.read_exact(&mut byte).unwrap();
-            head.push(byte[0]);
-        }
-    }
-
     fn serve_once(response: &'static [u8]) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            read_request_head(&mut stream);
-            stream.write_all(response).unwrap();
-        });
+        let address = testkit::serve(move |_, stream| stream.write_all(response).unwrap());
         format!("http://{address}/api/v10")
     }
 
@@ -288,16 +273,11 @@ mod tests {
     }
 
     fn serve_silently() -> Silent {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
         let (requested, on_request) = mpsc::channel();
         let (disconnected, on_disconnect) = mpsc::channel();
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            read_request_head(&mut stream);
+        let address = testkit::serve(move |_, stream| {
             requested.send(()).unwrap();
-            let mut rest = Vec::new();
-            drop(stream.read_to_end(&mut rest));
+            drop(stream.read_to_end(&mut Vec::new()));
             disconnected.send(()).unwrap();
         });
         Silent {
