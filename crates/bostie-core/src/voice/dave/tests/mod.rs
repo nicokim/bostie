@@ -109,13 +109,16 @@ fn founder(call: &Call) -> UserId {
 fn send_mode_follows_the_protocol_version_the_members_and_the_key() {
     let (mut plain, _) = started(0);
     plain.clients_connect(&[user(A)]);
-    let (alone, _) = started(1);
+    let (mut alone, _) = started(1);
     let (mut waiting, _) = started(1);
     waiting.clients_connect(&[user(A), user(B), user(BOT)]);
     let call = group(&[BOT, A]);
+    let mut out = Vec::new();
 
     assert_eq!(plain.send_mode(), SendMode::Plain);
+    assert_eq!(plain.encrypt(OPUS, &mut out), Err(EncryptFailure));
     assert_eq!(alone.send_mode(), SendMode::Discard);
+    assert_eq!(alone.encrypt(OPUS, &mut out), Err(EncryptFailure));
     assert_eq!(waiting.send_mode(), SendMode::Hold);
     assert_eq!(call.dave(user(BOT)).send_mode(), SendMode::Encrypt);
     waiting.client_disconnect(user(A));
@@ -598,7 +601,7 @@ fn the_bot_and_the_peer_compute_the_same_verification_code() {
 }
 
 #[test]
-fn the_silence_frame_is_never_encrypted_into_plaintext() {
+fn encrypt_refuses_the_opus_silence_frame() {
     let mut call = group(&[BOT, A]);
     let mut out = Vec::new();
 
@@ -607,16 +610,6 @@ fn the_silence_frame_is_never_encrypted_into_plaintext() {
         Err(EncryptFailure)
     );
     assert!(out.is_empty());
-}
-
-#[test]
-fn nothing_is_encrypted_before_a_group() {
-    let (mut alone, _) = started(1);
-    let mut stage = Dave::new(user(BOT), channel(), &ReceiveTuning::default());
-    let mut out = Vec::new();
-
-    assert_eq!(alone.encrypt(OPUS, &mut out), Err(EncryptFailure));
-    assert_eq!(stage.encrypt(OPUS, &mut out), Err(EncryptFailure));
 }
 
 #[test]
@@ -749,18 +742,22 @@ fn prepared_transitions_are_forgotten_after_a_reinit_or_a_recovery() {
     }
 }
 
-fn feed_davey(dave: &mut Dave, bytes: &[u8]) {
-    let recognized = dave.recognized();
-    let session = dave.session.as_mut().unwrap();
-    for operation in [
-        ProposalsOperationType::APPEND,
-        ProposalsOperationType::REVOKE,
-    ] {
-        drop(session.process_proposals(operation, bytes, Some(&recognized)));
-    }
-    drop(session.process_commit(bytes));
-    drop(session.process_welcome(bytes, Some(&recognized)));
-    drop(session.set_external_sender(bytes));
+fn malformed(bytes: &Bytes, transition_id: u16) -> [DaveOp; 4] {
+    [
+        DaveOp::Proposals {
+            operation: ProposalsOp::Append,
+            data: bytes.clone(),
+        },
+        DaveOp::Proposals {
+            operation: ProposalsOp::Revoke,
+            data: bytes.clone(),
+        },
+        DaveOp::ExternalSender(bytes.clone()),
+        DaveOp::AnnounceCommit {
+            transition_id,
+            commit: bytes.clone(),
+        },
+    ]
 }
 
 proptest! {
@@ -781,7 +778,9 @@ proptest! {
         let welcome = DaveOp::Welcome { transition_id, welcome: bytes.clone() };
         dave.handle(welcome, now, &mut out).unwrap();
         prop_assert!(out.contains(&Outbound::InvalidCommitWelcome(transition_id)));
-        feed_davey(&mut dave, &bytes);
+        for op in malformed(&bytes, transition_id) {
+            drop(dave.handle(op, now, &mut out));
+        }
     }
 
     #[test]
@@ -795,8 +794,10 @@ proptest! {
         let dave = call.dave_mut(user(BOT));
         let mut out = Vec::new();
 
-        feed_davey(dave, &bytes);
-        let commit = DaveOp::AnnounceCommit { transition_id, commit: bytes };
+        let [append, revoke, sender, commit] = malformed(&bytes, transition_id);
+        for op in [append, revoke, sender] {
+            drop(dave.handle(op, now, &mut out));
+        }
         dave.handle(commit, now, &mut out).unwrap();
         prop_assert!(out.contains(&Outbound::InvalidCommitWelcome(transition_id)));
     }

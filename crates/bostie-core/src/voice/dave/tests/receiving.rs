@@ -224,10 +224,10 @@ proptest! {
         let mut call = group(&[BOT, A]);
         let size = u8::try_from(supplemental.len() + 3).unwrap();
         let frame = [body, supplemental, vec![size], MARKER.to_vec()].concat();
-        let mut out = vec![0; frame.len()];
+        let mut out = Vec::new();
 
-        let session = call.dave_mut(user(BOT)).session.as_mut().unwrap();
-        let decrypted = session.decrypt_into(A, MediaType::AUDIO, &frame, &mut out);
-        prop_assert_eq!(decrypted.unwrap_or(0), 0);
+        let heard = call.dave_mut(user(BOT)).receive(user(A), &frame, &mut out);
+
+        prop_assert!(heard.is_err(), "{out:02X?}");
     }
 }
