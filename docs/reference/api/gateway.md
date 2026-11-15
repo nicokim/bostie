@@ -11,3 +11,5 @@
 ::: bostie.RequestedMembers
 
 ::: bostie.cache.Cache
+
+::: bostie.lookup.Lookup

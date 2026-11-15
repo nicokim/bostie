@@ -46,6 +46,14 @@ With `members=True`, Discord sends only some members of large guilds when the bo
 
 Lookups return `None`, or an empty list, for what the cache does not hold. `bot.cache.clear()` empties it. Update and delete events carry the cached object from before the change, as [Events](events.md#old-values-and-the-cache) explains.
 
+## The cache, else REST
+
+```python
+--8<-- "docs/snippets/cache/lookups_with_rest.py"
+```
+
+`bot.lookup` returns an object from the cache when it holds it, and asks REST for it otherwise: `user(user_id)`, `member(guild_id, user_id)`, `channel(channel_id)`, `guild(guild_id)`, `role(guild_id, role_id)` and `message(channel_id, message_id)`. What REST returns is not stored: the cache keeps following the gateway only, so a second lookup of the same missing object asks again. The REST errors pass through, such as `NotFound` for an id that does not exist.
+
 ## Scheduled events, stages and sounds
 
 ```python

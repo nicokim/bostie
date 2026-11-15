@@ -115,7 +115,7 @@ if __name__ == "__main__":
 - `bot.rest` exists once the bot has started. A script without a gateway uses `async with RESTClient() as client:` and `client.rest`.
 - Attachments and CDN images download without the token: `await bot.http.read(attachment)` returns the bytes, `bot.http.save(attachment, path)` writes a file, and `bot.http.to_file(attachment)` returns a `File` to upload again.
 - For an endpoint `bot.rest` does not cover: `await bot.http.request("GET", "/channels/{channel_id}/pins", channel_id=channel_id)`.
-- Reads that need no request go to the cache: `bot.cache.guild(guild_id)`, `bot.cache.channel(channel_id)`, `bot.cache.member(guild_id, user_id)`. All members are cached only with `bostie.Bot(members=True)`, which needs `Intents.GUILD_MEMBERS`.
+- Reads that need no request go to the cache: `bot.cache.guild(guild_id)`, `bot.cache.channel(channel_id)`, `bot.cache.member(guild_id, user_id)`. `await bot.lookup.member(guild_id, user_id)` (and `user`, `channel`, `guild`, `role`, `message`) reads the cache and asks REST for what it lacks. All members are cached only with `bostie.Bot(members=True)`, which needs `Intents.GUILD_MEMBERS`.
 
 ## Checks, errors and structure
 

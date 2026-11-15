@@ -109,6 +109,7 @@ from bostie.gateway import (
     presence_fields,
 )
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
+from bostie.lookup import Lookup
 from bostie.models import (
     AllowedMentions,
     Application,
@@ -278,6 +279,7 @@ class Bot(Router):
             max_dm_channels=max_dm_channels,
         )
         self.voice = VoiceManager(self, voice)
+        self.lookup = Lookup(self)
         self._intents = intents
         self._dev_guilds = tuple(dev_guilds)
         self._command_ids: dict[int | None, Mapping[str, int]] = {}
