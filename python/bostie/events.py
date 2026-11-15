@@ -772,23 +772,33 @@ class SoundboardSoundCreate(_SoundboardSoundEvent, kw_only=True):
 
 
 class SoundboardSoundUpdate(_SoundboardSoundEvent, kw_only=True):
+    """A soundboard sound changed; `old` is the cached sound before the change."""
+
     NAME = "GUILD_SOUNDBOARD_SOUND_UPDATE"
+
+    old: SoundboardSound | None = None
 
 
 class SoundboardSoundDelete(Event, kw_only=True):
+    """A soundboard sound was deleted; `sound` is the cached one."""
+
     NAME = "GUILD_SOUNDBOARD_SOUND_DELETE"
     INTENTS = Intents.GUILD_EXPRESSIONS
 
     sound_id: int
     guild_id: int
+    sound: SoundboardSound | None = None
 
 
 class SoundboardSoundsUpdate(Event, kw_only=True):
+    """Several soundboard sounds changed; `old` holds the cached ones among them."""
+
     NAME = "GUILD_SOUNDBOARD_SOUNDS_UPDATE"
     INTENTS = Intents.GUILD_EXPRESSIONS
 
     soundboard_sounds: tuple[SoundboardSound, ...]
     guild_id: int
+    old: tuple[SoundboardSound, ...] = ()
 
 
 class SoundboardSounds(Event, kw_only=True):
@@ -820,7 +830,11 @@ class ScheduledEventCreate(_ScheduledEventEvent, kw_only=True):
 
 
 class ScheduledEventUpdate(_ScheduledEventEvent, kw_only=True):
+    """A scheduled event changed; `old` is the cached event before the change."""
+
     NAME = "GUILD_SCHEDULED_EVENT_UPDATE"
+
+    old: ScheduledEvent | None = None
 
 
 class ScheduledEventDelete(_ScheduledEventEvent, kw_only=True):
@@ -1179,7 +1193,11 @@ class StageInstanceCreate(_StageInstanceEvent, kw_only=True):
 
 
 class StageInstanceUpdate(_StageInstanceEvent, kw_only=True):
+    """A stage instance changed; `old` is the cached instance before the change."""
+
     NAME = "STAGE_INSTANCE_UPDATE"
+
+    old: StageInstance | None = None
 
 
 class StageInstanceDelete(_StageInstanceEvent, kw_only=True):

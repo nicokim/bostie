@@ -20,7 +20,7 @@ Discord sends most events only to a bot that asked for their intents. `Bot(inten
 
 ## Old values and the cache
 
-Update events carry `old`, the object as the [cache](cache.md) had it before the change, and delete events carry the removed object: `RoleUpdate.old`, `MessageDelete.message`, `MemberRemove.member`. They are `None` when the cache did not hold the object. Messages are cached only with `Bot(max_messages=...)`, members only with `members=True`, presences only with `presences=True`.
+Update events carry `old`, the object as the [cache](cache.md) had it before the change, and delete events carry the removed object: `RoleUpdate.old`, `ScheduledEventUpdate.old`, `MessageDelete.message`, `MemberRemove.member`. They are `None` when the cache did not hold the object. Messages are cached only with `Bot(max_messages=...)`, members only with `members=True`, presences only with `presences=True`.
 
 ## Waiting for an event
 

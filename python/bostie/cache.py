@@ -1,4 +1,4 @@
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterable
 from typing import Any
 
 import msgspec
@@ -26,6 +26,17 @@ from bostie.events import (
     RoleCreate,
     RoleDelete,
     RoleUpdate,
+    ScheduledEventCreate,
+    ScheduledEventDelete,
+    ScheduledEventUpdate,
+    SoundboardSoundCreate,
+    SoundboardSoundDelete,
+    SoundboardSounds,
+    SoundboardSoundsUpdate,
+    SoundboardSoundUpdate,
+    StageInstanceCreate,
+    StageInstanceDelete,
+    StageInstanceUpdate,
     StickersUpdate,
     ThreadCreate,
     ThreadDelete,
@@ -43,6 +54,9 @@ from bostie.models import (
     Message,
     Presence,
     Role,
+    ScheduledEvent,
+    SoundboardSound,
+    StageInstance,
     User,
     VoiceState,
     WebhookMessage,
@@ -53,8 +67,45 @@ type CachedMessage = Message | WebhookMessage
 type Changes = dict[str, Any] | None
 
 
+class _GuildChildren[T]:
+    def __init__(self) -> None:
+        self._by_id: dict[int, T] = {}
+        self._by_guild: dict[int, dict[int, T]] = {}
+
+    def get(self, id: int) -> T | None:
+        return self._by_id.get(id)
+
+    def of(self, guild_id: int) -> list[T]:
+        return list(self._by_guild.get(guild_id, {}).values())
+
+    def put(self, guild_id: int, id: int, child: T) -> T | None:
+        old = self._by_id.get(id)
+        self._by_id[id] = child
+        self._by_guild.setdefault(guild_id, {})[id] = child
+        return old
+
+    def pop(self, guild_id: int, id: int) -> T | None:
+        self._by_guild.get(guild_id, {}).pop(id, None)
+        return self._by_id.pop(id, None)
+
+    def reset(self, guild_id: int, children: Iterable[tuple[int, T]]) -> None:
+        self.drop(guild_id)
+        for id, child in children:
+            self.put(guild_id, id, child)
+
+    def drop(self, guild_id: int) -> None:
+        for id in self._by_guild.pop(guild_id, {}):
+            self._by_id.pop(id, None)
+
+    def clear(self) -> None:
+        self._by_id.clear()
+        self._by_guild.clear()
+
+
 class Cache:
     """Guilds, channels, active threads, voice states and the bot's member and user.
+
+    Scheduled events, stage instances and soundboard sounds are kept too.
 
     Members, presences, the latest messages and DM channels are kept only when
     asked for.
@@ -91,6 +142,9 @@ class Cache:
         self._presences: dict[int, dict[int, Presence]] = {}
         self._messages: dict[int, CachedMessage] = {}
         self._dm_channels: dict[int, Channel] = {}
+        self._scheduled_events = _GuildChildren[ScheduledEvent]()
+        self._stage_instances = _GuildChildren[StageInstance]()
+        self._sounds = _GuildChildren[SoundboardSound]()
         self._handlers: dict[type[Event], Callable[[Any], Changes]] = {
             Ready: self._start_session,
             GuildCreate: self._create_guild,
@@ -114,6 +168,17 @@ class Cache:
             MemberJoin: self._join,
             MemberRemove: self._leave,
             MemberUpdate: self._update_member,
+            ScheduledEventCreate: self._keep_scheduled_event,
+            ScheduledEventUpdate: self._keep_scheduled_event,
+            ScheduledEventDelete: self._delete_scheduled_event,
+            StageInstanceCreate: self._keep_stage_instance,
+            StageInstanceUpdate: self._keep_stage_instance,
+            StageInstanceDelete: self._delete_stage_instance,
+            SoundboardSoundCreate: self._keep_sound,
+            SoundboardSoundUpdate: self._keep_sound,
+            SoundboardSoundDelete: self._delete_sound,
+            SoundboardSoundsUpdate: self._update_sounds,
+            SoundboardSounds: self._replace_sounds,
         }
         if members or presences:
             self._handlers[MembersChunk] = self._store_chunk
@@ -148,6 +213,24 @@ class Cache:
     def guild_roles(self, guild_id: int) -> list[Role]:
         guild = self._guilds.get(guild_id)
         return [] if guild is None else list(guild.roles)
+
+    def scheduled_event(self, id: int) -> ScheduledEvent | None:
+        return self._scheduled_events.get(id)
+
+    def guild_scheduled_events(self, guild_id: int) -> list[ScheduledEvent]:
+        return self._scheduled_events.of(guild_id)
+
+    def stage_instance(self, id: int) -> StageInstance | None:
+        return self._stage_instances.get(id)
+
+    def guild_stage_instances(self, guild_id: int) -> list[StageInstance]:
+        return self._stage_instances.of(guild_id)
+
+    def soundboard_sound(self, id: int) -> SoundboardSound | None:
+        return self._sounds.get(id)
+
+    def guild_soundboard_sounds(self, guild_id: int) -> list[SoundboardSound]:
+        return self._sounds.of(guild_id)
 
     def voice_state(self, guild_id: int, user_id: int) -> VoiceState | None:
         """The user's voice state, or None when they are in no voice channel."""
@@ -228,6 +311,9 @@ class Cache:
         self._presences.clear()
         self._messages.clear()
         self._dm_channels.clear()
+        self._scheduled_events.clear()
+        self._stage_instances.clear()
+        self._sounds.clear()
 
     def apply[E: Event](self, event: E) -> E:
         """Update the cache; return the event with its `old` or removed object."""
@@ -294,6 +380,14 @@ class Cache:
         if self._keeps_presences:
             for presence in event.presences:
                 self._store_presence(guild_id, presence)
+        self._scheduled_events.reset(
+            guild_id,
+            ((each.id, _stored(each)) for each in event.guild_scheduled_events),
+        )
+        self._stage_instances.reset(
+            guild_id, ((each.id, _stored(each)) for each in event.stage_instances)
+        )
+        self._sounds.reset(guild_id, _sounds(guild_id, event.soundboard_sounds))
         return None
 
     def _update_guild(self, event: GuildUpdate) -> Changes:
@@ -336,6 +430,67 @@ class Cache:
         self._voice_states.pop(guild_id, None)
         self._members.pop(guild_id, None)
         self._presences.pop(guild_id, None)
+        self._scheduled_events.drop(guild_id)
+        self._stage_instances.drop(guild_id)
+        self._sounds.drop(guild_id)
+
+    def _keep_scheduled_event(
+        self, event: ScheduledEventCreate | ScheduledEventUpdate
+    ) -> Changes:
+        scheduled = event.scheduled_event
+        if scheduled.guild_id not in self._guilds:
+            return None
+        old = self._scheduled_events.put(
+            scheduled.guild_id, scheduled.id, _stored(scheduled)
+        )
+        return {"old": old} if isinstance(event, ScheduledEventUpdate) else None
+
+    def _delete_scheduled_event(self, event: ScheduledEventDelete) -> Changes:
+        scheduled = event.scheduled_event
+        self._scheduled_events.pop(scheduled.guild_id, scheduled.id)
+        return None
+
+    def _keep_stage_instance(
+        self, event: StageInstanceCreate | StageInstanceUpdate
+    ) -> Changes:
+        stage = event.stage_instance
+        if stage.guild_id not in self._guilds:
+            return None
+        old = self._stage_instances.put(stage.guild_id, stage.id, _stored(stage))
+        return {"old": old} if isinstance(event, StageInstanceUpdate) else None
+
+    def _delete_stage_instance(self, event: StageInstanceDelete) -> Changes:
+        stage = event.stage_instance
+        self._stage_instances.pop(stage.guild_id, stage.id)
+        return None
+
+    def _keep_sound(
+        self, event: SoundboardSoundCreate | SoundboardSoundUpdate
+    ) -> Changes:
+        guild_id = event.sound.guild_id
+        if guild_id is None or guild_id not in self._guilds:
+            return None
+        [(sound_id, sound)] = _sounds(guild_id, (event.sound,))
+        old = self._sounds.put(guild_id, sound_id, sound)
+        return {"old": old} if isinstance(event, SoundboardSoundUpdate) else None
+
+    def _delete_sound(self, event: SoundboardSoundDelete) -> Changes:
+        return {"sound": self._sounds.pop(event.guild_id, event.sound_id)}
+
+    def _update_sounds(self, event: SoundboardSoundsUpdate) -> Changes:
+        if event.guild_id not in self._guilds:
+            return None
+        olds = [
+            self._sounds.put(event.guild_id, sound_id, sound)
+            for sound_id, sound in _sounds(event.guild_id, event.soundboard_sounds)
+        ]
+        return {"old": tuple(old for old in olds if old is not None)}
+
+    def _replace_sounds(self, event: SoundboardSounds) -> Changes:
+        if event.guild_id in self._guilds:
+            sounds = _sounds(event.guild_id, event.soundboard_sounds)
+            self._sounds.reset(event.guild_id, sounds)
+        return None
 
     def _create_channel(self, event: ChannelCreate | ThreadCreate) -> Changes:
         self._store_channel(event.channel)
@@ -599,6 +754,18 @@ class Cache:
 
 def _stored[M: msgspec.Struct](model: M) -> M:
     return msgspec.structs.replace(model, raw_json=None)
+
+
+def _sounds(
+    guild_id: int, sounds: Iterable[SoundboardSound]
+) -> list[tuple[int, SoundboardSound]]:
+    return [
+        (
+            sound.sound_id,
+            msgspec.structs.replace(sound, raw_json=None, guild_id=guild_id),
+        )
+        for sound in sounds
+    ]
 
 
 def _in_guild(channel: Channel, guild_id: int) -> Channel:

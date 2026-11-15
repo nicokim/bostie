@@ -17,6 +17,7 @@ from bostie.events import (
     MessageDeleteBulk,
     MessageUpdate,
     PresenceUpdate,
+    SoundboardSoundsUpdate,
     StickersUpdate,
     ThreadDelete,
     ThreadUpdate,
@@ -40,6 +41,10 @@ BOT = int(BOT_USER["id"])
 MODERATOR = 820774541721731073
 SUPPORT = 613374681415811073
 NEWCOMER = 1562134550937731073
+WEEKLY_JAM = 1565130211538231073
+STAGE = 1565172411634631073
+YAY = 1565122204124631073
+AIRHORN = 1565122576989831073
 
 
 def event(fixture: str, **changes: Any) -> Event:
@@ -157,6 +162,68 @@ def test_guild_delete_after_leaving_removes_everything(cache: Cache) -> None:
     assert cache.channel(GENERAL) is None
     assert cache.channel(RELEASE_NOTES_THREAD) is None
     assert cache.role(ADMIN_ROLE) is None
+    assert cache.scheduled_event(WEEKLY_JAM) is None
+    assert cache.guild_soundboard_sounds(GUILD) == []
+
+
+def test_guild_create_fills_scheduled_events_and_soundboard_sounds(
+    cache: Cache,
+) -> None:
+    scheduled = cache.scheduled_event(WEEKLY_JAM)
+    sound = cache.soundboard_sound(AIRHORN)
+
+    assert cache.guild_scheduled_events(GUILD) == [scheduled]
+    assert cache.guild_soundboard_sounds(GUILD) == [sound]
+    assert scheduled is not None
+    assert sound is not None
+    assert (scheduled.raw_json, sound.raw_json) == (None, None)
+    assert sound.guild_id == GUILD
+
+
+@pytest.mark.parametrize(
+    ("kind", "key", "held"),
+    [
+        (
+            "GUILD_SCHEDULED_EVENT",
+            "id",
+            lambda cache: cache.guild_scheduled_events(GUILD),
+        ),
+        ("STAGE_INSTANCE", "id", lambda cache: cache.guild_stage_instances(GUILD)),
+        (
+            "GUILD_SOUNDBOARD_SOUND",
+            "sound_id",
+            lambda cache: cache.guild_soundboard_sounds(GUILD),
+        ),
+    ],
+)
+def test_guild_children_follow_their_create_update_and_delete(
+    cache: Cache, kind: str, key: str, held: Callable[[Cache], list[Any]]
+) -> None:
+    before = held(cache)
+    fresh = {key: "42"}
+
+    cache.apply(event(f"{kind}_CREATE", **fresh))
+    created = [child for child in held(cache) if child not in before]
+    updated = cache.apply(event(f"{kind}_UPDATE", **fresh))
+    cache.apply(event(f"{kind}_DELETE", **fresh))
+
+    assert len(created) == 1
+    assert created[0].raw_json is None
+    assert getattr(updated, "old", None) == created[0]
+    assert held(cache) == before
+
+
+def test_a_soundboard_sounds_update_carries_the_old_ones_and_an_answer_replaces_all(
+    cache: Cache,
+) -> None:
+    before = cache.soundboard_sound(AIRHORN)
+
+    updated = applied(cache, SoundboardSoundsUpdate, "GUILD_SOUNDBOARD_SOUNDS_UPDATE")
+    cache.apply(event("SOUNDBOARD_SOUNDS", soundboard_sounds=[]))
+
+    assert updated.old == (before,)
+    assert cache.soundboard_sound(YAY) is None
+    assert cache.guild_soundboard_sounds(GUILD) == []
 
 
 def test_channel_create_update_and_delete(cache: Cache) -> None:
@@ -349,6 +416,12 @@ def test_a_ready_drops_only_the_guilds_of_its_shard(cache: Cache) -> None:
             lambda cache: cache.role(ADMIN_ROLE),
         ),
         ("USER_UPDATE", {}, "old", lambda cache: cache.user(BOT)),
+        (
+            "GUILD_SOUNDBOARD_SOUND_DELETE",
+            {"sound_id": str(AIRHORN)},
+            "sound",
+            lambda cache: cache.soundboard_sound(AIRHORN),
+        ),
     ],
 )
 def test_update_and_delete_events_carry_what_the_cache_held(

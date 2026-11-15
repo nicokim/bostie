@@ -13,6 +13,7 @@
 | guilds, with their roles, emojis and stickers | yes | |
 | channels and active threads | yes | |
 | voice states | yes | |
+| scheduled events, stage instances and soundboard sounds | yes | |
 | the bot's user and its own member in each guild | yes | |
 | all members | no | `members=True`, needs `Intents.GUILD_MEMBERS` |
 | presences of members who are not offline | no | `presences=True`, needs `Intents.GUILD_PRESENCES` |
@@ -31,6 +32,9 @@ With `members=True`, Discord sends only some members of large guilds when the bo
 | `channel(id)`, `guild_channels(guild_id)` | a `Channel`, or a guild's channels with its active threads |
 | `role(id)`, `guild_roles(guild_id)` | a `Role`, or a guild's roles |
 | `voice_state(guild_id, user_id)`, `guild_voice_states(guild_id)` | where users are in voice; `None` when the user is in no voice channel |
+| `scheduled_event(id)`, `guild_scheduled_events(guild_id)` | a `ScheduledEvent`, or a guild's |
+| `stage_instance(id)`, `guild_stage_instances(guild_id)` | a live `StageInstance`, or a guild's |
+| `soundboard_sound(sound_id)`, `guild_soundboard_sounds(guild_id)` | a `SoundboardSound`, or a guild's |
 | `me(guild_id)` | the bot's own `Member` in a guild |
 | `member(guild_id, user_id)`, `guild_members(guild_id)` | members; only the bot's own unless `members=True` |
 | `presence(guild_id, user_id)`, `guild_presences(guild_id)` | presences, with `presences=True`; `None` when offline |
@@ -41,6 +45,14 @@ With `members=True`, Discord sends only some members of large guilds when the bo
 | `guild_permissions(guild_id, member=None)` | the same, guild-wide |
 
 Lookups return `None`, or an empty list, for what the cache does not hold. `bot.cache.clear()` empties it. Update and delete events carry the cached object from before the change, as [Events](events.md#old-values-and-the-cache) explains.
+
+## Scheduled events, stages and sounds
+
+```python
+--8<-- "docs/snippets/cache/guild_events.py"
+```
+
+They arrive with each guild and follow their create, update and delete events, which need `Intents.GUILD_SCHEDULED_EVENTS` for scheduled events and `Intents.GUILD_EXPRESSIONS` for soundboard sounds; both are in `Intents.DEFAULT`. The answer to `bot.request_soundboard_sounds` replaces a guild's sounds. Their update events carry `old`, and `SoundboardSoundDelete` the removed `sound`.
 
 ## Startup
 
