@@ -611,6 +611,24 @@ def message_body(
     if mentions is not None and given is not None:
         body["allowed_mentions"] = _merged_mentions(mentions, given)
     files: Sequence[File] = body.pop("files", ())
+    components_v2 = _flag_components(body)
+    if any(file.waveform is not None for file in files):
+        _check_voice_message(body, files)
+        body["flags"] = MessageFlags.IS_VOICE_MESSAGE | (body.get("flags") or 0)
+    if reply_to is not None:
+        if "message_reference" in body:
+            raise ValueError("reply_to and message_reference are mutually exclusive")
+        body["message_reference"] = MessageReference(
+            type=MessageReferenceType.DEFAULT, message_id=reply_to
+        )
+    if files or "attachments" in body:
+        body["attachments"] = _attachments(body.get("attachments"), files)
+    if components_v2:
+        body |= {"content": None, "embeds": []}
+    return body, files
+
+
+def _flag_components(body: dict[str, Any]) -> bool:
     components = body.get("components")
     if components is not None:
         body["components"] = [
@@ -625,26 +643,17 @@ def message_body(
             "messages with Components V2 cannot have content, embeds, stickers, "
             "a poll or a shared client theme; use ui.text() and ui.container() instead"
         )
-    if any(file.waveform is not None for file in files):
-        _check_voice_message(body, files)
-        body["flags"] = MessageFlags.IS_VOICE_MESSAGE | (body.get("flags") or 0)
-    if reply_to is not None:
-        if "message_reference" in body:
-            raise ValueError("reply_to and message_reference are mutually exclusive")
-        body["message_reference"] = MessageReference(
-            type=MessageReferenceType.DEFAULT, message_id=reply_to
-        )
-    if files or "attachments" in body:
-        kept: Sequence[Attachment | int] | None = body.get("attachments")
-        body["attachments"] = (
-            None
-            if kept is None and not files
-            else [_kept(attachment) for attachment in kept or ()]
-            + [_attachment(index, file) for index, file in enumerate(files)]
-        )
-    if components_v2:
-        body |= {"content": None, "embeds": []}
-    return body, files
+    return components_v2
+
+
+def _attachments(
+    kept: Sequence[Attachment | int] | None, files: Sequence[File]
+) -> list[dict[str, Any]] | None:
+    if kept is None and not files:
+        return None
+    return [_kept(attachment) for attachment in kept or ()] + [
+        _attachment(index, file) for index, file in enumerate(files)
+    ]
 
 
 def _merged_mentions(
