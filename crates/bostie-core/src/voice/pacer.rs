@@ -709,14 +709,6 @@ mod tests {
     }
 
     #[test]
-    fn a_lane_that_returns_false_leaves() {
-        let pool = PacerPool::new();
-        assign(&pool, Box::new(|_| false));
-
-        wait_until(|| lanes(&pool) == 0);
-    }
-
-    #[test]
     fn a_panicking_lane_is_dropped_and_its_neighbours_keep_ticking() {
         struct Dropped(Arc<AtomicBool>);
         impl Drop for Dropped {

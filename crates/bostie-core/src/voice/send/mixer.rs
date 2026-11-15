@@ -728,23 +728,18 @@ mod tests {
     fn retain_keeps_state_only_for_open_sinks() {
         let mut fixture = Fixture::new();
         let mut mixer = Mixer::new(settings()).unwrap();
-        let mut open = Vec::new();
-        let stereo = packet(Channels::Stereo, 960);
-        let mono = packet(Channels::Mono, 960);
-
-        for index in 0..3 {
+        let sinks = [Channels::Stereo, Channels::Mono, Channels::Stereo].map(|channels| {
             let sink = opus_sink(&mut fixture);
-            sink.write(if index % 2 == 0 { &stereo } else { &mono })
-                .unwrap();
-            open.push(sink);
-            mixer.mix(&open).unwrap();
-            if index % 3 != 0 {
-                open.remove(0).close();
-            }
-            open.retain(|sink| !sink.is_closed());
-            mixer.retain(&open);
-            assert!(mixer.strips.len() <= open.len());
-        }
+            sink.write(&packet(channels, 960)).unwrap();
+            sink
+        });
+        mixer.mix(&sinks).unwrap();
+
+        sinks[0].close();
+        sinks[1].close();
+        mixer.retain(&sinks[2..]);
+
+        assert_eq!(mixer.strips.len(), 1);
     }
 
     #[test]

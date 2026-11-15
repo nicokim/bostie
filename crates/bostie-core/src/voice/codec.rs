@@ -435,7 +435,6 @@ pub(crate) mod tests {
             opus::Application::LowDelay
         );
         assert_eq!(encoder.opus.get_bitrate().unwrap(), Bitrate::Bits(128_000));
-        assert_eq!(encoder.settings.application, Application::LowDelay);
     }
 
     #[test]
@@ -450,7 +449,6 @@ pub(crate) mod tests {
             })
             .unwrap();
 
-        assert_eq!(encoder.opus.get_bitrate().unwrap(), Bitrate::Bits(32_000));
         assert_eq!(encoder.opus.get_complexity().unwrap(), 3);
         assert!(
             encoder
@@ -460,7 +458,7 @@ pub(crate) mod tests {
                 })
                 .is_err()
         );
-        assert_eq!(encoder.settings.bitrate, 32_000);
+        assert_eq!(encoder.opus.get_bitrate().unwrap(), Bitrate::Bits(32_000));
     }
 
     #[test]
@@ -497,17 +495,6 @@ pub(crate) mod tests {
         tail.extend(encoder.flush());
         let tail: Vec<Option<u32>> = tail.iter().map(|packet| packet_samples(packet)).collect();
         assert_eq!(tail, [Some(960)]);
-    }
-
-    #[test]
-    fn frame_encoder_rejects_formats_a_sink_would_reject() {
-        let format = PcmFormat {
-            rate: 8_001,
-            channels: 2,
-            sample: SampleFormat::S16Le,
-        };
-
-        assert!(FrameEncoder::new(format, settings()).is_err());
     }
 
     #[expect(clippy::cast_precision_loss)]

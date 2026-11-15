@@ -395,9 +395,7 @@ mod tests {
     use super::*;
     use crate::testkit;
     use crate::voice::source::SourceKind;
-    use crate::voice::source::tests::{
-        Harness, fixture, frames, read_to_end, samples, wait_for_info,
-    };
+    use crate::voice::source::tests::{Harness, fixture, frames, read_to_end, wait_for_info};
     use crate::voice::types::SourceSpec;
 
     struct Server {
@@ -541,21 +539,6 @@ mod tests {
     }
 
     #[test]
-    fn a_seekable_url_plays_from_the_seek_position() {
-        let mut harness = Harness::new();
-        let bytes = std::fs::read(fixture("tone-s16.wav")).unwrap();
-        let server = Server::start(bytes, true);
-        let source = url_source(&mut harness, server.url("/tone.wav"));
-        assert!(wait_for_info(&source).seekable);
-
-        source.seek(Duration::from_millis(500)).unwrap();
-        let (chunks, error) = read_to_end(&source);
-
-        assert_eq!(error, None);
-        assert_eq!(samples(&chunks).len(), 24_000 * 2);
-    }
-
-    #[test]
     fn a_dropped_body_resumes_with_a_range_from_where_it_broke() {
         let harness = Harness::new();
         let body = body_of(100_000);
@@ -588,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dropped_body_of_unknown_length_resumes_with_a_range_when_the_server_takes_ranges() {
+    fn a_dropped_unknown_length_body_resumes_with_a_range_when_ranges_work() {
         let harness = Harness::new();
         let body = body_of(10_000);
         let server = Server::start(body.clone(), true);

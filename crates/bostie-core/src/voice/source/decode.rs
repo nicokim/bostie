@@ -596,53 +596,42 @@ mod tests {
     }
 
     #[test]
-    fn five_point_one_gains_follow_itu_r_bs_775() {
-        let layout = Channels::Positioned(
-            Position::FRONT_LEFT
-                | Position::FRONT_RIGHT
-                | Position::FRONT_CENTER
-                | Position::LFE1
-                | Position::REAR_LEFT
-                | Position::REAR_RIGHT,
-        );
-
-        assert_eq!(
-            stereo_gains(&layout),
-            [
-                [1.0, 0.0],
-                [0.0, 1.0],
-                [H, H],
-                [0.0, 0.0],
-                [H, 0.0],
-                [0.0, H]
-            ]
-        );
-    }
-
-    #[test]
-    fn side_and_rear_centre_channels_fold_in_at_minus_3_db() {
-        let layout = Channels::Positioned(
-            Position::FRONT_LEFT
-                | Position::FRONT_RIGHT
-                | Position::FRONT_CENTER
-                | Position::LFE1
-                | Position::REAR_CENTER
-                | Position::SIDE_LEFT
-                | Position::SIDE_RIGHT,
-        );
-
-        assert_eq!(
-            stereo_gains(&layout),
-            [
-                [1.0, 0.0],
-                [0.0, 1.0],
-                [H, H],
-                [0.0, 0.0],
-                [H, H],
-                [H, 0.0],
-                [0.0, H]
-            ]
-        );
+    fn positioned_layouts_fold_to_stereo_by_itu_r_bs_775() {
+        let front = Position::FRONT_LEFT | Position::FRONT_RIGHT | Position::FRONT_CENTER;
+        let five_one = front | Position::LFE1 | Position::REAR_LEFT | Position::REAR_RIGHT;
+        let sides = Position::REAR_CENTER | Position::SIDE_LEFT | Position::SIDE_RIGHT;
+        let six_one = front | Position::LFE1 | sides;
+        for (layout, gains) in [
+            (
+                five_one,
+                &[
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [H, H],
+                    [0.0, 0.0],
+                    [H, 0.0],
+                    [0.0, H],
+                ][..],
+            ),
+            (
+                six_one,
+                &[
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [H, H],
+                    [0.0, 0.0],
+                    [H, H],
+                    [H, 0.0],
+                    [0.0, H],
+                ],
+            ),
+        ] {
+            assert_eq!(
+                stereo_gains(&Channels::Positioned(layout)),
+                gains,
+                "{layout:?}"
+            );
+        }
     }
 
     #[test]

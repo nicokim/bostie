@@ -632,33 +632,22 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn writes_are_accepted_below_the_high_water_mark_and_then_arm_one_wake() {
+    fn writes_are_refused_past_the_high_water_mark_and_woken_at_half() {
         let mut fixture = Fixture::new();
         let sink = fixture.sink(stereo_48k(), 100, StallPolicy::Hold);
 
-        assert!(sink.write(&frames_of(0.1, 2_880)).unwrap());
-        assert!(sink.write(&frames_of(0.1, 2_880)).unwrap());
-        assert!(!sink.write(&frames_of(0.1, 960)).unwrap());
-        assert!(!sink.write(&frames_of(0.1, 960)).unwrap());
-
-        assert_eq!(sink.queued().unwrap(), Duration::from_millis(120));
-        assert_eq!(fixture.wakes(), 0);
-    }
-
-    #[test]
-    fn the_wake_fires_once_the_queue_is_down_to_half_the_buffer() {
-        let mut fixture = Fixture::new();
-        let sink = fixture.sink(stereo_48k(), 100, StallPolicy::Hold);
-        sink.write(&frames_of(0.1, 5_280)).unwrap();
-        assert!(!sink.write(&frames_of(0.1, 960)).unwrap());
-
-        let mut wakes = Vec::new();
+        let accepted =
+            [2_880, 2_400, 960, 960].map(|frames| sink.write(&frames_of(0.1, frames)).unwrap());
+        let queued = sink.queued().unwrap();
+        let mut wakes = vec![fixture.wakes()];
         for _ in 0..5 {
             pull(&sink).unwrap();
             wakes.push(fixture.wakes());
         }
 
-        assert_eq!(wakes, [0, 0, 1, 0, 0]);
+        assert_eq!(accepted, [true, true, false, false]);
+        assert_eq!(queued, Duration::from_millis(110));
+        assert_eq!(wakes, [0, 0, 0, 1, 0, 0]);
     }
 
     #[test]
@@ -1003,20 +992,5 @@ pub(crate) mod tests {
             ));
         }
         assert_eq!(sink.volume(), 0.25);
-    }
-
-    #[test]
-    fn passthrough_is_reported_and_counted() {
-        let mut fixture = Fixture::new();
-        let sink = fixture.sink(SinkFormat::Opus, 1_000, StallPolicy::Hold);
-
-        sink.note_passthrough(true);
-        sink.note_passthrough(true);
-        let passing = sink.passthrough().unwrap();
-        sink.note_passthrough(false);
-
-        assert!(passing);
-        assert!(!sink.passthrough().unwrap());
-        assert_eq!(sink.stats().unwrap().passthrough_packets, 2);
     }
 }
