@@ -412,7 +412,7 @@ def _presence(guild: Guild | UnavailableGuild) -> _GuildPresence:
 
 def _decoded[S: msgspec.Struct](cls: type[S], data: bytes) -> S | None:
     try:
-        decoded: S = decoder(cls).decode(data)
+        decoded = decoder(cls).decode(data)
     except msgspec.ValidationError:
         return None
     return decoded

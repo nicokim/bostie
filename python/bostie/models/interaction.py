@@ -225,8 +225,7 @@ class ComponentInteraction(_Interaction, kw_only=True):
     @property
     def message_flags(self) -> MessageFlags:
         """The flags of the component's message, decoded without the rest of it."""
-        message: _MessageFlags = decoder(_MessageFlags).decode(self._message)
-        return message.flags
+        return decoder(_MessageFlags).decode(self._message).flags
 
 
 class ModalSubmitData(Model, kw_only=True):
@@ -259,8 +258,7 @@ class ModalSubmitInteraction(_Interaction, kw_only=True):
         """The flags of that message, decoded without the rest; None without one."""
         if self._message == NULL:
             return None
-        message: _MessageFlags = decoder(_MessageFlags).decode(self._message)
-        return message.flags
+        return decoder(_MessageFlags).decode(self._message).flags
 
 
 class UnknownInteraction(Model, Snowflake, kw_only=True):

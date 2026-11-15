@@ -370,16 +370,16 @@ class Messages(ResourceGroup):
         return self._in_guild(decode_message(data))
 
     def _pin(self, data: bytes) -> MessagePin:
-        pin: _Pin = decoder(_Pin).decode(data)
+        pin = decoder(_Pin).decode(data)
         message = self._message(bytes(pin.message))
         return MessagePin(pinned_at=pin.pinned_at, message=message, raw_json=data)
 
 
 def _search_results(guild_id: int, data: bytes) -> MessageSearchResults | _Indexing:
-    indexing: _Indexing = decoder(_Indexing).decode(data)
+    indexing = decoder(_Indexing).decode(data)
     if indexing.code == JSONErrorCode.INDEX_NOT_YET_AVAILABLE:
         return indexing
-    found: _Found = decoder(_Found).decode(data)
+    found = decoder(_Found).decode(data)
     return MessageSearchResults(
         doing_deep_historical_index=found.doing_deep_historical_index,
         documents_indexed=found.documents_indexed,

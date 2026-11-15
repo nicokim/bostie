@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from functools import cache
-from typing import Any, Protocol, cast, dataclass_transform
+from typing import Any, Protocol, cast, dataclass_transform, overload
 
 import msgspec
 
@@ -85,6 +85,14 @@ class Builder(msgspec.Struct, kw_only=True, frozen=True, gc=False, omit_defaults
     __rich_repr__ = shown_fields
 
 
+@overload
+def decoder[T: msgspec.Struct](type_: type[T]) -> msgspec.json.Decoder[T]: ...
+
+
+@overload
+def decoder(type_: Any) -> msgspec.json.Decoder[Any]: ...
+
+
 @cache
 def decoder(type_: Any) -> msgspec.json.Decoder[Any]:
     """The shared lax JSON decoder for a type.
@@ -107,7 +115,7 @@ encoder = msgspec.json.Encoder(enc_hook=_as_builtin)
 
 def decode[M: Model](model: type[M], data: bytes) -> M:
     """Decode a Discord payload into a model that keeps the payload as its raw JSON."""
-    value: M = decoder(model).decode(data)
+    value = decoder(model).decode(data)
     msgspec.structs.force_setattr(value, "raw_json", data)
     return value
 

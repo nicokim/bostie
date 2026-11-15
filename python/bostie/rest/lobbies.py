@@ -50,8 +50,7 @@ class _Invite(msgspec.Struct):
 
 
 def _invite_code(data: bytes) -> str:
-    invite: _Invite = decoder(_Invite).decode(data)
-    return invite.code
+    return decoder(_Invite).decode(data).code
 
 
 class Lobbies(ResourceGroup):

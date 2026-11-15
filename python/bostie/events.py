@@ -92,7 +92,7 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     @classmethod
     def decode(cls, shard_id: int, data: bytes) -> Self:
         """Decode the `d` payload of a dispatch."""
-        event: Self = decoder(cls).decode(data)
+        event = decoder(cls).decode(data)
         msgspec.structs.force_setattr(event, "shard_id", shard_id)
         msgspec.structs.force_setattr(event, "raw_json", data)
         return event
@@ -165,7 +165,7 @@ class GuildCreate(Event, kw_only=True):
         needle = str(user_id).encode()
         for item in decoder(tuple[msgspec.Raw, ...]).decode(self._members):
             if needle in bytes(item):
-                member: Member = decoder(Member).decode(item)
+                member = decoder(Member).decode(item)
                 if member.user.id == user_id:
                     return member
         return None
@@ -174,11 +174,11 @@ class GuildCreate(Event, kw_only=True):
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
         try:
-            payload: _GuildCreatePayload = decoder(_GuildCreatePayload).decode(data)
+            payload = decoder(_GuildCreatePayload).decode(data)
         except msgspec.ValidationError:
             if not decoder(_Availability).decode(data).unavailable:
                 raise
-            unavailable: UnavailableGuild = decoder(UnavailableGuild).decode(data)
+            unavailable = decoder(UnavailableGuild).decode(data)
             return cls(shard_id=shard_id, raw_json=data, guild=unavailable)
         return cls(
             shard_id=shard_id,
@@ -275,7 +275,7 @@ class ThreadCreate(_ChannelEvent, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        fields: _ThreadCreateFields = decoder(_ThreadCreateFields).decode(data)
+        fields = decoder(_ThreadCreateFields).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -393,7 +393,7 @@ class MessageDelete(Event, Snowflake, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _MessageDeletePayload = decoder(_MessageDeletePayload).decode(data)
+        payload = decoder(_MessageDeletePayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -423,9 +423,7 @@ class MessageDeleteBulk(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _MessageDeleteBulkPayload = decoder(_MessageDeleteBulkPayload).decode(
-            data
-        )
+        payload = decoder(_MessageDeleteBulkPayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -523,7 +521,7 @@ class MemberJoin(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _GuildMemberPayload = decoder(_GuildMemberPayload).decode(data)
+        payload = decoder(_GuildMemberPayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -710,7 +708,7 @@ class AuditLogEntryCreate(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _AuditLogEntryPayload = decoder(_AuditLogEntryPayload).decode(data)
+        payload = decoder(_AuditLogEntryPayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1009,7 +1007,7 @@ class ThreadMemberUpdate(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _ThreadMemberPayload = decoder(_ThreadMemberPayload).decode(data)
+        payload = decoder(_ThreadMemberPayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1062,7 +1060,7 @@ class PresenceUpdate(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _PresencePayload = decoder(_PresencePayload).decode(data)
+        payload = decoder(_PresencePayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1120,7 +1118,7 @@ class _IntegrationEvent(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        payload: _IntegrationPayload = decoder(_IntegrationPayload).decode(data)
+        payload = decoder(_IntegrationPayload).decode(data)
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1237,7 +1235,7 @@ class GatewayRateLimited(Event, kw_only=True):
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:
-        limit: _RateLimit = decoder(_RateLimit).decode(data)
+        limit = decoder(_RateLimit).decode(data)
         meta: RequestGuildMembersRateLimit | None = None
         if limit.opcode == REQUEST_GUILD_MEMBERS:
             meta = decoder(_RequestGuildMembersMeta).decode(data).meta

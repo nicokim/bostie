@@ -52,7 +52,7 @@ class _Permissions(msgspec.Struct):
 
 
 def decode_permissions(data: bytes) -> Permissions:
-    found: _Permissions = decoder(_Permissions).decode(data)
+    found = decoder(_Permissions).decode(data)
     return Permissions(int(found.permissions))
 
 
