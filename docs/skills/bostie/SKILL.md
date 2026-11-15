@@ -101,7 +101,7 @@ if __name__ == "__main__":
 ## Events
 
 - `@bot.listen` registers an `async def` for the event class in its parameter's type hint, or for each class of a union. The classes live in `bostie.events`: `MessageCreate`, `MemberJoin`, `ReactionAdd` and the rest.
-- `Intents.DEFAULT` holds every intent but the privileged ones. Message text in guilds needs `Intents.MESSAGE_CONTENT` and member events need `Intents.GUILD_MEMBERS`; a privileged intent must also be switched on in the Developer Portal. bostie logs a warning that names an intent a listener is missing.
+- `Intents.DEFAULT` holds every intent but the privileged ones, `Intents.PRIVILEGED` those three and `Intents.ALL` both. Message text in guilds needs `Intents.MESSAGE_CONTENT` and member events need `Intents.GUILD_MEMBERS`; a privileged intent must also be switched on in the Developer Portal. bostie logs a warning that names an intent a listener is missing.
 - Skip the bot's own messages and other bots' with `message.author.bot`.
 - Inside a handler, `await bot.wait_for(ReactionAdd, check=...)` waits for one event and `async with bot.stream(ReactionAdd) as events:` for many. Neither has a timeout, so wrap them in `asyncio.timeout`.
 

@@ -141,9 +141,6 @@ FAILURE_ANSWER = "Something went wrong."
 UNANSWERED = frozenset(
     {ResponseState.PENDING, ResponseState.DEFERRED, ResponseState.DEFERRED_UPDATE}
 )
-PRIVILEGED_INTENTS = (
-    Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
-)
 CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
     "status",
     "voice_start_time",
@@ -805,7 +802,7 @@ class Bot(Router):
         if listener is None or event is None or not event.INTENTS:
             return
         if not event.INTENTS & self._intents:
-            privileged = event.INTENTS & PRIVILEGED_INTENTS == event.INTENTS
+            privileged = event.INTENTS & Intents.PRIVILEGED == event.INTENTS
             log.warning(
                 "%s listens to %s, which needs the %s intent; add it to "
                 "Bot(intents=...)%s",

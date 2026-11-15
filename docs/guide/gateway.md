@@ -16,6 +16,12 @@ A privileged intent must also be turned on, on the **Bot** page of the Developer
 
 Voice needs `GUILD_VOICE_STATES`, which `DEFAULT` includes.
 
+```python
+--8<-- "docs/snippets/gateway/intent_presets.py"
+```
+
+Three presets sit next to the single intents: `Intents.DEFAULT`, also named `Intents.UNPRIVILEGED`, holds every intent but the privileged ones, `Intents.PRIVILEGED` the three privileged ones, and `Intents.ALL` both. `& ~` takes intents away from a preset, as above.
+
 ## Presence
 
 ```python

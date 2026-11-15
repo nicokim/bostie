@@ -1144,6 +1144,9 @@ class Intents(DiscordIntFlag):
         | GUILD_MESSAGE_POLLS
         | DIRECT_MESSAGE_POLLS
     )
+    UNPRIVILEGED = DEFAULT
+    PRIVILEGED = GUILD_MEMBERS | GUILD_PRESENCES | MESSAGE_CONTENT
+    ALL = DEFAULT | PRIVILEGED
 
 
 class MessageFlags(DiscordIntFlag):

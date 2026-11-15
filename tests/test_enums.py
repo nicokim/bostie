@@ -114,14 +114,16 @@ def test_reading_permissions_caches_no_composite_values() -> None:
     assert len(Permissions._value2member_map_) == cached
 
 
-def test_default_intents_exclude_privileged_ones() -> None:
+def test_the_intent_presets_split_every_intent_by_privilege() -> None:
     privileged = (
         Intents.GUILD_MEMBERS | Intents.GUILD_PRESENCES | Intents.MESSAGE_CONTENT
     )
 
     assert Intents.DEFAULT.value == 53575421
-    assert Intents.DEFAULT & privileged == 0
-    assert Intents.DEFAULT | privileged == sum(Intents)
+    assert Intents.UNPRIVILEGED.value == Intents.DEFAULT.value
+    assert privileged == Intents.PRIVILEGED
+    assert Intents.DEFAULT & Intents.PRIVILEGED == 0
+    assert Intents.ALL == Intents.DEFAULT | Intents.PRIVILEGED == sum(Intents)
 
 
 @pytest.mark.parametrize(
