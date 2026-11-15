@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
-from datetime import datetime
+from collections.abc import AsyncIterator, Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal, Required, TypedDict, Unpack
 
@@ -84,6 +84,8 @@ class MessageSearch(TypedDict, total=False):
 
 
 MESSAGE_CREATE = MessageCreate.__optional_keys__
+BULK_DELETE_MAX = 100
+BULK_DELETABLE_FOR = timedelta(days=14) - timedelta(minutes=1)
 
 
 class _Pin(msgspec.Struct):
@@ -176,6 +178,50 @@ class Messages(Group):
             reason=reason,
             channel_id=channel_id,
         )
+
+    async def purge(
+        self,
+        channel_id: int,
+        /,
+        *,
+        limit: int | None = 100,
+        check: Callable[[Message | WebhookMessage], bool] | None = None,
+        before: int | datetime | None = None,
+        after: int | datetime | None = None,
+        bulk: bool = True,
+        reason: str | None = None,
+    ) -> list[Message | WebhookMessage]:
+        """Delete the deletable messages among the last `limit` that pass `check`."""
+        window: MessageList = {}
+        if limit is not None:
+            window["limit"] = limit
+        if before is not None:
+            window["before"] = before
+        if after is not None:
+            window["after"] = after
+        deleted: list[Message | WebhookMessage] = []
+        batch: list[int] = []
+        async for message in self.list(channel_id, **window):
+            if not message.type.deletable or (check is not None and not check(message)):
+                continue
+            deleted.append(message)
+            if bulk and datetime.now(UTC) - message.created_at < BULK_DELETABLE_FOR:
+                batch.append(message.id)
+                if len(batch) == BULK_DELETE_MAX:
+                    await self._delete_batch(channel_id, batch, reason)
+                    batch = []
+            else:
+                await self.delete(channel_id, message.id, reason=reason)
+        await self._delete_batch(channel_id, batch, reason)
+        return deleted
+
+    async def _delete_batch(
+        self, channel_id: int, batch: list[int], reason: str | None
+    ) -> None:
+        if len(batch) == 1:
+            await self.delete(channel_id, batch[0], reason=reason)
+        elif batch:
+            await self.bulk_delete(channel_id, messages=batch, reason=reason)
 
     async def crosspost(self, channel_id: int, message_id: int, /) -> Message:
         message = await self._http._decoded(

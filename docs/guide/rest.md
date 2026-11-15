@@ -20,6 +20,14 @@
 
 `list` methods of endpoints that Discord pages return an async iterator, which fetches the next page as you go: `async for message in bot.rest.messages.list(channel_id, limit=500):`, as `/today` does above. Without `limit` it walks every item. `before`, `after` and `around` start somewhere else, at most one of them; they take an id or a `datetime`, which bostie turns into the id of that moment. Messages come newest first, or oldest first with `after`. A `list` method of an endpoint that Discord does not page is a coroutine that returns a tuple. `audit_log.list` yields whole `AuditLogPage` objects, with the users, webhooks and other objects the entries refer to.
 
+## Purging messages
+
+`messages.purge(channel_id, limit=100, check=None)` walks the last `limit` messages, newest first, and deletes those for which `check` returns true, or all of them without one; `limit=None` walks the whole channel, and `before` and `after` start elsewhere, as in `list`. Messages younger than 14 days go in bulk deletes of up to 100, older ones one request each, since Discord bulk deletes only young messages; a type Discord does not let be deleted, such as a thread's starter message, is skipped. `bulk=False` deletes one at a time, as in a DM, where bulk deletes do not exist. It returns the deleted messages, and `reason` goes to the audit log. Bulk deletes and others' messages need Manage Messages.
+
+```python
+--8<-- "docs/snippets/rest/purge.py"
+```
+
 ## The audit log
 
 `audit_log.list(guild_id)` yields `AuditLogPage` objects, and the gateway sends each new entry as an `AuditLogEntryCreate` event. An entry's `changes` hold one `AuditLogChange` per changed field, whose `new_value` and `old_value` have the type the changed object gives that field: `Permissions` for a role's `permissions`, a `datetime` for a member's `communication_disabled_until`, a tuple of `Overwrite` for a channel's `permission_overwrites`. Discord's exceptions follow its documentation: `$add` and `$remove` on a member's roles hold `AuditLogRole` objects, a webhook's `avatar_hash` and an invite's `channel_id` take the type of `avatar` and of an id, and a command permission change is keyed by the role, user or channel id and holds a `CommandPermission`. A key bostie does not know, or a value in a shape the field does not take, keeps its JSON value, and a value Discord leaves out is `None`.
@@ -98,7 +106,7 @@ A script or a web backend that needs only REST uses a `RESTClient`:
 | `invites` | `add_target_user`, `bulk_add_target_users`, `bulk_delete_target_users`, `create`, `delete`, `fetch`, `fetch_target_users_job_status`, `list`, `list_guild`, `list_target_users`, `remove_target_user`, `update_target_users` |
 | `lobbies` | `add_member`, `bulk_update_members`, `create`, `create_invite_for_user`, `delete`, `edit`, `fetch`, `remove_member`, `update_message_moderation_metadata` |
 | `members` | `add`, `add_role`, `edit`, `edit_current`, `fetch`, `fetch_permissions`, `list`, `remove`, `remove_role`, `search` |
-| `messages` | `bulk_delete`, `create`, `crosspost`, `delete`, `edit`, `fetch`, `list`, `list_pins`, `pin`, `search`, `unpin` |
+| `messages` | `bulk_delete`, `create`, `crosspost`, `delete`, `edit`, `fetch`, `list`, `list_pins`, `pin`, `purge`, `search`, `unpin` |
 | `monetization` | `consume_entitlement`, `create_test_entitlement`, `delete_test_entitlement`, `fetch_entitlement`, `fetch_subscription`, `list_entitlements`, `list_skus`, `list_subscriptions` |
 | `onboarding` | `edit`, `fetch` |
 | `partner_sdk` | `create_provisional_token`, `exchange_child_token`, `exchange_external_token`, `unmerge_external_account`, `unmerge_provisional_account`, `update_dm_moderation_metadata` |

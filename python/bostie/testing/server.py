@@ -23,6 +23,10 @@ from bostie.testing.voice import VoiceGateway
 
 API = "/api/v10"
 CDN = "/cdn"
+BULK_DELETE_MIN = 2
+BULK_DELETE_MAX = 100
+BULK_DELETE_AGE = 14 * 24 * 3600
+UNDELETABLE = frozenset({1, 2, 3, 4, 5, 21})
 ROUTE_LIMIT = 5
 ROUTE_WINDOW = 1.0
 MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
@@ -224,6 +228,12 @@ class FakeDiscord(VoiceGateway):
                 for method in ("GET", "PATCH", "DELETE")
             ),
             ("POST", "/channels/{channel_id}/messages", self._create_message),
+            ("GET", "/channels/{channel_id}/messages", self._list_messages),
+            (
+                "POST",
+                "/channels/{channel_id}/messages/bulk-delete",
+                self._bulk_delete,
+            ),
             *(
                 (
                     method,
@@ -826,6 +836,34 @@ class FakeDiscord(VoiceGateway):
         self.messages.setdefault(channel_id, {})[message["id"]] = message
         return _json(message)
 
+    async def _list_messages(self, request: web.Request) -> web.Response:
+        messages = self.messages.get(request.match_info["channel_id"], {})
+        newest = sorted(messages.values(), key=_snowflake, reverse=True)
+        query = request.query
+        limit = int(query.get("limit", 50))
+        if "before" in query:
+            newest = [m for m in newest if _snowflake(m) < int(query["before"])]
+        if "after" in query:
+            newest = [m for m in newest if _snowflake(m) > int(query["after"])]
+            newest = newest[-limit:]
+        return _json(newest[:limit])
+
+    async def _bulk_delete(self, request: web.Request) -> web.Response:
+        messages = self.messages.get(request.match_info["channel_id"], {})
+        ids: list[str] = [str(id) for id in request[RECORD].json["messages"]]
+        oldest = (time.time() - BULK_DELETE_AGE) * 1000 - payloads.DISCORD_EPOCH_MS
+        if not BULK_DELETE_MIN <= len(ids) <= BULK_DELETE_MAX:
+            return _error(400, 50016, "Provide 2 to 100 messages to delete")
+        if any(int(id) >> 22 < oldest for id in ids):
+            return _error(
+                400, 50034, "You can only bulk delete messages under 14 days old"
+            )
+        if any(messages.get(id, {}).get("type") in UNDELETABLE for id in ids):
+            return _error(400, 50021, "Cannot execute action on a system message")
+        for id in ids:
+            messages.pop(id, None)
+        return web.Response(status=204)
+
     async def _channel_message(self, request: web.Request) -> web.Response:
         messages = self.messages.get(request.match_info["channel_id"], {})
         return _message_route(request, messages)
@@ -933,6 +971,8 @@ def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Respo
     if message is None:
         return _error(404, 10008, "Unknown Message")
     if request.method == "DELETE":
+        if message.get("type") in UNDELETABLE:
+            return _error(400, 50021, "Cannot execute action on a system message")
         del messages[message_id]
         return web.Response(status=204)
     if request.method == "PATCH":
@@ -943,6 +983,10 @@ def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Respo
             "edited_timestamp": datetime.now(UTC).isoformat(),
         }
     return _json(message)
+
+
+def _snowflake(entity: Json) -> int:
+    return int(entity["id"])
 
 
 def _message_fields(body: Json) -> Json:

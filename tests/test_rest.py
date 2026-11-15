@@ -102,10 +102,13 @@ def implemented(rest: REST | BearerREST) -> dict[str, Shape]:
                 for node in ast.walk(tree)
                 if isinstance(node, ast.Constant) and isinstance(node.value, str)
             ]
+            paths = tuple(text for text in texts if text.startswith("/"))
+            if not paths:
+                continue
             parameters = inspect.signature(function).parameters.values()
             found[f"{group_name}.{name}"] = (
                 tuple(text for text in texts if text in VERBS) or ("GET",),
-                tuple(text for text in texts if text.startswith("/")),
+                paths,
                 tuple(
                     parameter.name
                     for parameter in parameters

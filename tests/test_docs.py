@@ -7,6 +7,7 @@ import typing
 from enum import Enum
 from pathlib import Path
 from types import NoneType, UnionType
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -24,7 +25,13 @@ from bostie import (
     ui,
     voice,
 )
+from bostie.cache import Cache
+from bostie.models import AllowedMentions
+from bostie.rest import REST
 from bostie.testing import FakeDiscord, payloads, run, running
+
+if TYPE_CHECKING:
+    from bostie.http import HTTPClient
 
 ROOT = Path(__file__).parent.parent
 DOCS = ROOT / "docs"
@@ -242,12 +249,14 @@ def test_the_event_list_names_every_event_class() -> None:
 def test_the_rest_guide_lists_every_method_of_every_bot_group() -> None:
     groups = text(DOCS / "guide" / "rest.md").split("## The groups")[1]
     rows = GROUP_ROW.findall(groups)
-    operations = text(ROOT / "tests" / "fixtures" / "rest" / "operations.txt")
-    expected: dict[str, set[str]] = {}
-    for line in operations.splitlines():
-        name, *flags = line.split()[2:]
-        if "bearer" not in flags:
-            group, method = name.split(".")
-            expected.setdefault(group, set()).add(method)
+    rest = REST(cast("HTTPClient", None), AllowedMentions(), Cache())
+    expected = {
+        name: {
+            method
+            for method, _ in inspect.getmembers(type(group), inspect.isfunction)
+            if not method.startswith("_")
+        }
+        for name, group in vars(rest).items()
+    }
 
     assert {group: set(CODE.findall(methods)) for group, methods in rows} == expected

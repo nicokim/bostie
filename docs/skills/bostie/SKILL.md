@@ -109,6 +109,7 @@ if __name__ == "__main__":
 
 - `bot.rest.<group>.<verb>(ids..., **fields)`: the ids in the URL come first and positional, then Discord's field names as keywords, and `reason=` for the audit log. The verbs are `fetch`, `list`, `create`, `edit` and `delete`, or the word Discord's docs use, as in `bot.rest.members.add_role(guild_id, user_id, role_id)`.
 - A paged `list` is an async iterator: `async for message in bot.rest.messages.list(channel_id, limit=100):`.
+- `await bot.rest.messages.purge(channel_id, limit=100, check=...)` deletes recent messages in bulk and older ones one by one, skipping system messages; do not loop over `delete` yourself.
 - Failures raise `HTTPException` subclasses: `Forbidden`, `NotFound`, `BadRequest`, `RateLimited`. bostie waits out rate limits itself.
 - `bot.rest` exists once the bot has started. A script without a gateway uses `async with RESTClient() as client:` and `client.rest`.
 - Attachments and CDN images download without the token: `await bot.http.read(attachment)` returns the bytes, `bot.http.save(attachment, path)` writes a file, and `bot.http.to_file(attachment)` returns a `File` to upload again.
