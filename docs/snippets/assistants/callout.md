@@ -1,9 +1,9 @@
-{% from "links.md" import repo, owner, name, site with context %}
-!!! tip "Using an AI coding assistant?"
+{% from "links.md" import repo, owner, name, site, t with context %}
+!!! tip "{{ t("Using an AI coding assistant?") }}"
 
-    Install the bostie skill to make your coding assistant better at bostie tasks. Copy the prompt and paste it into your coding assistant.{% if not expanded %} [More about the skill](assistants.md){% endif %}
+    {{ t("Install the bostie skill to make your coding assistant better at bostie tasks. Copy the prompt and paste it into your coding assistant.") }}{% if not expanded %} [{{ t("More about the skill") }}](assistants.md){% endif %}
 
-    ???{{ "+" if expanded }} example "Install the bostie skill"
+    ???{{ "+" if expanded }} example "{{ t("Install the bostie skill") }}"
 
         ```text
         Install the bostie skill for my coding agent so it writes correct bostie code: Discord bots with slash commands, components, events, REST calls, voice and tests.

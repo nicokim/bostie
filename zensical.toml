@@ -6,8 +6,10 @@ exclude_docs = """
 snippets/
 skills/
 /plugin.json
+/i18n/
 """
 extra_css = ["assets/stylesheets/bostie.css"]
+extra_javascript = ["assets/javascripts/languages.js"]
 nav = [
   { "Home" = "index.md" },
   { "Get started" = [
@@ -155,3 +157,6 @@ show_root_heading = true
 [project.plugins.macros]
 render_by_default = false
 include_dir = "docs/snippets/assistants"
+
+# one line per translation in docs/i18n/<code>/: <theme language code> = "<its name in that language>"
+[project.extra.languages]

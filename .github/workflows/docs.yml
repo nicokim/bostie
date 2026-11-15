@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
           enable-cache: false
       # the API reference is read from the source, so the Rust core is not built
-      - run: uv run --locked --only-group docs zensical build --strict
+      - run: uv run --locked --only-group docs python docs/i18n/languages.py build
       - if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

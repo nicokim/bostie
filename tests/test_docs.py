@@ -39,6 +39,7 @@ ROOT = Path(__file__).parent.parent
 DOCS = ROOT / "docs"
 SKILL = DOCS / "skills" / "bostie"
 SNIPPETS = sorted((DOCS / "snippets").rglob("*.py"))
+I18N = runpy.run_path(str(DOCS / "i18n" / "languages.py"))
 FENCE = re.compile(r"^```python\n(.*?)^```", re.MULTILINE | re.DOTALL)
 ANY_FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 INCLUDE = re.compile(r'--8<-- "([^"]+)"\n')
@@ -234,6 +235,12 @@ def test_the_tests_of_the_testing_guide_pass() -> None:
     for name, test in tests.items():
         if name.startswith("test_"):
             test()
+
+
+def test_every_registered_language_translates_every_page() -> None:
+    gaps = {code: I18N["missing"](code) for code in I18N["LANGUAGES"]}
+
+    assert {code: pages for code, pages in gaps.items() if pages} == {}
 
 
 def test_the_event_list_names_every_event_class() -> None:

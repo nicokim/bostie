@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["python/bostie/testing/fixtures/", "tests/fixtures/", "THIRD-PARTY-NOTICES.md"]
+extend-exclude = ["python/bostie/testing/fixtures/", "tests/fixtures/", "THIRD-PARTY-NOTICES.md", "docs/i18n/*/"]
 
 [default.extend-words]
 seeked = "seeked"
