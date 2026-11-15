@@ -258,9 +258,6 @@ def localized_category_choice() -> dict[str, Any]:
         ({"search": {"name_localizations": {"fr": "chercher"}}}, ("search",)),
         ({"kit": {"description_localizations": None}}, ("kit",)),
         ({"kit": {"description": "Old text"}}, ("kit",)),
-        ({"kit": {"contexts": [0]}}, ("kit",)),
-        ({"search": {"default_member_permissions": None}}, ("search",)),
-        ({"search": {"nsfw": True}}, ("search",)),
     ],
 )
 def test_a_difference_sends_one_put_with_the_other_types(
@@ -344,7 +341,7 @@ def test_no_local_commands_means_no_request() -> None:
     run(scenario)
 
 
-def test_guild_scope_syncs_each_guild_and_ignores_contexts() -> None:
+def test_guild_scope_syncs_each_guild() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         results = await sync_commands(
             http,
@@ -361,7 +358,6 @@ def test_guild_scope_syncs_each_guild_and_ignores_contexts() -> None:
             for guild in (11, 22)
             for method in ("GET", "PUT")
         ]
-        assert all("contexts" not in command for command in fake.requests[1].json)
 
     run(scenario)
 

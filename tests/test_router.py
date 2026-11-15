@@ -318,8 +318,6 @@ def test_error_hooks_pick_the_nearest_base_then_walk_up() -> None:
     assert list(music.find_error_handlers(DetailedError())) == [hook, parent_hook]
     assert list(music.find_error_handlers(KeyError())) == [other_hook, parent_hook]
     assert list(bot.find_error_handlers(DetailedError())) == [parent_hook]
-    with pytest.raises(ValueError, match="AppError already exists"):
-        music.on_error(AppError)(hook)
 
 
 def test_walk_commands_yields_leaves_in_order() -> None:

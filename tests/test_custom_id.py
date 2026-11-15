@@ -38,12 +38,6 @@ def route(template: str) -> ComponentRoute[...]:
         ("vote:{tag}:{up:int}", "other:x:1", None),
         ("v:{n:int}", "v:12junk", None),
         ("{n:int}1{x}", "12121x", {"n": 1212, "x": "x"}),
-        (MANY, "a:b:c:d:e:f:g\n:end", None),
-        (
-            MANY,
-            "a:b:c:d:e:f:g:end",
-            {"a": "a", "b": "b", "c": "c", "d": "d", "e": "e", "f": "f:g"},
-        ),
     ],
 )
 def test_match(

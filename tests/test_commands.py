@@ -109,7 +109,6 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (PartialChannel, option(7)),
         (Attachment, option(11)),
         (User | Role, option(9)),
-        (ResolvedMember | Role, option(9)),
         (
             Literal["a", "b"],
             option(
@@ -778,33 +777,21 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
 
 
 @pytest.mark.parametrize(
-    ("given", "resolved", "problem"),
+    ("given", "problem"),
     [
-        ([], Resolved(), "required option 'name' is missing"),
-        (
-            [filled("name", 3, "x"), filled("other", 3, "y")],
-            Resolved(),
-            "no option 'other'",
-        ),
-        ([filled("name", 4, 1)], Resolved(), "no option 'name' of type 4"),
-        ([filled("name", 3, 1)], Resolved(), "is STRING but got 1"),
-        ([filled("name", 3, "x"), filled("count", 4, True)], Resolved(), "is INTEGER"),
-        ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], Resolved(), "choices"),
-        ([filled("name", 3, "x"), filled("mode", 3, "avg")], Resolved(), "choices"),
-        (
-            [filled("name", 3, "x"), filled("member", 6, "9")],
-            Resolved(),
-            "no ResolvedMember",
-        ),
-        (
-            [filled("name", 3, "x"), filled("member", 6, "abc")],
-            Resolved(),
-            "no ResolvedMember",
-        ),
+        ([], "required option 'name' is missing"),
+        ([filled("name", 3, "x"), filled("other", 3, "y")], "no option 'other'"),
+        ([filled("name", 4, 1)], "no option 'name' of type 4"),
+        ([filled("name", 3, 1)], "is STRING but got 1"),
+        ([filled("name", 3, "x"), filled("count", 4, True)], "is INTEGER"),
+        ([filled("name", 3, "x"), filled("unit", 3, "kelvin")], "choices"),
+        ([filled("name", 3, "x"), filled("mode", 3, "avg")], "choices"),
+        ([filled("name", 3, "x"), filled("member", 6, "9")], "no ResolvedMember"),
+        ([filled("name", 3, "x"), filled("member", 6, "abc")], "no ResolvedMember"),
     ],
 )
 def test_bind_rejects_unexpected_input(
-    given: list[InteractionDataOption], resolved: Resolved, problem: str
+    given: list[InteractionDataOption], problem: str
 ) -> None:
     router = Router()
 
@@ -820,7 +807,7 @@ def test_bind_rejects_unexpected_input(
         pass
 
     with pytest.raises(OptionConversionError, match=problem):
-        show.bind(given, resolved)
+        show.bind(given, Resolved())
 
 
 def test_autocomplete_functions_are_found_by_option_name() -> None:

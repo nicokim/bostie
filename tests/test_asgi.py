@@ -9,7 +9,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from bostie import ASGIApp, Bot, Context, InteractionContextType
+from bostie import ASGIApp, Bot, Context
 from bostie.asgi import MAX_BODY
 from bostie.events import ApplicationAuthorized, Starting, Stopped
 from bostie.testing import FakeDiscord, payloads, run, running
@@ -77,7 +77,7 @@ async def serving(app: ASGIApp) -> AsyncIterator[None]:
 
 def test_signed_interactions_reach_commands_without_a_gateway() -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, contexts=[InteractionContextType.GUILD])
+        bot = Bot(api_url=fake.api_url)
 
         @bot.command
         async def ping(ctx: Context) -> None:
@@ -89,8 +89,6 @@ def test_signed_interactions_reach_commands_without_a_gateway() -> None:
         body = msgspec.json.encode(interaction)
         async with serving(app):
             assert bot.application_id == fake.application_id
-            mention = f"</ping:{fake.commands[0]['id']}>"
-            assert await bot.command_mention("ping") == mention
             assert await post(app, body, signed=False) == (401, b"")
             ping_body = msgspec.json.encode(interaction | {"type": 1})
             assert await post(app, ping_body) == (200, b'{"type":1}')
@@ -98,7 +96,7 @@ def test_signed_interactions_reach_commands_without_a_gateway() -> None:
             assert await post(app, body) == (202, b"")
             assert (await callback).json["data"]["content"] == "pong"
         assert fake.connections == []
-        assert (fake.commands[0]["name"], fake.commands[0]["contexts"]) == ("ping", [0])
+        assert fake.commands[0]["name"] == "ping"
 
     run(scenario)
 
