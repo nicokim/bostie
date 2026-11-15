@@ -84,7 +84,7 @@ A member can kick, ban, time out or edit only members whose highest role is lowe
 |---|---|
 | `top_role(guild, member)` | the member's highest `Role`, or `None` when it has only `@everyone` |
 | `display_colors(guild, member)` | the `RoleColors` of its highest role with a color, or `None` |
-| `can_act_on(guild, actor, target)` | whether `actor` outranks `target`: the owner outranks everyone, nobody outranks the owner, and otherwise the highest roles compare by position |
+| `can_act_on(guild, actor, target)` | whether `actor` outranks `target`, a member or a role: the owner outranks everyone, nobody outranks the owner, and otherwise the actor's highest role compares by position with the target's highest role, or with the role itself, as Discord does for role management |
 
 Roles at the same position rank by id, the older role first, as Discord orders them.
 

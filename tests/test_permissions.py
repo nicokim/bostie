@@ -201,3 +201,21 @@ def test_a_member_acts_only_on_members_it_outranks(
     actor: ResolvedMember, target: ResolvedMember, expected: bool
 ) -> None:
     assert can_act_on(RANKED, actor, target) is expected
+
+
+@pytest.mark.parametrize(
+    ("actor", "target", "expected"),
+    [
+        (member(OWNER), HIGH, True),
+        (member(roles=(HIGH,)), LOW, True),
+        (member(roles=(HIGH,)), TIE, True),
+        (member(roles=(HIGH,)), HIGH, False),
+        (member(roles=(LOW,)), HIGH, False),
+        (member(), GUILD, False),
+    ],
+)
+def test_a_member_acts_only_on_roles_below_its_top_role(
+    actor: ResolvedMember, target: int, expected: bool
+) -> None:
+    role = next(role for role in RANKED.roles if role.id == target)
+    assert can_act_on(RANKED, actor, role) is expected

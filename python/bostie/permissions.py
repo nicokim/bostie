@@ -203,13 +203,15 @@ def display_colors(guild: Guild, member: AnyMember) -> RoleColors | None:
     return max(colored, key=_rank).colors if colored else None
 
 
-def can_act_on(guild: Guild, actor: AnyMember, target: AnyMember) -> bool:
-    """Whether `actor` outranks `target`: the owner outranks all, nobody the owner."""
-    if target.id == guild.owner_id:
+def can_act_on(guild: Guild, actor: AnyMember, target: AnyMember | Role) -> bool:
+    """Whether `actor` outranks a member or a role: the owner all, nobody the owner."""
+    if isinstance(target, Role):
+        target_rank = _rank(target)
+    elif target.id == guild.owner_id:
         return False
-    if actor.id == guild.owner_id:
-        return True
-    return _rank(top_role(guild, actor)) > _rank(top_role(guild, target))
+    else:
+        target_rank = _rank(top_role(guild, target))
+    return actor.id == guild.owner_id or _rank(top_role(guild, actor)) > target_rank
 
 
 def _rank(role: Role | None) -> tuple[int, int]:
