@@ -814,15 +814,27 @@ mod tests {
 
     #[test]
     fn backoff_doubles_with_jitter_and_stays_under_its_cap() {
-        let tuning = ConnectionTuning::default();
-        for failures in 0..40 {
-            let delay = tuning.backoff(failures);
-            let base = tuning.resume_backoff.saturating_mul(1 << failures.min(16));
-            assert!(delay <= tuning.resume_backoff_max, "{failures}: {delay:?}");
-            assert!(
-                delay >= (base / 2).min(tuning.resume_backoff_max),
-                "{failures}: {delay:?}"
-            );
+        let cap = Duration::from_secs(5);
+        let tuning = ConnectionTuning {
+            resume_backoff: Duration::from_millis(500),
+            resume_backoff_max: cap,
+            ..ConnectionTuning::default()
+        };
+        for (failures, base) in [
+            (0, 500),
+            (1, 1_000),
+            (3, 4_000),
+            (4, 8_000),
+            (39, 32_768_000),
+        ] {
+            let base = Duration::from_millis(base);
+            for _ in 0..100 {
+                let delay = tuning.backoff(failures);
+                assert!(
+                    (base / 2).min(cap) <= delay && delay <= base.min(cap),
+                    "{failures}: {delay:?}"
+                );
+            }
         }
     }
 
