@@ -132,10 +132,10 @@ impl Heartbeat {
         }
     }
 
-    fn beat(&mut self, paused: bool) {
+    fn beat(&mut self, paused: bool, now: Instant) {
         self.acked = false;
         self.paused = paused;
-        self.next += self.interval;
+        self.next = (self.next + self.interval).max(now + self.interval / 2);
     }
 }
 
@@ -442,7 +442,7 @@ impl Shard {
         if !heartbeat.acked && !heartbeat.paused {
             return Err(Ending::Zombie);
         }
-        heartbeat.beat(connection.held.is_some());
+        heartbeat.beat(connection.held.is_some(), Instant::now());
         self.send_heartbeat(connection).await
     }
 
@@ -820,8 +820,8 @@ mod tests {
             let mut heartbeat = Heartbeat::after_hello(interval, hello_at, fraction);
             let first = heartbeat.next;
 
-            heartbeat.beat(false);
-            heartbeat.beat(true);
+            heartbeat.beat(false, first);
+            heartbeat.beat(true, first + interval);
 
             assert!(
                 first >= hello_at && first < hello_at + interval,
@@ -829,5 +829,17 @@ mod tests {
             );
             assert_eq!(heartbeat.next, first + interval * 2, "{fraction}");
         }
+    }
+
+    #[test]
+    fn a_beat_after_a_stall_waits_half_an_interval_before_the_next() {
+        let interval = Duration::from_millis(41_250);
+        let hello_at = Instant::now();
+        let mut heartbeat = Heartbeat::after_hello(interval, hello_at, 0.0);
+        let woke = hello_at + interval * 3;
+
+        heartbeat.beat(false, woke);
+
+        assert_eq!(heartbeat.next, woke + interval / 2);
     }
 }
