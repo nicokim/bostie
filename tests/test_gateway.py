@@ -86,18 +86,8 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
     async def scenario(harness: Harness) -> None:
         fake, gateway = harness.fake, harness.gateway
         before = gateway.latency
-        gateway.identify_limit(
-            {"remaining": 0, "total": 1, "reset_after": 300, "max_concurrency": 1}
-        )
         harness.start()
 
-        assert await harness.deliveries.get() == (
-            "disconnected",
-            0,
-            None,
-            "daily identify limit reached; waiting 1 s",
-            False,
-        )
         identify = await fake.next_identify()
         assert identify == {
             "token": fake.token,

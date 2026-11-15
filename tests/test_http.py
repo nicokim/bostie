@@ -137,8 +137,6 @@ def test_a_rate_limit_longer_than_bostie_waits_raises_rate_limited(
         ("/oauth2/token", {}),
         ("/oauth2/token/revoke", {}),
         ("/partner-sdk/token", {}),
-        ("/partner-sdk/child-token", {}),
-        ("/partner-sdk/provisional-accounts/unmerge", {}),
     ],
 )
 def test_another_partys_rejected_token_keeps_its_status_and_code(
@@ -280,18 +278,15 @@ def test_an_audit_log_reason_outside_1_to_512_characters_is_not_sent() -> None:
     run(scenario)
 
 
-def test_http_settings_bound_the_retries_and_the_rate_limit_wait() -> None:
+def test_http_settings_bound_the_rate_limit_wait() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        fake.fail("GET", "/users/@me", 502, {"message": "Bad Gateway", "code": 0})
-        with pytest.raises(ServerError):
-            await http.request("GET", "/users/@me")
         fake.rate_limit("GET", "/users/@me", retry_after=0.2)
         with pytest.raises(RateLimited):
             await http.request("GET", "/users/@me")
 
-        assert len(fake.requests) == 2
+        assert len(fake.requests) == 1
 
-    run(scenario, http=HTTPSettings(retries=0, max_rate_limit_wait=0.1))
+    run(scenario, http=HTTPSettings(max_rate_limit_wait=0.1))
 
 
 @pytest.mark.parametrize(

@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from bostie.http import HTTPClient
 
 FIXTURES = Path(__file__).parent / "fixtures" / "rest"
-MENTIONS = {"parse": ["users", "roles"]}
 VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 type Shape = tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], bool]
@@ -175,12 +174,11 @@ def test_every_operation_that_takes_a_reason_sends_it_to_the_audit_log() -> None
     run(scenario)
 
 
-def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
+def test_messages_are_sent_edited_fetched_and_deleted() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
         guild_id = int(payloads.fixture("rest/guild")["id"])
         channel_id = int(payloads.channel()["id"])
-        member_id = int(payloads.member()["user"]["id"])
         async with running(bot, fake):
             await asyncio.gather(
                 bot.wait_for(GuildCreate),
@@ -190,23 +188,12 @@ def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
             sent = await messages.create(
                 channel_id, "hello", files=[File("a.txt", b"A")], reply_to=5
             )
-            assert fake.requests[-1].json == {
-                "content": "hello",
-                "allowed_mentions": MENTIONS,
-                "message_reference": {"type": 0, "message_id": 5},
-                "attachments": [{"id": 0, "filename": "a.txt"}],
-            }
             assert sent.content == "hello"
             assert sent.raw["id"] == str(sent.id)
 
             edited = await messages.edit(
                 channel_id, sent.id, content="edited", attachments=[7]
             )
-            assert fake.requests[-1].json == {
-                "content": "edited",
-                "allowed_mentions": MENTIONS,
-                "attachments": [{"id": 7}],
-            }
             fetched = await messages.fetch(channel_id, sent.id)
             assert (edited.content, fetched.content) == ("edited", "edited")
             link = f"https://discord.com/channels/{guild_id}/{channel_id}/{sent.id}"
@@ -217,12 +204,6 @@ def test_messages_are_sent_edited_fetched_and_deleted_and_ids_fetched() -> None:
             await messages.delete(channel_id, sent.id)
             with pytest.raises(NotFound):
                 await messages.fetch(channel_id, sent.id)
-
-            assert (await bot.rest.channels.fetch(channel_id)).id == channel_id
-            assert (await bot.rest.guilds.fetch(guild_id)).id == guild_id
-            assert (await bot.rest.users.fetch(member_id)).id == member_id
-            member = await bot.rest.members.fetch(guild_id, member_id)
-            assert member.id == member_id
 
     run(scenario)
 

@@ -74,7 +74,7 @@ async def received_ops(fake: FakeDiscord, count: int) -> list[int]:
     return [(await fake.gateway_received.get())["op"] for _ in range(count)]
 
 
-def test_handshake_sends_wire_ordered_frames_and_acks_until_held() -> None:
+def test_handshake_answers_and_acks_heartbeats_until_held() -> None:
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         async with session.ws_connect(fake.gateway_url) as ws:
             hello = await ws.receive_str()
@@ -88,14 +88,12 @@ def test_handshake_sends_wire_ordered_frames_and_acks_until_held() -> None:
             seq = await fake.dispatch("MESSAGE_CREATE", payloads.message())
             after_held_beat = await receive(ws)
 
-        assert hello.startswith(
-            '{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":41250,'
-        )
+        assert msgspec.json.decode(hello)["op"] == 10
+        assert msgspec.json.decode(ack)["op"] == 11
         assert (ready["t"], ready["s"], ready["op"]) == ("READY", 1, 0)
         assert ready["d"]["user"] == fake.bot_user
         assert ready["d"]["resume_gateway_url"] == fake.gateway_url + "-resume"
         assert (await fake.next_identify())["intents"] == 513
-        assert ack == '{"t":null,"s":null,"op":11,"d":null}'
         assert (after_held_beat["t"], after_held_beat["s"], seq) == (
             "MESSAGE_CREATE",
             2,

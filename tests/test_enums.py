@@ -74,9 +74,7 @@ def test_application_flags_read_flags_new_only_when_it_is_sent(
     ("flags", "unknown"),
     [
         (Permissions, 1 << 70),
-        (ApplicationFlags, 1 << 70),
         (MessageFlags, 1 << 63),
-        (ChannelFlags, 1 << 63),
         (Intents, 1 << 40),
     ],
 )

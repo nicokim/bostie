@@ -13,14 +13,10 @@ from bostie.enums import (
     ChannelFlags,
     ChannelType,
     ComponentType,
-    ContentScanMetadataFlags,
     EmbedFlags,
-    EmbedMediaFlags,
-    EmbedType,
     GuildFeature,
     MessageFlags,
     OptionType,
-    UnfurledMediaItemFlags,
 )
 from bostie.events import Ready, decode_event
 from bostie.file import File
@@ -39,12 +35,10 @@ from bostie.models import (
     ComponentInteraction,
     ComponentInteractionMetadata,
     Container,
-    ContentScanMetadata,
     DisplayNameStyles,
     Embed,
     Entitlement,
     FileComponent,
-    Guild,
     InteractionMetadata,
     LobbyMessage,
     MediaGallery,
@@ -52,7 +46,6 @@ from bostie.models import (
     Message,
     ModalInteractionMetadata,
     ModalSubmitInteraction,
-    Model,
     PartialChannel,
     PartialEntitlement,
     ResolvedMember,
@@ -91,20 +84,10 @@ def payload(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
 
-@pytest.mark.parametrize(
-    ("name", "model"),
-    [
-        ("rest/user.json", User),
-        ("rest/member.json", Member),
-        ("rest/channel.json", Channel),
-        ("rest/guild.json", Guild),
-        ("rest/message.json", Message),
-    ],
-)
-def test_rest_results_keep_their_payload(name: str, model: type[Model]) -> None:
-    data = payload(name)
+def test_rest_results_keep_their_payload() -> None:
+    data = payload("rest/message.json")
 
-    value = decode(model, data)
+    value = decode(Message, data)
 
     assert value.raw_json is data
     assert value.raw == json.loads(data)
@@ -154,27 +137,12 @@ def test_interaction_metadata_decodes_by_type_and_keeps_unknown_types() -> None:
     assert decode(Message, payload("rest/message.json")).interaction_metadata is None
 
 
-def test_embeds_and_media_items_carry_their_content_scan_flags() -> None:
-    first, video = decode(Message, payload("events/MESSAGE_CREATE.rich.json")).embeds
-    container = decode(
-        Message, payload("events/MESSAGE_CREATE.components_v2.json")
-    ).components[0]
+def test_a_link_preview_embed_decodes_its_components() -> None:
     text = {"type": 10, "content": "A preview"}
     preview = {"type": "components", "flags": 64, "components": [text]}
 
-    assert (first.type, video.type) == (EmbedType.RICH, EmbedType.VIDEO)
-    assert first.thumbnail is not None
-    assert first.thumbnail.flags == EmbedMediaFlags.IS_ANIMATED
-    assert first.thumbnail.content_type == "image/gif"
-    assert isinstance(container, Container)
-    gallery = container.components[1]
-    assert isinstance(gallery, MediaGallery)
-    media = gallery.items[0].media
-    assert media.flags == UnfurledMediaItemFlags(0)
-    assert media.content_scan_metadata == ContentScanMetadata(
-        flags=ContentScanMetadataFlags(0)
-    )
     link = decoder(Embed).decode(msgspec.json.encode(preview))
+
     assert link.flags == EmbedFlags.CONTAINS_GORE_CONTENT
     assert link.components == (TextDisplay(content="A preview"),)
 

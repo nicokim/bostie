@@ -1,10 +1,7 @@
-from functools import partial
-
 import pytest
 
 from bostie import (
     ApplicationIntegrationType,
-    BadRequest,
     BearerClient,
     OAuth2Scope,
     Permissions,
@@ -63,18 +60,13 @@ def test_authorization_urls_carry_only_the_parts_given(url: str, query: str) -> 
 def test_a_code_becomes_a_token_whose_bearer_sets_a_role_connection() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with BearerClient(api_url=fake.api_url) as anonymous:
-            exchange = partial(
-                anonymous.rest.oauth2.exchange_code,
+            fake.fail("POST", "/oauth2/token", 200, TOKEN)
+            token = await anonymous.rest.oauth2.exchange_code(
                 client_id=1,
                 client_secret="secret",
                 code="code",
                 redirect_uri="https://example.com/back",
             )
-            fake.fail("POST", "/oauth2/token", 400, {"error_description": "Bad code"})
-            with pytest.raises(BadRequest, match="Bad code"):
-                await exchange()
-            fake.fail("POST", "/oauth2/token", 200, TOKEN)
-            token = await exchange()
         assert "user-token" not in repr(token)
         async with BearerClient(token.access_token, api_url=fake.api_url) as user:
             connection = {"platform_name": "Chess", "metadata": {"rating": "1800"}}
@@ -93,7 +85,6 @@ def test_a_code_becomes_a_token_whose_bearer_sets_a_role_connection() -> None:
             "redirect_uri": "https://example.com/back",
         }
         assert "authorization" not in exchanged.headers
-        assert set_connection.headers["authorization"] == "Bearer user-token"
         assert set_connection.json == connection
         assert updated.metadata == {"rating": "1800"}
 

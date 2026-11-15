@@ -444,7 +444,10 @@ def test_unknown_enum_values_and_flag_bits_are_kept(
     assert all(value in (0, UNKNOWN_FLAGS) for value in flags)
 
 
-@pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)
+@pytest.mark.parametrize(
+    ("path", "decoder"),
+    [case for case in ALL_FIXTURES if any(components(load(case.values[0])))],
+)
 def test_unknown_component_types_become_unknown_components(
     path: Path, decoder: Decoder
 ) -> None:

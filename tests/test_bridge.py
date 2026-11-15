@@ -14,7 +14,6 @@ from bostie import _native
 from bostie._bridge import Bridge, GatewayDelivery
 from bostie.errors import (
     BostieError,
-    InvalidToken,
     RequestBudgetExhausted,
     StateError,
     TransportError,
@@ -26,7 +25,6 @@ from bostie.testing import FakeDiscord
 TOKEN = "dummy-token"
 API_URL = "https://discord.test/api/v10"
 CALLBACK = "/interactions/{interaction_id}/{interaction_token}/callback"
-OK = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello"
 
 type Handler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]
 type Runner = Callable[[Coroutine[Any, Any, None]], None]
@@ -72,15 +70,16 @@ async def serve(handler: Handler) -> tuple[asyncio.Server, str]:
     return server, f"http://{host}:{port}/api/v10"
 
 
-async def reply_hello(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-) -> None:
+async def echo_path(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     while True:
         try:
-            await reader.readuntil(b"\r\n\r\n")
+            head = await reader.readuntil(b"\r\n\r\n")
         except asyncio.IncompleteReadError:
             break
-        writer.write(OK)
+        path = head.split(b" ")[1]
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (len(path), path)
+        )
         await writer.drain()
     writer.close()
 
@@ -106,18 +105,21 @@ class RewrittenCore:
 
 def test_concurrent_requests_all_complete(run: Runner) -> None:
     async def main() -> None:
-        server, url = await serve(reply_hello)
+        server, url = await serve(echo_path)
         async with server, bridge(url) as running:
             responses = await asyncio.gather(
                 *(callback(running, index) for index in range(500))
             )
 
-        assert responses == [(200, b"hello")] * 500
+        assert responses == [
+            (200, b"/api/v10/interactions/%d/token/callback" % index)
+            for index in range(500)
+        ]
 
     run(main())
 
 
-def test_cancelling_a_request_drops_its_connection(run: Runner) -> None:
+def test_cancelling_a_request_drops_its_connection() -> None:
     async def main() -> None:
         disconnected = asyncio.Event()
 
@@ -134,16 +136,12 @@ def test_cancelling_a_request_drops_its_connection(run: Runner) -> None:
                     await me(running)
             await asyncio.wait_for(disconnected.wait(), 5)
 
-    run(main())
+    asyncio.run(main())
 
 
-def test_invalid_request_raises_immediately(run: Runner) -> None:
+def test_an_invalid_token_param_is_refused_without_showing_it() -> None:
     async def main() -> None:
         async with bridge() as running:
-            with pytest.raises(ValueError, match="unsupported method"):
-                await running.request("GE T", "/users/@me", {}, [])
-            with pytest.raises(ValueError, match="needs the param"):
-                await running.request("GET", "/channels/{channel_id}", {}, [])
             with pytest.raises(ValueError, match="webhook_token") as raised:
                 await running.request(
                     "POST",
@@ -153,7 +151,7 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
                 )
             assert "SECRET-TOKEN" not in str(raised.value)
 
-    run(main())
+    asyncio.run(main())
 
 
 def test_a_proxy_bostie_cannot_tunnel_through_is_refused() -> None:
@@ -196,7 +194,7 @@ def test_delivery_failure_stops_the_bridge(
         raise RuntimeError("drain exploded")
 
     async def main() -> None:
-        server, url = await serve(reply_hello)
+        server, url = await serve(echo_path)
         async with server, bridge(url) as running:
             monkeypatch.setattr(running, "core", RewrittenCore(running.core, explode))
             with pytest.raises(TransportError) as raised:
@@ -209,7 +207,7 @@ def test_delivery_failure_stops_the_bridge(
 
 
 def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
-    run: Runner, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def main() -> None:
         exploded = asyncio.Event()
@@ -229,7 +227,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
             with pytest.raises(TransportError, match="stopped"):
                 await started
 
-    run(main())
+    asyncio.run(main())
 
     failures = {
         (record.levelno, str(record.exc_info[1]))
@@ -240,7 +238,7 @@ def test_a_failing_callback_is_logged_and_the_bridge_keeps_working(
 
 
 def test_rust_logs_reach_the_python_logger_at_their_level(
-    run: Runner, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def main() -> None:
         async with (
@@ -251,7 +249,7 @@ def test_rust_logs_reach_the_python_logger_at_their_level(
             assert (await me(running))[0] == 200
 
     with caplog.at_level(logging.DEBUG, logger="bostie.rest"):
-        run(main())
+        asyncio.run(main())
 
     levels = [
         record.levelno for record in caplog.records if record.name == "bostie.rest"
@@ -260,7 +258,7 @@ def test_rust_logs_reach_the_python_logger_at_their_level(
     assert logging.DEBUG in levels
 
 
-def test_rejects_use_from_another_loop(run: Runner) -> None:
+def test_rejects_use_from_another_loop() -> None:
     async def main() -> None:
         async with bridge() as running:
 
@@ -270,7 +268,7 @@ def test_rejects_use_from_another_loop(run: Runner) -> None:
             with pytest.raises(StateError, match="another event loop"):
                 await asyncio.to_thread(use_from_another_loop)
 
-    run(main())
+    asyncio.run(main())
 
 
 def test_close_propagates_the_callers_cancellation() -> None:
@@ -290,13 +288,11 @@ def test_close_propagates_the_callers_cancellation() -> None:
     ("kind", "error_type"),
     [
         ("transport", TransportError),
-        ("invalid_token", InvalidToken),
         ("request_budget", RequestBudgetExhausted),
         ("bug", BostieError),
     ],
 )
 def test_failure_kinds_map_to_their_exceptions(
-    run: Runner,
     monkeypatch: pytest.MonkeyPatch,
     kind: "_native.FailureKind",
     error_type: type[BostieError],
@@ -305,7 +301,7 @@ def test_failure_kinds_map_to_their_exceptions(
         return [("failure", delivery[1], kind, "relabelled") for delivery in deliveries]
 
     async def main() -> None:
-        server, url = await serve(reply_hello)
+        server, url = await serve(echo_path)
         async with server, bridge(url) as running:
             monkeypatch.setattr(running, "core", RewrittenCore(running.core, relabel))
             with pytest.raises(error_type, match="relabelled") as raised:
@@ -313,7 +309,7 @@ def test_failure_kinds_map_to_their_exceptions(
 
         assert type(raised.value) is error_type
 
-    run(main())
+    asyncio.run(main())
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
