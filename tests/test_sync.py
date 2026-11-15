@@ -465,6 +465,13 @@ def test_translate_fills_the_localizations_a_command_leaves_out() -> None:
         assert kit_payload["description_localizations"]["fr"] == "Tout essayer"
         (inspect,) = kit_payload["options"]
         assert inspect["name_localizations"] == {"de": "nie"}
+        search_payload = fake.requests[1].json[1]
+        limit = next(o for o in search_payload["options"] if o["name"] == "limit")
+        assert search_payload["name"] == "search"
+        assert [choice["name_localizations"] for choice in limit["choices"]] == [
+            {"de": "nie"},
+            {"de": "nie"},
+        ]
 
     run(scenario)
 
