@@ -216,6 +216,10 @@ impl Visit for Text {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU16;
+
+    use bostie_core::{Auth, Core, Delivery, HttpSettings};
+
     use super::*;
 
     #[test]
@@ -231,6 +235,43 @@ mod tests {
         assert!(!allowed(Level::INFO, "h2::proto"));
         assert!(allowed(Level::WARN, "h2::proto"));
         assert_eq!(Forward.max_level_hint(), Some(LevelFilter::DEBUG));
+    }
+
+    #[test]
+    fn a_log_goes_to_the_newest_open_sink_and_falls_back_once_it_closes() {
+        let core = || {
+            Core::new(
+                Auth::Bot("token"),
+                "http://127.0.0.1:1/api/v10",
+                NonZeroU16::MIN,
+                HttpSettings::default(),
+                None,
+            )
+            .unwrap()
+        };
+        let (older, _older_bell) = core();
+        let (newer, _newer_bell) = core();
+        register(older.log_sink());
+        register(newer.log_sink());
+
+        deliver(Level::WARN, "bostie", "first".to_owned());
+        newer.close().unwrap();
+        deliver(Level::WARN, "bostie", "second".to_owned());
+
+        let sent = |core: &Core| -> Vec<String> {
+            core.drain()
+                .unwrap()
+                .into_iter()
+                .filter_map(|delivery| match delivery {
+                    Delivery::Log { message, .. } if message == "first" || message == "second" => {
+                        Some(message)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(sent(&newer), ["first"]);
+        assert_eq!(sent(&older), ["second"]);
     }
 
     #[test]
