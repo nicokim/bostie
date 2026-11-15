@@ -500,6 +500,8 @@ class _MessageKind(msgspec.Struct, gc=False):
 
 
 def message_model(data: bytes) -> type[Message] | type[WebhookMessage]:
+    if b'"webhook_id"' not in bytes(data):
+        return Message
     kind = decoder(_MessageKind).decode(data)
     return Message if kind.webhook_id is None else WebhookMessage
 
