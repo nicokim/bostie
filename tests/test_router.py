@@ -240,8 +240,8 @@ def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:
 
     assert bot.commands == {("ping", ()): ping}
     assert bot.listeners == {}
-    assert plugin.parent is None
-    assert clashing_route.parent is None
+    assert plugin._parent is None
+    assert clashing_route._parent is None
     del plugin.commands["ping", ()]
     bot.include(plugin)
     assert bot.commands == {("ping", ()): ping, ("echo", ()): echo}
@@ -304,7 +304,7 @@ def test_error_hooks_register_bare_or_for_types_and_all_or_nothing() -> None:
     with pytest.raises(TypeError, match="is not an exception class"):
         router.on_error(AppError, not_an_exception)
 
-    assert router.error_handlers == {Exception: hook, AppError: other_hook}
+    assert router._error_handlers == {Exception: hook, AppError: other_hook}
 
 
 def test_error_hooks_pick_the_nearest_base_then_walk_up() -> None:
@@ -349,6 +349,6 @@ def test_router_defaults_apply_where_a_command_or_route_sets_nothing() -> None:
     assert (purge.ephemeral, purge.auto_defer) == (True, None)
     assert (ping.ephemeral, ping.auto_defer) == (False, 1.0)
     assert (route.ephemeral, route.auto_defer) == (True, None)
-    payload = purge.payload("global")
+    payload = purge._payload("global")
     assert (payload["default_member_permissions"], payload["nsfw"]) == ("8", True)
     assert payload["contexts"] == [0]

@@ -17,7 +17,7 @@ class ErrorHooks:
     """Error hooks by exception type, for a router, a command or a route."""
 
     def __init__(self) -> None:
-        self.error_handlers: dict[type[BaseException], ErrorHook[Any]] = {}
+        self._error_handlers: dict[type[BaseException], ErrorHook[Any]] = {}
 
     @overload
     def on_error[H: ErrorHook[Exception]](self, handler: H, /) -> H: ...
@@ -53,13 +53,13 @@ class ErrorHooks:
 
         return register
 
-    def error_handler(self, error: BaseException) -> ErrorHook[Any] | None:
+    def _error_handler(self, error: BaseException) -> ErrorHook[Any] | None:
         """The hook registered for the nearest class of `error`, or None."""
         return next(
             (
-                self.error_handlers[cls]
+                self._error_handlers[cls]
                 for cls in type(error).__mro__
-                if cls in self.error_handlers
+                if cls in self._error_handlers
             ),
             None,
         )
@@ -68,12 +68,12 @@ class ErrorHooks:
         self, handler: H, exception_types: tuple[type[BaseException], ...]
     ) -> H:
         for exception_type in exception_types:
-            if exception_type in self.error_handlers:
+            if exception_type in self._error_handlers:
                 raise ValueError(
                     f"an error hook for {exception_type.__name__} already exists"
                 )
         for exception_type in exception_types:
-            self.error_handlers[exception_type] = handler
+            self._error_handlers[exception_type] = handler
         return handler
 
 
@@ -109,5 +109,5 @@ class Answering(ErrorHooks):
     def _scopes(self) -> list[Mapping[str, object]]:
         return [
             self._settings,
-            *(router.defaults for router in routers_from(self.router)),
+            *(router._defaults for router in routers_from(self.router)),
         ]

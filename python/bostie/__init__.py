@@ -1,5 +1,6 @@
 from bostie import activity, cdn, checks, color, fmt, oauth2, ui, voice
 from bostie._native import VERSION
+from bostie._sync import SyncResult
 from bostie.asgi import ASGIApp
 from bostie.bot import Bot
 from bostie.client import BearerClient, RESTClient, SyncWebhookClient, WebhookClient
@@ -357,7 +358,6 @@ from bostie.models import (
 )
 from bostie.router import Router
 from bostie.snowflake import snowflake_time, time_snowflake
-from bostie.sync import SyncResult
 from bostie.webhook_events import decode_webhook_event, verify_signature
 
 __version__ = VERSION

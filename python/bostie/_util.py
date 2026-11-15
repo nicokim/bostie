@@ -59,4 +59,4 @@ def routers_from(router: "Router") -> Iterator["Router"]:
     current: Router | None = router
     while current is not None:
         yield current
-        current = current.parent
+        current = current._parent

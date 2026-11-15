@@ -41,7 +41,7 @@ from bostie.models import (
     ModalSubmitInteraction,
     UnknownInteraction,
 )
-from bostie.router import Router, scoped
+from bostie.router import Router, _scoped
 from bostie.snowflake import snowflake_time
 
 if TYPE_CHECKING:
@@ -215,11 +215,11 @@ class Interactions:
         data = interaction.data
         command: Command | ContextMenuCommand | EntryPointCommand
         options: tuple[InteractionDataOption, ...] = ()
-        found = self._bot.match_command(data)
+        found = self._bot._match_command(data)
         if found is not None:
             command, options = found
         elif (
-            menu := scoped(
+            menu := _scoped(
                 self._bot.context_menus, (data.type, data.name), data.guild_id
             )
         ) is not None:
@@ -236,20 +236,20 @@ class Interactions:
         )
         arguments: Arguments = dict
         if isinstance(command, Command):
-            arguments = partial(command.arguments, ctx, options, data.resolved)
+            arguments = partial(command._arguments, ctx, options, data.resolved)
         elif isinstance(command, ContextMenuCommand):
-            arguments = partial(command.bind, interaction)
+            arguments = partial(command._bind, interaction)
         return self._run_handler(ctx, command, command.callback, arguments)
 
     def _autocomplete_handler(
         self, interaction: AutocompleteInteraction, received: float
     ) -> Coroutine[Any, Any, None] | None:
-        found = self._bot.match_command(interaction.data)
+        found = self._bot._match_command(interaction.data)
         if found is None:
             return None
         command, options = found
         focused = next((option for option in options if option.focused), None)
-        function = None if focused is None else command.autocompletes.get(focused.name)
+        function = None if focused is None else command._autocompletes.get(focused.name)
         if focused is None or function is None:
             return None
         ctx = AutocompleteContext(interaction, self._bot, received=received)
@@ -270,7 +270,7 @@ class Interactions:
                 await _run_check(check, ctx)
                 passed.append(check)
             for router in routers:
-                for hook in router.before_hooks:
+                for hook in router._before_hooks:
                     await hook(ctx)
             try:
                 bound = arguments()
@@ -334,7 +334,7 @@ class Interactions:
         handler: Callable[..., object],
         error: Exception,
     ) -> None:
-        hooks = (scope.error_handler(error) for scope in _nodes(node))
+        hooks = (scope._error_handler(error) for scope in _nodes(node))
         for hook in (
             *(hook for hook in hooks if hook is not None),
             *node.router.find_error_handlers(error),
@@ -418,14 +418,14 @@ def _nodes(
 
 def _checks(node: Node, routers: list[Router]) -> list[Check]:
     return [
-        *(check for router in routers for check in router.checks),
-        *(check for scope in reversed(_nodes(node)) for check in scope.checks),
+        *(check for router in routers for check in router._checks),
+        *(check for scope in reversed(_nodes(node)) for check in scope._checks),
     ]
 
 
 async def _after(ctx: AnyContext, routers: list[Router]) -> None:
     for router in reversed(routers):
-        for hook in router.after_hooks:
+        for hook in router._after_hooks:
             try:
                 await hook(ctx)
             except Exception:

@@ -72,15 +72,12 @@ __all__ = [
     "ChoiceValue",
     "Command",
     "CommandCallback",
-    "CommandDefaults",
     "ContextMenuCommand",
     "Convert",
     "EntryPointCommand",
     "Group",
     "Option",
     "Range",
-    "Scope",
-    "autocomplete_choices",
 ]
 
 type ChoiceValue = str | int | float
@@ -89,77 +86,77 @@ type CommandCallback = Callable[..., Coroutine[Any, Any, None]]
 type AutocompleteCallback = Callable[
     ["AutocompleteContext", Any], Coroutine[Any, Any, Iterable[ChoiceValue | Choice]]
 ]
-type OptionModel = type[User | ResolvedMember | Role | PartialChannel | Attachment]
-type TargetModel = type[User | ResolvedMember | Message | WebhookMessage]
-type TargetType = Literal[CommandType.USER, CommandType.MESSAGE]
-type Scope = Literal["global", "guild"]
+type _OptionModel = type[User | ResolvedMember | Role | PartialChannel | Attachment]
+type _TargetModel = type[User | ResolvedMember | Message | WebhookMessage]
+type _TargetType = Literal[CommandType.USER, CommandType.MESSAGE]
+type _Scope = Literal["global", "guild"]
 
-MAX_OPTIONS = 25
-MAX_CHOICES = 25
-MAX_NAME = 32
-MAX_TEXT = 100
-MAX_LENGTH_BOUND = 6000
-MAX_INTEGER = 2**53 - 1
-MAX_NUMBER = 2**53
-TEXT_BUDGET = 8000
-MAX_FILE_TYPES = 10
-CONVERTER_ARITY = 2
-DEFAULT_DESCRIPTION = "\N{HORIZONTAL ELLIPSIS}"
-GOOGLE_ENTRY = re.compile(r"(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<text>.*)")
-NAME_SYMBOLS = frozenset({"-", "_", "\N{MODIFIER LETTER APOSTROPHE}"})
-NAME_SCRIPTS = (range(0x0900, 0x0980), range(0x0E00, 0x0E80))
-CONTEXT_POSITIONAL = (
+_MAX_OPTIONS = 25
+_MAX_CHOICES = 25
+_MAX_NAME = 32
+_MAX_TEXT = 100
+_MAX_LENGTH_BOUND = 6000
+_MAX_INTEGER = 2**53 - 1
+_MAX_NUMBER = 2**53
+_TEXT_BUDGET = 8000
+_MAX_FILE_TYPES = 10
+_CONVERTER_ARITY = 2
+_DEFAULT_DESCRIPTION = "\N{HORIZONTAL ELLIPSIS}"
+_GOOGLE_ENTRY = re.compile(r"(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<text>.*)")
+_NAME_SYMBOLS = frozenset({"-", "_", "\N{MODIFIER LETTER APOSTROPHE}"})
+_NAME_SCRIPTS = (range(0x0900, 0x0980), range(0x0E00, 0x0E80))
+_CONTEXT_POSITIONAL = (
     inspect.Parameter.POSITIONAL_ONLY,
     inspect.Parameter.POSITIONAL_OR_KEYWORD,
 )
-OPTION_KEYWORD = (
+_OPTION_KEYWORD = (
     inspect.Parameter.POSITIONAL_OR_KEYWORD,
     inspect.Parameter.KEYWORD_ONLY,
 )
-SCALAR_TYPES: dict[object, OptionType] = {
+_SCALAR_TYPES: dict[object, OptionType] = {
     str: OptionType.STRING,
     int: OptionType.INTEGER,
     float: OptionType.NUMBER,
     bool: OptionType.BOOLEAN,
 }
-VALUE_TYPES: dict[OptionType, tuple[type, ...]] = {
+_VALUE_TYPES: dict[OptionType, tuple[type, ...]] = {
     OptionType.STRING: (str,),
     OptionType.INTEGER: (int,),
     OptionType.NUMBER: (int, float),
     OptionType.BOOLEAN: (bool,),
 }
-CHOICE_TYPES = frozenset({OptionType.STRING, OptionType.INTEGER, OptionType.NUMBER})
-NUMERIC_TYPES = frozenset({OptionType.INTEGER, OptionType.NUMBER})
-FIELD_TYPES = {
-    "choices": CHOICE_TYPES,
-    "autocomplete": CHOICE_TYPES,
-    "min_value": NUMERIC_TYPES,
-    "max_value": NUMERIC_TYPES,
+_CHOICE_TYPES = frozenset({OptionType.STRING, OptionType.INTEGER, OptionType.NUMBER})
+_NUMERIC_TYPES = frozenset({OptionType.INTEGER, OptionType.NUMBER})
+_FIELD_TYPES = {
+    "choices": _CHOICE_TYPES,
+    "autocomplete": _CHOICE_TYPES,
+    "min_value": _NUMERIC_TYPES,
+    "max_value": _NUMERIC_TYPES,
     "min_length": frozenset({OptionType.STRING}),
     "max_length": frozenset({OptionType.STRING}),
     "channel_types": frozenset({OptionType.CHANNEL}),
     "file_types": frozenset({OptionType.ATTACHMENT}),
 }
-MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
-OPTION_MODELS: dict[OptionModel, OptionType] = {
+_MENTIONABLE_TYPES = frozenset({OptionType.USER, OptionType.ROLE})
+_OPTION_MODELS: dict[_OptionModel, OptionType] = {
     User: OptionType.USER,
     ResolvedMember: OptionType.USER,
     Role: OptionType.ROLE,
     PartialChannel: OptionType.CHANNEL,
     Attachment: OptionType.ATTACHMENT,
 }
-MODEL_ADVICE: dict[type, str] = {
+_MODEL_ADVICE: dict[type, str] = {
     Channel: "a channel option is a PartialChannel",
     Member: "a member option is a ResolvedMember",
     PartialUser: "a user option is a User or a ResolvedMember",
 }
-TARGET_MODELS: dict[CommandType, tuple[TargetModel, ...]] = {
+_TARGET_MODELS: dict[CommandType, tuple[_TargetModel, ...]] = {
     CommandType.USER: (User, ResolvedMember),
     CommandType.MESSAGE: (Message, WebhookMessage),
 }
 
 
-class CommandDefaults(TypedDict, total=False):
+class _CommandDefaults(TypedDict, total=False):
     """Where global commands can be used, unless a command says otherwise."""
 
     contexts: Iterable[InteractionContextType]
@@ -228,7 +225,7 @@ class _Parameter:
     python_name: str
     payload: dict[str, Any]
     default: object
-    models: tuple[OptionModel, ...]
+    models: tuple[_OptionModel, ...]
     lookup: Callable[[Any], object] | None
     autocomplete: AutocompleteCallback | None
     converter: Callable[[Any, Any], Any] | None = None
@@ -248,7 +245,7 @@ class _Parameter:
     def convert(self, value: Any, resolved: Resolved) -> object:
         if self.models:
             return self._resolve(value, resolved)
-        if type(value) not in VALUE_TYPES[self.type]:
+        if type(value) not in _VALUE_TYPES[self.type]:
             raise OptionConversionError(
                 f"option {self.name!r} is {self.type.name} but got {value!r}"
             )
@@ -288,15 +285,15 @@ class _Registered(Answering):
         super().__init__(router, settings)
         self.type = type
         self.name = name
-        self.checks = tuple(settings["checks"])
+        self._checks = tuple(settings["checks"])
         self.name_localizations = dict(settings["name_localizations"] or {})
         for localized in self.name_localizations.values():
             _check_name(localized, spaced=type is not CommandType.CHAT_INPUT)
         self.guilds = tuple(settings.get("guilds", ()))
         self.extra = dict(settings["extra"] or {})
 
-    def payload(
-        self, scope: Scope, defaults: CommandDefaults | None = None
+    def _payload(
+        self, scope: _Scope, defaults: _CommandDefaults | None = None
     ) -> dict[str, Any]:
         """The JSON that registers this top-level command in the given scope."""
         permissions = self._inherited("default_permissions", None)
@@ -361,7 +358,7 @@ class _Node(_Registered, ABC):
             "options": self._options(),
         }
 
-    def option_payload(self) -> dict[str, Any]:
+    def _option_payload(self) -> dict[str, Any]:
         """The JSON of this subcommand or group as an option of its parent."""
         return {
             "type": self._option_type,
@@ -402,7 +399,7 @@ class Command(_Node):
                 f"{qualified_name(callback)}: {error}"
             ) from None
         self.callback = callback
-        self.autocompletes: dict[str, AutocompleteCallback] = {
+        self._autocompletes: dict[str, AutocompleteCallback] = {
             parameter.name: parameter.autocomplete
             for parameter in self._parameters
             if parameter.autocomplete is not None
@@ -413,7 +410,7 @@ class Command(_Node):
         if parent is None:
             _warn_if_over_budget(self)
 
-    def bind(
+    def _bind(
         self, options: Sequence[InteractionDataOption], resolved: Resolved
     ) -> dict[str, Any]:
         """Turn the leaf options of an invocation into keyword arguments."""
@@ -436,7 +433,7 @@ class Command(_Node):
             arguments[parameter.python_name] = parameter.default
         return arguments
 
-    def filled(
+    def _filled(
         self, options: Sequence[InteractionDataOption], resolved: Resolved
     ) -> dict[str, Any]:
         """The options given so far by name, converted as far as they convert.
@@ -453,14 +450,14 @@ class Command(_Node):
                 filled[option.name] = parameter.convert(option.value, resolved)
         return filled
 
-    async def arguments(
+    async def _arguments(
         self,
         ctx: object,
         options: Sequence[InteractionDataOption],
         resolved: Resolved,
     ) -> dict[str, Any]:
         """The keyword arguments of an invocation, with `Convert` functions applied."""
-        arguments = self.bind(options, resolved)
+        arguments = self._bind(options, resolved)
         given = {option.name for option in options}
         for parameter in self._parameters:
             if parameter.converter is None or parameter.name not in given:
@@ -580,7 +577,7 @@ class Group(_Node):
             raise CommandDefinitionError(
                 f"/{self.qualified_name} already has a subcommand named {node.name!r}"
             )
-        if len(self.commands) == MAX_OPTIONS:
+        if len(self.commands) == _MAX_OPTIONS:
             raise CommandDefinitionError(
                 f"/{self.qualified_name} already has 25 subcommands"
             )
@@ -590,7 +587,7 @@ class Group(_Node):
 
     @override
     def _options(self) -> list[dict[str, Any]]:
-        return [node.option_payload() for node in self.commands.values()]
+        return [node._option_payload() for node in self.commands.values()]
 
 
 class ContextMenuCommand(_Registered):
@@ -598,7 +595,7 @@ class ContextMenuCommand(_Registered):
 
     def __init__(
         self,
-        type: TargetType,
+        type: _TargetType,
         name: str,
         callback: CommandCallback,
         *,
@@ -607,7 +604,7 @@ class ContextMenuCommand(_Registered):
     ) -> None:
         try:
             _check_name(name, spaced=True)
-            self._target, self._models = _target(callback, TARGET_MODELS[type])
+            self._target, self._models = _target(callback, _TARGET_MODELS[type])
         except CommandDefinitionError as error:
             raise CommandDefinitionError(
                 f"{qualified_name(callback)}: {error}"
@@ -615,7 +612,7 @@ class ContextMenuCommand(_Registered):
         super().__init__(type, name, router=router, settings=settings)
         self.callback = callback
 
-    def bind(self, interaction: CommandInteraction) -> dict[str, Any]:
+    def _bind(self, interaction: CommandInteraction) -> dict[str, Any]:
         """Resolve the user or message the command was run on into its argument."""
         data = interaction.data
         for model in self._models:
@@ -684,13 +681,13 @@ def autocomplete_choices(
         choice = item if isinstance(item, Choice) else Choice(str(item), item)
         if (
             not choice.name
-            or type(choice.value) not in VALUE_TYPES[option_type]
-            or (isinstance(choice.value, str) and len(choice.value) > MAX_TEXT)
+            or type(choice.value) not in _VALUE_TYPES[option_type]
+            or (isinstance(choice.value, str) and len(choice.value) > _MAX_TEXT)
         ):
             dropped = True
             continue
-        truncated = truncated or len(choice.name) > MAX_TEXT
-        choices.append(_choice(replace(choice, name=choice.name[:MAX_TEXT])))
+        truncated = truncated or len(choice.name) > _MAX_TEXT
+        choices.append(_choice(replace(choice, name=choice.name[:_MAX_TEXT])))
     where = qualified_name(function)
     if dropped:
         warn_user(
@@ -700,14 +697,14 @@ def autocomplete_choices(
         )
     if truncated:
         warn_user(f"{where} returned choice names over 100 characters; they were cut")
-    if len(choices) > MAX_CHOICES:
+    if len(choices) > _MAX_CHOICES:
         warn_user(f"{where} returned more than 25 choices; only the first 25 were sent")
-    return choices[:MAX_CHOICES]
+    return choices[:_MAX_CHOICES]
 
 
 def _parameters(callback: CommandCallback) -> list[_Parameter]:
     signature = list(inspect.signature(callback).parameters.values())
-    if not signature or signature[0].kind not in CONTEXT_POSITIONAL:
+    if not signature or signature[0].kind not in _CONTEXT_POSITIONAL:
         raise CommandDefinitionError(
             "the first parameter must take the context positionally"
         )
@@ -717,7 +714,7 @@ def _parameters(callback: CommandCallback) -> list[_Parameter]:
         _parameter(parameter, hints, documented.get(parameter.name))
         for parameter in signature[1:]
     ]
-    if len(parameters) > MAX_OPTIONS:
+    if len(parameters) > _MAX_OPTIONS:
         raise CommandDefinitionError(f"{len(parameters)} options; Discord allows 25")
     seen: set[str] = set()
     for parameter in parameters:
@@ -728,11 +725,11 @@ def _parameters(callback: CommandCallback) -> list[_Parameter]:
 
 
 def _target(
-    callback: CommandCallback, allowed: tuple[TargetModel, ...]
-) -> tuple[str, tuple[TargetModel, ...]]:
+    callback: CommandCallback, allowed: tuple[_TargetModel, ...]
+) -> tuple[str, tuple[_TargetModel, ...]]:
     match list(inspect.signature(callback).parameters.values()):
         case [context, target] if (
-            context.kind in CONTEXT_POSITIONAL and target.kind in OPTION_KEYWORD
+            context.kind in _CONTEXT_POSITIONAL and target.kind in _OPTION_KEYWORD
         ):
             hints = typing.get_type_hints(callback, include_extras=True)
             members, optional, _ = _unwrap(hints.get(target.name))
@@ -753,7 +750,7 @@ def _target(
 
 def _check_takes_only_the_context(callback: CommandCallback) -> None:
     match list(inspect.signature(callback).parameters.values()):
-        case [context] if context.kind in CONTEXT_POSITIONAL:
+        case [context] if context.kind in _CONTEXT_POSITIONAL:
             return
         case _:
             raise CommandDefinitionError("the function must take only the context")
@@ -769,7 +766,7 @@ def _parameter(
 
 
 def _hint(parameter: inspect.Parameter, hints: Mapping[str, object]) -> object:
-    if parameter.kind not in OPTION_KEYWORD:
+    if parameter.kind not in _OPTION_KEYWORD:
         raise CommandDefinitionError(
             "options cannot be *args, **kwargs or positional-only"
         )
@@ -818,7 +815,7 @@ def _infer(
     elif settings.description is not None:
         description = settings.description
     else:
-        description = documented or DEFAULT_DESCRIPTION
+        description = documented or _DEFAULT_DESCRIPTION
     payload: dict[str, Any] = {
         "type": option_type,
         "name": parameter.name if settings.name is None else settings.name,
@@ -866,7 +863,7 @@ def _value_hint(converter: Callable[[Any, Any], Any]) -> object:
         hints = typing.get_type_hints(converter, include_extras=True)
     except (TypeError, ValueError):
         parameters, hints = [], {}
-    if len(parameters) != CONVERTER_ARITY or parameters[-1] not in hints:
+    if len(parameters) != _CONVERTER_ARITY or parameters[-1] not in hints:
         raise CommandDefinitionError(
             "Convert takes a function of the context and a value with a type hint"
         )
@@ -897,20 +894,20 @@ def _unwrap(hint: object) -> tuple[tuple[object, ...], bool, list[object]]:
 def _kind(
     members: tuple[object, ...],
 ) -> tuple[
-    OptionType, list[Choice], tuple[OptionModel, ...], Callable[[Any], object] | None
+    OptionType, list[Choice], tuple[_OptionModel, ...], Callable[[Any], object] | None
 ]:
     models = tuple(
-        model for member in members for model in OPTION_MODELS if member is model
+        model for member in members for model in _OPTION_MODELS if member is model
     )
     if len(models) == len(members):
-        kinds = frozenset(OPTION_MODELS[model] for model in models)
+        kinds = frozenset(_OPTION_MODELS[model] for model in models)
         if len(models) == 1:
-            return OPTION_MODELS[models[0]], [], models, None
-        if kinds == MENTIONABLE_TYPES:
+            return _OPTION_MODELS[models[0]], [], models, None
+        if kinds == _MENTIONABLE_TYPES:
             return OptionType.MENTIONABLE, [], models, None
     hint = members[0] if len(members) == 1 else None
-    if hint in SCALAR_TYPES:
-        return SCALAR_TYPES[hint], [], (), None
+    if hint in _SCALAR_TYPES:
+        return _SCALAR_TYPES[hint], [], (), None
     if isinstance(hint, type) and issubclass(hint, Enum):
         choices = [Choice(member.name, member.value) for member in hint]
         return _choice_type(choices), choices, (), hint
@@ -919,7 +916,7 @@ def _kind(
         choices = [Choice(str(value), value) for value in values]
         lookup = {value: value for value in values}.__getitem__
         return _choice_type(choices), choices, (), lookup
-    advice = [use for model, use in MODEL_ADVICE.items() if model in members]
+    advice = [use for model, use in _MODEL_ADVICE.items() if model in members]
     raise CommandDefinitionError(
         "; ".join(
             [
@@ -932,9 +929,9 @@ def _kind(
 
 
 def _choice_type(choices: Sequence[Choice]) -> OptionType:
-    kinds = {SCALAR_TYPES.get(type(choice.value)) for choice in choices}
+    kinds = {_SCALAR_TYPES.get(type(choice.value)) for choice in choices}
     kind = kinds.pop() if len(kinds) == 1 else None
-    if kind is None or kind not in CHOICE_TYPES:
+    if kind is None or kind not in _CHOICE_TYPES:
         raise CommandDefinitionError(
             "Literal and Enum values must be all str, all int or all float"
         )
@@ -969,14 +966,14 @@ def _check_option(payload: Mapping[str, Any]) -> None:
         _check_name(localized)
     for localized in payload.get("description_localizations", {}).values():
         _check_description(localized)
-    for key, allowed in FIELD_TYPES.items():
+    for key, allowed in _FIELD_TYPES.items():
         if key in payload and option_type not in allowed:
             raise CommandDefinitionError(
                 f"{key} does not apply to {option_type.name} options"
             )
     if "choices" in payload and "autocomplete" in payload:
         raise CommandDefinitionError("autocomplete cannot be combined with choices")
-    if len(payload.get("file_types", ())) > MAX_FILE_TYPES:
+    if len(payload.get("file_types", ())) > _MAX_FILE_TYPES:
         raise CommandDefinitionError("file_types takes at most 10 types")
     _check_choices(option_type, payload.get("choices", []))
     _check_bounds(option_type, payload)
@@ -985,32 +982,32 @@ def _check_option(payload: Mapping[str, Any]) -> None:
 def _check_choices(
     option_type: OptionType, choices: Sequence[Mapping[str, Any]]
 ) -> None:
-    if len(choices) > MAX_CHOICES:
+    if len(choices) > _MAX_CHOICES:
         raise CommandDefinitionError(f"{len(choices)} choices; Discord allows 25")
     for choice in choices:
         name, value = choice["name"], choice["value"]
-        if not 1 <= len(name) <= MAX_TEXT:
+        if not 1 <= len(name) <= _MAX_TEXT:
             raise CommandDefinitionError(
                 f"choice name {name!r} must be 1-100 characters long"
             )
-        if type(value) not in VALUE_TYPES[option_type]:
+        if type(value) not in _VALUE_TYPES[option_type]:
             raise CommandDefinitionError(
                 f"choice {name!r} has a {type(value).__name__} value "
                 f"for a {option_type.name} option"
             )
-        if isinstance(value, str) and len(value) > MAX_TEXT:
+        if isinstance(value, str) and len(value) > _MAX_TEXT:
             raise CommandDefinitionError(
                 f"choice value {value!r} is longer than 100 characters"
             )
 
 
 def _check_bounds(option_type: OptionType, payload: Mapping[str, Any]) -> None:
-    limit = MAX_NUMBER if option_type is OptionType.NUMBER else MAX_INTEGER
+    limit = _MAX_NUMBER if option_type is OptionType.NUMBER else _MAX_INTEGER
     if any(abs(payload.get(key) or 0) > limit for key in ("min_value", "max_value")):
         raise CommandDefinitionError(f"min and max must be within -{limit}..{limit}")
-    if not 0 <= payload.get("min_length", 0) <= MAX_LENGTH_BOUND:
+    if not 0 <= payload.get("min_length", 0) <= _MAX_LENGTH_BOUND:
         raise CommandDefinitionError("min_length must be 0-6000")
-    if not 1 <= payload.get("max_length", 1) <= MAX_LENGTH_BOUND:
+    if not 1 <= payload.get("max_length", 1) <= _MAX_LENGTH_BOUND:
         raise CommandDefinitionError("max_length must be 1-6000")
     for low, high in (("min_value", "max_value"), ("min_length", "max_length")):
         if low in payload and high in payload and payload[low] > payload[high]:
@@ -1031,7 +1028,7 @@ def _localized(key: str, texts: Mapping[str, str] | None) -> dict[str, Any]:
 
 def _check_name(name: str, *, spaced: bool = False) -> None:
     if not (
-        1 <= len(name) <= MAX_NAME
+        1 <= len(name) <= _MAX_NAME
         and all(_is_name_character(character, spaced=spaced) for character in name)
     ):
         letters = "letters, digits, spaces" if spaced else "lowercase letters, digits"
@@ -1041,17 +1038,17 @@ def _check_name(name: str, *, spaced: bool = False) -> None:
 
 
 def _is_name_character(character: str, *, spaced: bool) -> bool:
-    if character in NAME_SYMBOLS or (spaced and character == " "):
+    if character in _NAME_SYMBOLS or (spaced and character == " "):
         return True
     if not spaced and character != character.lower():
         return False
     return unicodedata.category(character)[0] in "LN" or any(
-        ord(character) in script for script in NAME_SCRIPTS
+        ord(character) in script for script in _NAME_SCRIPTS
     )
 
 
 def _check_description(description: str) -> None:
-    if not 1 <= len(description) <= MAX_TEXT:
+    if not 1 <= len(description) <= _MAX_TEXT:
         raise CommandDefinitionError(
             f"description {description!r} must be 1-100 characters long"
         )
@@ -1061,7 +1058,7 @@ def _command_description(callback: CommandCallback, description: str | None) -> 
     if description is not None:
         return description
     docstring = inspect.getdoc(callback)
-    return docstring.splitlines()[0] if docstring else DEFAULT_DESCRIPTION
+    return docstring.splitlines()[0] if docstring else _DEFAULT_DESCRIPTION
 
 
 def _documented(callback: CommandCallback) -> dict[str, str]:
@@ -1091,7 +1088,7 @@ def _described(lines: list[str], header: int, *, google: bool) -> dict[str, str]
         if _indent(line) > entry and name is not None:
             found[name] = f"{found[name]} {text}".strip()
         elif google:
-            match = GOOGLE_ENTRY.fullmatch(text)
+            match = _GOOGLE_ENTRY.fullmatch(text)
             if match is None:
                 break
             name, found[name] = match.group("name", "text")
@@ -1108,8 +1105,8 @@ def _indent(line: str) -> int:
 def _warn_if_over_budget(node: _Node) -> None:
     while node.parent is not None:
         node = node.parent
-    size = _text_size(node.payload("guild"))
-    if size > TEXT_BUDGET:
+    size = _text_size(node._payload("guild"))
+    if size > _TEXT_BUDGET:
         warn_user(
             f"/{node.name} uses {size} characters for names, descriptions and "
             "choice values; Discord allows 8000 per command"

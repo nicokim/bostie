@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any
 from bostie._util import qualified_name, warn_user
 from bostie.commands import (
     Command,
-    CommandDefaults,
     ContextMenuCommand,
     EntryPointCommand,
     Group,
-    Scope,
+    _CommandDefaults,
+    _Scope,
 )
 from bostie.enums import CommandType, InteractionContextType, Locale, OptionType
 from bostie.errors import BadRequest, CommandSyncError, SyncProblem, form_errors
@@ -86,7 +86,7 @@ async def sync_commands(
     guild_ids: Iterable[int],
     *,
     install_types: Iterable[int],
-    defaults: CommandDefaults | None = None,
+    defaults: _CommandDefaults | None = None,
     translate: Translate | None = None,
     always_put: bool = False,
 ) -> list[SyncResult]:
@@ -137,11 +137,11 @@ async def _sync_scope(
     guild_id: int | None,
     *,
     install_types: Iterable[int],
-    defaults: CommandDefaults | None,
+    defaults: _CommandDefaults | None,
     translate: Translate | None,
     always_put: bool,
 ) -> SyncResult:
-    scope: Scope
+    scope: _Scope
     params: dict[str, Any]
     if guild_id is None:
         scope, route, label = "global", GLOBAL_ROUTE, "global"
@@ -154,7 +154,7 @@ async def _sync_scope(
         scope, route, label = "guild", GUILD_ROUTE, f"guild {guild_id}"
         params = {"application_id": application_id, "guild_id": guild_id}
         fields = COMMAND_DEFAULTS
-    local = [command.payload(scope, defaults) for command in commands]
+    local = [command._payload(scope, defaults) for command in commands]
     if translate is not None:
         local = [_translated(command, translate) for command in local]
     remote = await http.request(

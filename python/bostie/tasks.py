@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 type TaskCallback = Callable[[], Coroutine[Any, Any, None]]
 type TaskHook = Callable[[], Coroutine[Any, Any, None]]
-type TaskFailed = Callable[["Task", Exception], None]
+type _TaskFailed = Callable[["Task", Exception], None]
 type Changed = Callable[[], None]
 
 
@@ -86,7 +86,7 @@ class Task:
         self._after = hook
         return hook
 
-    async def run(self, failed: TaskFailed) -> None:
+    async def _run(self, failed: _TaskFailed) -> None:
         self._count = 0
         try:
             if await self._hook(self._before, failed):
@@ -94,7 +94,7 @@ class Task:
         finally:
             await self._hook(self._after, failed)
 
-    async def _loop(self, failed: TaskFailed) -> None:
+    async def _loop(self, failed: _TaskFailed) -> None:
         loop = asyncio.get_running_loop()
         anchor = loop.time()
         due = datetime.now(UTC)
@@ -108,7 +108,7 @@ class Task:
             if self.seconds is not None:
                 delay = self.seconds - (loop.time() - anchor) % self.seconds
             else:
-                due = next_time(self.times, max(due, datetime.now(UTC)))
+                due = _next_time(self.times, max(due, datetime.now(UTC)))
                 delay = (due - datetime.now(UTC)).total_seconds()
             run = await self._wait(delay)
 
@@ -123,14 +123,14 @@ class Task:
             sleep.cancel()
         return not sleep.cancelled()
 
-    async def _call(self, failed: TaskFailed) -> None:
+    async def _call(self, failed: _TaskFailed) -> None:
         try:
             await self.callback()
         except Exception as error:
             failed(self, error)
         self._count += 1
 
-    async def _hook(self, hook: TaskHook | None, failed: TaskFailed) -> bool:
+    async def _hook(self, hook: TaskHook | None, failed: _TaskFailed) -> bool:
         if hook is None:
             return True
         try:
@@ -141,7 +141,7 @@ class Task:
         return True
 
 
-def next_time(times: Iterable[time], after: datetime) -> datetime:
+def _next_time(times: Iterable[time], after: datetime) -> datetime:
     """The first moment after `after` that one of `times` names, naive ones in UTC."""
     return min(_next(at, after) for at in times)
 

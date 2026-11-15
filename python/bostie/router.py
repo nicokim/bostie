@@ -24,7 +24,7 @@ from bostie.commands import (
     ContextMenuCommand,
     EntryPointCommand,
     Group,
-    TargetType,
+    _TargetType,
 )
 from bostie.custom_id import ComponentRoute
 from bostie.enums import (
@@ -43,7 +43,7 @@ from bostie.voice.events import VoiceEvent
 if TYPE_CHECKING:
     from bostie.bot import Bot
 
-RAW_EVENT_NAME = RawEvent.NAME
+_RAW_EVENT_NAME = RawEvent.NAME
 
 type AnyEvent = Event | VoiceEvent | BotEvent
 type ListenerCallback = Callable[[Any], Coroutine[Any, Any, None]]
@@ -83,7 +83,7 @@ class Router(ErrorHooks):
     ) -> None:
         """Set what its commands and routes inherit where they set nothing."""
         super().__init__()
-        self.defaults: dict[str, object] = {
+        self._defaults: dict[str, object] = {
             "ephemeral": ephemeral,
             "auto_defer": auto_defer,
             "default_permissions": default_permissions,
@@ -91,23 +91,23 @@ class Router(ErrorHooks):
             "contexts": contexts,
             "integration_types": integration_types,
         }
-        self.parent: Router | None = None
+        self._parent: Router | None = None
         self.commands: dict[CommandKey, Command | Group] = {}
         self.context_menus: dict[MenuKey, ContextMenuCommand | EntryPointCommand] = {}
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
         self.tasks: dict[TaskCallback, Task] = {}
-        self.checks: list[Check] = []
-        self.before_hooks: list[InvokeHook] = []
-        self.after_hooks: list[InvokeHook] = []
+        self._checks: list[Check] = []
+        self._before_hooks: list[InvokeHook] = []
+        self._after_hooks: list[InvokeHook] = []
 
     @property
     def bot(self) -> "Bot":
         """The bot this router is included in; StateError until then."""
-        if self.parent is None:
+        if self._parent is None:
             raise StateError("router.bot exists once the router is included in a Bot")
-        return self.parent.bot
+        return self._parent.bot
 
     @overload
     def command(self, callback: CommandCallback, /) -> Command: ...
@@ -171,7 +171,7 @@ class Router(ErrorHooks):
 
         def register(callback: CommandCallback) -> Command:
             command = Command(callback, router=self, settings=settings)
-            self._add(COMMANDS, _scope_key(command.name, command.guilds), command)
+            self._add(_COMMANDS, _scope_key(command.name, command.guilds), command)
             return command
 
         return register if callback is None else register(callback)
@@ -208,7 +208,7 @@ class Router(ErrorHooks):
                 "extra": extra,
             },
         )
-        self._add(COMMANDS, _scope_key(group.name, group.guilds), group)
+        self._add(_COMMANDS, _scope_key(group.name, group.guilds), group)
         return group
 
     def user_command(
@@ -313,7 +313,7 @@ class Router(ErrorHooks):
 
         def register(callback: CommandCallback) -> EntryPointCommand:
             command = EntryPointCommand(name, callback, router=self, settings=settings)
-            self._add(CONTEXT_MENUS, (command.type, name, ()), command)
+            self._add(_CONTEXT_MENUS, (command.type, name, ()), command)
             return command
 
         return register
@@ -382,7 +382,7 @@ class Router(ErrorHooks):
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route buttons and selects whose custom_id fits `template`."""
         settings = {"ephemeral": ephemeral, "auto_defer": auto_defer, "checks": checks}
-        return self._custom_id_route(COMPONENT_ROUTES, template, settings)
+        return self._custom_id_route(_COMPONENT_ROUTES, template, settings)
 
     def on_modal[**P](
         self,
@@ -394,7 +394,7 @@ class Router(ErrorHooks):
     ) -> Callable[[Callable[P, Coroutine[Any, Any, None]]], ComponentRoute[P]]:
         """Route the submits of modals whose custom_id fits `template`."""
         settings = {"ephemeral": ephemeral, "auto_defer": auto_defer, "checks": checks}
-        return self._custom_id_route(MODAL_ROUTES, template, settings)
+        return self._custom_id_route(_MODAL_ROUTES, template, settings)
 
     def every(
         self,
@@ -416,7 +416,7 @@ class Router(ErrorHooks):
                 router=self,
                 changed=self._registered,
             )
-            self._add(TASKS, task.callback, task)
+            self._add(_TASKS, task.callback, task)
             return task
 
         return register
@@ -427,17 +427,17 @@ class Router(ErrorHooks):
         A check takes the context and returns or awaits a bool; False refuses the
         run with CheckFailure, and it may raise a CheckFailure of its own.
         """
-        self.checks.append(predicate)
+        self._checks.append(predicate)
         return predicate
 
     def before_invoke[H: InvokeHook](self, hook: H) -> H:
         """Register `async def hook(ctx)`, run after the checks of each handler here."""
-        self.before_hooks.append(hook)
+        self._before_hooks.append(hook)
         return hook
 
     def after_invoke[H: InvokeHook](self, hook: H) -> H:
         """Register `async def hook(ctx)`, run after each handler here, even failed."""
-        self.after_hooks.append(hook)
+        self._after_hooks.append(hook)
         return hook
 
     def include(self, router: "Router | str") -> None:
@@ -447,13 +447,13 @@ class Router(ErrorHooks):
         """
         if isinstance(router, str):
             router = _module_router(importlib.import_module(router))
-        if router.parent is not None or router in routers_from(self):
+        if router._parent is not None or router in routers_from(self):
             raise ValueError("a router can be included once, and never into itself")
-        for registry in REGISTRIES:
+        for registry in _REGISTRIES:
             for key in registry.of(router):
                 self._check(registry, key)
-        router.parent = self
-        for registry in REGISTRIES:
+        router._parent = self
+        for registry in _REGISTRIES:
             for key, value in registry.of(router).items():
                 self._add(registry, key, value)
         for name, listeners in router.listeners.items():
@@ -468,13 +468,13 @@ class Router(ErrorHooks):
         name = router if isinstance(router, str) else None
         if isinstance(router, str):
             router = _imported_router(router)
-        if router.parent is not self:
+        if router._parent is not self:
             raise ValueError("the router is not included here")
         removed = {
             id(listener) for kept in router.listeners.values() for listener in kept
         }
         for ancestor in routers_from(self):
-            for registry in REGISTRIES:
+            for registry in _REGISTRIES:
                 owned = registry.of(ancestor)
                 for key, value in registry.of(router).items():
                     if owned.get(key) is value:
@@ -488,7 +488,7 @@ class Router(ErrorHooks):
                 else:
                     del ancestor.listeners[event]
         self._registered()
-        router.parent = None
+        router._parent = None
         if name is not None:
             for module in _submodules(name):
                 del sys.modules[module]
@@ -520,14 +520,14 @@ class Router(ErrorHooks):
         """The modal route for a custom_id and its placeholder values, or None."""
         return _match(self.modal_routes, custom_id)
 
-    def match_command(
+    def _match_command(
         self, data: CommandData
     ) -> tuple[Command, tuple[InteractionDataOption, ...]] | None:
         """The slash command `data` invokes, with its own options, or None."""
         if data.type is not CommandType.CHAT_INPUT:
             return None
         names, options = split_subcommands(data.options)
-        node: Command | Group | None = scoped(
+        node: Command | Group | None = _scoped(
             self.commands, (data.name,), data.guild_id
         )
         for name in names:
@@ -537,7 +537,7 @@ class Router(ErrorHooks):
     def find_error_handlers(self, error: BaseException) -> Iterator[ErrorHook[Any]]:
         """Hooks for `error`: this router's nearest match first, then each parent's."""
         for router in routers_from(self):
-            handler = router.error_handler(error)
+            handler = router._error_handler(error)
             if handler is not None:
                 yield handler
 
@@ -554,18 +554,20 @@ class Router(ErrorHooks):
                 raise TypeError(f"{event!r} is not an event class")
             self._add_listener(
                 event.NAME,
-                Listener(listener, None if event.NAME == RAW_EVENT_NAME else event),
+                Listener(listener, None if event.NAME == _RAW_EVENT_NAME else event),
             )
         return listener
 
     def _context_menu(
-        self, type: TargetType, name: str, settings: Mapping[str, object]
+        self, type: _TargetType, name: str, settings: Mapping[str, object]
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         def register(callback: CommandCallback) -> ContextMenuCommand:
             command = ContextMenuCommand(
                 type, name, callback, router=self, settings=settings
             )
-            self._add(CONTEXT_MENUS, (type, *_scope_key(name, command.guilds)), command)
+            self._add(
+                _CONTEXT_MENUS, (type, *_scope_key(name, command.guilds)), command
+            )
             return command
 
         return register
@@ -603,19 +605,19 @@ class Router(ErrorHooks):
         self._registered(listener)
 
     def _registered(self, listener: Listener | None = None) -> None:
-        if self.parent is not None:
-            parent: Router = self.parent
+        if self._parent is not None:
+            parent: Router = self._parent
             parent._registered(listener)
 
 
-COMMANDS: _Registry[CommandKey, Command | Group] = _Registry(
+_COMMANDS: _Registry[CommandKey, Command | Group] = _Registry(
     lambda router: router.commands,
     lambda key: CommandDefinitionError(
         f"a command named {key[0]!r} is already registered {_where(key[1])}"
     ),
     lambda key, keys: any(_overlap(key, other) for other in keys),
 )
-CONTEXT_MENUS: _Registry[MenuKey, ContextMenuCommand | EntryPointCommand] = _Registry(
+_CONTEXT_MENUS: _Registry[MenuKey, ContextMenuCommand | EntryPointCommand] = _Registry(
     lambda router: router.context_menus,
     lambda key: CommandDefinitionError(
         f"a {key[0].name.lower()} command named {key[1]!r} is already registered "
@@ -625,32 +627,32 @@ CONTEXT_MENUS: _Registry[MenuKey, ContextMenuCommand | EntryPointCommand] = _Reg
         key[0] == other[0] and _overlap(key[1:], other[1:]) for other in keys
     ),
 )
-COMPONENT_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
+_COMPONENT_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
     lambda router: router.component_routes,
     lambda template: ValueError(
         f"the component template {template!r} is already registered"
     ),
 )
-MODAL_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
+_MODAL_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
     lambda router: router.modal_routes,
     lambda template: ValueError(
         f"the modal template {template!r} is already registered"
     ),
 )
-TASKS: _Registry[TaskCallback, Task] = _Registry(
+_TASKS: _Registry[TaskCallback, Task] = _Registry(
     lambda router: router.tasks,
     lambda callback: ValueError(f"{qualified_name(callback)} already runs as a task"),
 )
-REGISTRIES: tuple[_Registry[Any, Any], ...] = (
-    COMMANDS,
-    CONTEXT_MENUS,
-    COMPONENT_ROUTES,
-    MODAL_ROUTES,
-    TASKS,
+_REGISTRIES: tuple[_Registry[Any, Any], ...] = (
+    _COMMANDS,
+    _CONTEXT_MENUS,
+    _COMPONENT_ROUTES,
+    _MODAL_ROUTES,
+    _TASKS,
 )
 
 
-def scoped[V](
+def _scoped[V](
     registered: Mapping[tuple[Any, ...], V], key: tuple[Any, ...], guild_id: int | None
 ) -> V | None:
     """The command registered under `key` for `guild_id`, else the global one."""

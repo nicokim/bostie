@@ -12,10 +12,10 @@ from bostie.commands import (
     ChoiceValue,
     Command,
     CommandCallback,
-    CommandDefaults,
     Convert,
     Option,
     Range,
+    _CommandDefaults,
     autocomplete_choices,
 )
 from bostie.enums import (
@@ -83,7 +83,7 @@ def command_with(hint: object, default: object = inspect.Parameter.empty) -> Com
 
 
 def only_option(command: Command) -> dict[str, Any]:
-    (option,) = command.payload("guild")["options"]
+    (option,) = command._payload("guild")["options"]
     return dict(option)
 
 
@@ -208,7 +208,7 @@ def test_required_options_come_first_in_declaration_order() -> None:
     ) -> None:
         pass
 
-    names = [option["name"] for option in roll.payload("guild")["options"]]
+    names = [option["name"] for option in roll._payload("guild")["options"]]
     assert names == ["b", "d", "a", "c"]
 
 
@@ -279,7 +279,7 @@ def test_hints_and_options_describe_an_option_before_the_docstring(
 
     assert command.description == "Roll some dice."
     assert [
-        option["description"] for option in command.payload("guild")["options"]
+        option["description"] for option in command._payload("guild")["options"]
     ] == [
         "Sides on each die, from 2 to 100.",
         "From the hint",
@@ -496,7 +496,7 @@ def test_text_over_8000_characters_warns() -> None:
 
 def test_contexts_and_install_types_reach_the_global_scope_only() -> None:
     router = Router()
-    defaults: CommandDefaults = {"contexts": [InteractionContextType.GUILD]}
+    defaults: _CommandDefaults = {"contexts": [InteractionContextType.GUILD]}
 
     @router.command
     async def anywhere(ctx: object) -> None:
@@ -509,11 +509,11 @@ def test_contexts_and_install_types_reach_the_global_scope_only() -> None:
     async def installed(ctx: object) -> None:
         pass
 
-    assert not {"contexts", "integration_types"} & anywhere.payload("global").keys()
-    assert anywhere.payload("global", defaults)["contexts"] == [0]
-    assert installed.payload("global", defaults)["contexts"] == [2]
-    assert installed.payload("global")["integration_types"] == [1]
-    assert not {"contexts", "integration_types"} & installed.payload("guild").keys()
+    assert not {"contexts", "integration_types"} & anywhere._payload("global").keys()
+    assert anywhere._payload("global", defaults)["contexts"] == [0]
+    assert installed._payload("global", defaults)["contexts"] == [2]
+    assert installed._payload("global")["integration_types"] == [1]
+    assert not {"contexts", "integration_types"} & installed._payload("guild").keys()
 
 
 def test_a_command_payload_carries_its_permissions_and_nsfw_flag() -> None:
@@ -523,7 +523,7 @@ def test_a_command_payload_carries_its_permissions_and_nsfw_flag() -> None:
     async def tag(ctx: object, name: str) -> None:
         """Show a tag."""
 
-    assert tag.payload("global") == {
+    assert tag._payload("global") == {
         "type": 1,
         "name": "tag",
         "description": "Show a tag.",
@@ -554,7 +554,7 @@ def test_group_tree_payload_and_names() -> None:
         """Remove a role."""
 
     assert color_set.qualified_name == "role color set"
-    assert role.payload("global") == {
+    assert role._payload("global") == {
         "type": 1,
         "name": "role",
         "description": "Manage roles",
@@ -606,7 +606,7 @@ def test_convert_takes_the_value_hints_type_and_runs_on_given_options() -> None:
         pass
 
     given = [filled("color", 3, "#ff0000"), filled("times", 4, 3)]
-    color, times = paint.payload("guild")["options"]
+    color, times = paint._payload("guild")["options"]
 
     assert color == {
         "type": 3,
@@ -617,11 +617,11 @@ def test_convert_takes_the_value_hints_type_and_runs_on_given_options() -> None:
         "max_length": 7,
     }
     assert (times["type"], times["required"]) == (4, False)
-    assert asyncio.run(paint.arguments(None, given, Resolved())) == {
+    assert asyncio.run(paint._arguments(None, given, Resolved())) == {
         "color": 0xFF0000,
         "times": 6,
     }
-    assert asyncio.run(paint.arguments(None, given[:1], Resolved()))["times"] == 1
+    assert asyncio.run(paint._arguments(None, given[:1], Resolved()))["times"] == 1
     with pytest.raises(CommandDefinitionError, match="Convert takes a function"):
         command_with(Annotated[int, Convert(int)])
 
@@ -649,7 +649,7 @@ def test_localizations_reach_every_level_and_follow_the_name_rules() -> None:
     ) -> None:
         """Pick a color."""
 
-    payload = role.payload("guild")
+    payload = role._payload("guild")
     (group,) = payload["options"]
     (command,) = group["options"]
     (option,) = command["options"]
@@ -735,7 +735,7 @@ def test_bind_converts_every_option_type() -> None:
         filled("half", 10, 1),
     ]
 
-    arguments = kitchen_sink().bind(given, RESOLVED)
+    arguments = kitchen_sink()._bind(given, RESOLVED)
 
     assert arguments == {
         "text": "hello",
@@ -773,7 +773,7 @@ def test_mentionable_prefers_the_first_class_that_resolves() -> None:
     }
     both = decode(Resolved, msgspec.json.encode(data))
 
-    assert poke.bind([filled("who", 9, "5")], both) == {"who": both.users[5]}
+    assert poke._bind([filled("who", 9, "5")], both) == {"who": both.users[5]}
 
 
 @pytest.mark.parametrize(
@@ -807,7 +807,7 @@ def test_bind_rejects_unexpected_input(
         pass
 
     with pytest.raises(OptionConversionError, match=problem):
-        show.bind(given, Resolved())
+        show._bind(given, Resolved())
 
 
 def test_autocomplete_functions_are_found_by_option_name() -> None:
@@ -819,7 +819,7 @@ def test_autocomplete_functions_are_found_by_option_name() -> None:
     ) -> None:
         pass
 
-    assert tag.autocompletes == {"tag-name": suggest}
+    assert tag._autocompletes == {"tag-name": suggest}
     assert only_option(tag)["autocomplete"] is True
 
 
@@ -901,13 +901,13 @@ def test_context_menu_payloads_carry_no_description_or_options() -> None:
         on_message
     )
 
-    assert stats.payload("global") == {
+    assert stats._payload("global") == {
         "type": 2,
         "name": "View Stats",
         "default_member_permissions": "268435456",
         "nsfw": True,
     }
-    assert pin.payload("guild") == {
+    assert pin._payload("guild") == {
         "type": 3,
         "name": "Pin it",
         "default_member_permissions": None,
@@ -990,9 +990,9 @@ def test_bind_resolves_the_target_to_its_hint(
 
     if expected is None:
         with pytest.raises(OptionConversionError, match="resolves to no"):
-            command.bind(interaction)
+            command._bind(interaction)
         return
-    (target,) = command.bind(interaction).values()
+    (target,) = command._bind(interaction).values()
     assert type(target) is expected
     assert isinstance(target, User | ResolvedMember | Message | WebhookMessage)
     if isinstance(target, ResolvedMember):

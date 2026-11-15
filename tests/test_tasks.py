@@ -6,7 +6,7 @@ import pytest
 from clock import SteppedLoop, run_stepped
 
 from bostie import Bot, Router, tasks
-from bostie.tasks import next_time
+from bostie.tasks import _next_time
 from bostie.testing import FakeDiscord, running, settle
 
 UTC_PLUS_2 = timezone(timedelta(hours=2))
@@ -29,7 +29,7 @@ AFTER = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)
 def test_next_time_is_the_first_named_time_after_the_moment(
     times: list[time], due: datetime
 ) -> None:
-    assert next_time(times, AFTER) == due
+    assert _next_time(times, AFTER) == due
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,7 @@ def test_a_daily_task_runs_once_at_each_time_even_when_a_sleep_ends_early(
 
         task = Router().every(time=(time(21), time(9)))(callback)
         running = asyncio.ensure_future(
-            task.run(lambda callback, error: errors.append(error))
+            task._run(lambda callback, error: errors.append(error))
         )
         async with asyncio.timeout(10):
             await third.wait()

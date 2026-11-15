@@ -743,10 +743,10 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
         """
         data = self.interaction.data
         _, leaves = split_subcommands(data.options)
-        found = self.bot.match_command(data)
+        found = self.bot._match_command(data)
         if found is None:
             return {option.name: option.value for option in leaves}
-        return found[0].filled(leaves, data.resolved)
+        return found[0]._filled(leaves, data.resolved)
 
     async def respond(self, choices: list[dict[str, Any]]) -> None:
         """Answer with these Discord choice objects; autocomplete results go here."""

@@ -3,7 +3,7 @@ from typing import Any, Literal, NewType, NotRequired, TypedDict, cast
 
 import msgspec
 
-from bostie.custom_id import MAX_CUSTOM_ID, ComponentRoute
+from bostie.custom_id import _MAX_CUSTOM_ID, ComponentRoute
 from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
 from bostie.models.components import AnyEmoji, SelectDefaultType, partial_emoji
 
@@ -883,7 +883,7 @@ def _emoji(emoji: AnyEmoji) -> Mapping[str, Any]:
 
 
 def _checked(custom_id: str) -> str:
-    if not 1 <= len(custom_id) <= MAX_CUSTOM_ID:
+    if not 1 <= len(custom_id) <= _MAX_CUSTOM_ID:
         raise ValueError(
             f"custom_id must be 1-100 characters, got {len(custom_id)}: {custom_id!r}"
         )

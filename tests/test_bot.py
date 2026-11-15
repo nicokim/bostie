@@ -46,6 +46,7 @@ from bostie import (
     ui,
 )
 from bostie._bridge import Bridge
+from bostie._sync import SyncResult
 from bostie.checks import MaxConcurrency
 from bostie.events import (
     BotEvent,
@@ -74,7 +75,6 @@ from bostie.events import (
     UserUpdate,
 )
 from bostie.gateway import Shards
-from bostie.sync import SyncResult
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 STRING = OptionType.STRING
@@ -471,7 +471,7 @@ def test_a_commands_auto_defer_overrides_the_bots(
 def test_a_handler_that_starts_late_logs_a_warning(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("bostie.dispatch.SLOW_HANDLER_START", 0.01)
+    monkeypatch.setattr("bostie._dispatch.SLOW_HANDLER_START", 0.01)
 
     def block_the_loop(event: InteractionCreate) -> bool:
         time.sleep(0.05)

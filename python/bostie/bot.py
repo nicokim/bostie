@@ -21,20 +21,19 @@ from typing import Any, Literal, Self, cast, override
 
 import msgspec
 
-from bostie import fmt, sync
+from bostie import fmt
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie._dispatch import Claim, Interactions
+from bostie._sync import SyncResult, Translate, fetch_ids, sync_commands
 from bostie._util import UNSET, Unset, qualified_name, resolve_token
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
-from bostie.commands import (
-    CommandDefaults,
-)
+from bostie.commands import _CommandDefaults
 from bostie.context import (
     ComponentContext,
     ModalContext,
 )
-from bostie.dispatch import Claim, Interactions
 from bostie.enums import (
     ApplicationIntegrationType,
     Intents,
@@ -101,7 +100,7 @@ from bostie.models import (
 )
 from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST
-from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
+from bostie.router import _RAW_EVENT_NAME, AnyEvent, Listener, Router
 from bostie.tasks import Task
 from bostie.voice.connection import VoiceManager
 from bostie.voice.events import VoiceEvent
@@ -184,7 +183,7 @@ class Bot(Router):
         auto_sync: bool = True,
         contexts: Iterable[InteractionContextType] | None = None,
         integration_types: Iterable[ApplicationIntegrationType] | None = None,
-        translate: sync.Translate | None = None,
+        translate: Translate | None = None,
         auto_defer: float | None = 2.5,
         cache: bool = True,
         max_messages: int = 0,
@@ -696,7 +695,7 @@ class Bot(Router):
                 del self._requests[key]
             self._refresh_filter()
 
-    async def sync_commands(self) -> list[sync.SyncResult]:
+    async def sync_commands(self) -> list[SyncResult]:
         """Overwrite the commands on Discord now and return what differed."""
         return await self._sync(always_put=True)
 
@@ -708,10 +707,10 @@ class Bot(Router):
             ApplicationIntegrationType.GUILD_INSTALL,
         )
 
-    async def _sync(self, *, always_put: bool) -> list[sync.SyncResult]:
+    async def _sync(self, *, always_put: bool) -> list[SyncResult]:
         if self.application_id is None:
             raise StateError("sync_commands() needs a running bot")
-        results = await sync.sync_commands(
+        results = await sync_commands(
             self.http,
             self.application_id,
             [*self.commands.values(), *self.context_menus.values()],
@@ -737,7 +736,7 @@ class Bot(Router):
             ids = self._command_ids.get(scope)
             if ids is None:
                 try:
-                    ids = await sync.fetch_ids(self.http, self.application_id, scope)
+                    ids = await fetch_ids(self.http, self.application_id, scope)
                 except Forbidden:
                     if scope is None:
                         raise
@@ -747,7 +746,7 @@ class Bot(Router):
                 return fmt.command(name, ids[top])
         raise LookupError(f"no slash command named {top!r} is registered there")
 
-    def _remember_ids(self, results: Iterable[sync.SyncResult]) -> None:
+    def _remember_ids(self, results: Iterable[SyncResult]) -> None:
         for result in results:
             self._command_ids[result.guild_id] = result.ids
 
@@ -820,7 +819,7 @@ class Bot(Router):
             for name in (*self.listeners, *self._waiters, GatewayRateLimited.NAME)
             if "." not in name
         }
-        if RAW_EVENT_NAME in names:
+        if _RAW_EVENT_NAME in names:
             return None
         names |= {name for name, _ in self._requests}
         if self._intents & Intents.GUILDS:
@@ -966,7 +965,7 @@ class Bot(Router):
         for task in self._running_tasks.keys() - wanted:
             self._running_tasks.pop(task).cancel()
         for task in wanted - self._running_tasks.keys():
-            running = asyncio.create_task(task.run(self._task_failed))
+            running = asyncio.create_task(task._run(self._task_failed))
             running.add_done_callback(self._tasks.discard)
             self._tasks.add(running)
             self._running_tasks[task] = running
@@ -1001,7 +1000,7 @@ class Bot(Router):
             cached = dispatch.event(cls)
             if cached is not None:
                 dispatch.decoded[cls] = self.cache.apply(cached)
-        for key in (name, RAW_EVENT_NAME):
+        for key in (name, _RAW_EVENT_NAME):
             for waiter in self._waiters.get(key, ()):
                 _resolve(waiter, dispatch.event(waiter.event))
         if name == InteractionCreate.NAME:
@@ -1010,7 +1009,7 @@ class Bot(Router):
                 self._interactions.route(created.interaction, received, shard_id)
         for listener in (
             *self.listeners.get(name, ()),
-            *self.listeners.get(RAW_EVENT_NAME, ()),
+            *self.listeners.get(_RAW_EVENT_NAME, ()),
         ):
             payload = dispatch.event(
                 RawEvent
@@ -1143,8 +1142,8 @@ def _owners(application: Application) -> frozenset[int]:
 def _command_defaults(
     contexts: Iterable[InteractionContextType] | None,
     integration_types: Iterable[ApplicationIntegrationType] | None,
-) -> CommandDefaults:
-    defaults = CommandDefaults()
+) -> _CommandDefaults:
+    defaults = _CommandDefaults()
     if contexts is not None:
         defaults["contexts"] = tuple(contexts)
     if integration_types is not None:

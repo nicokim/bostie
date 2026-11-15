@@ -8,13 +8,13 @@ from typing import Annotated, Any
 import pytest
 
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie._sync import SyncResult, sync_commands
 from bostie.commands import Choice, Command, ContextMenuCommand, Group, Option, Range
 from bostie.enums import InteractionContextType, Locale, Permissions
 from bostie.errors import BadRequest, CommandSyncError
 from bostie.http import HTTPClient
 from bostie.models import Attachment, Message, PartialChannel, Role, User
 from bostie.router import Router
-from bostie.sync import SyncResult, sync_commands
 from bostie.testing import FakeDiscord, payloads
 
 FIXTURES = payloads.FIXTURES / "rest"
@@ -169,7 +169,7 @@ def test_explicit_sync_puts_ours_then_other_types_verbatim() -> None:
 
         put = fake.requests[1]
         assert put.method == "PUT"
-        assert put.json[:3] == [command.payload("global") for command in COMMANDS]
+        assert put.json[:3] == [command._payload("global") for command in COMMANDS]
         (launch,) = put.json[3:]
         assert launch["id"] == "1329027302293635073"
         assert launch["handler"] == 2

@@ -26,10 +26,6 @@ The decorators on [`Bot`][bostie.Bot] and [`Router`][bostie.Router] build these 
 
 ::: bostie.custom_id.ComponentRoute
 
-## Settings
-
-::: bostie.commands.CommandDefaults
-
 ## Sync
 
 ::: bostie.SyncResult

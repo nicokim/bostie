@@ -8,9 +8,9 @@ from bostie.hooks import Answering
 if TYPE_CHECKING:
     from bostie.router import Router
 
-MAX_CUSTOM_ID = 100
-PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
-KINDS = frozenset({"", "int"})
+_MAX_CUSTOM_ID = 100
+_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+_KINDS = frozenset({"", "int"})
 
 
 class ComponentRoute[**P](Answering):
@@ -25,7 +25,7 @@ class ComponentRoute[**P](Answering):
         settings: Mapping[str, Any],
     ) -> None:
         super().__init__(router, settings)
-        pieces = PLACEHOLDER.split(template)
+        pieces = _PLACEHOLDER.split(template)
         literals = pieces[::2]
         placeholders = [_placeholder(template, text) for text in pieces[1::2]]
         if any("{" in literal or "}" in literal for literal in literals):
@@ -37,7 +37,7 @@ class ComponentRoute[**P](Answering):
             raise ValueError(f"{template!r} repeats a placeholder name")
         self.template = template
         self.handler = handler
-        self.checks = tuple(settings["checks"])
+        self._checks = tuple(settings["checks"])
         self.names = names
         self._literals = literals
         self._kinds = tuple(kind for _, kind in placeholders)
@@ -55,7 +55,7 @@ class ComponentRoute[**P](Answering):
             str(params[name]) + literal
             for name, literal in zip(self.names, self._literals[1:], strict=True)
         )
-        if len(custom_id) > MAX_CUSTOM_ID:
+        if len(custom_id) > _MAX_CUSTOM_ID:
             raise ValueError(
                 f"{custom_id!r} is {len(custom_id)} characters; Discord allows 100"
             )
@@ -95,7 +95,7 @@ class ComponentRoute[**P](Answering):
 
 def _placeholder(template: str, text: str) -> tuple[str, str]:
     name, _, kind = text.partition(":")
-    if not name.isidentifier() or kind not in KINDS:
+    if not name.isidentifier() or kind not in _KINDS:
         raise ValueError(
             f"{template!r} has an invalid placeholder {{{text}}}; "
             "use {name} or {name:int}"
