@@ -146,7 +146,7 @@ impl Rig {
             .unwrap(),
         );
         self.next_handle += 1;
-        self.media.sinks.lock().push(Arc::clone(&sink));
+        assert!(self.media.add_sink(&sink));
         sink
     }
 
@@ -173,7 +173,7 @@ impl Rig {
     }
 
     fn packets(&self, count: usize) -> Vec<Packet> {
-        let transport = self.media.transport.lock().clone().unwrap();
+        let transport = self.media.transport().unwrap();
         let packets = self.sfu.flush(&transport.socket, WAIT);
         assert_eq!(packets.len(), count, "{packets:?}");
         packets
@@ -222,7 +222,6 @@ fn encrypting(rig: &Rig) -> Call {
     );
     assert_eq!(dave.send_mode(), SendMode::Encrypt);
     rig.media.with_dave(|current| *current = dave);
-    rig.media.others.store(1, Ordering::Relaxed);
     assert_eq!(rig.media.gate(), SendMode::Encrypt);
     call
 }
@@ -360,6 +359,7 @@ fn a_held_gate_sends_nothing_and_a_plain_gate_sends_opus() {
     sink.write(&tone(FRAME_SAMPLES * 4)).unwrap();
     assert_eq!(rig.media.gate(), SendMode::Plain);
     rig.media
+        .sending
         .gate
         .store(SendMode::Hold as u8, Ordering::Release);
 
@@ -421,7 +421,7 @@ fn the_nonce_continues_on_one_transport_and_restarts_with_a_new_one() {
     rig.tick(3);
     rig.media.install(None);
     rig.tick(1);
-    let current = rig.media.transport.lock().clone();
+    let current = rig.media.transport();
     assert!(current.is_none());
     rig.connect(&OTHER_KEY);
     rig.plain();
@@ -446,13 +446,13 @@ fn a_nonce_about_to_wrap_stops_sending_and_asks_for_a_new_key_once() {
     sink.write(&tone(FRAME_SAMPLES * 4)).unwrap();
 
     rig.tick(2);
-    let asked = rig.media.exhausted.notified().now_or_never();
+    let asked = rig.media.rekey_requested().now_or_never();
     rig.tick(2);
 
     let packets = rig.packets(1);
     assert_eq!(packets[0].nonce, u32::MAX - 1);
     assert!(asked.is_some());
-    assert!(rig.media.exhausted.notified().now_or_never().is_none());
+    assert!(rig.media.rekey_requested().now_or_never().is_none());
 }
 
 #[test]
@@ -469,7 +469,7 @@ fn a_frame_dave_cannot_encrypt_is_dropped_and_never_sent_plain() {
     );
     dave.start(1, &mut Vec::new()).unwrap();
     let dave = Mutex::new(dave);
-    let transport = rig.media.transport.lock().clone().unwrap();
+    let transport = rig.media.transport().unwrap();
 
     rig.lane.snapshot_sinks();
     rig.lane.send_frame(&transport, rig.now, Some(dave.lock()));
@@ -487,7 +487,7 @@ fn a_busy_dave_lock_holds_the_tick_and_keeps_the_audio() {
     sink.write(&tone(FRAME_SAMPLES * 3)).unwrap();
 
     let media = Arc::clone(&rig.media);
-    let guard = media.dave.lock();
+    let guard = media.dave();
     rig.tick(2);
     drop(guard);
 
@@ -509,6 +509,7 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
     });
     assert_eq!(rig.media.gate(), SendMode::Hold);
     rig.media
+        .sending
         .gate
         .store(SendMode::Encrypt as u8, Ordering::Release);
     let sink = rig.pcm_sink(StallPolicy::Hold);
@@ -523,20 +524,20 @@ fn a_stale_encrypt_gate_is_rechecked_under_the_lock_and_held() {
 
 #[test]
 fn the_watchdog_reports_a_stall_and_its_end() {
-    for (others, version) in [(1, 1), (0, 0)] {
+    for (others, version) in [(&[UserId::from(PEER)][..], 1), (&[], 0)] {
         let mut rig = Rig::new();
         let sink = rig.pcm_sink(StallPolicy::Hold);
         sink.write(&tone(FRAME_SAMPLES * 20)).unwrap();
-        rig.media.others.store(others, Ordering::Relaxed);
         rig.media.with_dave(|dave| {
             let mut out = Vec::new();
             dave.start(version, &mut out).unwrap();
+            dave.clients_connect(others);
         });
 
         rig.tick(5);
         assert!(stalls(&rig.deliveries()).is_empty());
         rig.tick(1);
-        assert_eq!(stalls(&rig.deliveries()), [(true, STALL)], "{others}");
+        assert_eq!(stalls(&rig.deliveries()), [(true, STALL)], "{others:?}");
         rig.tick(3);
         assert!(stalls(&rig.deliveries()).is_empty());
         rig.connect(&KEY);
@@ -569,15 +570,16 @@ fn a_reported_stall_stays_reported_while_it_eases_until_it_resumes() {
 #[test]
 fn the_watchdog_stays_quiet_without_queued_audio_or_alone_in_a_dave_call() {
     let mut rig = Rig::new();
-    rig.media.others.store(1, Ordering::Relaxed);
+    rig.media
+        .with_dave(|dave| dave.clients_connect(&[UserId::from(PEER)]));
     rig.tick(20);
     assert!(stalls(&rig.deliveries()).is_empty());
 
     rig.media.with_dave(|dave| {
         let mut out = Vec::new();
         dave.start(1, &mut out).unwrap();
+        dave.client_disconnect(UserId::from(PEER));
     });
-    rig.media.others.store(0, Ordering::Relaxed);
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 40)).unwrap();
     rig.tick(20);
@@ -596,8 +598,8 @@ fn dropping_the_lane_marks_the_media_closed_and_wakes_the_connection() {
 
     drop(rig);
 
-    assert!(media.closed.load(Ordering::Acquire));
-    assert!(media.lost.notified().now_or_never().is_some());
+    assert!(media.is_closed());
+    assert!(media.lost().now_or_never().is_some());
 }
 
 #[test]
@@ -622,14 +624,14 @@ fn a_pending_encoder_change_applies_on_the_next_tick() {
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
     rig.tick(1);
-    *rig.media.encoder.lock() = Some(EncoderSettings {
+    rig.media.set_encoder(EncoderSettings {
         bitrate: 8_000,
         ..settings()
     });
     rig.tick(1);
 
     let packets = rig.packets(2);
-    assert!(rig.media.encoder.lock().is_none());
+    assert!(rig.media.sending.encoder.lock().is_none());
     assert!(packets[1].payload.len() < packets[0].payload.len());
 }
 
@@ -638,6 +640,7 @@ fn include_self_tees_exactly_the_packets_sent() {
     let mut rig = Rig::new();
     let teed = |rig: &Rig| -> Vec<(u32, u16, u32, Vec<u8>, bool)> {
         rig.media
+            .receiving
             .arrivals
             .lock()
             .drain(..)
@@ -653,7 +656,10 @@ fn include_self_tees_exactly_the_packets_sent() {
             })
             .collect()
     };
-    rig.media.self_receivers.store(1, Ordering::Relaxed);
+    rig.media
+        .receiving
+        .self_receivers
+        .store(1, Ordering::Relaxed);
     let sink = rig.pcm_sink(StallPolicy::Hold);
     sink.write(&tone(FRAME_SAMPLES * 2)).unwrap();
     rig.tick(2);
@@ -691,7 +697,10 @@ fn include_self_tees_exactly_the_packets_sent() {
     let mut rig = Rig::new();
     rig.connect(&KEY);
     let mut call = encrypting(&rig);
-    rig.media.self_receivers.store(1, Ordering::Relaxed);
+    rig.media
+        .receiving
+        .self_receivers
+        .store(1, Ordering::Relaxed);
     let sink = rig.sink(SinkFormat::Opus, StallPolicy::Hold);
     let opus = opus_packets(2);
     for packet in &opus {
@@ -741,6 +750,7 @@ fn the_arrival_queue_drops_the_oldest_beyond_its_bound() {
     }
 
     let kept: Vec<u16> = media
+        .receiving
         .arrivals
         .lock()
         .iter()

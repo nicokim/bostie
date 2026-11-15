@@ -194,7 +194,7 @@ async fn a_panicking_connection_task_is_ended_by_its_supervisor() {
     assert_eq!(reason, DisconnectReason::ProtocolError);
     assert_eq!(detail, "internal error: boom");
     assert_eq!(harness.leaves(), 1);
-    assert!(media.closed.load(Ordering::Acquire));
+    assert!(media.is_closed());
     assert!(matches!(
         harness.voice.dave(guild()),
         Err(CoreError::UnknownVoice(_))

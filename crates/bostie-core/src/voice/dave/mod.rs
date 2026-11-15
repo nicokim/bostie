@@ -5,6 +5,7 @@ use std::fmt;
 use std::mem;
 use std::num::NonZeroU16;
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -129,7 +130,7 @@ pub(crate) struct Dave {
     session: Option<DaveSession>,
     protocol_version: u16,
     external_sender: Option<Bytes>,
-    members: HashSet<UserId>,
+    members: Arc<HashSet<UserId>>,
     pending: HashMap<u16, u16>,
     last_transition: u16,
     recovering: bool,
@@ -151,7 +152,7 @@ impl Dave {
             session: None,
             protocol_version: 0,
             external_sender: None,
-            members: HashSet::new(),
+            members: Arc::default(),
             pending: HashMap::new(),
             last_transition: 0,
             recovering: false,
@@ -182,12 +183,19 @@ impl Dave {
 
     pub(crate) fn clients_connect(&mut self, users: &[UserId]) {
         let own = self.user;
-        self.members
-            .extend(users.iter().copied().filter(|&user| user != own));
+        Arc::make_mut(&mut self.members).extend(users.iter().copied().filter(|&user| user != own));
     }
 
     pub(crate) fn client_disconnect(&mut self, user: UserId) {
-        self.members.remove(&user);
+        Arc::make_mut(&mut self.members).remove(&user);
+    }
+
+    pub(crate) fn clear_clients(&mut self) {
+        self.members = Arc::default();
+    }
+
+    pub(crate) fn members(&self) -> &Arc<HashSet<UserId>> {
+        &self.members
     }
 
     pub(crate) fn handle(

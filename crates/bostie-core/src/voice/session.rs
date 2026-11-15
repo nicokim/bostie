@@ -3,7 +3,6 @@ use std::mem;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -92,9 +91,8 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
                 Ok(url) => url,
                 Err(error) => return SessionEnd::Failed(error.to_string()),
             };
-            conn.info.members.lock().clear();
             conn.info.ssrcs.lock().clear();
-            conn.media.others.store(0, Ordering::Relaxed);
+            conn.media.with_dave(Dave::clear_clients);
             conn.voice = Some(VoiceSession {
                 url,
                 session_id: credentials.session_id,
@@ -281,9 +279,9 @@ impl<'c> Session<'c> {
                     Ok(())
                 }
                 () = until(speak) => self.speak().await,
-                () = self.conn.media.lost.notified() => Err(SessionEnd::MediaLost),
-                () = self.conn.media.exhausted.notified() => Err(SessionEnd::NonceExhausted),
-                () = self.conn.media.recover.notified() => self.receive_recovery().await,
+                () = self.conn.media.lost() => Err(SessionEnd::MediaLost),
+                () = self.conn.media.rekey_requested() => Err(SessionEnd::NonceExhausted),
+                () = self.conn.media.recovery_requested() => self.receive_recovery().await,
                 () = until(deadline) => Err(SessionEnd::TimedOut),
             };
             if let Err(end) = step {
@@ -582,13 +580,6 @@ impl<'c> Session<'c> {
         let guild = self.conn.guild;
         match inbound {
             Inbound::ClientsConnect { users } => {
-                let own = self.conn.user;
-                let others = {
-                    let mut members = self.conn.info.members.lock();
-                    members.extend(users.iter().copied().filter(|&user| user != own));
-                    members.len()
-                };
-                self.conn.media.others.store(others, Ordering::Relaxed);
                 self.conn
                     .media
                     .with_dave(|dave| dave.clients_connect(&users));
@@ -596,17 +587,11 @@ impl<'c> Session<'c> {
                 self.request_speaking().await?;
             }
             Inbound::ClientDisconnect { user } => {
-                let others = {
-                    let mut members = self.conn.info.members.lock();
-                    members.remove(&user);
-                    members.len()
-                };
                 self.conn
                     .info
                     .ssrcs
                     .lock()
                     .retain(|_, (owner, _)| *owner != user);
-                self.conn.media.others.store(others, Ordering::Relaxed);
                 self.conn
                     .media
                     .with_dave(|dave| dave.client_disconnect(user));

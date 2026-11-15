@@ -327,7 +327,7 @@ async fn a_busy_dave_lock_holds_only_its_own_lane_and_never_blocks_readers() {
     let own = harness.sink(pcm(), StallPolicy::Hold);
     own.write(&tone(FRAME_SAMPLES * 5)).unwrap();
     let media = harness.media();
-    let busy = media.dave.lock();
+    let busy = media.dave();
     let pacer = Arc::clone(&harness.pacer);
     let (ticked, on_ticked) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

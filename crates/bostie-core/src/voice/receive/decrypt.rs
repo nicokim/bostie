@@ -174,7 +174,7 @@ impl Hold {
             return work.len();
         }
         let media = &core.media;
-        let Some(mut dave) = media.dave.try_lock() else {
+        let Some(mut dave) = media.try_dave() else {
             return 0;
         };
         let settling = dave.settling(now);
@@ -188,7 +188,7 @@ impl Hold {
                 break;
             }
             MutexGuard::unlock_fair(dave);
-            match media.dave.try_lock() {
+            match media.try_dave() {
                 Some(next) => dave = next,
                 None => break,
             }
@@ -331,7 +331,7 @@ impl Hold {
             streak.requested = streak.requested.saturating_add(1);
             streak.last_request = Some(now);
             self.last_request = Some(now);
-            core.media.recover.notify_one();
+            core.media.request_recovery();
         }
     }
 

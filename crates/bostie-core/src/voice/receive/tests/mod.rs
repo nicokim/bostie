@@ -270,7 +270,7 @@ impl Rig {
     }
 
     fn recovered(&self) -> bool {
-        self.media.recover.notified().now_or_never().is_some()
+        self.media.recovery_requested().now_or_never().is_some()
     }
 
     fn speech(&self) -> Vec<(u64, Speaking)> {
@@ -331,7 +331,7 @@ impl Rig {
         }
         call.run();
         self.deliver(&mut call);
-        assert_eq!(self.media.dave.lock().send_mode(), SendMode::Encrypt);
+        assert_eq!(self.media.dave().send_mode(), SendMode::Encrypt);
         call
     }
 
@@ -452,7 +452,8 @@ fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
     intake.receive(Kind::Rtp, &mut packet(&cipher, 3, BOT_SSRC, 4, &tagged));
     intake.receive(Kind::Rtp, &mut packet(&stranger, 4, ALICE_SSRC, 5, &tagged));
 
-    let arrivals: Vec<Arrival> = rig.media.arrivals.lock().drain(..).collect();
+    let mut arrivals = VecDeque::new();
+    rig.media.take_arrivals(&mut arrivals);
     let shapes: Vec<(u16, bool, bool)> = arrivals
         .iter()
         .map(|arrival| (arrival.sequence, arrival.payload.is_some(), arrival.silence))
@@ -485,7 +486,9 @@ fn the_intake_reads_the_sfus_shared_nonce_counter_little_endian() {
         intake.receive(Kind::Rtp, &mut packet);
     }
 
-    assert_eq!(rig.media.arrivals.lock().len(), 2);
+    let mut arrivals = VecDeque::new();
+    rig.media.take_arrivals(&mut arrivals);
+    assert_eq!(arrivals.len(), 2);
 }
 
 #[test]
@@ -516,8 +519,8 @@ fn dropping_the_reception_closes_media_and_wakes_the_connection() {
     drop(rig);
     let late = Receiver::new(Handle::from(1), options(ReceiveFormat::Opus), inbox).unwrap();
 
-    assert!(media.closed.load(Ordering::Acquire));
-    assert!(media.lost.notified().now_or_never().is_some());
+    assert!(media.is_closed());
+    assert!(media.lost().now_or_never().is_some());
     assert!(!media.add_receiver(&Arc::new(late)));
 }
 
@@ -543,7 +546,7 @@ fn a_receive_panic_restarts_the_phase_and_keeps_the_media() {
         ]
     );
     assert_eq!(data(&read(&receiver)), packets);
-    assert!(!rig.media.closed.load(Ordering::Acquire));
+    assert!(!rig.media.is_closed());
 }
 
 #[test]
@@ -638,7 +641,7 @@ fn a_new_transport_resets_stream_state_and_keeps_receivers() {
     let held = call.speak(user(ALICE), &packets[3]);
     rig.send(BOB_SSRC, 0, &unmapped);
     let media = Arc::clone(&rig.media);
-    let busy = media.dave.lock();
+    let busy = media.dave();
     rig.send(ALICE_SSRC, failing.end, &held);
     rig.step();
     drop(busy);

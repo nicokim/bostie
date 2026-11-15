@@ -10,7 +10,6 @@ use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -154,8 +153,8 @@ impl Reception {
 
     fn run(&mut self, now: Instant, skipped: u32, deadline: Instant) -> bool {
         let media = &self.core.media;
-        if self.state.is_none() && media.open_receivers() == 0 && media.arrivals.lock().is_empty() {
-            return !media.closed.load(Ordering::Acquire);
+        if self.state.is_none() && media.open_receivers() == 0 && !media.has_arrivals() {
+            return !media.is_closed();
         }
         let state = self
             .state
@@ -176,14 +175,13 @@ impl Reception {
         if let Some(mut state) = self.state.take() {
             state.abandon(now);
         }
-        !self.core.media.closed.load(Ordering::Acquire)
+        !self.core.media.is_closed()
     }
 }
 
 impl Drop for Reception {
     fn drop(&mut self) {
-        self.core.media.closed.store(true, Ordering::Release);
-        self.core.media.lost.notify_one();
+        self.core.media.lose();
     }
 }
 
@@ -208,7 +206,7 @@ impl State {
     }
 
     fn run(&mut self, now: Instant, skipped: u32, deadline: Instant) -> bool {
-        if self.core.media.closed.load(Ordering::Acquire) {
+        if self.core.media.is_closed() {
             return false;
         }
         self.subscribe();
@@ -233,7 +231,7 @@ impl State {
             skipped,
         };
         self.speech.enabled = self.core.media.speech_activity();
-        let transport = self.core.media.transport.lock().clone();
+        let transport = self.core.media.transport();
         if let Some(transport) = &transport {
             self.follow(transport.generation);
         }
@@ -282,7 +280,7 @@ impl State {
             && self.streams.feeds.is_empty()
             && !self.watchdog.stall.reported()
             && self.presence.forget_at.is_none_or(|at| now48 < at)
-            && self.core.media.others.load(Ordering::Relaxed) == self.presence.members
+            && self.core.media.others() == self.presence.members
     }
 
     fn subscribe(&mut self) {
@@ -515,7 +513,7 @@ impl State {
             .values()
             .map(|last| last.saturating_add(idle))
             .min();
-        let members = self.core.info.members.lock();
+        let members = self.core.media.members();
         let heard_at = &presence.heard_at;
         self.hold
             .forget_streaks(|user| heard_at.contains_key(user) || members.contains(user));

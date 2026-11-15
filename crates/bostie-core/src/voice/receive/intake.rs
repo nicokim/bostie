@@ -68,7 +68,7 @@ impl Intake {
 
     fn adopt_transport(&mut self) {
         if self.transport.is_none() {
-            let installed = self.media.transport.lock().clone();
+            let installed = self.media.transport();
             self.transport =
                 installed.filter(|transport| Arc::ptr_eq(&transport.socket, &self.socket));
         }

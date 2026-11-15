@@ -279,7 +279,7 @@ async fn an_exhausted_nonce_rejoins_for_a_new_key_and_restarts_at_zero() {
     sink.write(&tone(FRAME_SAMPLES * 10)).unwrap();
     harness.tick(2);
 
-    harness.media().exhausted.notify_one();
+    harness.media().request_rekey();
     let (_, _, _, detail) = harness.until(VoiceStatus::Reconnecting).await;
     harness.settle(|harness| harness.joins(CHANNEL) == 2).await;
     harness.server.rekey([9; 32]).await;

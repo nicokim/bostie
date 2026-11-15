@@ -294,7 +294,7 @@ impl Voice {
     pub fn set_encoder(&self, guild: GuildId, encoder: EncoderSettings) -> Result<(), CoreError> {
         encoder.validate()?;
         let media = self.media(guild)?;
-        *media.encoder.lock() = Some(encoder);
+        media.set_encoder(encoder);
         Ok(())
     }
 
@@ -327,7 +327,7 @@ impl Voice {
 
     pub fn verification_code(&self, guild: GuildId, user: UserId) -> Result<String, CoreError> {
         let media = self.media(guild)?;
-        let fingerprints = media.dave.lock().fingerprint_pair(user)?;
+        let fingerprints = media.dave().fingerprint_pair(user)?;
         Ok(dave::verification_code(fingerprints)?)
     }
 
@@ -338,12 +338,11 @@ impl Voice {
             options,
             Arc::clone(&self.shared.inbox),
         )?);
-        let mut sinks = media.sinks.lock();
-        if media.closed.load(Ordering::Acquire) {
-            return Err(CoreError::UnknownVoice(guild));
+        if media.add_sink(&sink) {
+            Ok(sink)
+        } else {
+            Err(CoreError::UnknownVoice(guild))
         }
-        sinks.push(Arc::clone(&sink));
-        Ok(sink)
     }
 
     pub fn open_receiver(

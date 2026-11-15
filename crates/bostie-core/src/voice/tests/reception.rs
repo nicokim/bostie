@@ -68,7 +68,7 @@ async fn a_reassigned_ssrc_keeps_its_new_owner_when_op_5_repeats() {
     harness.speaking(LATE_PEER, 70).await;
     harness.say(70, 0, &packets[0]);
     harness
-        .settle(|harness| harness.media().arrivals.lock().len() == 1)
+        .settle(|harness| harness.media().has_arrivals())
         .await;
     harness.speaking(LATE_PEER, 70).await;
     let heard = harness.hear(&receiver, 1).await;

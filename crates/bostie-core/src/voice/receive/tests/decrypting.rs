@@ -122,7 +122,7 @@ fn a_busy_dave_lock_does_not_hold_plain_frames() {
     rig.map(ALICE_SSRC, ALICE);
     let receiver = rig.open(options(ReceiveFormat::Opus));
     let media = Arc::clone(&rig.media);
-    let busy = media.dave.lock();
+    let busy = media.dave();
     rig.send(ALICE_SSRC, 0, &plain_ending_in_the_marker);
     rig.step();
     drop(busy);
@@ -154,7 +154,7 @@ fn dave_frames_wait_in_user_order_and_decrypt_in_slices() {
             .collect()
     };
     let media = Arc::clone(&rig.media);
-    let busy = media.dave.lock();
+    let busy = media.dave();
     for (ssrc, sequence, frame) in [
         (ALICE_SSRC, 0, &frames[0][..]),
         (ALICE_SSRC, 1, &frames[1][..]),
@@ -233,7 +233,7 @@ fn the_dave_hold_drops_its_oldest_frames_beyond_its_bounds() {
         let receiver = rig.open(options(ReceiveFormat::Opus));
         join_behind_the_bot(&mut call, BOB);
         let media = Arc::clone(&rig.media);
-        let lock = busy.then(|| media.dave.lock());
+        let lock = busy.then(|| media.dave());
         for tick in ticks {
             for (speaker, sequence) in tick {
                 let ssrc = if speaker == ALICE {
@@ -320,6 +320,8 @@ fn streams_and_failure_streaks_unheard_for_the_stream_idle_are_forgotten() {
     let mut rig = Rig::new(tuning);
     let mut call = rig.group(&[ALICE]);
     rig.map(ALICE_SSRC, ALICE);
+    rig.media
+        .with_dave(|dave| dave.client_disconnect(user(ALICE)));
 
     let receiver = rig.open(options(ReceiveFormat::Opus));
     let packets = opus(2, 0.3);

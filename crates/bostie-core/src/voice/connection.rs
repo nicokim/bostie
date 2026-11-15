@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future;
 use std::mem;
 use std::pin::pin;
@@ -129,7 +129,6 @@ pub(crate) struct Info {
     pub guild: GuildId,
     pub shard: ShardId,
     pub ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
-    pub members: Mutex<HashSet<UserId>>,
     pub ws_latency: Latency,
     pub udp_latency: Latency,
 }
@@ -140,7 +139,6 @@ impl Info {
             guild,
             shard,
             ssrcs: Mutex::new(HashMap::new()),
-            members: Mutex::new(HashSet::new()),
             ws_latency: Latency::default(),
             udp_latency: Latency::default(),
         }
@@ -481,7 +479,7 @@ impl Connection {
                         return Err(SessionEnd::Stopped);
                     }
                 }
-                () = self.media.lost.notified() => return Err(SessionEnd::MediaLost),
+                () = self.media.lost() => return Err(SessionEnd::MediaLost),
                 () = until(deadline) => return Err(SessionEnd::TimedOut),
                 output = &mut future => return Ok(output),
             }
