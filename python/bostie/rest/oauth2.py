@@ -2,13 +2,18 @@ from collections.abc import Iterable
 from functools import partial
 from typing import Literal
 
+from bostie.enums import OAuth2Scope
 from bostie.models import AccessToken, Authorization, decode
 from bostie.rest.base import Group
 
 
 class OAuth2(Group):
     async def exchange_client_credentials(
-        self, *, client_id: int, client_secret: str, scopes: Iterable[str]
+        self,
+        *,
+        client_id: int,
+        client_secret: str,
+        scopes: Iterable[OAuth2Scope | str],
     ) -> AccessToken:
         """A token for the app's owner, or its team, with `scopes`."""
         return await self._http._decoded(

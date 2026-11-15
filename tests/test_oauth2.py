@@ -6,6 +6,7 @@ from bostie import (
     ApplicationIntegrationType,
     BadRequest,
     BearerClient,
+    OAuth2Scope,
     Permissions,
     oauth2,
 )
@@ -26,7 +27,7 @@ TOKEN = {
         (
             oauth2.authorize_url(
                 1,
-                scopes=["identify", "guilds.join"],
+                scopes=[OAuth2Scope.IDENTIFY, "guilds.join"],
                 redirect_uri="https://example.com/back",
                 state="s",
                 prompt="consent",
@@ -43,7 +44,7 @@ TOKEN = {
             oauth2.invite_url(
                 1,
                 permissions=Permissions.VIEW_CHANNEL | Permissions.SEND_MESSAGES,
-                scopes=["bot"],
+                scopes=[OAuth2Scope.BOT],
                 guild_id=5,
                 disable_guild_select=True,
             ),

@@ -2,7 +2,7 @@ from collections.abc import Iterable, Mapping
 from typing import Literal
 from urllib.parse import quote, urlencode
 
-from bostie.enums import ApplicationIntegrationType, Permissions
+from bostie.enums import ApplicationIntegrationType, OAuth2Scope, Permissions
 
 AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 
@@ -12,7 +12,7 @@ type QueryValue = str | int | bool | None
 def authorize_url(
     client_id: int,
     *,
-    scopes: Iterable[str],
+    scopes: Iterable[OAuth2Scope | str],
     redirect_uri: str | None = None,
     state: str | None = None,
     prompt: Literal["consent", "none"] | None = None,
@@ -44,7 +44,7 @@ def invite_url(
     client_id: int,
     *,
     permissions: Permissions | None = None,
-    scopes: Iterable[str] | None = None,
+    scopes: Iterable[OAuth2Scope | str] | None = None,
     integration_type: ApplicationIntegrationType | None = None,
     guild_id: int | None = None,
     disable_guild_select: bool | None = None,

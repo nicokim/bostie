@@ -8,7 +8,7 @@ OAuth2 lets a user grant your app access to their account: their profile, their 
 
 ## Authorization URLs
 
-`oauth2.authorize_url(client_id, scopes=[...], redirect_uri=..., state=...)` returns the URL that asks the user to grant `scopes` and redirects back to `redirect_uri` with a `code`. Check that the redirect carries the `state` you sent, so another site cannot make the user log in with its code. It also takes:
+`oauth2.authorize_url(client_id, scopes=[...], redirect_uri=..., state=...)` returns the URL that asks the user to grant `scopes` and redirects back to `redirect_uri` with a `code`. Scopes are `OAuth2Scope` members, such as `OAuth2Scope.IDENTIFY` for `identify`, one for each scope Discord documents; a plain string works for a scope Discord adds before bostie names it. Check that the redirect carries the `state` you sent, so another site cannot make the user log in with its code. It also takes:
 
 - `code_challenge`, the S256 challenge of a PKCE verifier, which `exchange_code` then sends as `code_verifier`; the snippet computes one;
 - `prompt="none"` to skip the consent screen for a user who already granted the scopes, or `"consent"` to show it again;

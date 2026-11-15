@@ -8,6 +8,7 @@ from bostie import (
     AccessToken,
     ApplicationRoleConnectionMetadata,
     ApplicationRoleConnectionMetadataType,
+    OAuth2Scope,
     oauth2,
 )
 
@@ -23,7 +24,11 @@ def login_url() -> tuple[str, str, str]:
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
     url = oauth2.authorize_url(
         CLIENT_ID,
-        scopes=["identify", "guilds", "role_connections.write"],
+        scopes=[
+            OAuth2Scope.IDENTIFY,
+            OAuth2Scope.GUILDS,
+            OAuth2Scope.ROLE_CONNECTIONS_WRITE,
+        ],
         redirect_uri=REDIRECT_URI,
         state=state,
         code_challenge=challenge,

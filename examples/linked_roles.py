@@ -10,7 +10,7 @@ import secrets
 from aiohttp import web
 
 import bostie
-from bostie import oauth2
+from bostie import OAuth2Scope, oauth2
 
 CLIENT_ID = int(os.environ.get("CLIENT_ID", "0"))
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "")
@@ -23,7 +23,7 @@ async def login(request: web.Request) -> web.Response:
     STATES.add(state)
     url = oauth2.authorize_url(
         CLIENT_ID,
-        scopes=["identify", "role_connections.write"],
+        scopes=[OAuth2Scope.IDENTIFY, OAuth2Scope.ROLE_CONNECTIONS_WRITE],
         redirect_uri=REDIRECT_URI,
         state=state,
     )
