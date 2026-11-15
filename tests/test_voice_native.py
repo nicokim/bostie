@@ -275,7 +275,6 @@ def test_seeking_restarts_the_stream_until_the_source_closes(
         source.read()
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
 def test_voice_message_measures_the_audio_and_names_the_file() -> None:
     async def main() -> None:
         file = await voice.message(MEDIA / "tone.opus")
@@ -292,6 +291,7 @@ def test_voice_message_measures_the_audio_and_names_the_file() -> None:
     asyncio.run(main())
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="fork is only reliable on Linux")
 def test_voice_handles_refuse_to_work_in_a_forked_child(
     connected: _native.Core,
 ) -> None:
