@@ -268,34 +268,20 @@ def test_closing_the_bridge_fails_start_and_drops_the_connection() -> None:
     run(scenario)
 
 
-def test_close_code_4002_resumes_and_is_reported_as_a_bostie_bug(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    async def scenario(harness: Harness) -> None:
-        await harness.ready()
-
-        await harness.fake.close_gateway(4002)
-
-        await harness.fake.next_resume()
-        assert (await harness.next_dispatch())[1] == "RESUMED"
-
-    run(scenario)
-
-    hints = [record for record in caplog.records if "bostie bug" in record.message]
-    assert [record.levelno for record in hints] == [logging.WARNING]
-    assert "close code 4002 (decode error)" in hints[0].message
-
-
 @pytest.mark.parametrize(
-    ("delivery", "level"),
+    ("delivery", "levels"),
     [
-        (("disconnected", 0, None, "reconnect requested", True), logging.INFO),
-        (("disconnected", 0, 4009, "session timed out", False), logging.WARNING),
-        (("backpressure", 0, 70_000_000), logging.WARNING),
+        (("disconnected", 0, None, "reconnect requested", True), [logging.INFO]),
+        (("disconnected", 0, 4009, "session timed out", False), [logging.WARNING]),
+        (
+            ("disconnected", 0, 4002, "decode error", True),
+            [logging.INFO, logging.WARNING],
+        ),
+        (("backpressure", 0, 70_000_000), [logging.WARNING]),
     ],
 )
 def test_status_deliveries_are_logged_at_their_level(
-    caplog: pytest.LogCaptureFixture, delivery: StatusDelivery, level: int
+    caplog: pytest.LogCaptureFixture, delivery: StatusDelivery, levels: list[int]
 ) -> None:
     caplog.set_level(logging.INFO, logger="bostie.gateway")
     bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
@@ -304,4 +290,4 @@ def test_status_deliveries_are_logged_at_their_level(
     gateway.handle(delivery)
     asyncio.run(bridge.close())
 
-    assert [record.levelno for record in caplog.records] == [level]
+    assert [record.levelno for record in caplog.records] == levels

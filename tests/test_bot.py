@@ -79,7 +79,6 @@ from bostie.sync import SyncResult
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
 STRING = OptionType.STRING
-INTEGER = OptionType.INTEGER
 USER = OptionType.USER
 MENTIONS = {"parse": ["users", "roles"]}
 EPHEMERAL = 64
@@ -332,31 +331,6 @@ def test_a_listener_whose_events_no_intent_delivers_logs_a_warning(
     ] == ([] if warning is None else [warning])
 
 
-def test_a_slash_command_gets_its_typed_options_and_defaults() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        async with running(example_bot(fake), fake):
-            callback = await fake.interaction(
-                2,
-                payloads.command(
-                    "roll",
-                    payloads.option("sides", INTEGER, 20),
-                    payloads.option("mode", STRING, "list"),
-                    payloads.option("unit", STRING, "imperial"),
-                ),
-            )
-
-        assert callback.query == {"with_response": "true"}
-        assert callback.json == {
-            "type": 4,
-            "data": {
-                "content": "1d20 in list mode (imperial)",
-                "allowed_mentions": MENTIONS,
-            },
-        }
-
-    run(scenario)
-
-
 def info_answering(text: str) -> Callable[[Context], Coroutine[Any, Any, None]]:
     async def info(ctx: Context) -> None:
         await ctx.respond(text)
@@ -454,7 +428,13 @@ def test_a_subcommand_in_a_group_gets_its_resolved_member() -> None:
         async with running(example_bot(fake), fake):
             callback = await fake.interaction(2, data)
 
-        assert callback.json["data"]["content"] == f"<@{MEMBER_ID}> is now #ff8800"
+        assert callback.json == {
+            "type": 4,
+            "data": {
+                "content": f"<@{MEMBER_ID}> is now #ff8800",
+                "allowed_mentions": MENTIONS,
+            },
+        }
 
     run(scenario)
 

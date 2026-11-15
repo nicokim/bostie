@@ -206,18 +206,6 @@ def test_a_router_reaches_its_bot_once_it_is_included() -> None:
     assert nested.bot is plugin.bot is bot.bot is bot
 
 
-def test_command_names_are_unique_across_included_routers() -> None:
-    bot = Router()
-    bot.group("command", "A group")
-    music = Router()
-    music.command(command)
-
-    with pytest.raises(CommandDefinitionError, match="'command' is already registered"):
-        bot.include(music)
-    with pytest.raises(CommandDefinitionError, match="already registered"):
-        bot.command(command)
-
-
 def test_a_name_is_unique_per_command_type_across_routers() -> None:
     bot = Router()
     bot.command(name="inspect")(command)
