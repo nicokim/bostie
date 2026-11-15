@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -6,7 +7,8 @@ import pytest
 
 from bostie import Bot, MessageReference, MessageReferenceType
 from bostie.events import GuildCreate
-from bostie.models import PollAnswer, PollCreateRequest, PollMedia
+from bostie.models import PollAnswer, PollCreateRequest, PollMedia, WebhookMessage
+from bostie.rest import REST
 from bostie.testing import FakeDiscord, payloads, run, running
 
 MENTIONS = {"parse": ["users", "roles"]}
@@ -193,5 +195,28 @@ def test_a_purge_without_bulk_deletes_each_message_alone() -> None:
         assert len(deleted) == 3
         assert [request.method for request in changes] == ["DELETE"] * 3
         assert fake.messages[channel] == {}
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("call", "route"),
+    [
+        (
+            lambda rest: rest.messages.crosspost(1, 2),
+            "/channels/1/messages/2/crosspost",
+        ),
+        (lambda rest: rest.polls.end(1, 2), "/channels/1/polls/2/expire"),
+    ],
+)
+def test_a_message_a_webhook_sent_comes_back_as_a_webhook_message(
+    call: Callable[[REST], Awaitable[object]], route: str
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            sent = payloads.fixture("rest/poll_message") | {"webhook_id": "99"}
+            fake.fail("POST", route, 200, sent)
+            assert isinstance(await call(bot.rest), WebhookMessage)
 
     run(scenario)

@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from typing import TypedDict, Unpack
 
-from bostie.models import Message, User
+from bostie.models import Message, User, WebhookMessage, decode_message
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -11,9 +11,11 @@ class PollListAnswerVoters(TypedDict, total=False):
 
 
 class Polls(ResourceGroup):
-    async def end(self, channel_id: int, message_id: int, /) -> Message:
+    async def end(
+        self, channel_id: int, message_id: int, /
+    ) -> Message | WebhookMessage:
         message = await self._call(
-            Message,
+            decode_message,
             "POST",
             "/channels/{channel_id}/polls/{message_id}/expire",
             channel_id=channel_id,

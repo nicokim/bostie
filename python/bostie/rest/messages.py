@@ -269,15 +269,16 @@ class Messages(ResourceGroup):
         elif batch:
             await self.bulk_delete(channel_id, messages=batch, reason=reason)
 
-    async def crosspost(self, channel_id: int, message_id: int, /) -> Message:
-        message = await self._call(
-            Message,
+    async def crosspost(
+        self, channel_id: int, message_id: int, /
+    ) -> Message | WebhookMessage:
+        return await self._call(
+            self._message,
             "POST",
             "/channels/{channel_id}/messages/{message_id}/crosspost",
             channel_id=channel_id,
             message_id=message_id,
         )
-        return self._in_guild(message)
 
     async def fetch(
         self, channel_id: int, message_id: int, /
