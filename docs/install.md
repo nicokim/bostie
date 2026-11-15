@@ -2,7 +2,7 @@
 
 ![Bostie opening a box with a star inside](assets/mascot/bostie-install.webp){ align=right width="180" loading=lazy }
 
-bostie is not on PyPI yet, so you build it from a clone of its repository. The build compiles the Rust core and a bundled libopus, which takes a few minutes the first time.
+You build bostie from a clone of its repository. The build compiles the Rust core and a bundled libopus, which takes a few minutes the first time.
 
 ## Requirements
 

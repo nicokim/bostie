@@ -6,7 +6,7 @@
 
 A Discord library for Python with a Rust core, built around reliable voice.
 
-> **Status:** pre-alpha, not on PyPI yet, and the API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
+> **Status:** pre-alpha, and the API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
 
 ```python
 import bostie

@@ -9,7 +9,7 @@ render_macros: true
 bostie is a Discord library for Python whose gateway, HTTP client and voice engine run in Rust. You write the bot in typed, async Python.
 
 !!! warning "Pre-alpha"
-    bostie is not on PyPI yet, and its API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
+    bostie's API can still change. Slash, user and message commands, components, modals, gateway events, the cache, REST, webhooks, HTTP interactions, OAuth2, and voice playback and receiving work today.
 
 ```python
 --8<-- "docs/snippets/home/readme_example.py"
