@@ -2,11 +2,13 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from typing import Required, TypedDict, Unpack
 
+import msgspec
+
 from bostie.enums import MemberFlags, Permissions
 from bostie.file import File
 from bostie.http import decode_answer
-from bostie.models import Member, decode
-from bostie.models.base import Model
+from bostie.models import Member
+from bostie.models.base import decoder
 from bostie.rest.base import ResourceGroup, decoding, each, wire
 
 
@@ -45,12 +47,13 @@ class MemberSearch(TypedDict, total=False):
     limit: int
 
 
-class _Permissions(Model, kw_only=True):
+class _Permissions(msgspec.Struct):
     permissions: str
 
 
 def decode_permissions(data: bytes) -> Permissions:
-    return Permissions(int(decode(_Permissions, data).permissions))
+    found: _Permissions = decoder(_Permissions).decode(data)
+    return Permissions(int(found.permissions))
 
 
 class Members(ResourceGroup):
