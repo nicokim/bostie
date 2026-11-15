@@ -1,13 +1,30 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+
   wheels:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -47,6 +64,8 @@ jobs:
           path: dist
 
   sdist:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
