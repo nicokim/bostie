@@ -1110,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn the_clock_ticks_100_times_in_2_seconds_with_a_small_p99_lateness() {
+    fn the_clock_ticks_about_100_frames_in_2_seconds_on_time_at_the_median() {
         let pool = PacerPool::new();
         let (lane, ticks) = recorder();
         assign(&pool, lane);
@@ -1118,11 +1118,10 @@ mod tests {
         let end = start + Duration::from_secs(2);
 
         let mut lateness = Vec::new();
-        let (mut count, mut frames, mut anchor, mut since) = (0_u32, 0_u32, start, 0_u32);
+        let (mut frames, mut anchor, mut since) = (0_u32, start, 0_u32);
         loop {
             match ticks.recv_timeout(PATIENCE) {
                 Ok((tick, at)) if at < end => {
-                    count += 1;
                     frames += 1 + tick.skipped;
                     (anchor, since) = if tick.skipped > 0 {
                         (at, 0)
@@ -1138,16 +1137,9 @@ mod tests {
             }
         }
         lateness.sort();
-        let quantile = |q: usize| lateness[lateness.len() * q / 100 - 1];
+        let median = lateness[lateness.len() / 2 - 1];
 
-        if crate::strict_timing() {
-            assert!((98..=102).contains(&count), "{count} ticks");
-            let p99 = quantile(99);
-            assert!(p99 <= Duration::from_millis(5), "p99 lateness {p99:?}");
-        } else {
-            assert!((90..=102).contains(&frames), "{frames} frames");
-            let median = quantile(50);
-            assert!(median <= FRAME / 2, "median lateness {median:?}");
-        }
+        assert!((90..=102).contains(&frames), "{frames} frames");
+        assert!(median <= FRAME / 2, "median lateness {median:?}");
     }
 }

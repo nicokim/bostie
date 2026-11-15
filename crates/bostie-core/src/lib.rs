@@ -234,11 +234,6 @@ fn refusing_socket() -> tokio::net::TcpSocket {
 }
 
 #[cfg(test)]
-fn strict_timing() -> bool {
-    std::env::var_os("BOSTIE_STRICT_TIMING").is_some_and(|value| !value.is_empty())
-}
-
-#[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};

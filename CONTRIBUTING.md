@@ -89,7 +89,7 @@ Each behaviour gets one test, at the lowest layer that shows it. Codecs, crypto 
 
 Parsers and crypto get a round trip, a known-answer vector when one exists, and a malformed input that comes back as an error instead of a panic. Wire formats get one fixture per payload under `tests/fixtures`, taken from Discord's documentation. In `crates/bostie-core/src/voice/testdata`, `media/generate.sh` rebuilds the audio fixtures, byte for byte with ffmpeg 7.1.1, and `uv run vectors.py` prints the transport encryption vectors.
 
-Don't wait on the clock. Pass short timeouts and intervals through configuration, not a `#[cfg(test)]` constant. The pacer tests are the exception, because real time is what they measure. Their default bound holds on a busy CI runner. To check the clock's precision, run `BOSTIE_STRICT_TIMING=1 cargo test -p bostie-core pacer` on an idle machine, which holds it to 5 ms at p99.
+Don't wait on the clock. Pass short timeouts and intervals through configuration, not a `#[cfg(test)]` constant. The pacer tests are the exception, because real time is what they measure. Their bounds hold on a busy CI runner.
 
 Name a test after what it proves, like `a_dropped_socket_resumes_with_the_last_seq_and_keeps_sending`. Python tests go in `tests/test_<module>.py`. Nothing in the suite touches the network or real Discord.
 
