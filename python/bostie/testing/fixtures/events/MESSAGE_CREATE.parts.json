@@ -1,0 +1,134 @@
+{
+  "id": "1564609610244030465",
+  "type": 0,
+  "channel_id": "1335173295636611073",
+  "author": {
+    "id": "820774541721731073",
+    "username": "linus",
+    "global_name": null,
+    "discriminator": "0",
+    "avatar": null,
+    "public_flags": 0,
+    "avatar_decoration_data": null,
+    "collectibles": null,
+    "display_name_styles": null,
+    "clan": null,
+    "primary_guild": null
+  },
+  "content": "hello bostie",
+  "timestamp": "2026-10-27T12:00:00.123000+00:00",
+  "edited_timestamp": null,
+  "tts": false,
+  "mention_everyone": false,
+  "mentions": [],
+  "mention_roles": [],
+  "attachments": [
+    {
+      "id": "1564609632377372673",
+      "filename": "waveform.png",
+      "title": "waveform",
+      "description": "Waveform of the test clip",
+      "size": 48213,
+      "url": "https://cdn.discordapp.com/attachments/1335173295636611073/1564609632377372673/waveform.png?ex=69005f00&is=68ff0d80&hm=7d7bd6751b805865d223073d16060d7b09b5ca4bb6ea70eac86699810f4b7445&",
+      "proxy_url": "https://media.discordapp.net/attachments/1335173295636611073/1564609632377372673/waveform.png?ex=69005f00&is=68ff0d80&hm=7d7bd6751b805865d223073d16060d7b09b5ca4bb6ea70eac86699810f4b7445&",
+      "width": 1280,
+      "height": 720,
+      "content_type": "image/png",
+      "placeholder": "2PcJBQB4h3eAeHd/iHiHh3h3eA==",
+      "placeholder_version": 1,
+      "flags": 1,
+      "clip_participants": [
+        {
+          "id": "820774541721731073",
+          "username": "linus",
+          "global_name": null,
+          "discriminator": "0",
+          "avatar": null,
+          "public_flags": 0,
+          "avatar_decoration_data": null,
+          "collectibles": null,
+          "display_name_styles": null,
+          "clan": null,
+          "primary_guild": null
+        }
+      ],
+      "clip_created_at": "2026-10-27T11:58:00+00:00",
+      "application": {
+        "id": "1329027298099331073"
+      }
+    }
+  ],
+  "embeds": [],
+  "components": [],
+  "pinned": false,
+  "flags": 0,
+  "nonce": "1564609609937846279",
+  "channel_type": 0,
+  "guild_id": "1335172792320131073",
+  "member": {
+    "avatar": null,
+    "banner": null,
+    "communication_disabled_until": null,
+    "flags": 2,
+    "joined_at": "2025-04-18T19:03:11.987000+00:00",
+    "nick": null,
+    "premium_since": null,
+    "roles": [],
+    "unusual_dm_activity_until": null,
+    "collectibles": null,
+    "avatar_decoration_data": null,
+    "deaf": false,
+    "mute": false
+  },
+  "application_id": "1329027298099331073",
+  "activity": {
+    "type": 1,
+    "party_id": "lobby:7"
+  },
+  "application": {
+    "id": "1329027298099331073",
+    "name": "Lyre Hero"
+  },
+  "mention_channels": [
+    {
+      "id": "7",
+      "guild_id": "8",
+      "type": 0,
+      "name": "news"
+    }
+  ],
+  "role_subscription_data": {
+    "role_subscription_listing_id": "9",
+    "tier_name": "Gold",
+    "total_months_subscribed": 3,
+    "is_renewal": true
+  },
+  "resolved": {
+    "roles": {
+      "1564612126310531073": {
+        "id": "1564612126310531073",
+        "name": "Tester",
+        "description": null,
+        "colors": {
+          "primary_color": 0,
+          "secondary_color": null,
+          "tertiary_color": null
+        },
+        "hoist": false,
+        "icon": null,
+        "unicode_emoji": null,
+        "position": 1,
+        "permissions": "68608",
+        "managed": false,
+        "mentionable": false,
+        "flags": 1
+      }
+    }
+  },
+  "call": {
+    "participants": [
+      "820774541721731073"
+    ],
+    "ended_timestamp": null
+  }
+}

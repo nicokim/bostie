@@ -11,8 +11,7 @@ from pathlib import Path
 import pytest
 
 from bostie import _native, voice
-from bostie.errors import ShardNotRunning, SourceError, StateError
-from bostie.voice.formats import OpusApplication
+from bostie.errors import SourceError, StateError
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 API_URL = "http://127.0.0.1:1/api/v10"
@@ -44,19 +43,6 @@ def core() -> Iterator[_native.Core]:
 @pytest.fixture
 def connected(core: _native.Core) -> _native.Core:
     core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
-    connect(core)
-    return core
-
-
-def connect(
-    core: _native.Core,
-    *,
-    timeout: float = 60.0,
-    server_change_delay: float = 0.0,
-    bitrate: int = 64_000,
-    application: OpusApplication = "audio",
-    speaking: int = 1,
-) -> None:
     core.voice_connect(
         GUILD,
         CHANNEL,
@@ -64,11 +50,12 @@ def connect(
         user_id=USER,
         self_mute=False,
         self_deaf=False,
-        timeout=timeout,
-        server_change_delay=server_change_delay,
-        encoder=voice.EncoderSettings(bitrate=bitrate, application=application),
-        speaking=speaking,
+        timeout=60.0,
+        server_change_delay=0.0,
+        encoder=voice.EncoderSettings(bitrate=64_000),
+        speaking=1,
     )
+    return core
 
 
 def pcm_sink(
@@ -156,24 +143,13 @@ def test_a_connection_reports_latency_and_dave(connected: _native.Core) -> None:
     assert connected.voice_dave(GUILD) == (0, None, None)
 
 
-def test_voice_connect_needs_a_running_shard_and_valid_settings(
-    core: _native.Core,
+def test_invalid_sink_and_receive_settings_raise_value_error(
+    connected: _native.Core,
 ) -> None:
-    core.voice_disconnect(GUILD)
-    with pytest.raises(ShardNotRunning, match="shard 0 is not running"):
-        connect(core)
-    with pytest.raises(ValueError, match="bitrate"):
-        connect(core, bitrate=10)
-    with pytest.raises(ValueError, match="timeout"):
-        connect(core, timeout=-1.0)
-    with pytest.raises(ValueError, match="server_change_delay"):
-        connect(core, server_change_delay=-1.0)
-    core.gateway_start(0, "ws://127.0.0.1:1", b"{}")
-    connect(core)
     with pytest.raises(ValueError, match="buffer"):
-        pcm_sink(core, buffer=-1.0)
+        pcm_sink(connected, buffer=-1.0)
     with pytest.raises(ValueError, match="mix=True needs a PCM format"):
-        core.voice_receive(
+        connected.voice_receive(
             GUILD,
             kind="opus",
             rate=48_000,

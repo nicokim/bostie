@@ -968,6 +968,7 @@ def test_shuffle_reorders_the_upcoming_tracks_and_plays_each_once() -> None:
         rest = [add(q, FakeSource(clock, name, 2)) for name in "bcdefghijk"]
         await clock.until(lambda: q.now is first)
         q.shuffle()
+        assert list(q.upcoming) != rest
         assert sorted(q.upcoming, key=rest.index) == rest
         order = "".join(cast("FakeSource", track.source).name for track in q.upcoming)
         await q.join()

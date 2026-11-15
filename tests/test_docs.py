@@ -1,4 +1,6 @@
+import ast
 import builtins
+import dataclasses
 import inspect
 import json
 import re
@@ -41,6 +43,7 @@ FENCE = re.compile(r"^```python\n(.*?)^```", re.MULTILINE | re.DOTALL)
 ANY_FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 INCLUDE = re.compile(r'--8<-- "([^"]+)"\n')
 GROUP_ROW = re.compile(r"^\| `(\w+)` \| (.+) \|$", re.MULTILINE)
+SETTING_ROW = re.compile(r"^\| (`\w+`(?:, `\w+`)*) \| ([^|]+) \|", re.MULTILINE)
 CODE = re.compile(r"`(\w+)`")
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
@@ -260,3 +263,23 @@ def test_the_rest_guide_lists_every_method_of_every_bot_group() -> None:
     }
 
     assert {group: set(CODE.findall(methods)) for group, methods in rows} == expected
+
+
+def test_the_voice_settings_table_gives_every_default() -> None:
+    table = text(DOCS / "voice" / "index.md").split("## Settings")[1].split("\n## ")[0]
+    named: dict[str, object] = {
+        "EncoderSettings()": voice.EncoderSettings(),
+        "MICROPHONE": voice.SpeakingFlags.MICROPHONE,
+    }
+    documented: dict[str, object] = {}
+    for names, values in SETTING_ROW.findall(table):
+        fields = CODE.findall(names)
+        given = [value.strip().strip("`") for value in values.split(", ")]
+        parsed = [named.get(value) or ast.literal_eval(value) for value in given]
+        documented |= dict(zip(fields, parsed * len(fields), strict=False))
+    defaults = voice.Defaults()
+
+    assert documented == {
+        field.name: getattr(defaults, field.name)
+        for field in dataclasses.fields(defaults)
+    }

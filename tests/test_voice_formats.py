@@ -152,24 +152,6 @@ def test_filters_check_their_bounds(
         voice.Filters(**settings)
 
 
-def test_formats_default_to_the_documented_values() -> None:
-    defaults = voice.Defaults()
-
-    assert voice.PCM() == voice.PCM(48_000, 2, "s16le")
-    assert defaults.encoder == voice.EncoderSettings(
-        bitrate=None, application="audio", fec=True, packet_loss=0.1, complexity=10
-    )
-    assert defaults.speaking_flags is SpeakingFlags.MICROPHONE
-    assert (defaults.timeout, defaults.sink_buffer) == (10.0, 0.2)
-    assert defaults.server_change_delay == 0.0
-    assert (defaults.stage, defaults.stall) == ("listen", "hold")
-    assert (defaults.speech_hangover, defaults.receive_buffer) == (0.2, 2.0)
-    assert defaults.jitter == 0.1
-    assert (defaults.overflow, defaults.receive_stall) == ("drop_oldest", "wait")
-    assert not defaults.self_deaf
-    assert not defaults.self_mute
-
-
 @pytest.mark.parametrize(
     ("enum", "names"),
     [

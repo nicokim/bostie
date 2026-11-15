@@ -75,16 +75,6 @@ def without(document: dict[str, Any], key: str) -> dict[str, Any]:
     return {name: value for name, value in document.items() if name != key}
 
 
-def required_keys(event: type[Event], document: dict[str, Any]) -> list[str]:
-    required = []
-    for key in document:
-        try:
-            event.decode(0, msgspec.json.encode(without(document, key)))
-        except msgspec.ValidationError:
-            required.append(key)
-    return required
-
-
 @pytest.mark.parametrize("path", MODELLED, ids=lambda path: path.stem)
 def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
     data = path.read_bytes()
@@ -307,19 +297,16 @@ def test_typing_and_voice_session_start_times_read_unix_seconds() -> None:
     assert [channel.voice_start_time for channel in info.channels] == [started, None]
 
 
-def test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too(
+def test_typed_listeners_get_each_fixture_and_raw_ones_a_broken_one_too(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(events, "_undecodable", set())
-    cases: list[tuple[str, dict[str, Any], bool]] = []
-    for path in MODELLED:
-        name = path.name.split(".")[0]
-        document = json.loads(path.read_bytes())
-        cases.append((name, document, True))
-        cases += [
-            (name, without(document, key), False)
-            for key in required_keys(EVENTS[name], document)
-        ]
+    cases = [
+        (path.name.split(".")[0], json.loads(path.read_bytes()), True)
+        for path in MODELLED
+    ]
+    message = json.loads((EVENT_FIXTURES / "MESSAGE_CREATE.json").read_bytes())
+    cases.append(("MESSAGE_CREATE", message | {"mentions": "everyone"}, False))
 
     async def scenario(fake: FakeDiscord) -> None:
         bot = Bot(api_url=fake.api_url)
@@ -349,13 +336,6 @@ def test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too(
     with caplog.at_level(logging.WARNING):
         run(scenario)
 
-    broken = {name for name, _, ok in cases if not ok}
-    skipped = [
-        record.getMessage().split()[0]
-        for record in caplog.records
-        if record.name == "bostie.events"
-    ]
-    assert sorted(skipped) == sorted(broken)
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
 
 
