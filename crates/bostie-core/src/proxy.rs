@@ -10,7 +10,7 @@ use crate::error::{CoreError, describe};
 const MAX_ANSWER_HEAD: usize = 8 * 1024;
 
 #[derive(Clone)]
-pub struct Proxy {
+pub(crate) struct Proxy {
     url: Url,
     authorization: Option<String>,
 }

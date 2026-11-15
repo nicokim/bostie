@@ -115,20 +115,20 @@ pub(crate) fn write_header(out: &mut [u8; HEADER_LEN], sequence: u16, timestamp:
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Extension {
-    pub profile: u16,
-    pub words: u16,
+    pub(crate) profile: u16,
+    pub(crate) words: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Header {
-    pub padding: bool,
-    pub marker: bool,
-    pub payload_type: u8,
-    pub sequence: u16,
-    pub timestamp: u32,
-    pub ssrc: u32,
-    pub csrc_count: u8,
-    pub extension: Option<Extension>,
+    pub(crate) padding: bool,
+    pub(crate) marker: bool,
+    pub(crate) payload_type: u8,
+    pub(crate) sequence: u16,
+    pub(crate) timestamp: u32,
+    pub(crate) ssrc: u32,
+    pub(crate) csrc_count: u8,
+    pub(crate) extension: Option<Extension>,
 }
 
 impl Header {

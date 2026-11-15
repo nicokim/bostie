@@ -26,10 +26,10 @@ pub(crate) fn response(ssrc: u32, address: SocketAddr) -> [u8; DISCOVERY_LEN] {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Sealing {
-    pub extension: Option<Vec<u8>>,
-    pub padding: u8,
-    pub csrcs: u8,
-    pub marker: bool,
+    pub(crate) extension: Option<Vec<u8>>,
+    pub(crate) padding: u8,
+    pub(crate) csrcs: u8,
+    pub(crate) marker: bool,
 }
 
 pub(crate) fn seal(
@@ -77,11 +77,11 @@ pub(crate) fn seal(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Packet {
-    pub at: Instant,
-    pub key: usize,
-    pub header: Header,
-    pub nonce: u32,
-    pub payload: Vec<u8>,
+    pub(crate) at: Instant,
+    pub(crate) key: usize,
+    pub(crate) header: Header,
+    pub(crate) nonce: u32,
+    pub(crate) payload: Vec<u8>,
 }
 
 #[derive(Default)]

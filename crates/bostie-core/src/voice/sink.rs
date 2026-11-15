@@ -84,7 +84,11 @@ enum Fate {
 }
 
 impl Sink {
-    pub fn new(id: Handle, options: SinkOptions, inbox: Arc<Inbox>) -> Result<Self, CoreError> {
+    pub(crate) fn new(
+        id: Handle,
+        options: SinkOptions,
+        inbox: Arc<Inbox>,
+    ) -> Result<Self, CoreError> {
         options.validate()?;
         let producer = match options.format {
             SinkFormat::Pcm(format) => Producer::Pcm {
@@ -113,7 +117,7 @@ impl Sink {
         self.id
     }
 
-    pub fn options(&self) -> &SinkOptions {
+    pub(crate) fn options(&self) -> &SinkOptions {
         &self.options
     }
 
@@ -265,7 +269,7 @@ impl Sink {
         Ok(self.queue.lock().stats)
     }
 
-    pub fn is_closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         self.queue.lock().closed
     }
 
@@ -286,7 +290,7 @@ impl Sink {
         self.wake(&mut queue);
     }
 
-    pub fn volume(&self) -> f32 {
+    pub(crate) fn volume(&self) -> f32 {
         self.queue.lock().volume
     }
 
@@ -318,7 +322,7 @@ impl Sink {
             .is_some_and(|marker| marker.position <= queue.stats.consumed)
     }
 
-    pub fn pull_pcm(&self, frame: &mut [f32]) -> bool {
+    pub(crate) fn pull_pcm(&self, frame: &mut [f32]) -> bool {
         let mut queue = self.queue.lock();
         if queue.cut {
             return false;
@@ -336,7 +340,7 @@ impl Sink {
         true
     }
 
-    pub fn pull_opus(&self) -> Option<(Bytes, u32)> {
+    pub(crate) fn pull_opus(&self) -> Option<(Bytes, u32)> {
         let mut queue = self.queue.lock();
         if queue.cut {
             return None;
@@ -350,7 +354,7 @@ impl Sink {
         Some((packet, samples))
     }
 
-    pub fn hold(&self) {
+    pub(crate) fn hold(&self) {
         let mut queue = self.queue.lock();
         queue.stats.held_ticks += 1;
         if self.options.stall == StallPolicy::Hold {
@@ -402,7 +406,7 @@ impl Sink {
         }
     }
 
-    pub fn note_passthrough(&self, passing: bool) {
+    pub(crate) fn note_passthrough(&self, passing: bool) {
         let mut queue = self.queue.lock();
         queue.passthrough = passing;
         if passing {

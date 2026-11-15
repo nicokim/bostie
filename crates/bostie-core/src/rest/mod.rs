@@ -50,7 +50,7 @@ pub enum Auth<'a> {
 }
 
 impl<'a> Auth<'a> {
-    pub const fn bot_token(self) -> Option<&'a str> {
+    pub(crate) const fn bot_token(self) -> Option<&'a str> {
         match self {
             Self::Bot(token) => Some(token),
             Self::None | Self::Bearer(_) => None,

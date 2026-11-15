@@ -44,9 +44,9 @@ pub(crate) enum Outbound {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Executed {
-    pub protocol_version: u16,
-    pub epoch: Option<u64>,
-    pub transition_id: u16,
+    pub(crate) protocol_version: u16,
+    pub(crate) epoch: Option<u64>,
+    pub(crate) transition_id: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

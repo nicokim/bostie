@@ -208,7 +208,7 @@ impl SeqAck {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("no heartbeat ACK within {interval:?}")]
 pub(crate) struct Zombie {
-    pub interval: Duration,
+    pub(crate) interval: Duration,
 }
 
 #[derive(Debug, Clone, Copy)]

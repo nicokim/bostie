@@ -96,17 +96,17 @@ pub(crate) enum Inbound {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ready {
-    pub ssrc: u32,
-    pub ip: IpAddr,
-    pub port: u16,
-    pub modes: Vec<Box<str>>,
+    pub(crate) ssrc: u32,
+    pub(crate) ip: IpAddr,
+    pub(crate) port: u16,
+    pub(crate) modes: Vec<Box<str>>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct SessionDescription {
-    pub mode: Box<str>,
-    pub secret_key: [u8; SECRET_KEY_LEN],
-    pub dave_protocol_version: u16,
+    pub(crate) mode: Box<str>,
+    pub(crate) secret_key: [u8; SECRET_KEY_LEN],
+    pub(crate) dave_protocol_version: u16,
 }
 
 impl fmt::Debug for SessionDescription {
@@ -120,8 +120,8 @@ impl fmt::Debug for SessionDescription {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Frame {
-    pub seq: Option<u64>,
-    pub inbound: Result<Inbound, ProtoError>,
+    pub(crate) seq: Option<u64>,
+    pub(crate) inbound: Result<Inbound, ProtoError>,
 }
 
 pub(crate) fn parse_text(text: &[u8]) -> Frame {

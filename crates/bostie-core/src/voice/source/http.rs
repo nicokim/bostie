@@ -19,7 +19,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_PIECES: usize = 16;
 const RESUME_ATTEMPTS: u32 = 3;
 
-pub struct Http {
+pub(crate) struct Http {
     runtime: Handle,
     client: OnceLock<reqwest::Client>,
     proxy: Option<Proxy>,
@@ -28,7 +28,12 @@ pub struct Http {
 }
 
 impl Http {
-    pub fn new(runtime: Handle, buffer: usize, retry: Duration, proxy: Option<Proxy>) -> Self {
+    pub(crate) fn new(
+        runtime: Handle,
+        buffer: usize,
+        retry: Duration,
+        proxy: Option<Proxy>,
+    ) -> Self {
         Self {
             runtime,
             client: OnceLock::new(),

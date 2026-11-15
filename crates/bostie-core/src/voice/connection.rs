@@ -126,11 +126,11 @@ impl Step {
 }
 
 pub(crate) struct Info {
-    pub guild: GuildId,
-    pub shard: ShardId,
-    pub ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
-    pub ws_latency: Latency,
-    pub udp_latency: Latency,
+    pub(crate) guild: GuildId,
+    pub(crate) shard: ShardId,
+    pub(crate) ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
+    pub(crate) ws_latency: Latency,
+    pub(crate) udp_latency: Latency,
 }
 
 impl Info {
@@ -147,9 +147,9 @@ impl Info {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Ending {
-    pub reason: DisconnectReason,
-    pub code: Option<u16>,
-    pub detail: String,
+    pub(crate) reason: DisconnectReason,
+    pub(crate) code: Option<u16>,
+    pub(crate) detail: String,
 }
 
 impl Ending {
@@ -251,9 +251,9 @@ pub(super) struct Connection {
 }
 
 pub(super) struct Inputs {
-    pub commands: mpsc::Receiver<Command>,
-    pub stop: watch::Receiver<bool>,
-    pub gateway: watch::Receiver<Snapshot>,
+    pub(super) commands: mpsc::Receiver<Command>,
+    pub(super) stop: watch::Receiver<bool>,
+    pub(super) gateway: watch::Receiver<Snapshot>,
 }
 
 impl Connection {

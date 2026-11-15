@@ -229,7 +229,6 @@ async fn shutdown_closes_every_open_source_and_refuses_new_ones() {
 
     harness.voice.shutdown();
 
-    assert!(kept.is_closed());
     assert!(matches!(kept.read(), Err(CoreError::SourceClosed(_))));
     assert!(matches!(
         harness.voice.open_source(tone_file()),
@@ -246,7 +245,7 @@ async fn dropped_sources_are_forgotten_when_the_next_one_opens() {
     let kept = harness.voice.open_source(tone_file()).unwrap();
 
     assert_eq!(harness.voice.shared.sources.lock().len(), 1);
-    assert!(!kept.is_closed());
+    kept.read().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

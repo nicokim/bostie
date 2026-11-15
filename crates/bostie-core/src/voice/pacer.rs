@@ -21,8 +21,8 @@ const WORK_SMOOTHING: u64 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Tick {
-    pub now: Instant,
-    pub skipped: u32,
+    pub(crate) now: Instant,
+    pub(crate) skipped: u32,
 }
 
 pub(crate) type LaneFn = Box<dyn FnMut(Tick) -> bool + Send>;

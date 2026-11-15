@@ -24,10 +24,10 @@ mod platform {
     use std::net::{Ipv4Addr, TcpListener, TcpStream};
     use std::os::windows::io::{IntoRawSocket, RawSocket};
 
-    pub type Stream = TcpStream;
-    pub type RawHandle = RawSocket;
+    pub(super) type Stream = TcpStream;
+    pub(super) type RawHandle = RawSocket;
 
-    pub fn pair() -> io::Result<(Stream, Stream)> {
+    pub(super) fn pair() -> io::Result<(Stream, Stream)> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let ringer = TcpStream::connect(listener.local_addr()?)?;
         ringer.set_nodelay(true)?;
@@ -39,7 +39,7 @@ mod platform {
         }
     }
 
-    pub fn into_raw(stream: Stream) -> RawHandle {
+    pub(super) fn into_raw(stream: Stream) -> RawHandle {
         stream.into_raw_socket()
     }
 }

@@ -447,7 +447,7 @@ mod tests {
 
         core.close().unwrap();
 
-        assert!(source.is_closed());
+        assert!(matches!(source.read(), Err(CoreError::SourceClosed(_))));
         let voice = core.voice().unwrap();
         assert!(matches!(
             voice.open_source(some_bytes()),

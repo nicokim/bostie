@@ -35,19 +35,19 @@ pub(crate) enum Outgoing {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
-    pub server_id: GuildId,
-    pub user_id: UserId,
-    pub session_id: String,
-    pub token: String,
-    pub heartbeat_interval: Duration,
-    pub hello: HelloAt,
-    pub ssrc: u32,
-    pub udp: SocketAddr,
-    pub modes: Vec<String>,
-    pub session_mode: Option<String>,
-    pub secret_key: [u8; 32],
-    pub dave_protocol_version: u16,
-    pub early: Vec<Outgoing>,
+    pub(crate) server_id: GuildId,
+    pub(crate) user_id: UserId,
+    pub(crate) session_id: String,
+    pub(crate) token: String,
+    pub(crate) heartbeat_interval: Duration,
+    pub(crate) hello: HelloAt,
+    pub(crate) ssrc: u32,
+    pub(crate) udp: SocketAddr,
+    pub(crate) modes: Vec<String>,
+    pub(crate) session_mode: Option<String>,
+    pub(crate) secret_key: [u8; 32],
+    pub(crate) dave_protocol_version: u16,
+    pub(crate) early: Vec<Outgoing>,
 }
 
 impl Default for Config {

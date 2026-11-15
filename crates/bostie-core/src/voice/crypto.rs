@@ -47,10 +47,10 @@ pub(crate) enum CryptoError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Opened<'a> {
-    pub header: Header,
-    pub nonce: [u8; NONCE_LEN],
-    pub payload: &'a [u8],
-    pub extension: &'a [u8],
+    pub(crate) header: Header,
+    pub(crate) nonce: [u8; NONCE_LEN],
+    pub(crate) payload: &'a [u8],
+    pub(crate) extension: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

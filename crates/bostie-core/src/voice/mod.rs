@@ -65,7 +65,7 @@ use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::proxy::Proxy;
 
-pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
+pub(crate) type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
 
 const COMMAND_QUEUE: usize = 32;
 const LOG_EVERY: Duration = Duration::from_secs(1);
@@ -117,7 +117,7 @@ struct ConnectionHandle {
 }
 
 impl Voice {
-    pub fn new(
+    pub(crate) fn new(
         runtime: runtime::Handle,
         inbox: Arc<Inbox>,
         tap: Arc<GatewayTap>,
@@ -414,7 +414,7 @@ impl Voice {
         Ok(source)
     }
 
-    pub fn shutdown(&self) {
+    pub(crate) fn shutdown(&self) {
         self.shared.closed.store(true, Ordering::Release);
         for handle in self.shared.connections.lock().values() {
             handle.stop.send_replace(true);

@@ -30,23 +30,23 @@ static STATE_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| tree(&STATE_KEYS))
 static SERVER_FIELDS: LazyLock<PointerTree> = LazyLock::new(|| tree(&SERVER_KEYS));
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Snapshot {
-    pub state: Option<StateUpdate>,
-    pub state_seq: u64,
-    pub server: Option<ServerUpdate>,
-    pub server_seq: u64,
-    pub main_session: u64,
+pub(crate) struct Snapshot {
+    pub(crate) state: Option<StateUpdate>,
+    pub(crate) state_seq: u64,
+    pub(crate) server: Option<ServerUpdate>,
+    pub(crate) server_seq: u64,
+    pub(crate) main_session: u64,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct StateUpdate {
-    pub channel: Option<ChannelId>,
-    pub session_id: Box<str>,
-    pub self_mute: bool,
-    pub self_deaf: bool,
-    pub mute: bool,
-    pub deaf: bool,
-    pub suppress: bool,
+pub(crate) struct StateUpdate {
+    pub(crate) channel: Option<ChannelId>,
+    pub(crate) session_id: Box<str>,
+    pub(crate) self_mute: bool,
+    pub(crate) self_deaf: bool,
+    pub(crate) mute: bool,
+    pub(crate) deaf: bool,
+    pub(crate) suppress: bool,
 }
 
 impl fmt::Debug for StateUpdate {
@@ -63,9 +63,9 @@ impl fmt::Debug for StateUpdate {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct ServerUpdate {
-    pub token: Box<str>,
-    pub endpoint: Option<Box<str>>,
+pub(crate) struct ServerUpdate {
+    pub(crate) token: Box<str>,
+    pub(crate) endpoint: Option<Box<str>>,
 }
 
 impl fmt::Debug for ServerUpdate {
@@ -83,21 +83,21 @@ struct Entry {
 }
 
 #[derive(Default)]
-pub struct GatewayTap {
+pub(crate) struct GatewayTap {
     guilds: RwLock<HashMap<GuildId, Entry>>,
     sessions: Mutex<HashMap<ShardId, u64>>,
 }
 
 impl GatewayTap {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn has_guilds(&self) -> bool {
+    pub(crate) fn has_guilds(&self) -> bool {
         !self.guilds.read().is_empty()
     }
 
-    pub fn register(
+    pub(crate) fn register(
         &self,
         guild: GuildId,
         shard: ShardId,
@@ -115,11 +115,11 @@ impl GatewayTap {
         receiver
     }
 
-    pub fn unregister(&self, guild: GuildId) {
+    pub(crate) fn unregister(&self, guild: GuildId) {
         self.guilds.write().remove(&guild);
     }
 
-    pub fn offer(&self, shard: ShardId, name: &str, data: &[u8]) {
+    pub(crate) fn offer(&self, shard: ShardId, name: &str, data: &[u8]) {
         match name {
             VOICE_STATE_UPDATE => self.offer_state(shard, data),
             VOICE_SERVER_UPDATE => self.offer_server(shard, data),
@@ -127,7 +127,7 @@ impl GatewayTap {
         }
     }
 
-    pub fn session_started(&self, shard: ShardId) {
+    pub(crate) fn session_started(&self, shard: ShardId) {
         let mut sessions = self.sessions.lock();
         let counter = sessions.entry(shard).or_default();
         *counter += 1;

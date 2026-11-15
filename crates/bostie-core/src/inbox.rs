@@ -175,7 +175,7 @@ impl LogSink {
     }
 }
 
-pub struct Inbox {
+pub(crate) struct Inbox {
     state: Mutex<State>,
     room: Notify,
     bell: Bell,
@@ -209,7 +209,7 @@ impl Inbox {
         self.logs_closed.store(true, Ordering::Relaxed);
     }
 
-    pub fn push(&self, delivery: Delivery) {
+    pub(crate) fn push(&self, delivery: Delivery) {
         let first_since_drain = {
             let mut state = self.state.lock();
             if let Delivery::Dispatch { data, .. } = &delivery {
@@ -223,7 +223,7 @@ impl Inbox {
         }
     }
 
-    pub fn drain(&self) -> Vec<Delivery> {
+    pub(crate) fn drain(&self) -> Vec<Delivery> {
         let deliveries = {
             let mut state = self.state.lock();
             state.rung = false;
@@ -240,7 +240,7 @@ impl Inbox {
         (queued_bytes >= self.dispatch_bytes_limit).then_some(queued_bytes)
     }
 
-    pub async fn wait_for_room(&self) {
+    pub(crate) async fn wait_for_room(&self) {
         loop {
             let mut room = pin!(self.room.notified());
             room.as_mut().enable();

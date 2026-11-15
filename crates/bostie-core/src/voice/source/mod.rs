@@ -88,7 +88,7 @@ enum Command {
 }
 
 impl Source {
-    pub fn open(
+    pub(crate) fn open(
         id: Handle,
         spec: SourceSpec,
         inbox: Arc<Inbox>,
@@ -202,10 +202,6 @@ impl Source {
         state.progress = Progress::Playing;
         self.shared.changed.notify_one();
         Ok(())
-    }
-
-    pub fn is_closed(&self) -> bool {
-        self.shared.state.lock().closed
     }
 
     pub fn close(&self) {
@@ -870,7 +866,6 @@ pub(crate) mod tests {
         source.close();
 
         assert_eq!(harness.wakes(), 1);
-        assert!(source.is_closed());
         assert!(matches!(source.read(), Err(CoreError::SourceClosed(_))));
         assert!(matches!(
             source.seek(Duration::ZERO),

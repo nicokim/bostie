@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
-pub(crate) struct Limits {
+pub(super) struct Limits {
     pub(super) connect_timeout: Duration,
     pub(super) hello_timeout: Duration,
     pub(super) close_timeout: Duration,

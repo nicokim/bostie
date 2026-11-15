@@ -93,7 +93,11 @@ pub struct ReceiverStats {
 }
 
 impl Receiver {
-    pub fn new(id: Handle, options: ReceiveOptions, inbox: Arc<Inbox>) -> Result<Self, CoreError> {
+    pub(crate) fn new(
+        id: Handle,
+        options: ReceiveOptions,
+        inbox: Arc<Inbox>,
+    ) -> Result<Self, CoreError> {
         options.validate()?;
         Ok(Self {
             id,
@@ -109,11 +113,11 @@ impl Receiver {
         self.id
     }
 
-    pub fn options(&self) -> &ReceiveOptions {
+    pub(crate) fn options(&self) -> &ReceiveOptions {
         &self.options
     }
 
-    pub fn opened(&self) -> Instant {
+    pub(crate) fn opened(&self) -> Instant {
         self.opened
     }
 
@@ -169,11 +173,11 @@ impl Receiver {
         Ok(id)
     }
 
-    pub fn is_marked(&self) -> bool {
+    pub(crate) fn is_marked(&self) -> bool {
         self.marked.load(Ordering::Relaxed)
     }
 
-    pub fn pass(&self, cut: Instant, pending: Option<Instant>, expiry: Option<Instant>) {
+    pub(crate) fn pass(&self, cut: Instant, pending: Option<Instant>, expiry: Option<Instant>) {
         let mut queue = self.queue.lock();
         while let Some(&(id, at)) = queue.marks.front() {
             let passed = at < cut && pending.is_none_or(|oldest| oldest > at);
@@ -191,7 +195,7 @@ impl Receiver {
         self.queue.lock().ended
     }
 
-    pub fn is_closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         self.ended().is_some()
     }
 
@@ -206,7 +210,7 @@ impl Receiver {
         self.wake(&mut queue);
     }
 
-    pub fn end(&self, why: Ended) {
+    pub(crate) fn end(&self, why: Ended) {
         let mut queue = self.queue.lock();
         if queue.ended.is_none() {
             queue.ended = Some(why);
@@ -215,7 +219,7 @@ impl Receiver {
         }
     }
 
-    pub fn push(&self, items: impl IntoIterator<Item = Item>, now: Instant) {
+    pub(crate) fn push(&self, items: impl IntoIterator<Item = Item>, now: Instant) {
         let mut queue = self.queue.lock();
         if queue.ended.is_some() {
             return;
@@ -240,11 +244,11 @@ impl Receiver {
         }
     }
 
-    pub fn add_lost(&self, packets: u64) {
+    pub(crate) fn add_lost(&self, packets: u64) {
         self.queue.lock().stats.lost += packets;
     }
 
-    pub fn add_dropped(&self, frames: u64) {
+    pub(crate) fn add_dropped(&self, frames: u64) {
         self.queue.lock().stats.dropped += frames;
     }
 

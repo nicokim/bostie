@@ -32,22 +32,22 @@ const DEFAULT_SPEECH_HANGOVER: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Arrival {
-    pub ssrc: u32,
-    pub sequence: u16,
-    pub timestamp: u32,
-    pub at: Instant,
-    pub payload: Option<Bytes>,
-    pub silence: bool,
-    pub extension: Option<(u16, Bytes)>,
-    pub own: bool,
+    pub(crate) ssrc: u32,
+    pub(crate) sequence: u16,
+    pub(crate) timestamp: u32,
+    pub(crate) at: Instant,
+    pub(crate) payload: Option<Bytes>,
+    pub(crate) silence: bool,
+    pub(crate) extension: Option<(u16, Bytes)>,
+    pub(crate) own: bool,
 }
 
 #[derive(Debug)]
 pub(crate) struct Transport {
-    pub generation: u64,
-    pub socket: Arc<std::net::UdpSocket>,
-    pub ssrc: u32,
-    pub cipher: Cipher,
+    pub(crate) generation: u64,
+    pub(crate) socket: Arc<std::net::UdpSocket>,
+    pub(crate) ssrc: u32,
+    pub(crate) cipher: Cipher,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

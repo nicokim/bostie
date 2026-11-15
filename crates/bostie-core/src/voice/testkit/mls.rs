@@ -72,9 +72,9 @@ pub(crate) struct ExternalSenderFake {
     transition: Option<Transition>,
     corruptions: Vec<(Id, Corruption)>,
     held: Vec<Message>,
-    pub next_transition: u16,
-    pub hold_commits: bool,
-    pub hold_transitions: bool,
+    pub(crate) next_transition: u16,
+    pub(crate) hold_commits: bool,
+    pub(crate) hold_transitions: bool,
 }
 
 impl ExternalSenderFake {
@@ -667,12 +667,12 @@ enum Item {
 }
 
 pub(crate) struct Call {
-    pub fake: ExternalSenderFake,
-    pub now: Instant,
-    pub sent: Vec<(UserId, Outbound)>,
-    pub executed: Vec<(UserId, Executed)>,
-    pub failures: Vec<(UserId, DaveError)>,
-    pub remote: Vec<Message>,
+    pub(crate) fake: ExternalSenderFake,
+    pub(crate) now: Instant,
+    pub(crate) sent: Vec<(UserId, Outbound)>,
+    pub(crate) executed: Vec<(UserId, Executed)>,
+    pub(crate) failures: Vec<(UserId, DaveError)>,
+    pub(crate) remote: Vec<Message>,
     pub(crate) receive: ReceiveTuning,
     channel: ChannelId,
     clients: HashMap<UserId, Dave>,

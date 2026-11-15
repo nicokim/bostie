@@ -27,9 +27,9 @@ use crate::error::describe;
 use crate::inbox::Delivery;
 
 pub(super) struct Credentials {
-    pub session_id: Box<str>,
-    pub token: Box<str>,
-    pub endpoint: Box<str>,
+    pub(super) session_id: Box<str>,
+    pub(super) token: Box<str>,
+    pub(super) endpoint: Box<str>,
 }
 
 pub(super) enum Attempt {

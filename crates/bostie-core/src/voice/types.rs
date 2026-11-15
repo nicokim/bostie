@@ -117,7 +117,7 @@ pub struct EncoderSettings {
 }
 
 impl EncoderSettings {
-    pub fn validate(self) -> Result<(), CoreError> {
+    pub(crate) fn validate(self) -> Result<(), CoreError> {
         if !BITRATES.contains(&self.bitrate) {
             return Err(CoreError::InvalidRequest(format!(
                 "bitrate must be from {} to {} bits per second, got {}",
@@ -156,7 +156,7 @@ pub struct PcmFormat {
 }
 
 impl PcmFormat {
-    pub fn validate(self) -> Result<(), CoreError> {
+    pub(crate) fn validate(self) -> Result<(), CoreError> {
         if !RATES.contains(&self.rate) {
             return Err(CoreError::InvalidRequest(format!(
                 "sample rate must be from {} to {} Hz, got {}",
@@ -205,7 +205,7 @@ pub struct SinkOptions {
 }
 
 impl SinkOptions {
-    pub fn validate(&self) -> Result<(), CoreError> {
+    pub(crate) fn validate(&self) -> Result<(), CoreError> {
         if let SinkFormat::Pcm(format) = self.format {
             format.validate()?;
         }
@@ -236,7 +236,7 @@ pub struct Filters {
 }
 
 impl Filters {
-    pub fn validate(&self) -> Result<(), CoreError> {
+    pub(crate) fn validate(&self) -> Result<(), CoreError> {
         let invalid = |text: String| Err(CoreError::InvalidRequest(text));
         if self.bands.len() > MAX_BANDS {
             return invalid(format!(
@@ -320,7 +320,7 @@ pub struct ReceiveOptions {
 }
 
 impl ReceiveOptions {
-    pub fn validate(&self) -> Result<(), CoreError> {
+    pub(crate) fn validate(&self) -> Result<(), CoreError> {
         if let ReceiveFormat::Pcm(format) | ReceiveFormat::Mixed(format) = self.format {
             format.validate()?;
             if !DECODE_RATES.contains(&format.rate) {
@@ -349,19 +349,19 @@ impl ReceiveOptions {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReceiveTuning {
-    pub hold: Duration,
-    pub hold_packets: usize,
-    pub unmapped_ssrcs: usize,
-    pub arrivals: usize,
-    pub stream_idle: Duration,
-    pub max_conceal: Duration,
-    pub replay_window: u32,
-    pub dave_retries: usize,
-    pub dave_budget: Duration,
-    pub decrypt_tolerance: u32,
-    pub dave_grace: Duration,
-    pub downgrade_expiry: u32,
-    pub upgrade_passthrough: u32,
+    pub(crate) hold: Duration,
+    pub(crate) hold_packets: usize,
+    pub(crate) unmapped_ssrcs: usize,
+    pub(crate) arrivals: usize,
+    pub(crate) stream_idle: Duration,
+    pub(crate) max_conceal: Duration,
+    pub(crate) replay_window: u32,
+    pub(crate) dave_retries: usize,
+    pub(crate) dave_budget: Duration,
+    pub(crate) decrypt_tolerance: u32,
+    pub(crate) dave_grace: Duration,
+    pub(crate) downgrade_expiry: u32,
+    pub(crate) upgrade_passthrough: u32,
 }
 
 impl Default for ReceiveTuning {

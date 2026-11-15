@@ -22,11 +22,11 @@ pub(crate) fn to_samples(duration: Duration) -> i64 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Slot {
-    pub sequence: u16,
-    pub timestamp: u32,
-    pub samples: u32,
-    pub at: i64,
-    pub payload: Option<Bytes>,
+    pub(crate) sequence: u16,
+    pub(crate) timestamp: u32,
+    pub(crate) samples: u32,
+    pub(crate) at: i64,
+    pub(crate) payload: Option<Bytes>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

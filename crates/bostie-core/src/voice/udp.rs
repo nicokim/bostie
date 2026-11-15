@@ -46,8 +46,8 @@ pub(crate) enum DiscoveryError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Answer {
-    pub address: SocketAddr,
-    pub at: Instant,
+    pub(crate) address: SocketAddr,
+    pub(crate) at: Instant,
 }
 
 pub(crate) fn bind(remote: SocketAddr) -> io::Result<(UdpSocket, Arc<std::net::UdpSocket>)> {
