@@ -6,14 +6,14 @@ from typing import Literal
 type TimestampStyle = Literal["t", "T", "d", "D", "f", "F", "s", "S", "R"]
 type GuildNavigation = Literal["customize", "browse", "guide", "linked-roles"]
 
-LINK = re.compile(r"(https?://\S+)")
-MARKDOWN = re.compile(r"([\\*_~`|>#\-\[\]()])|^(\s*\d+)\.", re.MULTILINE)
-INLINE_MARKDOWN = re.compile(r"[\\*_~`|]")
-LINE_MARKDOWN = re.compile(r"^(?:>>> |> |#{1,3} |-# |[-*] )", re.MULTILINE)
-PING = re.compile(r"@(everyone|here|[!&]?\d{17,20})")
-USER_MENTION = re.compile(r"<@!?(\d{15,20})>")
-ROLE_MENTION = re.compile(r"<@&(\d{15,20})>")
-CHANNEL_MENTION = re.compile(r"<#(\d{15,20})>")
+_LINK = re.compile(r"(https?://\S+)")
+_MARKDOWN = re.compile(r"([\\*_~`|>#\-\[\]()])|^(\s*\d+)\.", re.MULTILINE)
+_INLINE_MARKDOWN = re.compile(r"[\\*_~`|]")
+_LINE_MARKDOWN = re.compile(r"^(?:>>> |> |#{1,3} |-# |[-*] )", re.MULTILINE)
+_PING = re.compile(r"@(everyone|here|[!&]?\d{17,20})")
+_USER_MENTION = re.compile(r"<@!?(\d{15,20})>")
+_ROLE_MENTION = re.compile(r"<@&(\d{15,20})>")
+_CHANNEL_MENTION = re.compile(r"<#(\d{15,20})>")
 
 
 def timestamp(when: datetime | float, style: TimestampStyle | None = None) -> str:
@@ -64,31 +64,31 @@ def store(application_id: int, sku_id: int | None = None) -> str:
 
 def escape_markdown(text: str) -> str:
     """The text shown as typed, with links left working."""
-    return _outside_links(text, lambda part: MARKDOWN.sub(_escaped, part))
+    return _outside_links(text, lambda part: _MARKDOWN.sub(_escaped, part))
 
 
 def remove_markdown(text: str) -> str:
     """The text without markdown, with links left working."""
     return _outside_links(
-        text, lambda part: INLINE_MARKDOWN.sub("", LINE_MARKDOWN.sub("", part))
+        text, lambda part: _INLINE_MARKDOWN.sub("", _LINE_MARKDOWN.sub("", part))
     )
 
 
 def escape_mentions(text: str) -> str:
     """The text with @everyone, @here and user and role mentions that cannot ping."""
-    return PING.sub("@\u200b\\1", text)
+    return _PING.sub("@\u200b\\1", text)
 
 
 def mentioned_users(text: str) -> list[int]:
-    return [int(found) for found in USER_MENTION.findall(text)]
+    return [int(found) for found in _USER_MENTION.findall(text)]
 
 
 def mentioned_roles(text: str) -> list[int]:
-    return [int(found) for found in ROLE_MENTION.findall(text)]
+    return [int(found) for found in _ROLE_MENTION.findall(text)]
 
 
 def mentioned_channels(text: str) -> list[int]:
-    return [int(found) for found in CHANNEL_MENTION.findall(text)]
+    return [int(found) for found in _CHANNEL_MENTION.findall(text)]
 
 
 def _escaped(match: re.Match[str]) -> str:
@@ -97,7 +97,7 @@ def _escaped(match: re.Match[str]) -> str:
 
 
 def _outside_links(text: str, change: Callable[[str], str]) -> str:
-    parts = LINK.split(text)
+    parts = _LINK.split(text)
     return "".join(
         part if index % 2 else change(part) for index, part in enumerate(parts)
     )

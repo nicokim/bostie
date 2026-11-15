@@ -12,7 +12,7 @@ __all__ = [
     "watching",
 ]
 
-CUSTOM_STATUS_NAME = "Custom Status"
+_CUSTOM_STATUS_NAME = "Custom Status"
 
 
 class ActivityDict(TypedDict):
@@ -47,7 +47,7 @@ def competing(name: str, *, state: str | None = None) -> ActivityDict:
 
 def custom(state: str) -> ActivityDict:
     """A custom status that shows `state` as its text."""
-    return _activity(ActivityType.CUSTOM, CUSTOM_STATUS_NAME, state)
+    return _activity(ActivityType.CUSTOM, _CUSTOM_STATUS_NAME, state)
 
 
 def _activity(type: ActivityType, name: str, state: str | None) -> ActivityDict:

@@ -61,7 +61,7 @@ from bostie.models import (
     VoiceState,
     WebhookMessage,
 )
-from bostie.permissions import THREAD_TYPES, AnyMember, compute_permissions
+from bostie.permissions import _THREAD_TYPES, AnyMember, compute_permissions
 from bostie.snowflake import shard_of
 
 type _CachedMessage = Message | WebhookMessage
@@ -289,7 +289,7 @@ class Cache:
         if channel is None or channel.guild_id is None:
             return None
         parent = None
-        if channel.type in THREAD_TYPES:
+        if channel.type in _THREAD_TYPES:
             parent = self._channels.get(channel.parent_id or 0)
             if parent is None:
                 return None
@@ -547,7 +547,7 @@ class Cache:
         for thread in [
             channel
             for channel in channels.values()
-            if channel.type in THREAD_TYPES
+            if channel.type in _THREAD_TYPES
             and (parent_ids is None or channel.parent_id in parent_ids)
         ]:
             del channels[thread.id]

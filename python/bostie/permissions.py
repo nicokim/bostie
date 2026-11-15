@@ -5,14 +5,14 @@ from bostie.models import Channel, Guild, Member, ResolvedMember, Role, RoleColo
 
 type AnyMember = Member | ResolvedMember
 
-THREAD_TYPES = frozenset(
+_THREAD_TYPES = frozenset(
     {
         ChannelType.ANNOUNCEMENT_THREAD,
         ChannelType.PUBLIC_THREAD,
         ChannelType.PRIVATE_THREAD,
     }
 )
-VOICE_TYPES = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
+_VOICE_TYPES = frozenset({ChannelType.GUILD_VOICE, ChannelType.GUILD_STAGE_VOICE})
 ALL = Permissions(sum(Permissions))
 NONE = Permissions(0)
 TEXT = (
@@ -122,13 +122,13 @@ ELEVATED = (
     | Permissions.VIEW_CREATOR_MONETIZATION_ANALYTICS
 )
 TIMED_OUT = Permissions.VIEW_CHANNEL | Permissions.READ_MESSAGE_HISTORY
-NEEDS_SENDING = (
+_NEEDS_SENDING = (
     Permissions.MENTION_EVERYONE
     | Permissions.SEND_TTS_MESSAGES
     | Permissions.ATTACH_FILES
     | Permissions.EMBED_LINKS
 )
-NEEDS_CONNECTING = (
+_NEEDS_CONNECTING = (
     Permissions.CONNECT
     | Permissions.SPEAK
     | Permissions.MUTE_MEMBERS
@@ -164,7 +164,7 @@ def compute_permissions(
             permissions |= role.permissions
     if permissions & Permissions.ADMINISTRATOR:
         return ALL
-    thread = channel is not None and channel.type in THREAD_TYPES
+    thread = channel is not None and channel.type in _THREAD_TYPES
     source = parent if thread else channel
     if thread and source is None:
         raise ValueError("a thread's permissions need its parent channel")
@@ -181,9 +181,9 @@ def compute_permissions(
         Permissions.SEND_MESSAGES_IN_THREADS if thread else Permissions.SEND_MESSAGES
     )
     if not permissions & sending:
-        permissions &= ~NEEDS_SENDING
-    if source.type in VOICE_TYPES and not permissions & Permissions.CONNECT:
-        permissions &= ~NEEDS_CONNECTING
+        permissions &= ~_NEEDS_SENDING
+    if source.type in _VOICE_TYPES and not permissions & Permissions.CONNECT:
+        permissions &= ~_NEEDS_CONNECTING
     return permissions
 
 

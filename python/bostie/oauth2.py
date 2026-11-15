@@ -4,9 +4,9 @@ from urllib.parse import quote, urlencode
 
 from bostie.enums import ApplicationIntegrationType, OAuth2Scope, Permissions
 
-AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
+_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 
-type QueryValue = str | int | bool | None
+type _QueryValue = str | int | bool | None
 
 
 def authorize_url(
@@ -57,9 +57,9 @@ def invite_url(
     )
 
 
-def _url(query: Mapping[str, QueryValue]) -> str:
+def _url(query: Mapping[str, _QueryValue]) -> str:
     pairs = {name: _text(value) for name, value in query.items() if value is not None}
-    return f"{AUTHORIZE_URL}?{urlencode(pairs, quote_via=quote)}"
+    return f"{_AUTHORIZE_URL}?{urlencode(pairs, quote_via=quote)}"
 
 
 def _text(value: str | int) -> str:

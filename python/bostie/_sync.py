@@ -14,7 +14,7 @@ from bostie.commands import (
     _Scope,
 )
 from bostie.enums import CommandType, InteractionContextType, Locale, OptionType
-from bostie.errors import BadRequest, CommandSyncError, SyncProblem, form_errors
+from bostie.errors import BadRequest, CommandSyncError, SyncProblem, _form_errors
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient
@@ -358,7 +358,7 @@ def _sync_error(
     body: Sequence[Mapping[str, Any]],
     commands: Sequence[AnyCommand],
 ) -> CommandSyncError:
-    found = form_errors(error.errors) or [((), error.message)]
+    found = _form_errors(error.errors) or [((), error.message)]
     return CommandSyncError(
         _problem(path, message, body, commands) for path, message in found
     )
