@@ -19,6 +19,7 @@ use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame, command};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
+use super::tuning::GatewayTuning;
 use super::{GatewayShared, SavedSession};
 use crate::backoff::backoff;
 use crate::error::describe;
@@ -166,6 +167,28 @@ struct ShardConnection {
 }
 
 impl ShardConnection {
+    fn new(
+        socket: Socket,
+        signals: Arc<Signals>,
+        tuning: &GatewayTuning,
+        inflater: Inflater,
+    ) -> Self {
+        Self {
+            socket,
+            signals,
+            hello_timeout: tuning.hello_timeout,
+            close_timeout: tuning.close_timeout,
+            inflater,
+            hello_deadline: Instant::now() + tuning.hello_timeout,
+            heartbeat: None,
+            limiter: None,
+            identify_at: None,
+            awaiting_approval: None,
+            running: false,
+            held: None,
+        }
+    }
+
     fn next_tick(&self) -> Instant {
         self.heartbeat
             .as_ref()
@@ -190,8 +213,6 @@ impl ShardConnection {
             .map_or(self.hello_timeout, |heartbeat| heartbeat.interval);
         tokio::select! {
             biased;
-            () = self.signals.close.notified() => return Err(ShardEnding::Stop),
-            () = self.signals.reconnect.notified() => return Err(ShardEnding::Requested),
             sent = timeout(patience, self.socket.send(Message::text(payload))) => match sent {
                 Ok(sent) => sent.map_err(|error| ShardEnding::Lost(describe(&error)))?,
                 Err(_) => {
@@ -200,6 +221,8 @@ impl ShardConnection {
                     )));
                 }
             },
+            () = self.signals.close.notified() => return Err(ShardEnding::Stop),
+            () = self.signals.reconnect.notified() => return Err(ShardEnding::Requested),
         }
         if let Some(limiter) = &mut self.limiter {
             limiter.record(Instant::now());
@@ -370,20 +393,8 @@ impl Shard {
                 Err(_) => return ShardEnding::Unreachable(format!("no connection within {:?}", tuning.connect_timeout)),
             },
         };
-        let mut connection = ShardConnection {
-            socket,
-            signals: Arc::clone(&self.signals),
-            hello_timeout: tuning.hello_timeout,
-            close_timeout: tuning.close_timeout,
-            inflater,
-            hello_deadline: Instant::now() + tuning.hello_timeout,
-            heartbeat: None,
-            limiter: None,
-            identify_at: None,
-            awaiting_approval: None,
-            running: false,
-            held: None,
-        };
+        let mut connection =
+            ShardConnection::new(socket, Arc::clone(&self.signals), tuning, inflater);
         let ending = self.serve(&mut connection).await;
         match ending {
             ShardEnding::Stop => {
@@ -815,7 +826,48 @@ async fn connect(
 
 #[cfg(test)]
 mod tests {
+    use tokio::net::TcpListener;
+    use tokio_websockets::ServerBuilder;
+
     use super::*;
+
+    const LEAVE: &str =
+        r#"{"op":4,"d":{"guild_id":"1","channel_id":null,"self_mute":false,"self_deaf":false}}"#;
+
+    #[tokio::test]
+    async fn a_command_sent_as_close_arrives_goes_out_before_the_close_frame() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("ws://{}", listener.local_addr().unwrap())).unwrap();
+        let (socket, (_, peer)) = tokio::join!(connect(&url, &Connector::Plain, None), async {
+            let (stream, _) = listener.accept().await.unwrap();
+            ServerBuilder::new().accept(stream).await.unwrap()
+        });
+        let signals = Arc::new(Signals::new(Bytes::new()));
+        let tuning = GatewayTuning::default();
+        let inflater = Inflater::new(tuning.max_decompressed).unwrap();
+        let mut connection =
+            ShardConnection::new(socket.unwrap(), Arc::clone(&signals), &tuning, inflater);
+
+        signals.close.notify_one();
+        let ((), received) = tokio::join!(
+            async {
+                connection
+                    .send(Bytes::from_static(LEAVE.as_bytes()))
+                    .await
+                    .unwrap();
+                connection.close(NORMAL_CLOSE, None).await;
+                drop(connection);
+            },
+            peer.map(Result::unwrap).collect::<Vec<_>>()
+        );
+
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0].as_text(), Some(LEAVE));
+        assert_eq!(
+            received[1].as_close().map(|(code, _)| u16::from(code)),
+            Some(NORMAL_CLOSE)
+        );
+    }
 
     #[test]
     fn heartbeats_start_within_one_interval_then_follow_it() {
