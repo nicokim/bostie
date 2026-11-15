@@ -174,6 +174,6 @@ def test_a_new_interval_waits_afresh_from_the_change() -> None:
 
         assert not early
         assert (tick.seconds, tick.times) == (10, ())
-        assert 40 <= second - first < 41
+        assert second - first == pytest.approx(40, abs=0.05)
 
     run_stepped(scenario)

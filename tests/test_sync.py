@@ -18,7 +18,7 @@ from bostie.router import Router
 from bostie.testing import FakeDiscord, payloads
 
 FIXTURES = payloads._FIXTURES / "rest"
-REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_text())
+REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_bytes())
 INSTALL_TYPES = [0, 1]
 
 type Scenario = Callable[[FakeDiscord, HTTPClient], Coroutine[Any, Any, None]]
