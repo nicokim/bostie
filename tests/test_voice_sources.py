@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bostie import Bot, voice
-from bostie.errors import SourceError
+from bostie.errors import SourceError, StateError
 from bostie.testing import FakeDiscord, run, running, settle
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
@@ -97,7 +97,7 @@ def test_an_undecodable_source_raises_source_error_and_cannot_open_again() -> No
             source = voice.Bytes(b"not audio")
             with pytest.raises(SourceError) as raised:
                 await source.open(manager)
-            with pytest.raises(ValueError, match="a Source plays once"):
+            with pytest.raises(StateError, match="a Source plays once"):
                 await source.open(manager)
 
         assert raised.value.source == "Bytes(<9 bytes>)"
@@ -115,7 +115,7 @@ def test_closing_a_source_while_it_opens_ends_the_open() -> None:
             await fake.expect_request("GET", "/media")
             await source.aclose()
 
-            with pytest.raises(ValueError, match="a Source plays once"):
+            with pytest.raises(StateError, match="a Source plays once"):
                 await opening
             release.set()
 
@@ -154,7 +154,7 @@ def test_open_twice_keeps_one_decoder_and_a_used_source_plays_once() -> None:
                 SECOND_OF_F32_STEREO, rel=0.01
             )
             for source in (ended, closed, stream):
-                with pytest.raises(ValueError, match="a Source plays once"):
+                with pytest.raises(StateError, match="a Source plays once"):
                     await source.open(manager)
 
     run(scenario)

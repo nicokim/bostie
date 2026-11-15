@@ -105,7 +105,7 @@ class Source(ABC):
 
     def _check_unused(self) -> None:
         if self._done:
-            raise ValueError(PLAYS_ONCE)
+            raise StateError(PLAYS_ONCE)
 
 
 class _DecodedSource(Source):

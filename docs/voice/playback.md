@@ -8,7 +8,7 @@
 
 ## Sources
 
-A source is audio to play. Each is used once: `play` opens it, and `source.again()` returns a new one with the same audio, for playing it twice.
+A source is audio to play. Each is used once: `play` opens it, opening it after it ended raises `StateError`, and `source.again()` returns a new one with the same audio, for playing it twice.
 
 | Source | Plays | Seekable |
 |---|---|---|
