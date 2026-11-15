@@ -1,36 +1,49 @@
 ---
-source: 7849bf684b355c9ddd7819d46330ce19ea09b251
+source: 22e588eb286f2378e7b04e0a4e738f8828a23ecf
 ---
 
 # Instalación
 
 ![Bostie abre una caja con una estrella adentro](assets/mascot/bostie-install.webp){ align=right width="180" loading=lazy }
 
-bostie se compila a partir de un clon de su repositorio. La compilación construye el núcleo en Rust y una libopus incluida, lo que tarda unos minutos la primera vez.
+Instala bostie en el entorno de tu bot:
+
+```sh
+pip install bostie
+```
+
+Los wheels traen el núcleo en Rust y libopus ya compilados, así que pip no compila nada y no necesita ninguna otra herramienta.
 
 ## Requisitos { #requirements }
 
-- Python 3.12 o posterior. Las builds free-threaded de 3.14 y 3.15 también funcionan.
-- Rust 1.95 o posterior, instalado con [rustup](https://rustup.rs).
-- [CMake](https://cmake.org/download/) y un compilador de C, que compilan libopus.
+bostie necesita Python 3.12 o posterior. Los wheels cubren todas las versiones de CPython a partir de la 3.12:
+
+- Linux en x86_64 y aarch64, con glibc 2.28 o posterior, o con musl.
+- macOS en Apple Silicon e Intel.
+- Windows en x86_64.
+
+Las builds free-threaded de Python 3.14 y 3.15 tienen sus propios wheels en cada una de estas plataformas.
 
 La CI prueba cada commit en Linux, macOS y Windows con Python 3.12, 3.13, 3.14 y 3.15.
 
-## Instalar desde un clon { #install-from-a-clone }
-
-Clona el repositorio y luego instala el clon en el entorno de tu bot:
-
-```sh
-pip install path/to/bostie
-```
+## El extra testing { #the-testing-extra }
 
 `bostie.testing`, el Discord falso contra el que corren tus pruebas, necesita dos paquetes más. Instálalos con el extra `testing`:
 
 ```sh
-pip install "path/to/bostie[testing]"
+pip install "bostie[testing]"
 ```
 
 La voz no necesita nada más: la decodificación, Opus y el cifrado vienen compilados en bostie. Solo la fuente [`voice.FFmpeg`](voice/playback.md#sources) ejecuta un programa externo, `ffmpeg`, y tiene que estar en el `PATH`.
+
+## Compilar desde el código fuente { #build-from-source }
+
+Cuando ningún wheel sirve, pip compila bostie a partir de su distribución de código fuente. Lo mismo pasa al instalar un clon del repositorio con `pip install path/to/bostie`. La compilación necesita:
+
+- Rust 1.95 o posterior, instalado con [rustup](https://rustup.rs).
+- [CMake](https://cmake.org/download/) y un compilador de C, que compilan libopus.
+
+Compila el núcleo en Rust y libopus, lo que tarda unos minutos.
 
 ## Comprobar la instalación { #check-the-install }
 

@@ -1,36 +1,49 @@
 ---
-source: 7849bf684b355c9ddd7819d46330ce19ea09b251
+source: 22e588eb286f2378e7b04e0a4e738f8828a23ecf
 ---
 
 # 安装
 
 ![Bostie 打开一个装着星星的盒子](assets/mascot/bostie-install.webp){ align=right width="180" loading=lazy }
 
-bostie 需要从仓库的克隆进行构建。构建过程会编译 Rust 核心和内置的 libopus，第一次构建需要几分钟。
+把 bostie 安装到你机器人的环境中：
+
+```sh
+pip install bostie
+```
+
+wheel 中已经包含编译好的 Rust 核心和 libopus，因此 pip 不需要编译任何东西，也不需要其他工具。
 
 ## 环境要求 { #requirements }
 
-- Python 3.12 或更高版本。3.14 和 3.15 的自由线程（free-threaded）构建同样可用。
-- Rust 1.95 或更高版本，通过 [rustup](https://rustup.rs) 安装。
-- [CMake](https://cmake.org/download/) 和一个 C 编译器，用于构建 libopus。
+bostie 需要 Python 3.12 或更高版本。wheel 覆盖 3.12 及以后的所有 CPython 版本，适用于：
+
+- x86_64 和 aarch64 上的 Linux，需要 glibc 2.28 或更高版本，或者 musl。
+- Apple Silicon 和 Intel 上的 macOS。
+- x86_64 上的 Windows。
+
+Python 3.14 和 3.15 的自由线程（free-threaded）构建在上述每个平台上都有专门的 wheel。
 
 CI 会在 Linux、macOS 和 Windows 上，用 Python 3.12、3.13、3.14 和 3.15 测试每一次提交。
 
-## 从克隆安装 { #install-from-a-clone }
-
-克隆仓库，然后把这个克隆安装到你机器人的环境中：
-
-```sh
-pip install path/to/bostie
-```
+## testing 附加依赖 { #the-testing-extra }
 
 `bostie.testing` 是供测试使用的模拟 Discord，它还需要另外两个包。通过 `testing` 附加依赖安装它们：
 
 ```sh
-pip install "path/to/bostie[testing]"
+pip install "bostie[testing]"
 ```
 
 语音功能不需要额外安装任何东西：解码、Opus 和加密都已编译进 bostie。只有 [`voice.FFmpeg`](voice/playback.md#sources) 音源会运行外部程序 `ffmpeg`，它必须在 `PATH` 中。
+
+## 从源码构建 { #build-from-source }
+
+如果没有合适的 wheel，pip 会从 bostie 的源码分发包构建它。用 `pip install path/to/bostie` 安装仓库的克隆时也是如此。构建需要：
+
+- Rust 1.95 或更高版本，通过 [rustup](https://rustup.rs) 安装。
+- [CMake](https://cmake.org/download/) 和一个 C 编译器，用于构建 libopus。
+
+构建过程会编译 Rust 核心和 libopus，需要几分钟。
 
 ## 检查安装 { #check-the-install }
 
