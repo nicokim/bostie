@@ -104,17 +104,17 @@ class VoiceGateway:
     """The voice gateway at `/voice` and its UDP media server."""
 
     def __init__(self, heartbeat_interval: float, http_port: int) -> None:
-        self.voice_endpoint = f"ws://127.0.0.1:{http_port}/voice"
+        self.endpoint = f"ws://127.0.0.1:{http_port}/voice"
         self._udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._udp_socket.bind(("127.0.0.1", 0))
         self.udp_port: int = self._udp_socket.getsockname()[1]
-        self.voice_heartbeat_interval = heartbeat_interval
-        self.voice_sockets: list[VoiceSocket] = []
-        self.voice_sessions: list[VoiceSession] = []
-        self.voice_received: asyncio.Queue[Any] = asyncio.Queue()
+        self.heartbeat_interval = heartbeat_interval
+        self.sockets: list[VoiceSocket] = []
+        self.sessions: list[VoiceSession] = []
+        self.received: asyncio.Queue[Any] = asyncio.Queue()
         self.packets: list[Packet] = []
         self.rejected_packets: list[bytes] = []
-        self._voice_identifies: asyncio.Queue[Json] = asyncio.Queue()
+        self._identifies: asyncio.Queue[Json] = asyncio.Queue()
         self._grants: dict[str, tuple[str, str, str]] = {}
         self._current_sessions: dict[str, VoiceSession] = {}
         self._sessions_by_ssrc: dict[int, VoiceSession] = {}
@@ -122,25 +122,23 @@ class VoiceGateway:
         self._packet_arrived = asyncio.Event()
         self._udp: asyncio.DatagramTransport | None = None
 
-    async def voice_op(self, op: int, d: Any = None) -> None:
+    async def op(self, op: int, d: Any = None) -> None:
         """Send `op` to the latest voice session, kept for resume replay."""
-        if not self.voice_sessions:
-            raise RuntimeError("no voice session yet; await next_voice_identify()")
-        await self._send_sequenced(self.voice_sessions[-1], op, d)
+        if not self.sessions:
+            raise RuntimeError("no voice session yet; await fake.voice.next_identify()")
+        await self._send_sequenced(self.sessions[-1], op, d)
 
     async def clients_connect(self, user_ids: Iterable[int]) -> None:
         """Send op 11: `user_ids` joined the call."""
-        await self.voice_op(11, {"user_ids": [str(user_id) for user_id in user_ids]})
+        await self.op(11, {"user_ids": [str(user_id) for user_id in user_ids]})
 
     async def client_disconnect(self, user_id: int) -> None:
         """Send op 13: `user_id` left the call."""
-        await self.voice_op(13, {"user_id": str(user_id)})
+        await self.op(13, {"user_id": str(user_id)})
 
     async def speaking(self, user_id: int, ssrc: int, flags: int) -> None:
         """Send op 5: `user_id` speaks on `ssrc` with `flags`."""
-        await self.voice_op(
-            5, {"user_id": str(user_id), "ssrc": ssrc, "speaking": flags}
-        )
+        await self.op(5, {"user_id": str(user_id), "ssrc": ssrc, "speaking": flags})
 
     async def send_audio(
         self,
@@ -188,45 +186,50 @@ class VoiceGateway:
         self._send_datagram(data, address)
 
     def _sealing(self) -> tuple[VoiceSession, Address]:
-        session = self.voice_sessions[-1] if self.voice_sessions else None
+        session = self.sessions[-1] if self.sessions else None
         address = None if session is None else session.address
         if session is None or address is None or session.mode != AES_GCM:
             raise RuntimeError("no AES-GCM voice session with a discovered address")
         return session, address
 
-    async def next_voice_identify(self) -> Json:
+    async def next_identify(self) -> Json:
         """Wait for the next voice Identify and return its `d`."""
-        return await self._voice_identifies.get()
+        return await self._identifies.get()
 
     async def wait_for_packets(self, count: int) -> list[Packet]:
-        """Wait for `count` RTP packets and return the first `count`."""
+        """Wait for `count` RTP packets from the bot and return the first `count`."""
         while len(self.packets) < count:
             self._packet_arrived.clear()
             await self._packet_arrived.wait()
         return self.packets[:count]
 
-    async def _start_voice(self) -> None:
+    async def start(self) -> None:
+        """Start the UDP media server."""
         self._udp, _ = await asyncio.get_running_loop().create_datagram_endpoint(
             lambda: _Datagrams(self._on_datagram), sock=self._udp_socket
         )
 
-    async def _stop_voice(self) -> None:
-        for voice_socket in self.voice_sockets:
+    async def stop(self) -> None:
+        """Close every voice socket and the UDP media server."""
+        for voice_socket in self.sockets:
             await voice_socket.ws.close(code=WSCloseCode.GOING_AWAY)
         if self._udp is None:
             self._udp_socket.close()
         else:
             self._udp.close()
 
-    def _grant_voice(self, guild_id: str, user_id: str, session_id: str) -> str:
+    def grant(self, guild_id: str, user_id: str, session_id: str) -> str:
+        """A new token for the voice Identify of `session_id` in `guild_id`."""
         token = secrets.token_hex(8)
         self._grants[guild_id] = (user_id, session_id, token)
         return token
 
-    def _voice_session(self, guild_id: str) -> VoiceSession | None:
+    def current(self, guild_id: str) -> VoiceSession | None:
+        """The voice session the bot holds in `guild_id`, if any."""
         return self._current_sessions.get(guild_id)
 
-    async def _end_voice_session(self, session: VoiceSession | None, code: int) -> None:
+    async def end(self, session: VoiceSession | None, code: int) -> None:
+        """Close the socket of `session` with `code`, so it is no longer current."""
         if session is None:
             return
         guild_id = session.identify["server_id"]
@@ -235,15 +238,16 @@ class VoiceGateway:
         if session.socket is not None:
             await session.socket.close(code)
 
-    async def _voice_gateway(self, request: web.Request) -> web.StreamResponse:
+    async def serve(self, request: web.Request) -> web.StreamResponse:
+        """Run one voice gateway WebSocket."""
         if request.query.get("v") != "8":
             return web.Response(status=400, text="voice gateway version 8 required")
         ws = web.WebSocketResponse(autoclose=False, compress=False)
         await ws.prepare(request)
         voice_socket = VoiceSocket(request, ws)
-        self.voice_sockets.append(voice_socket)
+        self.sockets.append(voice_socket)
         await voice_socket.send(
-            _json(8, {"heartbeat_interval": self.voice_heartbeat_interval})
+            _json(8, {"heartbeat_interval": self.heartbeat_interval})
         )
         while (message := await ws.receive()).type in (
             WSMsgType.TEXT,
@@ -265,21 +269,21 @@ class VoiceGateway:
         self, voice_socket: VoiceSocket, message: WSMessage
     ) -> None:
         if message.type is WSMsgType.BINARY:
-            self.voice_received.put_nowait(message.data)
+            self.received.put_nowait(message.data)
             return
         try:
             payload = msgspec.json.decode(message.data)
         except msgspec.DecodeError:
             await voice_socket.close(4002)
             return
-        self.voice_received.put_nowait(payload)
+        self.received.put_nowait(payload)
         session = voice_socket.session
         match payload:
             case {"op": 3, "d": {"t": t}}:
                 await voice_socket.send(_json(6, {"t": t}))
             case {"op": 0, "d": identify} if is_object(identify):
                 await self._voice_identify(voice_socket, identify)
-                self._voice_identifies.put_nowait(identify)
+                self._identifies.put_nowait(identify)
             case {"op": 7, "d": resume} if is_object(resume):
                 await self._voice_resume(voice_socket, resume)
             case {"op": 1 | 5 | 23 | 31} if session is None:
@@ -308,7 +312,7 @@ class VoiceGateway:
         else:
             session = VoiceSession(identify, next(self._ssrcs), socket=voice_socket)
             voice_socket.session = session
-            self.voice_sessions.append(session)
+            self.sessions.append(session)
             self._current_sessions[identify["server_id"]] = session
             self._sessions_by_ssrc[session.ssrc] = session
             ready = {

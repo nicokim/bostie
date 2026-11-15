@@ -130,10 +130,11 @@ class _Hold:
 RECORD = web.RequestKey("record", Recorded)
 
 
-class FakeDiscord(VoiceGateway):
+class FakeDiscord:
     """A local Discord gateway and REST API for tests, served inside `async with`.
 
-    `voice=True` adds voice: op 4 answers, the voice gateway, UDP and voice routes.
+    `voice=True` adds voice: op 4 answers, voice routes, and in `voice` the voice
+    gateway and UDP server.
     `mute`, `deaf` and `suppress` go into every voice state the fake sends for
     the bot. `ready_guilds` are the guild ids READY lists, each on its own shard.
     `cdn_requests` records the downloads of `cdn_file` URLs.
@@ -155,7 +156,7 @@ class FakeDiscord(VoiceGateway):
         self._zstd_stream = _zstd_streams() if compress else None
         self._listener = socket.create_server(("127.0.0.1", 0))
         port = self._listener.getsockname()[1]
-        super().__init__(voice_heartbeat_interval, port)
+        self.voice = VoiceGateway(voice_heartbeat_interval, port)
         self.api_url = f"http://127.0.0.1:{port}{API}"
         self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
         self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
@@ -201,7 +202,7 @@ class FakeDiscord(VoiceGateway):
         self.voice_order: Order = voice_order
         self.mute = self.deaf = self.suppress = False
         self.voice_states: dict[tuple[str, str], Json] = {}
-        self._voice = voice
+        self._serves_voice = voice
         self._voice_state_updates: asyncio.Queue[Any] = asyncio.Queue()
         if voice:
             for voice_channel in (payloads.voice_channel(), payloads.stage_channel()):
@@ -263,7 +264,7 @@ class FakeDiscord(VoiceGateway):
             web.get("/gateway-resume", self._gateway),
             web.get(CDN + "/{path:.+}", self._cdn),
         ]
-        if self._voice:
+        if self._serves_voice:
             rest_routes += [
                 ("GET", "/guilds/{guild_id}/voice-states/{user_id}", self._voice_state),
                 (
@@ -272,7 +273,7 @@ class FakeDiscord(VoiceGateway):
                     self._edit_voice_state,
                 ),
             ]
-            routes.append(web.get("/voice", self._voice_gateway))
+            routes.append(web.get("/voice", self.voice.serve))
         app = web.Application(middlewares=[self._rest])
         app.add_routes(
             [
@@ -288,8 +289,8 @@ class FakeDiscord(VoiceGateway):
     async def __aenter__(self) -> Self:
         await self._runner.setup()
         await web.SockSite(self._runner, self._listener).start()
-        if self._voice:
-            await self._start_voice()
+        if self._serves_voice:
+            await self.voice.start()
         return self
 
     async def __aexit__(
@@ -302,7 +303,7 @@ class FakeDiscord(VoiceGateway):
             held.set()
         for connection in self.connections:
             await connection.ws.close(code=WSCloseCode.GOING_AWAY)
-        await self._stop_voice()
+        await self.voice.stop()
         await self._runner.cleanup()
 
     async def dispatch(self, name: str, d: Any, *, shard: int = 0) -> int:
@@ -509,7 +510,7 @@ class FakeDiscord(VoiceGateway):
             case {"op": 6, "d": resume} if is_object(resume):
                 await self._resume(connection, resume)
                 self._resumes.put_nowait(resume)
-            case {"op": 4, "d": update} if self._voice:
+            case {"op": 4, "d": update} if self._serves_voice:
                 await self._update_voice_state(connection, update)
             case _:
                 pass
@@ -597,30 +598,30 @@ class FakeDiscord(VoiceGateway):
     ) -> None:
         key = (guild_id, self.bot_user["id"])
         previous = self.voice_states.get(key)
-        session = self._voice_session(guild_id)
+        session = self.voice.current(guild_id)
         state = self._bot_voice(
             guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
         )
         self.voice_states[key] = state
-        token = self._grant_voice(guild_id, state["user_id"], state["session_id"])
-        server = {"token": token, "guild_id": guild_id, "endpoint": self.voice_endpoint}
+        token = self.voice.grant(guild_id, state["user_id"], state["session_id"])
+        server = {"token": token, "guild_id": guild_id, "endpoint": self.voice.endpoint}
         events = [("VOICE_STATE_UPDATE", state), ("VOICE_SERVER_UPDATE", server)]
         for name, d in events if order == "state_first" else events[::-1]:
             await self.dispatch(name, d)
         if previous is not None and previous["channel_id"] != channel_id:
-            await self._end_voice_session(session, 4014)
+            await self.voice.end(session, 4014)
 
     async def _leave_voice(
         self, guild_id: str, *, self_mute: bool, self_deaf: bool
     ) -> None:
         if self.voice_states.pop((guild_id, self.bot_user["id"]), None) is None:
             return
-        session = self._voice_session(guild_id)
+        session = self.voice.current(guild_id)
         state = self._bot_voice(
             guild_id, None, self_mute=self_mute, self_deaf=self_deaf
         )
         await self.dispatch("VOICE_STATE_UPDATE", state)
-        await self._end_voice_session(session, 4014)
+        await self.voice.end(session, 4014)
 
     def _bot_voice(
         self,

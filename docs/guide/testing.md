@@ -52,9 +52,9 @@ To wait for something the bot does in a listener, have it [dispatch an event of 
 
 ## Voice
 
-`FakeDiscord(voice=True)` adds a voice channel and a stage channel, answers voice state updates, and runs a voice gateway and UDP server, so `ctx.voice.connect()` and `vc.play(...)` work against it. It does not speak DAVE; bostie's Rust tests cover that. The test can:
+`FakeDiscord(voice=True)` adds a voice channel and a stage channel, answers voice state updates, and runs a voice gateway and UDP server as `fake.voice`, so `ctx.voice.connect()` and `vc.play(...)` work against it. It does not speak DAVE; bostie's Rust tests cover that. The test can:
 
-- wait for what the bot sent with `await fake.next_voice_state_update()`, `await fake.next_voice_identify()` and `await fake.wait_for_packets(count)`, which returns the decrypted RTP packets as `Packet` objects; each voice connection is a `VoiceSession` on a `VoiceSocket`, and `fake.voice_op(op, d)` sends it any voice opcode;
-- act as other users with `fake.clients_connect(user_ids)`, `fake.client_disconnect(user_id)`, `fake.speaking(user_id, ssrc, flags)`, `fake.send_audio(...)`, which sends Opus packets to the bot, `fake.send_rtcp(packet)`, which sends it an RTCP packet, and `fake.send_datagram(data)`, which sends bytes unsealed, as a broken server would;
+- wait for what the bot sent with `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` and `await fake.voice.wait_for_packets(count)`, which returns the decrypted RTP packets as `Packet` objects; each voice connection is a `VoiceSession` in `fake.voice.sessions`, on a `VoiceSocket`, and `fake.voice.op(op, d)` sends the latest one any voice opcode;
+- act as other users with `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, which sends Opus packets to the bot, `fake.voice.send_rtcp(packet)`, which sends it an RTCP packet, and `fake.voice.send_datagram(data)`, which sends bytes unsealed, as a broken server would;
 - move or disconnect the bot as a moderator would, with `fake.move_bot(channel_id)` and `fake.kick_bot()`;
 - set `fake.mute`, `fake.deaf` and `fake.suppress` for the voice states it sends about the bot, and `voice_order` for the order of the two events Discord sends on a join.

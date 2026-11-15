@@ -80,7 +80,7 @@ def assert_contiguous(packets: Iterable[Packet]) -> None:
 async def played(fake: FakeDiscord, start: int = 0) -> list[Packet]:
     count = start + len(SILENT_TAIL)
     while True:
-        packets = (await fake.wait_for_packets(count))[start:]
+        packets = (await fake.voice.wait_for_packets(count))[start:]
         if [packet.payload for packet in packets[-len(SILENT_TAIL) :]] == SILENT_TAIL:
             return packets
         count += 1
@@ -97,8 +97,8 @@ def sent(fake: FakeDiscord, op: int) -> list[Any]:
 
 def voice_ops(fake: FakeDiscord, op: int) -> list[Any]:
     found = []
-    while not fake.voice_received.empty():
-        payload = fake.voice_received.get_nowait()
+    while not fake.voice.received.empty():
+        payload = fake.voice.received.get_nowait()
         if isinstance(payload, dict) and payload["op"] == op:
             found.append(payload["d"])
     return found
@@ -140,7 +140,7 @@ def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> Non
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake, voice=voice.Defaults(self_deaf=True)) as bot:
             vc = await bot.voice.connect(VOICE_ID)
-            identify = await fake.next_voice_identify()
+            identify = await fake.voice.next_identify()
 
             bot_state = fake.voice_states[(str(GUILD_ID), fake.bot_user["id"])]
             assert identify == {
@@ -150,7 +150,7 @@ def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> Non
                 "token": identify["token"],
                 "max_dave_protocol_version": 1,
             }
-            assert [session.mode for session in fake.voice_sessions] == [
+            assert [session.mode for session in fake.voice.sessions] == [
                 "aead_aes256_gcm_rtpsize"
             ]
             assert vc.state is State.READY
@@ -161,7 +161,7 @@ def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> Non
 
         assert bot.voice.get(GUILD_ID) is None
         assert sent(fake, 4) == [join(VOICE_ID, self_deaf=True), LEAVE]
-        assert fake.voice_sockets[-1].close_code == 1000
+        assert fake.voice.sockets[-1].close_code == 1000
         assert fake.connections[-1].close_code == 1000
 
     run(scenario)
@@ -185,12 +185,12 @@ def test_a_second_of_pcm_plays_as_fifty_opus_packets_and_five_silent_ones() -> N
             vc = await bot.voice.connect(VOICE_ID)
             async with vc.sink(buffer=2.0) as out:
                 out.write_nowait(tone(1.0))
-                await fake.wait_for_packets(1)
+                await fake.voice.wait_for_packets(1)
                 speaking = voice_ops(fake, 5)
                 await out.drain()
                 packets = await played(fake)
 
-            ssrc = fake.voice_sessions[-1].ssrc
+            ssrc = fake.voice.sessions[-1].ssrc
             assert speaking[0] == {"speaking": 1, "delay": 0, "ssrc": ssrc}
             assert len(packets) == FRAMES_PER_SECOND + len(SILENT_TAIL)
             assert all(
@@ -230,9 +230,9 @@ def test_receive_a_spoken_second_from_the_fake() -> None:
             async def listen() -> tuple[list[Heard], voice.ReceiverStats]:
                 heard: list[Heard] = []
                 async with vc.receive(voice.PCM(16_000, 1), markers=True) as rx:
-                    await fake.speaking(FRIEND_ID, 4321, 1)
-                    await fake.send_audio(4321, spoken[:LOST_FROM])
-                    await fake.send_audio(
+                    await fake.voice.speaking(FRIEND_ID, 4321, 1)
+                    await fake.voice.send_audio(4321, spoken[:LOST_FROM])
+                    await fake.voice.send_audio(
                         4321,
                         spoken[LOST_UNTIL:],
                         sequence=LOST_UNTIL,
@@ -282,7 +282,7 @@ def test_a_move_by_a_moderator_keeps_the_connection_and_its_sinks() -> None:
         add_voice_channel(fake, OTHER_ID)
         async with started(fake) as bot:
             vc = await bot.voice.connect(VOICE_ID)
-            first_ssrc = fake.voice_sessions[-1].ssrc
+            first_ssrc = fake.voice.sessions[-1].ssrc
             async with vc.sink() as out:
                 await out.write(tone(0.2))
                 moved, _ = await asyncio.gather(
@@ -300,9 +300,9 @@ def test_a_move_by_a_moderator_keeps_the_connection_and_its_sinks() -> None:
             assert bot.voice.get(GUILD_ID) is vc
             assert vc.channel_id == OTHER_ID
             assert out.stats().dropped == 0
-            second_ssrc = fake.voice_sessions[-1].ssrc
+            second_ssrc = fake.voice.sessions[-1].ssrc
             assert second_ssrc != first_ssrc
-            assert any(packet.ssrc == second_ssrc for packet in fake.packets)
+            assert any(packet.ssrc == second_ssrc for packet in fake.voice.packets)
 
     run(scenario)
 
@@ -346,9 +346,9 @@ def test_voice_ops_and_the_bot_voice_flags_reach_python_field_by_field() -> None
 
             vc = await bot.voice.connect(VOICE_ID, self_mute=True)
             joined = (vc.self_mute, vc.self_deaf, vc.mute, vc.deaf, vc.suppress)
-            await fake.clients_connect([FRIEND_ID, int(MEMBER_ID)])
-            await fake.speaking(FRIEND_ID, 4321, 5)
-            await fake.client_disconnect(int(MEMBER_ID))
+            await fake.voice.clients_connect([FRIEND_ID, int(MEMBER_ID)])
+            await fake.voice.speaking(FRIEND_ID, 4321, 5)
+            await fake.voice.client_disconnect(int(MEMBER_ID))
             events = [await seen.get() for _ in range(4)]
             members = vc.members
             fake.mute, fake.deaf, fake.suppress = False, True, True
@@ -383,14 +383,15 @@ def test_rtcp_reports_reach_listeners_with_the_users_of_their_ssrcs() -> None:
         async with started(fake) as bot:
             vc = await bot.voice.connect(VOICE_ID)
             assert bot.user is not None
-            own = fake.voice_sessions[-1].ssrc
+            own = fake.voice.sessions[-1].ssrc
             await asyncio.gather(
-                bot.wait_for(voice.SpeakingUpdate), fake.speaking(FRIEND_ID, 4321, 1)
+                bot.wait_for(voice.SpeakingUpdate),
+                fake.voice.speaking(FRIEND_ID, 4321, 1),
             )
             block = struct.pack(">6I", own, 0x40FF_FFFE, 70_000, 480, 7, 32_768)
             report = struct.pack(">BBHI", 0x81, 201, 7, 4321) + block
             received, _ = await asyncio.gather(
-                bot.wait_for(voice.RtcpPacket), fake.send_rtcp(report)
+                bot.wait_for(voice.RtcpPacket), fake.voice.send_rtcp(report)
             )
 
             assert received == voice.RtcpPacket(
@@ -425,10 +426,10 @@ def test_a_receive_stall_travels_from_the_core_to_listeners_and_ends() -> None:
             vc = await bot.voice.connect(VOICE_ID)
             spoken = voice.OpusEncoder().encode(tone(0.2))
             async with vc.receive(voice.PCM(16_000, 1)):
-                await fake.speaking(FRIEND_ID, 4321, 1)
-                await fake.send_datagram(UNOPENABLE)
+                await fake.voice.speaking(FRIEND_ID, 4321, 1)
+                await fake.voice.send_datagram(UNOPENABLE)
                 stalled = await changes.get()
-                await fake.send_audio(4321, spoken)
+                await fake.voice.send_audio(4321, spoken)
                 resumed = await changes.get()
 
         assert vc.stall_after == 0.05

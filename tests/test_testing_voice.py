@@ -101,7 +101,7 @@ def select_protocol(mode: str = AES_GCM, protocol: str = "udp") -> Json:
 
 
 def voice_url(fake: FakeDiscord) -> str:
-    return fake.voice_endpoint + "?v=8"
+    return fake.voice.endpoint + "?v=8"
 
 
 async def identified(ws: Socket, state: Json, server: Json) -> Json:
@@ -209,7 +209,7 @@ def test_voice_handshake_runs_from_hello_to_session_description() -> None:
             "d": {
                 "ssrc": ssrc,
                 "ip": "127.0.0.1",
-                "port": fake.udp_port,
+                "port": fake.voice.udp_port,
                 "modes": MODES,
                 "heartbeat_interval": 1,
             },
@@ -217,7 +217,7 @@ def test_voice_handshake_runs_from_hello_to_session_description() -> None:
         }
         assert 2**31 < ssrc < 2**32
         assert ack == {"op": 6, "d": {"t": 1501184119561}}
-        [voice_session] = fake.voice_sessions
+        [voice_session] = fake.voice.sessions
         assert description == {
             "op": 4,
             "d": {
@@ -229,9 +229,9 @@ def test_voice_handshake_runs_from_hello_to_session_description() -> None:
         }
         assert len(voice_session.secret_key) == 32
         assert voice_session.mode == AES_GCM
-        assert fake.voice_sockets[0].session is voice_session
-        assert await fake.next_voice_identify() == voice_identify(state, server)["d"]
-        received = [fake.voice_received.get_nowait() for _ in range(3)]
+        assert fake.voice.sockets[0].session is voice_session
+        assert await fake.voice.next_identify() == voice_identify(state, server)["d"]
+        received = [fake.voice.received.get_nowait() for _ in range(3)]
         assert [payload["op"] for payload in received] == [0, 3, 1]
 
     run(scenario, voice_heartbeat_interval=13750.5)
@@ -265,7 +265,7 @@ def test_voice_gateway_refuses_bad_payloads_with_voice_close_codes() -> None:
             ),
         ]
         with pytest.raises(aiohttp.WSServerHandshakeError) as unversioned:
-            await session.ws_connect(fake.voice_endpoint)
+            await session.ws_connect(fake.voice.endpoint)
 
         assert codes == [
             4002,
@@ -308,10 +308,10 @@ def test_rtp_packets_open_with_the_session_key_and_bad_ones_are_kept_aside() -> 
             ]
             rtcp = b"\x80\xc8\x00\x06" + bytes(24)
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
-                udp.connect(("127.0.0.1", fake.udp_port))
+                udp.connect(("127.0.0.1", fake.voice.udp_port))
                 for datagram in [*rejected, rtcp, *accepted]:
                     udp.send(datagram)
-                packets = await fake.wait_for_packets(2)
+                packets = await fake.voice.wait_for_packets(2)
 
         assert [
             (p.sequence, p.timestamp, p.ssrc, p.nonce, p.payload) for p in packets
@@ -320,7 +320,7 @@ def test_rtp_packets_open_with_the_session_key_and_bad_ones_are_kept_aside() -> 
             (0, 0, ssrc, 0, b"opus"),
         ]
         assert packets[0].arrived <= packets[1].arrived
-        assert fake.rejected_packets == rejected
+        assert fake.voice.rejected_packets == rejected
 
     run(scenario)
 
@@ -336,17 +336,17 @@ def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> No
             loop = asyncio.get_running_loop()
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
                 udp.setblocking(False)
-                udp.connect(("127.0.0.1", fake.udp_port))
+                udp.connect(("127.0.0.1", fake.voice.udp_port))
                 udp.send(DISCOVERY.pack(1, 70, ssrc, b"", 0))
                 await loop.sock_recv(udp, DISCOVERY.size)
-                await fake.send_audio(
+                await fake.voice.send_audio(
                     4321,
                     [b"first", b"second"],
                     sequence=65535,
                     timestamp=2**32 - 960,
                     extension=b"\x10\x7f",
                 )
-                await fake.send_audio(4321, [b"plain"])
+                await fake.voice.send_audio(4321, [b"plain"])
                 datagrams = [await loop.sock_recv(udp, 2048) for _ in range(3)]
 
         opened = [
