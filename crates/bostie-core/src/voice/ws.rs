@@ -249,7 +249,7 @@ impl Heartbeat {
         }
         let t = unix_millis();
         self.unanswered = Some(Unanswered { t, sent_at: now });
-        self.deadline += self.interval;
+        self.deadline = (self.deadline + self.interval).max(now + self.interval / 2);
         Ok(t)
     }
 
@@ -394,6 +394,17 @@ mod tests {
 
         assert_eq!(heartbeat.deadline(), hello_at + INTERVAL * 2);
         assert!(t > 1_700_000_000_000, "{t} is not a unix time in ms");
+    }
+
+    #[test]
+    fn a_beat_after_a_stall_waits_half_an_interval_before_the_next() {
+        let hello_at = Instant::now();
+        let mut heartbeat = Heartbeat::new(INTERVAL, hello_at);
+        let woke = hello_at + INTERVAL * 3;
+
+        heartbeat.beat(woke).unwrap();
+
+        assert_eq!(heartbeat.deadline(), woke + INTERVAL / 2);
     }
 
     #[test]
