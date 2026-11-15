@@ -921,6 +921,10 @@ async fn a_ready_that_meets_a_full_inbox_still_starts_the_session() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+    windows,
+    ignore = "Windows takes the whole write into its send buffer, so the write never stalls"
+)]
 async fn a_stuck_write_ends_the_connection_without_holding_back_close() {
     let mut harness = Harness::new(false);
     harness.start();
