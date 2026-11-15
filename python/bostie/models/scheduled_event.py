@@ -8,7 +8,7 @@ from bostie.enums import (
     ScheduledEventStatus,
     Weekday,
 )
-from bostie.models.base import Builder, Model
+from bostie.models.base import Builder, Model, Snowflake
 from bostie.models.guild import Member
 from bostie.models.user import User
 
@@ -39,7 +39,7 @@ class RecurrenceRule(Builder, kw_only=True):
     count: int | None = None
 
 
-class ScheduledEvent(Model, kw_only=True):
+class ScheduledEvent(Model, Snowflake, kw_only=True):
     """An event planned in a guild."""
 
     id: int

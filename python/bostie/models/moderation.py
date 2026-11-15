@@ -7,7 +7,7 @@ from bostie.enums import (
     AutoModerationTriggerType,
     KeywordPresetType,
 )
-from bostie.models.base import Builder, Model
+from bostie.models.base import Builder, Model, Snowflake
 from bostie.models.channel import Channel
 from bostie.models.guild import PartialIntegration
 from bostie.models.interaction import ApplicationCommand
@@ -40,7 +40,7 @@ class AutoModerationAction(Builder, kw_only=True):
     metadata: AutoModerationActionMetadata | None = None
 
 
-class AutoModerationRule(Model, kw_only=True):
+class AutoModerationRule(Model, Snowflake, kw_only=True):
     id: int
     guild_id: int
     name: str
@@ -80,7 +80,7 @@ class AuditLogEntryInfo(Model, kw_only=True):
     status: str | None = None
 
 
-class AuditLogEntry(Model, kw_only=True):
+class AuditLogEntry(Model, Snowflake, kw_only=True):
     id: int
     action_type: AuditLogEvent
     target_id: str | None

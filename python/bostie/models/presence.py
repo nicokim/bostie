@@ -7,10 +7,10 @@ from bostie.enums import (
     StatusDisplayType,
     UserFlags,
 )
-from bostie.models.base import Model
+from bostie.models.base import MaybeSnowflake, Model, Snowflake
 
 
-class PresenceUser(Model, kw_only=True):
+class PresenceUser(Model, Snowflake, kw_only=True):
     """The user of a presence: only `id` is sure to be sent."""
 
     id: int
@@ -41,7 +41,7 @@ class ActivityTimestamps(Model, kw_only=True):
     end: int | None = None
 
 
-class ActivityEmoji(Model, kw_only=True):
+class ActivityEmoji(Model, MaybeSnowflake, kw_only=True):
     name: str
     id: int | None = None
     animated: bool = False

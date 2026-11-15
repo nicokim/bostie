@@ -4,21 +4,21 @@ from typing import Any
 import msgspec
 
 from bostie.enums import LobbyMemberFlags, MessageFlags, MessageType, ProfileFieldType
-from bostie.models.base import Builder, Model
+from bostie.models.base import Builder, Model, Snowflake
 from bostie.models.channel import Channel
 from bostie.models.components import Component, decode_components
 from bostie.models.message import Attachment
 from bostie.models.user import User
 
 
-class LobbyMember(Model, kw_only=True):
+class LobbyMember(Model, Snowflake, kw_only=True):
     id: int
     metadata: dict[str, str] | None = None
     flags: LobbyMemberFlags = LobbyMemberFlags(0)
     additional_name: str | None = None
 
 
-class Lobby(Model, kw_only=True):
+class Lobby(Model, Snowflake, kw_only=True):
     """A Social SDK lobby; `metadata` holds the game's key-value pairs."""
 
     id: int
@@ -32,7 +32,7 @@ class LobbyMessageMember(Model, kw_only=True):
     additional_name: str
 
 
-class LobbyMessage(Model, kw_only=True):
+class LobbyMessage(Model, Snowflake, kw_only=True):
     """A message in a lobby; `application_id` is absent outside SDK sessions."""
 
     id: int
@@ -50,7 +50,7 @@ class LobbyMessage(Model, kw_only=True):
     edited_timestamp: datetime | None = None
 
 
-class GameDirectMessage(Model, kw_only=True):
+class GameDirectMessage(Model, Snowflake, kw_only=True):
     """A direct message sent while a player has a Social SDK session.
 
     A message between two provisional accounts exists only in game and carries

@@ -61,7 +61,7 @@ The [formatting guide](formatting.md) covers mentions, timestamps and CDN URLs b
 
 ## Snowflakes
 
-Discord ids encode when the object was created. `bostie.snowflake_time(id)` returns that moment as a UTC `datetime`, and `bostie.time_snowflake(when)` the lowest id created at a moment, or with `high=True` the highest, for paging by date. A naive `datetime` is read as local time.
+Discord ids encode when the object was created. Every model with a snowflake id has `created_at`, that moment as a UTC `datetime`: `message.created_at`, `member.created_at` (the account's), `emoji.created_at` (`None` for a Unicode emoji). `bostie.snowflake_time(id)` does the same for a bare id, and `bostie.time_snowflake(when)` the lowest id created at a moment, or with `high=True` the highest, for paging by date. A naive `datetime` is read as local time.
 
 ## Enums
 

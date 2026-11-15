@@ -28,7 +28,6 @@ from bostie import (
     User,
     cdn,
     fmt,
-    snowflake_time,
     ui,
 )
 from bostie.checks import Cooldown, bot_has_permissions
@@ -112,7 +111,7 @@ async def high_five(ctx: Context, user: User) -> None:
 
 @bot.user_command("Profile")
 async def profile(ctx: Context, user: User) -> None:
-    joined = fmt.timestamp(snowflake_time(user.id), "R")
+    joined = fmt.timestamp(user.created_at, "R")
     await ctx.respond(
         components=[
             ui.section(

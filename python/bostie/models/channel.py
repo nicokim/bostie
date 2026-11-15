@@ -13,7 +13,13 @@ from bostie.enums import (
     StagePrivacyLevel,
     VideoQualityMode,
 )
-from bostie.models.base import Builder, Model, permissions_from
+from bostie.models.base import (
+    Builder,
+    MaybeSnowflake,
+    Model,
+    Snowflake,
+    permissions_from,
+)
 from bostie.models.guild import Member
 from bostie.models.presence import Presence
 from bostie.models.user import User
@@ -22,7 +28,7 @@ if TYPE_CHECKING:
     from bostie.models.message import Resolved
 
 
-class Overwrite(Model, kw_only=True):
+class Overwrite(Model, Snowflake, kw_only=True):
     """A permission overwrite for a role or a member."""
 
     id: int
@@ -48,7 +54,7 @@ class ThreadMetadata(Model, kw_only=True):
     create_timestamp: datetime | None = None
 
 
-class _ThreadMember(Model, kw_only=True):
+class _ThreadMember(Model, MaybeSnowflake, kw_only=True):
     id: int | None = None
     user_id: int | None = None
     join_timestamp: datetime
@@ -68,7 +74,7 @@ class AddedThreadMember(_ThreadMember, kw_only=True):
     presence: Presence | None
 
 
-class ForumTag(Builder, kw_only=True):
+class ForumTag(Builder, MaybeSnowflake, kw_only=True):
     """A tag for threads in a forum or media channel; only `name` is needed to send."""
 
     id: int | None = None
@@ -85,7 +91,7 @@ class DefaultReaction(Builder, kw_only=True):
     emoji_name: str | None = None
 
 
-class PartialChannel(Model, kw_only=True):
+class PartialChannel(Model, Snowflake, kw_only=True):
     """A channel as an interaction carries it, with the user's permissions in it."""
 
     id: int
@@ -168,7 +174,7 @@ class FollowedChannel(Model, kw_only=True):
     webhook_id: int
 
 
-class VoiceChannelInfo(Model, kw_only=True):
+class VoiceChannelInfo(Model, Snowflake, kw_only=True):
     """A channel's voice status and the start of its voice session."""
 
     id: int
@@ -176,7 +182,7 @@ class VoiceChannelInfo(Model, kw_only=True):
     voice_start_time: datetime | None = None
 
 
-class StageInstance(Model, kw_only=True):
+class StageInstance(Model, Snowflake, kw_only=True):
     """A live stage."""
 
     id: int

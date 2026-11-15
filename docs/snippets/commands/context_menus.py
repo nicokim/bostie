@@ -6,7 +6,7 @@ bot = bostie.Bot()
 
 @bot.user_command("Account age")
 async def account_age(ctx: Context, user: User) -> None:
-    created = fmt.timestamp(bostie.snowflake_time(user.id), "R")
+    created = fmt.timestamp(user.created_at, "R")
     await ctx.respond(f"{user.mention} joined Discord {created}.", ephemeral=True)
 
 

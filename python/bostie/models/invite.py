@@ -12,14 +12,14 @@ from bostie.enums import (
     VerificationLevel,
 )
 from bostie.models.application import PartialApplication
-from bostie.models.base import Model, decode, decoder
+from bostie.models.base import Model, Snowflake, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.guild import RoleColors
 from bostie.models.scheduled_event import ScheduledEvent
 from bostie.models.user import User
 
 
-class InviteGuild(Model, kw_only=True):
+class InviteGuild(Model, Snowflake, kw_only=True):
     """The part of a guild an invite shows."""
 
     id: int
@@ -35,7 +35,7 @@ class InviteGuild(Model, kw_only=True):
     premium_subscription_count: int | None = None
 
 
-class InviteRole(Model, kw_only=True):
+class InviteRole(Model, Snowflake, kw_only=True):
     """A role the user gets by accepting an invite."""
 
     id: int

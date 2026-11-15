@@ -1,10 +1,12 @@
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from functools import cache
-from typing import Any, cast, dataclass_transform
+from typing import Any, Protocol, cast, dataclass_transform
 
 import msgspec
 
 from bostie.enums import Permissions
+from bostie.snowflake import snowflake_time
 
 HIDDEN_FIELDS = frozenset(
     {"raw_json", "token", "access_token", "refresh_token", "id_token"}
@@ -22,6 +24,38 @@ def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
 def redacted_repr(self: msgspec.Struct) -> str:
     shown = ", ".join(f"{name}={value!r}" for name, value in shown_fields(self))
     return f"{type(self).__name__}({shown})"
+
+
+class _Identified(Protocol):
+    @property
+    def id(self) -> int: ...
+
+
+class _MaybeIdentified(Protocol):
+    @property
+    def id(self) -> int | None: ...
+
+
+class Snowflake:
+    """A model whose id is a snowflake, the moment it was created in its bits."""
+
+    __slots__ = ()
+
+    @property
+    def created_at(self: _Identified) -> datetime:
+        """When the object was created, in UTC, read from its id."""
+        return snowflake_time(self.id)
+
+
+class MaybeSnowflake:
+    """A model whose id is a snowflake when it has one."""
+
+    __slots__ = ()
+
+    @property
+    def created_at(self: _MaybeIdentified) -> datetime | None:
+        """When the object was created, in UTC, or None without an id."""
+        return None if self.id is None else snowflake_time(self.id)
 
 
 @dataclass_transform(

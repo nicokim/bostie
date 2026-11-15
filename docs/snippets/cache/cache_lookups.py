@@ -1,5 +1,5 @@
 import bostie
-from bostie import Context, Intents, PartialChannel, Permissions, fmt, snowflake_time
+from bostie import Context, Intents, PartialChannel, Permissions, fmt
 
 bot = bostie.Bot(
     intents=Intents.DEFAULT | Intents.GUILD_MEMBERS,
@@ -18,7 +18,7 @@ async def server(ctx: Context) -> None:
     channels = bot.cache.guild_channels(guild.id)
     in_voice = bot.cache.guild_voice_states(guild.id)
     members = bot.cache.guild_members(guild.id)
-    created = fmt.timestamp(snowflake_time(guild.id), "R")
+    created = fmt.timestamp(guild.created_at, "R")
     await ctx.respond(
         f"{guild.name}: {len(channels)} channels, {len(members)} members, "
         f"{len(in_voice)} in voice, created {created}"

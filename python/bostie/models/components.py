@@ -11,13 +11,13 @@ from bostie.enums import (
     ContentScanMetadataFlags,
     UnfurledMediaItemFlags,
 )
-from bostie.models.base import Builder, Model, decoder
+from bostie.models.base import Builder, MaybeSnowflake, Model, Snowflake, decoder
 from bostie.models.expressions import Emoji
 
 CUSTOM_EMOJI = re.compile(r"(?:(a)?:)?(\w+):(\d+)", re.ASCII)
 
 
-class PartialEmoji(Builder, kw_only=True):
+class PartialEmoji(Builder, MaybeSnowflake, kw_only=True):
     """A custom emoji by id, or a unicode emoji by name."""
 
     id: int | None = None
@@ -83,7 +83,7 @@ class SelectOption(Builder, kw_only=True):
 type SelectDefaultType = Literal["user", "role", "channel"]
 
 
-class SelectDefaultValue(Builder, kw_only=True):
+class SelectDefaultValue(Builder, Snowflake, kw_only=True):
     """A user, role or channel a select shows as already chosen."""
 
     id: int

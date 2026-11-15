@@ -20,7 +20,7 @@ from bostie.enums import (
     SystemChannelFlags,
     VerificationLevel,
 )
-from bostie.models.base import Builder, Model, permissions_from
+from bostie.models.base import Builder, Model, Snowflake, permissions_from
 from bostie.models.expressions import Emoji, Sticker
 from bostie.models.user import AvatarDecorationData, Collectibles, User
 
@@ -65,7 +65,7 @@ class RoleTags(Model, kw_only=True):
         return self._guild_connections is None
 
 
-class Role(Model, kw_only=True):
+class Role(Model, Snowflake, kw_only=True):
     """A guild role."""
 
     id: int
@@ -122,7 +122,7 @@ class PartialMember(_MemberFields, kw_only=True):
     mute: bool | None = None
 
 
-class _UserMember(_MemberFields, kw_only=True):
+class _UserMember(_MemberFields, Snowflake, kw_only=True):
     user: User
 
     @property
@@ -178,7 +178,7 @@ class IncidentsData(Model, kw_only=True):
     raid_detected_at: datetime | None = None
 
 
-class Guild(Model, kw_only=True):
+class Guild(Model, Snowflake, kw_only=True):
     """A guild, without its channels or members."""
 
     id: int
@@ -227,7 +227,7 @@ class Guild(Model, kw_only=True):
     unavailable: bool = False
 
 
-class InteractionGuild(Model, kw_only=True):
+class InteractionGuild(Model, Snowflake, kw_only=True):
     """The part of a guild an interaction from it carries."""
 
     id: int
@@ -235,7 +235,7 @@ class InteractionGuild(Model, kw_only=True):
     features: tuple[GuildFeature, ...] = ()
 
 
-class CurrentUserGuild(Model, kw_only=True):
+class CurrentUserGuild(Model, Snowflake, kw_only=True):
     """A guild the bot is in, with the bot's permissions there."""
 
     id: int
@@ -253,7 +253,7 @@ class CurrentUserGuild(Model, kw_only=True):
         return Permissions(int(self._permissions))
 
 
-class GuildPreview(Model, kw_only=True):
+class GuildPreview(Model, Snowflake, kw_only=True):
     id: int
     name: str
     icon: str | None
@@ -272,7 +272,7 @@ class GuildWidgetSettings(Model, kw_only=True):
     channel_id: int | None
 
 
-class GuildWidgetChannel(Model, kw_only=True):
+class GuildWidgetChannel(Model, Snowflake, kw_only=True):
     id: int
     name: str
     position: int
@@ -289,7 +289,7 @@ class GuildWidgetMember(Model, kw_only=True):
     avatar_url: str
 
 
-class GuildWidget(Model, kw_only=True):
+class GuildWidget(Model, Snowflake, kw_only=True):
     id: int
     name: str
     instant_invite: str | None
@@ -315,7 +315,7 @@ class BulkBan(Model, kw_only=True):
     failed_users: tuple[int, ...]
 
 
-class UnavailableGuild(Model, kw_only=True):
+class UnavailableGuild(Model, Snowflake, kw_only=True):
     """A guild Discord has not sent yet, or one it lost to an outage."""
 
     id: int
@@ -353,7 +353,7 @@ class IntegrationAccount(Model, kw_only=True):
     name: str
 
 
-class IntegrationApplication(Model, kw_only=True):
+class IntegrationApplication(Model, Snowflake, kw_only=True):
     id: int
     name: str
     icon: str | None
@@ -361,7 +361,7 @@ class IntegrationApplication(Model, kw_only=True):
     bot: User | None = None
 
 
-class Integration(Model, kw_only=True):
+class Integration(Model, Snowflake, kw_only=True):
     """A guild integration; bot integrations leave the subscriber fields None."""
 
     id: int
@@ -382,7 +382,7 @@ class Integration(Model, kw_only=True):
     scopes: tuple[str, ...] = ()
 
 
-class PartialIntegration(Model, kw_only=True):
+class PartialIntegration(Model, Snowflake, kw_only=True):
     """An integration as the audit log refers to it."""
 
     id: int

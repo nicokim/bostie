@@ -4,10 +4,10 @@ from typing import Any
 import msgspec
 
 from bostie.enums import EntitlementType, SKUFlags, SKUType, SubscriptionStatus
-from bostie.models.base import Model, decode, decoder
+from bostie.models.base import Model, Snowflake, decode, decoder
 
 
-class PartialEntitlement(Model, kw_only=True):
+class PartialEntitlement(Model, Snowflake, kw_only=True):
     """A test entitlement, which has no period because it never ends."""
 
     id: int
@@ -38,7 +38,7 @@ def decode_entitlement(data: bytes) -> PartialEntitlement:
     return decode(model, data)
 
 
-class SKU(Model, kw_only=True):
+class SKU(Model, Snowflake, kw_only=True):
     """A premium offering of the app."""
 
     id: int
@@ -49,7 +49,7 @@ class SKU(Model, kw_only=True):
     flags: SKUFlags
 
 
-class Subscription(Model, kw_only=True):
+class Subscription(Model, Snowflake, kw_only=True):
     """A user's recurring payment for SKUs of the app."""
 
     id: int

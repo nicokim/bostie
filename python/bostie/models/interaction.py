@@ -15,7 +15,7 @@ from bostie.enums import (
     OptionType,
     Permissions,
 )
-from bostie.models.base import Builder, Model, decode, decoder
+from bostie.models.base import Builder, Model, Snowflake, decode, decoder
 from bostie.models.channel import PartialChannel
 from bostie.models.components import SubmittedComponent, decode_submitted
 from bostie.models.guild import InteractionGuild, Member
@@ -40,7 +40,7 @@ class InteractionDataOption(Model, kw_only=True):
     focused: bool = False
 
 
-class CommandData(Model, kw_only=True):
+class CommandData(Model, Snowflake, kw_only=True):
     """The command an interaction invokes and the options the user filled."""
 
     id: int
@@ -108,7 +108,7 @@ class ApplicationCommandOption(Builder, kw_only=True):
     file_types: tuple[str, ...] = ()
 
 
-class ApplicationCommand(Model, kw_only=True):
+class ApplicationCommand(Model, Snowflake, kw_only=True):
     """A command of the app, global or in the guild of `guild_id`."""
 
     id: int
@@ -128,7 +128,7 @@ class ApplicationCommand(Model, kw_only=True):
     handler: EntryPointCommandHandlerType | None = None
 
 
-class CommandPermission(Model, kw_only=True):
+class CommandPermission(Model, Snowflake, kw_only=True):
     """Whether a role, a user or a channel may use a command."""
 
     id: int
@@ -136,7 +136,7 @@ class CommandPermission(Model, kw_only=True):
     permission: bool
 
 
-class GuildCommandPermissions(Model, kw_only=True):
+class GuildCommandPermissions(Model, Snowflake, kw_only=True):
     """A command's permissions in a guild, or every command's if `id` is the app's."""
 
     id: int
@@ -145,7 +145,7 @@ class GuildCommandPermissions(Model, kw_only=True):
     permissions: tuple[CommandPermission, ...]
 
 
-class _Interaction(Model, kw_only=True):
+class _Interaction(Model, Snowflake, kw_only=True):
     id: int
     application_id: int
     type: InteractionType
@@ -244,7 +244,7 @@ class ModalSubmitInteraction(_Interaction, kw_only=True):
         return nested_message(self._message, self.guild_id)
 
 
-class UnknownInteraction(Model, kw_only=True):
+class UnknownInteraction(Model, Snowflake, kw_only=True):
     """An interaction bostie does not model; see `raw`."""
 
     id: int

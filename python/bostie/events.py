@@ -52,7 +52,7 @@ from bostie.models import (
     VoiceState,
     WebhookMessage,
 )
-from bostie.models.base import decode, decoder, redacted_repr, shown_fields
+from bostie.models.base import Snowflake, decode, decoder, redacted_repr, shown_fields
 from bostie.models.interaction import decode_interaction
 from bostie.models.message import decode_message
 from bostie.models.monetization import decode_entitlement
@@ -291,7 +291,7 @@ class ThreadUpdate(_ChannelEvent, kw_only=True):
     old: Channel | None = None
 
 
-class ThreadDelete(Event, kw_only=True):
+class ThreadDelete(Event, Snowflake, kw_only=True):
     """A thread was deleted; `thread` is the cached one."""
 
     NAME = "THREAD_DELETE"
@@ -377,7 +377,7 @@ class _MessageDeletePayload(msgspec.Struct):
     guild_id: int | None = None
 
 
-class MessageDelete(Event, kw_only=True):
+class MessageDelete(Event, Snowflake, kw_only=True):
     """A message was deleted; `message` is the cached one if any."""
 
     NAME = "MESSAGE_DELETE"
@@ -615,7 +615,7 @@ class VoiceChannelEffectSend(Event, kw_only=True):
     sound_volume: float | None = None
 
 
-class VoiceChannelStatusUpdate(Event, kw_only=True):
+class VoiceChannelStatusUpdate(Event, Snowflake, kw_only=True):
     NAME = "VOICE_CHANNEL_STATUS_UPDATE"
     INTENTS = Intents.GUILDS
 
@@ -624,7 +624,7 @@ class VoiceChannelStatusUpdate(Event, kw_only=True):
     status: str | None
 
 
-class VoiceChannelStartTimeUpdate(Event, kw_only=True):
+class VoiceChannelStartTimeUpdate(Event, Snowflake, kw_only=True):
     NAME = "VOICE_CHANNEL_START_TIME_UPDATE"
     INTENTS = Intents.GUILDS
 
@@ -916,7 +916,7 @@ class LobbyMessageUpdate(_LobbyMessageEvent, kw_only=True):
     NAME = "LOBBY_MESSAGE_UPDATE"
 
 
-class LobbyMessageDelete(Event, kw_only=True):
+class LobbyMessageDelete(Event, Snowflake, kw_only=True):
     """A lobby message was deleted; only a webhook event."""
 
     NAME = "LOBBY_MESSAGE_DELETE"
@@ -1002,7 +1002,7 @@ class ThreadMemberUpdate(Event, kw_only=True):
         )
 
 
-class ThreadMembersUpdate(Event, kw_only=True):
+class ThreadMembersUpdate(Event, Snowflake, kw_only=True):
     """Members joined or left a thread; others than the bot need GUILD_MEMBERS."""
 
     NAME = "THREAD_MEMBERS_UPDATE"
@@ -1121,7 +1121,7 @@ class IntegrationUpdate(_IntegrationEvent, kw_only=True):
     NAME = "INTEGRATION_UPDATE"
 
 
-class IntegrationDelete(Event, kw_only=True):
+class IntegrationDelete(Event, Snowflake, kw_only=True):
     NAME = "INTEGRATION_DELETE"
     INTENTS = Intents.GUILD_INTEGRATIONS
 

@@ -11,12 +11,12 @@ from bostie.enums import (
     TeamMemberRole,
     WebhookEventType,
 )
-from bostie.models.base import Builder, Model
+from bostie.models.base import Builder, Model, Snowflake
 from bostie.models.guild import Guild
 from bostie.models.user import PartialUser, User
 
 
-class PartialApplication(Model, kw_only=True):
+class PartialApplication(Model, Snowflake, kw_only=True):
     id: int
     _flags: int = msgspec.field(default=0, name="flags")
     _flags_new: str | None = msgspec.field(default=None, name="flags_new")
@@ -46,7 +46,7 @@ class TeamMember(Model, kw_only=True):
     role: TeamMemberRole
 
 
-class Team(Model, kw_only=True):
+class Team(Model, Snowflake, kw_only=True):
     icon: str | None
     id: int
     members: tuple[TeamMember, ...]

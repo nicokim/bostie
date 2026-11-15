@@ -1,11 +1,11 @@
 import msgspec
 
 from bostie.enums import WebhookType
-from bostie.models.base import Model
+from bostie.models.base import Model, Snowflake
 from bostie.models.user import User
 
 
-class WebhookSourceGuild(Model, kw_only=True):
+class WebhookSourceGuild(Model, Snowflake, kw_only=True):
     """The guild of the announcement channel a webhook follows."""
 
     id: int
@@ -13,14 +13,14 @@ class WebhookSourceGuild(Model, kw_only=True):
     icon: str | None
 
 
-class WebhookSourceChannel(Model, kw_only=True):
+class WebhookSourceChannel(Model, Snowflake, kw_only=True):
     """The announcement channel a webhook follows."""
 
     id: int
     name: str
 
 
-class Webhook(Model, kw_only=True):
+class Webhook(Model, Snowflake, kw_only=True):
     """A webhook; `token` and `url` only come with incoming webhooks."""
 
     id: int

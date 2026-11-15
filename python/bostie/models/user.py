@@ -1,13 +1,13 @@
 from typing import TYPE_CHECKING, override
 
 from bostie.enums import Locale, PremiumType, UserFlags
-from bostie.models.base import Model
+from bostie.models.base import Model, Snowflake
 
 if TYPE_CHECKING:
     from bostie.models.message import Resolved
 
 
-class PartialUser(Model, kw_only=True):
+class PartialUser(Model, Snowflake, kw_only=True):
     """The author of a webhook's message, which carries only the webhook's identity."""
 
     id: int

@@ -8,7 +8,7 @@ bot = bostie.Bot()
 
 @bot.user_command("Profile card")
 async def profile_card(ctx: Context, user: User) -> None:
-    created = bostie.snowflake_time(user.id)
+    created = user.created_at
     banner = None
     if user.banner is not None:
         banner = EmbedMedia(url=cdn.user_banner(user.id, user.banner, size=1024))

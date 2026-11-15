@@ -24,7 +24,7 @@ from bostie.enums import (
 )
 from bostie.file import File
 from bostie.models.application import PartialApplication
-from bostie.models.base import Builder, Model, check_keys, decode, decoder
+from bostie.models.base import Builder, Model, Snowflake, check_keys, decode, decoder
 from bostie.models.channel import Channel, PartialChannel, ThreadMember
 from bostie.models.components import (
     Component,
@@ -62,7 +62,7 @@ V2_COMPONENT_TYPES = frozenset(
 )
 
 
-class Attachment(Model, kw_only=True):
+class Attachment(Model, Snowflake, kw_only=True):
     """A file attached to a message or passed as a command option."""
 
     id: int
@@ -211,7 +211,7 @@ class MessageReference(Builder, kw_only=True):
     fail_if_not_exists: bool | None = None
 
 
-class StickerItem(Model, kw_only=True):
+class StickerItem(Model, Snowflake, kw_only=True):
     id: int
     name: str
     format_type: StickerFormatType
@@ -295,7 +295,7 @@ class MessageActivity(Model, kw_only=True):
     party_id: str | None = None
 
 
-class ChannelMention(Model, kw_only=True):
+class ChannelMention(Model, Snowflake, kw_only=True):
     """A channel mentioned in a crossposted message."""
 
     id: int
@@ -320,7 +320,7 @@ class MessageCall(Model, kw_only=True):
     ended_timestamp: datetime | None = None
 
 
-class InteractionMetadata(Model, kw_only=True):
+class InteractionMetadata(Model, Snowflake, kw_only=True):
     """The interaction a message answers; its type picks the subclass."""
 
     id: int
@@ -402,7 +402,7 @@ class MessageSnapshot(Model, kw_only=True):
     message: SnapshotMessage
 
 
-class PartialMessage(Model, kw_only=True):
+class PartialMessage(Model, Snowflake, kw_only=True):
     """A message as an interaction resolves it, with only some of its fields."""
 
     id: int

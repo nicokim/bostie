@@ -1,9 +1,9 @@
 from bostie.enums import OnboardingMode, OnboardingPromptType
-from bostie.models.base import Model
+from bostie.models.base import Model, Snowflake
 from bostie.models.components import PartialEmoji
 
 
-class OnboardingPromptOption(Model, kw_only=True):
+class OnboardingPromptOption(Model, Snowflake, kw_only=True):
     id: int
     channel_ids: tuple[int, ...]
     role_ids: tuple[int, ...]
@@ -15,7 +15,7 @@ class OnboardingPromptOption(Model, kw_only=True):
     description: str | None
 
 
-class OnboardingPrompt(Model, kw_only=True):
+class OnboardingPrompt(Model, Snowflake, kw_only=True):
     id: int
     type: OnboardingPromptType
     options: tuple[OnboardingPromptOption, ...]

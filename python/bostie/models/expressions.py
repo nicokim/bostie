@@ -1,9 +1,9 @@
 from bostie.enums import StickerFormatType, StickerType
-from bostie.models.base import Model
+from bostie.models.base import MaybeSnowflake, Model, Snowflake
 from bostie.models.user import User
 
 
-class Emoji(Model, kw_only=True):
+class Emoji(Model, MaybeSnowflake, kw_only=True):
     id: int | None
     name: str | None
     roles: tuple[int, ...] = ()
@@ -14,7 +14,7 @@ class Emoji(Model, kw_only=True):
     available: bool | None = None
 
 
-class Sticker(Model, kw_only=True):
+class Sticker(Model, Snowflake, kw_only=True):
     id: int
     pack_id: int | None = None
     name: str
@@ -28,7 +28,7 @@ class Sticker(Model, kw_only=True):
     sort_value: int | None = None
 
 
-class StickerPack(Model, kw_only=True):
+class StickerPack(Model, Snowflake, kw_only=True):
     """A pack of standard stickers."""
 
     id: int
