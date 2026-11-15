@@ -9,6 +9,7 @@ import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import IntEnum
 from types import TracebackType
 from typing import Any, Literal, Self
 from urllib.parse import unquote
@@ -34,15 +35,21 @@ MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
 GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
 CLEARED: Json = {"content": "", "embeds": []}
 EPHEMERAL = 1 << 6
-LAUNCH_ACTIVITY = 12
 LOADING = 1 << 7
 LOCALIZATIONS = ("name_localizations", "description_localizations")
 TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
 FAKE_TOKEN = "fake-token"
-DEFERRED_WITH_SOURCE = 5
 
 type Respond = Callable[[dict[str, str]], web.Response]
 type Order = Literal["state_first", "server_first"]
+
+
+class _Callback(IntEnum):
+    CHANNEL_MESSAGE_WITH_SOURCE = 4
+    DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE = 5
+    DEFERRED_UPDATE_MESSAGE = 6
+    UPDATE_MESSAGE = 7
+    LAUNCH_ACTIVITY = 12
 
 
 @dataclass(frozen=True)
@@ -811,12 +818,12 @@ class FakeDiscord:
         self, interaction: Json, kind: int, data: Json
     ) -> Json | None:
         match kind:
-            case 4:
+            case _Callback.CHANNEL_MESSAGE_WITH_SOURCE:
                 return self._interaction_message(interaction, data)
-            case 5:
+            case _Callback.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE:
                 loading = {"flags": LOADING | data.get("flags", 0)}
                 return self._interaction_message(interaction, loading)
-            case 6 | 7:
+            case _Callback.DEFERRED_UPDATE_MESSAGE | _Callback.UPDATE_MESSAGE:
                 message: Json = interaction["message"]
                 return message | _message_fields(data)
             case _:
@@ -1028,14 +1035,15 @@ def _callback_response(interaction: Json, kind: int, original: Json | None) -> J
     summary: Json = {"id": interaction["id"], "type": interaction["type"]}
     resource: Json = {"type": kind}
     if original is not None:
+        loading = kind == _Callback.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
         summary |= {
             "response_message_id": original["id"],
-            "response_message_loading": kind == DEFERRED_WITH_SOURCE,
+            "response_message_loading": loading,
             "response_message_ephemeral": bool(original["flags"] & EPHEMERAL),
         }
-    if kind in (4, 7):
+    if kind in (_Callback.CHANNEL_MESSAGE_WITH_SOURCE, _Callback.UPDATE_MESSAGE):
         resource["message"] = original
-    if kind == LAUNCH_ACTIVITY:
+    if kind == _Callback.LAUNCH_ACTIVITY:
         summary["activity_instance_id"] = f"i-{interaction['id']}"
         resource["activity_instance"] = {"id": summary["activity_instance_id"]}
     return {"interaction": summary, "resource": resource}
