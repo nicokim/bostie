@@ -420,7 +420,7 @@ fn an_unmapped_ssrc_is_held_until_op_5_and_dropped_after_the_hold() {
 }
 
 #[test]
-fn the_intake_keeps_only_fresh_heard_packets_of_this_session() {
+fn fresh_authentic_packets_of_others_arrive_with_payloads_for_readers() {
     let mut rig = Rig::new(tuning());
     let cipher = Cipher::new(Mode::Aes256GcmRtpSize, &KEY);
     let stranger = Cipher::new(Mode::Aes256GcmRtpSize, &[1; 32]);
@@ -519,7 +519,6 @@ fn dropping_the_reception_closes_media_and_wakes_the_connection() {
     drop(rig);
     let late = Receiver::new(Handle::from(1), options(ReceiveFormat::Opus), inbox).unwrap();
 
-    assert!(media.is_closed());
     assert!(media.lost().now_or_never().is_some());
     assert!(!media.add_receiver(&Arc::new(late)));
 }

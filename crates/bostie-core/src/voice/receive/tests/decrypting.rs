@@ -5,7 +5,7 @@ fn long(frames: u8) -> Vec<u8> {
 }
 
 #[test]
-fn users_nobody_receives_are_never_decrypted_but_still_speak() {
+fn unreceived_users_go_undecrypted_and_speech_ends_by_hangover_or_switch() {
     let mut rig = Rig::dave();
     let mut call = rig.group(&[ALICE]);
     rig.map(ALICE_SSRC, ALICE);

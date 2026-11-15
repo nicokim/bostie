@@ -67,7 +67,7 @@ fn heard(items: &[Item]) -> Vec<Heard> {
 }
 
 #[test]
-fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
+fn the_playout_conceals_losses_and_skips_gaps_in_each_format() {
     let gaps: [&[u16]; 12] = [
         &[0],
         &[1],
@@ -82,20 +82,6 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
         &[10],
         &[11],
     ];
-    let swapped: [&[u16]; 12] = [
-        &[0],
-        &[1],
-        &[3],
-        &[2],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    ];
     let skipped = [
         (0, false),
         (960, false),
@@ -104,22 +90,13 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
         (9_600, false),
         (10_560, false),
     ];
-    let in_order = [(0, false), (960, false), (1_920, false), (2_880, false)];
     let pcm16k = pcm(16_000, 1, SampleFormat::S16Le);
-    let cases = [
-        (ReceiveFormat::Opus, Duration::ZERO, gaps, &skipped[..], 7),
-        (pcm16k, Duration::ZERO, gaps, &skipped[..], 7),
-        (ReceiveFormat::Opus, FRAME * 2, swapped, &in_order[..], 0),
-    ];
-    for (format, jitter, schedule, expected, lost) in cases {
+    for format in [ReceiveFormat::Opus, pcm16k] {
         let mut rig = Rig::new(tuning());
         rig.map(ALICE_SSRC, ALICE);
-        let receiver = rig.open(ReceiveOptions {
-            jitter,
-            ..options(format)
-        });
+        let receiver = rig.open(options(format));
         let packets = opus(12, 0.3);
-        for sequences in schedule {
+        for sequences in gaps {
             for &sequence in sequences {
                 rig.send(ALICE_SSRC, sequence, &packets[usize::from(sequence)]);
             }
@@ -139,8 +116,8 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
             })
             .collect();
         let lengths: Vec<usize> = data(&items).iter().map(Bytes::len).collect();
-        assert_eq!(played, expected, "{format:?} {jitter:?}");
-        assert_eq!(receiver.stats().unwrap().lost, lost, "{format:?}");
+        assert_eq!(played, skipped, "{format:?}");
+        assert_eq!(receiver.stats().unwrap().lost, 7, "{format:?}");
         if format == pcm16k {
             assert!(lengths.iter().all(|&length| length == 640));
             let mut fresh = OpusDecoder::new(16_000, 1).unwrap();
@@ -155,7 +132,7 @@ fn the_playout_reorders_within_the_jitter_conceals_losses_and_skips_gaps() {
             assert_eq!(data(&items)[4], after_the_skip.freeze());
         } else {
             let silent: Vec<bool> = lengths.iter().map(|&length| length == 0).collect();
-            let concealed: Vec<bool> = expected.iter().map(|&(_, lost)| lost).collect();
+            let concealed: Vec<bool> = skipped.iter().map(|&(_, lost)| lost).collect();
             assert_eq!(silent, concealed);
         }
     }

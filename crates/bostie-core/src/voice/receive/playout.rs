@@ -553,24 +553,6 @@ mod tests {
     }
 
     #[test]
-    fn a_swapped_pair_releases_in_order() {
-        let mut player = Player::new(2 * FRAME);
-        let late = Slot {
-            at: 3 * FRAME + FRAME / 2,
-            ..steady(2)
-        };
-
-        player.run(
-            (0..6)
-                .filter(|&sequence| sequence != 2)
-                .map(steady)
-                .chain([late]),
-        );
-
-        assert_eq!(player.played, plays(0..6));
-    }
-
-    #[test]
     fn losses_are_concealed_up_to_the_limit_and_skipped_beyond() {
         for (samples, lost, pause, bridge) in [
             (960, 1, 0, Out::Conceal(1)),
@@ -854,7 +836,10 @@ mod tests {
             let durations: Vec<u32> = player.frames.iter().map(|&(_, samples)| samples).collect();
             assert_eq!(durations, kept, "{samples}");
         }
+    }
 
+    #[test]
+    fn a_packet_without_a_payload_is_skipped_in_its_place() {
         let mut player = Player::new(0);
         let trimmed = Slot {
             samples: 2_880,

@@ -445,7 +445,27 @@ mod tests {
     }
 
     #[test]
-    fn items_wait_for_read_and_one_wake_fires_per_waiting_read() {
+    fn one_wake_fires_per_waiting_read_and_none_while_items_remain() {
+        let fixture = Fixture::new();
+        let receiver = open(&fixture, 60_000);
+        let now = Instant::now();
+
+        receiver.push([frame(ALICE, 0, now)], now);
+        let unwaited = wakes(&fixture);
+        receiver.read(256).unwrap();
+        let waits = [receiver.read(256).unwrap(), receiver.read(256).unwrap()];
+        receiver.push([frame(ALICE, 960, now), frame(ALICE, 1_920, now)], now);
+        receiver.push([frame(ALICE, 2_880, now)], now);
+        let woken = wakes(&fixture);
+        receiver.read(1).unwrap();
+        receiver.push([frame(ALICE, 3_840, now)], now);
+
+        assert_eq!(waits, [ReceiveRead::Pending, ReceiveRead::Pending]);
+        assert_eq!((unwaited, woken, wakes(&fixture)), (0, 1, 0));
+    }
+
+    #[test]
+    fn reads_take_up_to_their_limit_and_queued_is_the_age_of_the_oldest_left() {
         let fixture = Fixture::new();
         let receiver = open(&fixture, 60_000);
         let now = Instant::now();
@@ -463,41 +483,24 @@ mod tests {
             level: None,
         };
 
-        receiver.push([frame(ALICE, 0, now)], early);
-        let unwaited = wakes(&fixture);
-        let first = receiver.read(256).unwrap();
-        let waits = [receiver.read(256).unwrap(), receiver.read(256).unwrap()];
-        let batch = [
-            frame(ALICE, 960, now),
-            frame(ALICE, 1_920, now),
-            gap.clone(),
-        ];
+        let batch = [frame(ALICE, 0, now), frame(ALICE, 960, now), gap.clone()];
         receiver.push(batch, early);
-        receiver.push([frame(ALICE, 3_840, now)], later);
-        let woken = wakes(&fixture);
+        receiver.push([frame(ALICE, 1_920, now)], later);
         let oldest = receiver.queued().unwrap();
         let partial = receiver.read(2).unwrap();
-        receiver.push([frame(ALICE, 4_800, now)], later);
-        let while_more_remain = wakes(&fixture);
-        let rest = receiver.read(0).unwrap();
+        let single = receiver.read(0).unwrap();
         let next_oldest = receiver.queued().unwrap();
         receiver.add_lost(3);
         receiver.clear().unwrap();
 
-        assert_eq!((unwaited, woken, while_more_remain), (0, 1, 0));
-        assert_eq!(
-            first,
-            ReceiveRead::Items(vec![(early, frame(ALICE, 0, now))])
-        );
-        assert_eq!(waits, [ReceiveRead::Pending, ReceiveRead::Pending]);
         assert_eq!(
             partial,
             ReceiveRead::Items(vec![
-                (early, frame(ALICE, 960, now)),
-                (early, frame(ALICE, 1_920, now))
+                (early, frame(ALICE, 0, now)),
+                (early, frame(ALICE, 960, now))
             ])
         );
-        assert_eq!(rest, ReceiveRead::Items(vec![(early, gap)]));
+        assert_eq!(single, ReceiveRead::Items(vec![(early, gap)]));
         assert!(oldest >= Duration::from_secs(10), "{oldest:?}");
         assert!(
             (Duration::from_secs(1)..Duration::from_secs(10)).contains(&next_oldest),
@@ -508,7 +511,7 @@ mod tests {
         assert_eq!(
             receiver.stats().unwrap(),
             ReceiverStats {
-                delivered: 6,
+                delivered: 4,
                 dropped: 0,
                 lost: 4
             }

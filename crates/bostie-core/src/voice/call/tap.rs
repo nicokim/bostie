@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn registering_after_a_session_start_does_not_count_it() {
+    fn registering_after_a_session_start_sees_it_without_a_change() {
         let tap = GatewayTap::default();
         tap.session_started(shard(0));
 
