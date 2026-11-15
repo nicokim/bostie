@@ -225,7 +225,7 @@ class VoiceManager:
         core: Callable[[], _native.Core | None],
     ) -> None:
         self.defaults = defaults
-        self.link = CoreLink(core)
+        self._link = CoreLink(core)
         self._bot = bot
         self._connections: dict[int, _Connection] = {}
 
@@ -233,6 +233,11 @@ class VoiceManager:
     def bot(self) -> "Bot":
         """The bot these connections belong to."""
         return self._bot
+
+    @property
+    def link(self) -> CoreLink:
+        """The bot's core as bostie's sinks, receivers and sources reach it."""
+        return self._link
 
     @property
     def connections(self) -> tuple["VoiceConnection", ...]:
@@ -336,9 +341,9 @@ class VoiceManager:
         """Pass a voice delivery from the core to its connection or handle."""
         match delivery:
             case ("voice_wake", handle):
-                self.link.wake(handle)
+                self._link.wake(handle)
             case ("voice_marker", handle, marker, played):
-                self.link.marked(handle, marker, reached=played)
+                self._link.marked(handle, marker, reached=played)
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:
@@ -346,7 +351,7 @@ class VoiceManager:
 
     def _running_user(self, call: str) -> User:
         user = self._bot.user
-        if user is None or not self.link.running:
+        if user is None or not self._link.running:
             raise StateError(f"{call} needs a running bot")
         if not self._bot.intents & Intents.GUILD_VOICE_STATES:
             raise MissingIntent(
