@@ -493,7 +493,7 @@ def test_a_commands_auto_defer_overrides_the_bots(
 def test_a_handler_that_starts_late_logs_a_warning(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("bostie.bot.SLOW_HANDLER_START", 0.01)
+    monkeypatch.setattr("bostie.dispatch.SLOW_HANDLER_START", 0.01)
 
     def block_the_loop(event: InteractionCreate) -> bool:
         time.sleep(0.05)
