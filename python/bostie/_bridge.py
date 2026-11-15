@@ -90,7 +90,7 @@ class Bridge:
         try:
             self._loop.add_reader(self._bell, self._on_bell)
         except NotImplementedError:
-            self._fallback_pump = self._loop.create_task(
+            self._fallback_pump = asyncio.create_task(
                 self._pump_bell(), name="bostie-bell"
             )
             self._fallback_pump.add_done_callback(self._close_bell)

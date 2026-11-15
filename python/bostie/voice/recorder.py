@@ -124,7 +124,6 @@ class Recorder:
         self._max_duration = max_duration
         self._end = math.inf if max_duration is None else max_duration * SAMPLE_RATE
         self._room = math.inf if max_size is None else max_size
-        self._halting: asyncio.Task[None] | None = None
         self._files: dict[int | None, Path] = {}
         self._writers: dict[int | None, _OggFile | _WavFile] = {}
         self._error: Exception | None = None
@@ -174,11 +173,10 @@ class Recorder:
         await self.stop()
 
     async def _record(self) -> None:
-        loop = asyncio.get_running_loop()
         limit = (
             None
             if self._max_duration is None
-            else loop.call_later(self._max_duration, self._expire)
+            else asyncio.create_task(self._halt_after(self._max_duration))
         )
         try:
             await self._consume()
@@ -190,8 +188,9 @@ class Recorder:
             self._rx.close()
             await self._finish()
 
-    def _expire(self) -> None:
-        self._halting = asyncio.create_task(self._halt())
+    async def _halt_after(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        await self._halt()
 
     async def _halt(self) -> None:
         await self._rx.mark()
@@ -214,7 +213,7 @@ class Recorder:
             await self._write(frame)
 
     async def _next(self) -> Frame | None:
-        reading = asyncio.ensure_future(anext(self._rx))
+        reading = asyncio.create_task(self._read())
         either: set[asyncio.Future[Any]] = {reading, self._stopping}
         try:
             await asyncio.wait(either, return_when=asyncio.FIRST_COMPLETED)
@@ -224,6 +223,9 @@ class Recorder:
         if reading.cancelled() or isinstance(reading.exception(), StopAsyncIteration):
             return None
         return reading.result()
+
+    async def _read(self) -> Frame:
+        return await anext(self._rx)
 
     async def _write(self, frame: Frame) -> None:
         user = frame.user_id

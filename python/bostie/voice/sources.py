@@ -314,7 +314,7 @@ class FFmpeg(Source):
             stderr=asyncio.subprocess.PIPE,
         )
         if process.stderr is not None:
-            self._errors = asyncio.ensure_future(_last_line(process.stderr))
+            self._errors = asyncio.create_task(_last_line(process.stderr))
         self._format = FFMPEG_PCM
 
     @override

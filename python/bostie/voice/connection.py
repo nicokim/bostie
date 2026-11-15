@@ -284,36 +284,30 @@ class VoiceManager:
                 f"bostie already runs a voice connection in guild {guild_id}"
             )
         settings = self._settings(options, EXTERNAL_CONNECT_OPTIONS)
-        loop = asyncio.get_running_loop()
-        state = asyncio.Task(
-            self._bot.wait_for(
-                VoiceStateUpdate,
-                check=lambda event: (
-                    event.voice_state.user_id == user.id
-                    and event.voice_state.guild_id == guild_id
-                    and event.voice_state.channel_id == channel_id
-                ),
-            ),
-            loop=loop,
-            eager_start=True,
-        )
-        server = asyncio.Task(
-            self._bot.wait_for(
-                VoiceServerUpdate, check=lambda event: event.guild_id == guild_id
-            ),
-            loop=loop,
-            eager_start=True,
-        )
         try:
-            _send_voice_state(
-                self._bot,
-                guild_id,
-                channel_id,
-                self_mute=settings.self_mute,
-                self_deaf=settings.self_deaf,
-            )
-            async with asyncio.timeout(settings.timeout):
-                return ExternalVoice(await state, await server, self._bot, guild_id)
+            async with (
+                self._bot.stream(
+                    VoiceStateUpdate,
+                    check=lambda event: (
+                        event.voice_state.user_id == user.id
+                        and event.voice_state.guild_id == guild_id
+                        and event.voice_state.channel_id == channel_id
+                    ),
+                ) as states,
+                self._bot.stream(
+                    VoiceServerUpdate, check=lambda event: event.guild_id == guild_id
+                ) as servers,
+            ):
+                _send_voice_state(
+                    self._bot,
+                    guild_id,
+                    channel_id,
+                    self_mute=settings.self_mute,
+                    self_deaf=settings.self_deaf,
+                )
+                async with asyncio.timeout(settings.timeout):
+                    state, server = await anext(states), await anext(servers)
+            return ExternalVoice(state, server, self._bot, guild_id)
         except BaseException as error:
             with contextlib.suppress(BostieError):
                 _send_voice_state(
@@ -328,9 +322,6 @@ class VoiceManager:
                     "lacks CONNECT)",
                 ) from None
             raise
-        finally:
-            state.cancel()
-            server.cancel()
 
     async def close(self) -> None:
         """Disconnect every connection, waiting up to 2 s for them to end."""
