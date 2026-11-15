@@ -782,6 +782,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn clear_since_a_resolved_or_unknown_marker_drops_everything_queued() {
+        for resolved in [true, false] {
+            let mut fixture = Fixture::new();
+            let sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
+            sink.write(&frames_of(0.1, 960)).unwrap();
+            let (first, _) = sink.mark().unwrap();
+            pull(&sink).unwrap();
+            sink.write(&frames_of(0.2, 1_920)).unwrap();
+
+            sink.clear_since(if resolved { first } else { 99 }).unwrap();
+
+            assert_eq!(sink.queued().unwrap(), Duration::ZERO, "{resolved}");
+            assert_eq!(pull(&sink), None, "{resolved}");
+        }
+    }
+
+    #[test]
+    fn clear_since_on_an_opus_sink_drops_the_whole_packets_after_the_marker() {
+        let mut fixture = Fixture::new();
+        let sink = fixture.sink(SinkFormat::Opus, 1_000, StallPolicy::Hold);
+        let short = packet(Channels::Stereo, 960);
+        sink.write(&short).unwrap();
+        let (marker, _) = sink.mark().unwrap();
+        for _ in 0..2 {
+            sink.write(&packet(Channels::Stereo, 2_880)).unwrap();
+        }
+
+        sink.clear_since(marker).unwrap();
+
+        assert_eq!(sink.queued().unwrap(), Duration::from_millis(20));
+        assert_eq!(sink.pull_opus(), Some((Bytes::from(short), 960)));
+        assert_eq!(sink.pull_opus(), None);
+    }
+
+    #[test]
     fn clear_fires_an_armed_wake_and_resets_the_converter() {
         let mut fixture = Fixture::new();
         let format = SinkFormat::Pcm(PcmFormat {
