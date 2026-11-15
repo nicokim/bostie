@@ -20,21 +20,25 @@ The checks of the bot run first, then those of each router from the outermost in
 | `bot_has_permissions(permissions)` | `BotMissingPermissions` | the bot lacks any of them in the channel |
 | `Cooldown(rate, seconds, per="user")` | `CooldownActive` | the key already used it `rate` times in the last `seconds` |
 | `MaxConcurrency(number, per="global")` | `MaxConcurrencyReached` | `number` runs for the key are still going on |
+| `has_role(role)` | `MissingRole` | the user lacks the role, given by id or name, or is in a DM |
+| `has_any_role(*roles)` | `MissingRole` | the user has none of the roles |
 | `is_owner` | `NotOwner` | the user is not one of `bot.owner_ids` |
 
 `per` is `"user"`, `"guild"` (the user, in DMs), `"channel"`, `"global"`, or a function of the context that returns any hashable key. The permission checks read the permissions Discord sends with the interaction, so they need no cache and no request. Their errors carry `missing`, the `Permissions` lacking, and `CooldownActive` carries `retry_after` in seconds.
 
-## Owners
+## Roles and owners
 
 ```python
 --8<-- "docs/snippets/checks/staff_checks.py"
 ```
 
+`has_role` and `has_any_role` take role ids or names. An id is matched against the roles Discord sends with the interaction, so it needs no cache. A name is looked up among the roles of the cached guild, so a bot without the cache, or an [HTTP-only app](http-interactions.md), names roles by id. `MissingRole` carries the `roles` asked for, and its message mentions a role given by id, which Discord shows as the role's name.
+
 `is_owner` is a check as it is, without parentheses. `bot.owner_ids` holds the users it lets through: the `owner_ids` given to `Bot(...)`, else the app's owner, read from the application when the bot starts. For an app that belongs to a team, they are the team's owner and the admins and developers who accepted the invitation; read-only members are left out.
 
 ## What the user is told
 
-When no error hook handles a `CheckFailure`, bostie answers with its message, ephemeral: "You need the Manage Messages permission.", "The bot needs the Manage Messages permission.", "Try again" with a relative timestamp such as "in 42 seconds", "This is already running; try again once it is done.", "Only the bot's owners can use this.", or "You cannot use this." for a plain `False`.
+When no error hook handles a `CheckFailure`, bostie answers with its message, ephemeral: "You need the Manage Messages permission.", "The bot needs the Manage Messages permission.", "Try again" with a relative timestamp such as "in 42 seconds", "This is already running; try again once it is done.", "You need the Moderator role.", "Only the bot's owners can use this.", or "You cannot use this." for a plain `False`.
 
 ## Hooks before and after
 

@@ -9,6 +9,7 @@ from bostie.errors import (
     CooldownActive,
     MaxConcurrencyReached,
     MissingPermissions,
+    MissingRole,
     NotOwner,
 )
 
@@ -20,7 +21,9 @@ __all__ = [
     "MaxConcurrency",
     "Per",
     "bot_has_permissions",
+    "has_any_role",
     "has_permissions",
+    "has_role",
     "is_owner",
 ]
 
@@ -49,6 +52,32 @@ def bot_has_permissions(permissions: Permissions) -> Callable[[Any], bool]:
         missing = permissions & ~ctx.interaction.app_permissions
         if missing:
             raise BotMissingPermissions(missing)
+        return True
+
+    return check
+
+
+def has_role(role: int | str) -> Callable[[Any], bool]:
+    """A check that the user has `role`, by id or by name in the cached guild."""
+    return has_any_role(role)
+
+
+def has_any_role(*roles: int | str) -> Callable[[Any], bool]:
+    """A check that the user has one of `roles`, each by id or by cached name."""
+    if not roles:
+        raise ValueError("has_any_role needs at least one role")
+
+    wanted = frozenset(roles)
+
+    def check(ctx: AnyContext) -> bool:
+        member = ctx.interaction.member
+        ids = () if member is None else member.roles
+        cache = ctx.bot.cache
+        names = {
+            role.name for role_id in ids if (role := cache.role(role_id)) is not None
+        }
+        if wanted.isdisjoint({*ids, *names}):
+            raise MissingRole(roles)
         return True
 
     return check

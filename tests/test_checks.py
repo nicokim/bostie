@@ -1,3 +1,4 @@
+import asyncio
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -9,7 +10,9 @@ from bostie.checks import (
     Cooldown,
     MaxConcurrency,
     bot_has_permissions,
+    has_any_role,
     has_permissions,
+    has_role,
     is_owner,
 )
 from bostie.errors import (
@@ -18,6 +21,7 @@ from bostie.errors import (
     MaxConcurrencyReached,
     MissingPermissions,
 )
+from bostie.events import GuildCreate
 from bostie.testing import FakeDiscord, payloads, run, running
 from bostie.testing.payloads import Json
 
@@ -25,6 +29,8 @@ P = Permissions
 USER = int(payloads.interaction(2, {})["member"]["user"]["id"])
 APP_OWNER = int(payloads.fixture("rest/application_me")["owner"]["id"])
 TEAM_OWNER, ADMIN, READER, INVITED = 101, 102, 103, 104
+MODERATOR_ROLE = int(payloads.interaction(2, {})["member"]["roles"][0])
+ADMIN_ROLE = 1335174050611331073
 
 
 def context(
@@ -169,5 +175,41 @@ def test_is_owner_lets_through_the_given_owners_or_the_apps(
         assert answer.json["data"]["content"] == (
             "Bye." if USER in owners else "Only the bot's owners can use this."
         )
+
+    run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("roles", "cached", "refusal"),
+    [
+        ((MODERATOR_ROLE,), False, None),
+        (("Moderator",), True, None),
+        (("Moderator",), False, "You need the Moderator role."),
+        (("Admin", MODERATOR_ROLE), True, None),
+        ((ADMIN_ROLE, "Owner"), True, f"You need the <@&{ADMIN_ROLE}> or Owner role."),
+    ],
+)
+def test_role_checks_match_the_users_role_ids_or_the_cached_names(
+    roles: tuple[int | str, ...], cached: bool, refusal: str | None
+) -> None:
+    check = has_role(roles[0]) if len(roles) == 1 else has_any_role(*roles)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+
+        @bot.command(checks=[check])
+        async def warn(ctx: Context) -> None:
+            """Warn a member."""
+            await ctx.respond("Warned.")
+
+        async with running(bot, fake):
+            if cached:
+                await asyncio.gather(
+                    bot.wait_for(GuildCreate),
+                    fake.dispatch("GUILD_CREATE", payloads.guild()),
+                )
+            answer = await fake.interaction(2, payloads.command("warn"))
+
+        assert answer.json["data"]["content"] == (refusal or "Warned.")
 
     run(scenario)

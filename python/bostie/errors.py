@@ -274,6 +274,18 @@ class BotMissingPermissions(CheckFailure):
         self.missing = missing
 
 
+class MissingRole(CheckFailure):
+    """The user has none of the roles a check asks for, given by id or name."""
+
+    def __init__(self, roles: tuple[int | str, ...]) -> None:
+        names = [f"<@&{role}>" if isinstance(role, int) else role for role in roles]
+        listed = (
+            names[0] if len(names) == 1 else f"{', '.join(names[:-1])} or {names[-1]}"
+        )
+        super().__init__(f"You need the {listed} role.")
+        self.roles = roles
+
+
 class NotOwner(CheckFailure):
     """The user is not one of the bot's owners."""
 
