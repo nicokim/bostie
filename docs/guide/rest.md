@@ -60,7 +60,7 @@ Discord bans an IP that sends 10 000 invalid requests (401, 403, 429) in 10 minu
 
 ## Any endpoint
 
-`bot.http.request(method, route, **params)` sends any request through the same client and returns the decoded JSON, or `None` for an empty answer. The route keeps its placeholders, which keyword arguments fill: `await bot.http.request("GET", "/channels/{channel_id}/pins", channel_id=123)`. It takes `json=`, `files=` for a multipart upload, `form=` for named form fields, `urlencoded=` for a form-urlencoded body, `query=` and `reason=`, and raises the same exceptions.
+`bot.http.request(method, route, **params)` sends any request through the same client and returns the decoded JSON, or `None` for an empty answer. The route keeps its placeholders, which keyword arguments fill: `await bot.http.request("GET", "/channels/{channel_id}/pins", channel_id=123)`. It takes `json=`, `files=` for a multipart upload, `form=` for named form fields, `urlencoded=` for a form-urlencoded body, `query=` and `reason=`, and raises the same exceptions. `bot.http.send(...)` takes the same arguments and returns the answer's raw bytes, for an endpoint that does not answer with JSON.
 
 ## Downloading files
 
