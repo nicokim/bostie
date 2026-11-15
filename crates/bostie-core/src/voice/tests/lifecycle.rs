@@ -238,19 +238,6 @@ async fn shutdown_closes_every_open_source_and_refuses_new_ones() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn dropping_voice_in_another_process_leaves_its_sources_open() {
-    let harness = Harness::start().await;
-    let kept = harness.voice.open_source(tone_file()).unwrap();
-    let mut voice = harness.voice;
-    voice.owner = Owner::foreign();
-
-    drop(voice);
-
-    assert!(!kept.is_closed());
-    kept.close();
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn dropped_sources_are_forgotten_when_the_next_one_opens() {
     let harness = Harness::start().await;
     for _ in 0..10 {

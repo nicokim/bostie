@@ -44,8 +44,9 @@ pub struct SavedSession {
     pub resume_url: String,
 }
 
-pub(crate) struct Gateway {
+pub struct Gateway {
     runtime: Handle,
+    closed: AtomicBool,
     shared: Arc<Shared>,
     shards: Mutex<HashMap<ShardId, ShardHandle>>,
 }
@@ -98,6 +99,7 @@ impl Gateway {
     ) -> Result<Self, CoreError> {
         Ok(Self {
             runtime,
+            closed: AtomicBool::new(false),
             shared: Arc::new(Shared {
                 inbox,
                 token: token.into(),
@@ -114,15 +116,15 @@ impl Gateway {
         })
     }
 
-    pub(crate) fn set_identify_limit(&self, limit: IdentifyLimit) {
+    pub fn set_identify_limit(&self, limit: IdentifyLimit) {
         self.shared.identify.seed(limit, Instant::now());
     }
 
-    pub(crate) fn gate_identifies(&self) {
+    pub fn gate_identifies(&self) {
         self.shared.identify_gated.store(true, Ordering::Relaxed);
     }
 
-    pub(crate) fn approve_identify(&self, shard: ShardId, request: u64) -> Result<(), CoreError> {
+    pub fn approve_identify(&self, shard: ShardId, request: u64) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle
                 .signals
@@ -133,7 +135,7 @@ impl Gateway {
         })
     }
 
-    pub(crate) fn start(
+    pub fn start(
         &self,
         shard: ShardId,
         url: &str,
@@ -155,6 +157,9 @@ impl Gateway {
             .transpose()?;
         let identify = envelope::identify_frame(identify)?;
         let mut shards = self.shards.lock();
+        if self.closed.load(Ordering::Relaxed) {
+            return Err(CoreError::Closed);
+        }
         if shards.get(&shard).is_some_and(ShardHandle::is_running) {
             return Err(CoreError::ShardRunning(shard));
         }
@@ -180,7 +185,7 @@ impl Gateway {
         Ok(())
     }
 
-    pub(crate) fn send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
+    pub fn send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
         envelope::check_command(&payload)?;
         self.with_running(shard, |handle| {
             handle
@@ -193,7 +198,7 @@ impl Gateway {
         })
     }
 
-    pub(crate) fn set_identify(&self, shard: ShardId, identify: &[u8]) -> Result<(), CoreError> {
+    pub fn set_identify(&self, shard: ShardId, identify: &[u8]) -> Result<(), CoreError> {
         let identify = envelope::identify_frame(identify)?;
         self.with_running(shard, |handle| {
             *handle.signals.identify.lock() = identify;
@@ -201,26 +206,26 @@ impl Gateway {
         })
     }
 
-    pub(crate) fn set_filter(&self, names: Option<Vec<String>>) {
+    pub fn set_filter(&self, names: Option<Vec<String>>) {
         *self.shared.filter.write() =
             names.map(|names| names.into_iter().map(String::into_boxed_str).collect());
     }
 
-    pub(crate) fn reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
+    pub fn reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle.signals.reconnect.notify_one();
             Ok(())
         })
     }
 
-    pub(crate) fn close(&self, shard: ShardId) -> Result<(), CoreError> {
+    pub fn close(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle.signals.close.notify_one();
             Ok(())
         })
     }
 
-    pub(crate) fn suspend(&self, shard: ShardId) -> Result<(), CoreError> {
+    pub fn suspend(&self, shard: ShardId) -> Result<(), CoreError> {
         self.with_running(shard, |handle| {
             handle.signals.keep_session.store(true, Ordering::Release);
             handle.signals.close.notify_one();
@@ -228,12 +233,14 @@ impl Gateway {
         })
     }
 
-    pub(crate) fn latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
+    pub fn latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
         self.with_running(shard, |handle| Ok(handle.signals.latency.get()))
     }
 
     pub(crate) fn shutdown(&self) {
-        for (_, handle) in self.shards.lock().drain() {
+        let mut shards = self.shards.lock();
+        self.closed.store(true, Ordering::Relaxed);
+        for (_, handle) in shards.drain() {
             handle.task.abort();
         }
     }

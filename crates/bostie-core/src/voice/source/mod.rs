@@ -15,7 +15,7 @@ use parking_lot::{Condvar, Mutex, MutexGuard};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
-use crate::runtime::Owner;
+use crate::runtime;
 use crate::voice::panic_message;
 use crate::voice::source::decode::{Decoder, Input, Step};
 use crate::voice::source::http::{Http, HttpMedia};
@@ -59,7 +59,6 @@ pub enum SourceRead {
 
 pub struct Source {
     id: Handle,
-    owner: Owner,
     shared: Arc<Shared>,
 }
 
@@ -150,11 +149,7 @@ impl Source {
                 decoding.stop(failure);
             })
             .map_err(CoreError::Runtime)?;
-        Ok(Self {
-            id,
-            owner: Owner::current(),
-            shared,
-        })
+        Ok(Self { id, shared })
     }
 
     pub fn id(&self) -> Handle {
@@ -162,17 +157,17 @@ impl Source {
     }
 
     pub fn info(&self) -> Result<Option<SourceInfo>, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.shared.state.lock().info)
     }
 
     pub fn tags(&self) -> Result<Tags, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.shared.state.lock().tags.clone())
     }
 
     pub fn read(&self) -> Result<SourceRead, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut state = self.open_state()?;
         if !state.chunks.is_empty() {
             state.buffered = 0;
@@ -191,7 +186,7 @@ impl Source {
     }
 
     pub fn error(&self) -> Result<Option<String>, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(match &self.shared.state.lock().progress {
             Progress::Failed(error) => Some(error.clone()),
             Progress::Playing | Progress::Ended => None,
@@ -199,7 +194,7 @@ impl Source {
     }
 
     pub fn seek(&self, position: Duration) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut state = self.open_state()?;
         if !state.info.is_some_and(|info| info.seekable) {
             return Err(CoreError::InvalidRequest(
@@ -223,7 +218,7 @@ impl Source {
     }
 
     pub fn close(&self) {
-        if !self.owner.is_current() {
+        if !runtime::is_owner() {
             return;
         }
         let mut state = self.shared.state.lock();
@@ -364,7 +359,7 @@ pub(crate) mod tests {
                 inbox: Arc::new(Inbox::new(bell)),
                 _bell: receiver,
                 http: Http::new(
-                    crate::runtime::shared().unwrap(),
+                    runtime::shared().unwrap(),
                     HTTP_BUFFER,
                     Duration::ZERO,
                     None,

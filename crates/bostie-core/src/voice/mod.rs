@@ -64,7 +64,6 @@ use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, Handle, ShardId, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::proxy::Proxy;
-use crate::runtime::Owner;
 
 pub type GatewaySend = Arc<dyn Fn(ShardId, Bytes) -> Result<(), CoreError> + Send + Sync>;
 
@@ -93,7 +92,6 @@ impl Default for Tuning {
 pub struct Voice {
     runtime: runtime::Handle,
     shared: Arc<Shared>,
-    owner: Owner,
 }
 
 struct Shared {
@@ -166,7 +164,6 @@ impl Voice {
                 closed: AtomicBool::new(false),
             }),
             runtime,
-            owner: Owner::current(),
         })
     }
 
@@ -461,7 +458,7 @@ impl Voice {
 
 impl Drop for Voice {
     fn drop(&mut self) {
-        if self.owner.is_current() {
+        if crate::runtime::is_owner() {
             self.shutdown();
         }
     }

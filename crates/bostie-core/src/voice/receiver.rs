@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use crate::error::CoreError;
 use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
-use crate::runtime::Owner;
+use crate::runtime;
 use crate::voice::peak::Peak;
 use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
@@ -78,7 +78,6 @@ pub enum ReceiveRead {
 pub struct Receiver {
     id: Handle,
     options: ReceiveOptions,
-    owner: Owner,
     inbox: Arc<Inbox>,
     opened: Instant,
     marked: AtomicBool,
@@ -110,7 +109,6 @@ impl Receiver {
         Ok(Self {
             id,
             options,
-            owner: Owner::current(),
             inbox,
             opened: Instant::now(),
             marked: AtomicBool::new(false),
@@ -131,7 +129,7 @@ impl Receiver {
     }
 
     pub fn read(&self, limit: usize) -> Result<ReceiveRead, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut queue = self.queue.lock();
         if queue.ended == Some(Ended::Closed) {
             return Err(CoreError::ReceiverClosed(self.id));
@@ -148,25 +146,25 @@ impl Receiver {
     }
 
     pub fn queued(&self) -> Result<Duration, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let queue = self.queue.lock();
         let oldest = queue.stale_markers.first().or_else(|| queue.items.front());
         Ok(oldest.map_or(Duration::ZERO, |(queued, _)| queued.elapsed()))
     }
 
     pub fn clear(&self) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         self.queue.lock().discard();
         Ok(())
     }
 
     pub fn stats(&self) -> Result<ReceiverStats, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.queue.lock().stats)
     }
 
     pub fn mark(&self) -> Result<u64, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut queue = self.queue.lock();
         if queue.ended == Some(Ended::Closed) {
             return Err(CoreError::ReceiverClosed(self.id));
@@ -209,7 +207,7 @@ impl Receiver {
     }
 
     pub fn close(&self) {
-        if !self.owner.is_current() {
+        if !runtime::is_owner() {
             return;
         }
         let mut queue = self.queue.lock();

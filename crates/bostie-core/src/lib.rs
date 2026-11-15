@@ -16,26 +16,22 @@ use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
-use bytes::Bytes;
 use parking_lot::Mutex;
 use reqwest::Url;
 use tokio::runtime::Handle;
 
 pub use crate::bell::{BellReceiver, RawBellHandle};
 pub use crate::error::{CoreError, describe};
-pub use crate::gateway::{IdentifyLimit, SavedSession};
+pub use crate::gateway::{Gateway, IdentifyLimit, SavedSession};
 pub use crate::ids::{ChannelId, GuildId, ShardId, Ticket, UserId};
 pub use crate::inbox::{Delivery, FailureKind, LogSink};
 pub use crate::rest::{Auth, HttpSettings, RestRequest};
 pub use crate::signature::verify_signature;
 
-use crate::gateway::Gateway;
 use crate::inbox::Inbox;
 use crate::proxy::Proxy;
 use crate::rest::Rest;
-use crate::runtime::Owner;
 use crate::tasks::{PendingTicket, TaskTable};
 use crate::voice::tap::GatewayTap;
 use crate::voice::types::MAX_DAVE_PROTOCOL_VERSION;
@@ -58,7 +54,6 @@ pub fn versions() -> Vec<(&'static str, String)> {
 }
 
 pub struct Core {
-    owner: Owner,
     next_ticket: AtomicU64,
     runtime: Handle,
     inbox: Arc<Inbox>,
@@ -108,7 +103,6 @@ impl Core {
             (rest, gateway, voice)
         };
         let core = Self {
-            owner: Owner::current(),
             next_ticket: AtomicU64::new(1),
             runtime,
             inbox,
@@ -141,7 +135,7 @@ impl Core {
         F: FnOnce(Arc<Rest>, Ticket) -> Fut,
         Fut: Future<Output = Delivery> + Send + 'static,
     {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let ticket = Ticket::from(self.next_ticket.fetch_add(1, Ordering::Relaxed));
 
         let mut table = self.tasks.lock();
@@ -158,7 +152,7 @@ impl Core {
     }
 
     pub fn cancel(&self, ticket: Ticket) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let task = self.tasks.lock().running.remove(&ticket);
         if let Some(task) = task {
             task.abort();
@@ -166,76 +160,13 @@ impl Core {
         Ok(())
     }
 
-    pub fn gateway_identify_limit(&self, limit: IdentifyLimit) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.set_identify_limit(limit);
-        Ok(())
-    }
-
-    pub fn gateway_gate_identifies(&self) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.gate_identifies();
-        Ok(())
-    }
-
-    pub fn gateway_approve_identify(&self, shard: ShardId, request: u64) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.approve_identify(shard, request)
-    }
-
-    pub fn gateway_start(
-        &self,
-        shard: ShardId,
-        url: &str,
-        identify: &[u8],
-        saved: Option<SavedSession>,
-    ) -> Result<(), CoreError> {
-        self.owner.check()?;
-        let table = self.tasks.lock();
-        if table.rest.is_none() {
-            return Err(CoreError::Closed);
-        }
-        self.gateway.start(shard, url, identify, saved)
-    }
-
-    pub fn gateway_send(&self, shard: ShardId, payload: Bytes) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.send(shard, payload)
-    }
-
-    pub fn gateway_identify(&self, shard: ShardId, identify: &[u8]) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.set_identify(shard, identify)
-    }
-
-    pub fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.set_filter(names);
-        Ok(())
-    }
-
-    pub fn gateway_reconnect(&self, shard: ShardId) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.reconnect(shard)
-    }
-
-    pub fn gateway_close(&self, shard: ShardId) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.close(shard)
-    }
-
-    pub fn gateway_suspend(&self, shard: ShardId) -> Result<(), CoreError> {
-        self.owner.check()?;
-        self.gateway.suspend(shard)
-    }
-
-    pub fn gateway_latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
-        self.owner.check()?;
-        self.gateway.latency(shard)
+    pub fn gateway(&self) -> Result<&Gateway, CoreError> {
+        runtime::check_owner()?;
+        Ok(&self.gateway)
     }
 
     pub fn voice(&self) -> Result<&Voice, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(&self.voice)
     }
 
@@ -244,12 +175,12 @@ impl Core {
     }
 
     pub fn drain(&self) -> Result<Vec<Delivery>, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.inbox.drain())
     }
 
     pub fn close(&self) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         self.shut_down();
         Ok(())
     }
@@ -277,7 +208,7 @@ fn gateway_send(gateway: Weak<Gateway>) -> GatewaySend {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        if self.owner.is_current() {
+        if runtime::is_owner() {
             self.shut_down();
         }
     }
@@ -313,6 +244,9 @@ mod tests {
     use std::net::{TcpListener, TcpStream};
     use std::sync::mpsc;
     use std::thread;
+    use std::time::Duration;
+
+    use bytes::Bytes;
 
     use super::*;
     use crate::voice::types::{
@@ -462,7 +396,9 @@ mod tests {
         server.disconnected.recv_timeout(WAIT).unwrap();
         assert!(matches!(core.request(me()), Err(CoreError::Closed)));
         assert!(matches!(
-            core.gateway_start(ShardId::from(0), "ws://127.0.0.1:1", b"{}", None),
+            core.gateway()
+                .unwrap()
+                .start(ShardId::from(0), "ws://127.0.0.1:1", b"{}", None),
             Err(CoreError::Closed)
         ));
     }

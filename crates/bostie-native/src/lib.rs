@@ -14,8 +14,8 @@ use bostie_core::voice::types::{
     ReceiveStall, SampleFormat, SignalType, SourceSpec, StallPolicy,
 };
 use bostie_core::{
-    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, GuildId, HttpSettings, IdentifyLimit,
-    RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
+    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, Gateway, GuildId, HttpSettings,
+    IdentifyLimit, RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
@@ -117,22 +117,24 @@ impl NativeCore {
         let reset_after = seconds("reset_after", reset_after)?;
         let max_concurrency = NonZeroU32::new(max_concurrency)
             .ok_or_else(|| PyValueError::new_err("max_concurrency must be at least 1"))?;
-        Ok(self.0.gateway_identify_limit(IdentifyLimit {
+        self.gateway()?.set_identify_limit(IdentifyLimit {
             remaining,
             total,
             reset_after,
             max_concurrency,
-        })?)
+        });
+        Ok(())
     }
 
     fn gateway_gate_identifies(&self) -> Result<()> {
-        Ok(self.0.gateway_gate_identifies()?)
+        self.gateway()?.gate_identifies();
+        Ok(())
     }
 
     fn gateway_approve_identify(&self, shard_id: u32, request: u64) -> Result<()> {
         Ok(self
-            .0
-            .gateway_approve_identify(ShardId::from(shard_id), request)?)
+            .gateway()?
+            .approve_identify(ShardId::from(shard_id), request)?)
     }
 
     #[pyo3(signature = (shard_id, url, identify, session=None))]
@@ -149,40 +151,41 @@ impl NativeCore {
             resume_url,
         });
         Ok(self
-            .0
-            .gateway_start(ShardId::from(shard_id), url, &identify, saved)?)
+            .gateway()?
+            .start(ShardId::from(shard_id), url, &identify, saved)?)
     }
 
     fn gateway_send(&self, shard_id: u32, payload: Vec<u8>) -> Result<()> {
         Ok(self
-            .0
-            .gateway_send(ShardId::from(shard_id), payload.into())?)
+            .gateway()?
+            .send(ShardId::from(shard_id), payload.into())?)
     }
 
     fn gateway_identify(&self, shard_id: u32, identify: Vec<u8>) -> Result<()> {
         Ok(self
-            .0
-            .gateway_identify(ShardId::from(shard_id), &identify)?)
+            .gateway()?
+            .set_identify(ShardId::from(shard_id), &identify)?)
     }
 
     fn gateway_filter(&self, names: Option<Vec<String>>) -> Result<()> {
-        Ok(self.0.gateway_filter(names)?)
+        self.gateway()?.set_filter(names);
+        Ok(())
     }
 
     fn gateway_reconnect(&self, shard_id: u32) -> Result<()> {
-        Ok(self.0.gateway_reconnect(ShardId::from(shard_id))?)
+        Ok(self.gateway()?.reconnect(ShardId::from(shard_id))?)
     }
 
     fn gateway_close(&self, shard_id: u32) -> Result<()> {
-        Ok(self.0.gateway_close(ShardId::from(shard_id))?)
+        Ok(self.gateway()?.close(ShardId::from(shard_id))?)
     }
 
     fn gateway_suspend(&self, shard_id: u32) -> Result<()> {
-        Ok(self.0.gateway_suspend(ShardId::from(shard_id))?)
+        Ok(self.gateway()?.suspend(ShardId::from(shard_id))?)
     }
 
     fn gateway_latency(&self, shard_id: u32) -> Result<Option<f64>> {
-        let latency = self.0.gateway_latency(ShardId::from(shard_id))?;
+        let latency = self.gateway()?.latency(ShardId::from(shard_id))?;
         Ok(latency.map(|latency| latency.as_secs_f64()))
     }
 
@@ -449,6 +452,10 @@ impl NativeCore {
 }
 
 impl NativeCore {
+    fn gateway(&self) -> Result<&Gateway> {
+        Ok(self.0.gateway()?)
+    }
+
     fn voice(&self) -> Result<&Voice> {
         Ok(self.0.voice()?)
     }

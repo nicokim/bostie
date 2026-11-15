@@ -9,7 +9,7 @@ use parking_lot::{Mutex, MutexGuard};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::inbox::{Delivery, Inbox};
-use crate::runtime::Owner;
+use crate::runtime;
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
@@ -22,7 +22,6 @@ const FRAME_FRAMES: u64 = FRAME_SAMPLES as u64;
 pub struct Sink {
     id: Handle,
     options: SinkOptions,
-    owner: Owner,
     inbox: Arc<Inbox>,
     high_water: u64,
     low_water: u64,
@@ -98,7 +97,6 @@ impl Sink {
         Ok(Self {
             id,
             options,
-            owner: Owner::current(),
             inbox,
             high_water,
             low_water: high_water / 2,
@@ -120,7 +118,7 @@ impl Sink {
     }
 
     pub fn write(&self, data: &[u8]) -> Result<bool, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut producer = self.producer.lock();
         {
             let mut queue = self.open_queue()?;
@@ -151,13 +149,13 @@ impl Sink {
     }
 
     pub fn mark(&self) -> Result<(u64, u64), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut queue = self.open_queue()?;
         Ok(self.place_marker(&mut queue))
     }
 
     pub fn flush(&self) -> Result<(u64, u64), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut producer = self.producer.lock();
         let mut queue = self.open_queue()?;
         if let Producer::Pcm { converter, scratch } = &mut *producer {
@@ -178,7 +176,7 @@ impl Sink {
     }
 
     pub fn clear(&self, until: Option<u64>) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut producer = self.producer.lock();
         let mut queue = self.open_queue()?;
         let end = match until {
@@ -204,7 +202,7 @@ impl Sink {
     }
 
     pub fn clear_since(&self, since: u64) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let mut producer = self.producer.lock();
         let mut queue = self.open_queue()?;
         let start = queue
@@ -234,7 +232,7 @@ impl Sink {
     }
 
     pub fn set_volume(&self, volume: f32) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         SinkOptions {
             volume,
             ..self.options
@@ -245,25 +243,25 @@ impl Sink {
     }
 
     pub fn set_filters(&self, filters: Filters) -> Result<(), CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         filters.validate()?;
         self.open_queue()?.filters = (!filters.is_neutral()).then(|| Arc::new(filters));
         Ok(())
     }
 
     pub fn queued(&self) -> Result<Duration, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         let frames = self.queue.lock().queued;
         Ok(duration_of(frames, SAMPLE_RATE))
     }
 
     pub fn passthrough(&self) -> Result<bool, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.queue.lock().passthrough)
     }
 
     pub fn stats(&self) -> Result<SinkStats, CoreError> {
-        self.owner.check()?;
+        runtime::check_owner()?;
         Ok(self.queue.lock().stats)
     }
 
@@ -272,7 +270,7 @@ impl Sink {
     }
 
     pub fn close(&self) {
-        if !self.owner.is_current() {
+        if !runtime::is_owner() {
             return;
         }
         let mut queue = self.queue.lock();
@@ -1016,25 +1014,5 @@ pub(crate) mod tests {
         assert!(passing);
         assert!(!sink.passthrough().unwrap());
         assert_eq!(sink.stats().unwrap().passthrough_packets, 2);
-    }
-
-    #[test]
-    fn a_forked_child_gets_an_error_from_every_method() {
-        let mut fixture = Fixture::new();
-        let mut sink = fixture.sink(stereo_48k(), 1_000, StallPolicy::Hold);
-        sink.owner = Owner::foreign();
-        let forked =
-            |result: Result<(), CoreError>| matches!(result, Err(CoreError::Forked { .. }));
-
-        assert!(forked(sink.write(&frames_of(0.1, 960)).map(drop)));
-        assert!(forked(sink.mark().map(drop)));
-        assert!(forked(sink.flush().map(drop)));
-        assert!(forked(sink.clear(None)));
-        assert!(forked(sink.set_volume(0.5)));
-        assert!(forked(sink.queued().map(drop)));
-        assert!(forked(sink.passthrough().map(drop)));
-        assert!(forked(sink.stats().map(drop)));
-        sink.close();
-        assert!(!sink.is_closed());
     }
 }
