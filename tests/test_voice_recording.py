@@ -549,8 +549,7 @@ def test_a_recorder_finishes_its_files_when_its_receiver_moved_away(
         await settle(SETTLE)
         vc.rx.feed(opus(0), opus(1))
         vc.rx.end(ClosedReason.MOVED)
-        await settle(SETTLE)
-        files = await recorder.stop()
+        files = await recorder.wait()
         assert files == {42: tmp_path / "42.ogg"}
         assert read_ogg(files[42]) == ([b"\x00" * 3, b"\x01" * 3], [0, 0, 1_920])
 

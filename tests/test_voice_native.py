@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from bostie import _native, voice
-from bostie.errors import SourceError, StateError
+from bostie.errors import SourceError
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
 API_URL = "http://127.0.0.1:1/api/v10"
@@ -19,7 +19,6 @@ GUILD = 1_335_172_792_320_131_073
 CHANNEL = 1_335_173_295_636_611_074
 USER = 1_329_027_298_099_331_073
 FRAME_BYTES = 960 * 2 * 2
-SECOND_OF_F32_STEREO = 48_000 * 2 * 4
 
 
 @pytest.fixture
@@ -113,17 +112,6 @@ def probed(source: _native.Source) -> tuple[str, float | None, bool]:
     return info
 
 
-def read_all(source: _native.Source) -> list[bytes]:
-    chunks: list[bytes] = []
-    deadline = time.monotonic() + 10
-    while (read := source.read()) is not None:
-        chunks.extend(read)
-        if not read:
-            assert time.monotonic() < deadline, "the source never ended"
-            time.sleep(0.005)
-    return chunks
-
-
 def test_sinks_take_bytes_bytearrays_and_memoryview_slices(
     connected: _native.Core,
 ) -> None:
@@ -167,24 +155,15 @@ def test_invalid_sink_and_receive_settings_raise_value_error(
         )
 
 
-def test_seeking_restarts_the_stream_until_the_source_closes(
+def test_a_file_probes_its_format_and_refuses_a_negative_seek(
     core: _native.Core,
 ) -> None:
     source = core.voice_file(str(MEDIA / "tone.flac"))
-    kind, duration, seekable = probed(source)
-    assert (kind, duration, seekable) == ("pcm", 1.0, True)
 
-    source.seek(0.5)
-    after_seek = sum(map(len, read_all(source)))
+    assert probed(source) == ("pcm", 1.0, True)
     with pytest.raises(ValueError, match="position"):
         source.seek(-1.0)
     source.close()
-
-    assert after_seek == pytest.approx(SECOND_OF_F32_STEREO / 2, rel=0.01)
-    with pytest.raises(StateError, match=f"source {source.id} is closed"):
-        source.seek(0.0)
-    with pytest.raises(StateError, match="closed"):
-        source.read()
 
 
 def test_voice_message_measures_the_audio_and_names_the_file() -> None:

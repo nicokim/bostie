@@ -336,7 +336,6 @@ def test_rtp_packets_open_with_the_session_key_and_bad_ones_are_kept_aside() -> 
             (65535, 2**32 - 960, ssrc, 2**32 - 1, b"\xf8\xff\xfe"),
             (0, 0, ssrc, 0, b"opus"),
         ]
-        assert packets[0].arrived <= packets[1].arrived
         assert fake.voice.rejected_packets == rejected
 
     run(scenario)

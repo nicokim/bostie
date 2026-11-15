@@ -691,7 +691,7 @@ def test_a_format_change_opens_a_sink_that_starts_as_the_last_one_ends() -> None
         assert packets.passthrough
         await q.join()
         assert [sink.format for sink in vc.sinks] == [PCM(), Opus(), PCM()]
-        assert [sink.after for sink in vc.sinks] == [None] * 3
+        assert [sink.opened_after for sink in vc.sinks] == [None, *vc.sinks[:2]]
         heard: dict[int, list[bytes]] = {}
         for sink in vc.sinks:
             for tick, data in enumerate(sink.ticks, sink.born):

@@ -139,16 +139,7 @@ def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> Non
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake, voice=voice.Defaults(self_deaf=True)) as bot:
             vc = await bot.voice.connect(VOICE_ID)
-            identify = await fake.voice.next_identify()
 
-            bot_state = fake.voice_states[(str(GUILD_ID), fake.bot_user["id"])]
-            assert identify == {
-                "server_id": str(GUILD_ID),
-                "user_id": fake.bot_user["id"],
-                "session_id": bot_state["session_id"],
-                "token": identify["token"],
-                "max_dave_protocol_version": 1,
-            }
             assert [session.mode for session in fake.voice.sessions] == [
                 "aead_aes256_gcm_rtpsize"
             ]

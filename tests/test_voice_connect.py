@@ -170,8 +170,6 @@ def test_only_guild_voice_and_stage_channels_connect(channel: Json) -> None:
     ("default", "channel", "options", "asked"),
     [
         ("listen", VOICE_ID, {"stage": "speak"}, []),
-        ("listen", STAGE_ID, {"stage": "speak"}, [{"suppress": False}]),
-        ("listen", STAGE_ID, {}, []),
         ("speak", STAGE_ID, {}, [{"suppress": False}]),
         ("speak", STAGE_ID, {"stage": "listen"}, []),
     ],

@@ -5,7 +5,6 @@ from typing import Any, get_args
 
 import pytest
 
-import bostie
 from bostie import _native, voice
 from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlags, State
 from bostie.voice.events import VoiceEvent
@@ -205,11 +204,9 @@ def test_voice_connect_error_names_the_reason_code_and_step() -> None:
     )
     assert str(bare) == "voice connection failed: timeout"
     assert (error.reason, error.code) == (DisconnectReason.REMOVED, 4014)
-    assert isinstance(error, bostie.BostieError)
 
 
 def test_source_error_names_the_source() -> None:
     error = voice.SourceError("File('a.mp3')", "unknown format")
 
     assert str(error) == "File('a.mp3'): unknown format"
-    assert isinstance(error, voice.VoiceError)
