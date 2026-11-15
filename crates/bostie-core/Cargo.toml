@@ -31,6 +31,9 @@ tracing.workspace = true
 twilight-http-ratelimiting.workspace = true
 zstd-safe.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+audio_thread_priority.workspace = true
+
 [dev-dependencies]
 openmls.workspace = true
 openmls_basic_credential.workspace = true

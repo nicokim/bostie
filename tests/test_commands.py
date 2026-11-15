@@ -347,8 +347,8 @@ async def autocomplete(ctx: object, value: object) -> list[str]:
     ("hint", "problem"),
     [
         (list[int], "unsupported type hint list\\[int\\]"),
-        (int | str, "unsupported type hint"),
-        (User | ResolvedMember, "unsupported type hint"),
+        (int | str, "unsupported type hint int \\| str"),
+        (User | ResolvedMember, "unsupported type hint .*User \\| .*ResolvedMember"),
         (Member, "Member; a member option is a ResolvedMember"),
         (Channel, "Channel; a channel option is a PartialChannel"),
         (

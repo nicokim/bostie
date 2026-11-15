@@ -12,6 +12,7 @@ ignore-build-dependencies = true
 ignore-dev-dependencies = true
 private = { ignore = true }
 
+audio_thread_priority.accepted = ["MPL-2.0"]
 hpke-rs.accepted = ["MPL-2.0"]
 hpke-rs-crypto.accepted = ["MPL-2.0"]
 hpke-rs-rust-crypto.accepted = ["MPL-2.0"]

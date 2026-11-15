@@ -270,7 +270,7 @@ def test_the_fake_imports_nothing_from_the_library_it_checks() -> None:
     nodes = [
         node
         for path in package.glob("*.py")
-        for node in ast.parse(path.read_text()).body
+        for node in ast.parse(path.read_bytes()).body
     ]
     imported = {node.module for node in nodes if isinstance(node, ast.ImportFrom)} | {
         alias.name

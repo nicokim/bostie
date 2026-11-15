@@ -700,8 +700,7 @@ mod tests {
     #[test]
     fn a_failed_connection_reports_the_error_without_the_url() {
         let mut harness = Harness::new();
-        let refusing = crate::refusing_socket();
-        let port = refusing.local_addr().unwrap().port();
+        let port = crate::REFUSING.port();
         let source = url_source(
             &mut harness,
             format!("http://127.0.0.1:{port}/tone.ogg?token=hunter2"),

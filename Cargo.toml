@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
+audio_thread_priority = { version = "0.38.0", default-features = false }
 aws-lc-rs = { version = "1.19.0", default-features = false, features = ["aws-lc-sys"] }
 base64 = "0.23.1"
 bostie-core = { path = "crates/bostie-core" }
