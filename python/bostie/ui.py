@@ -63,25 +63,25 @@ __all__ = [
     "user_select",
 ]
 
-MAX_BUTTON_LABEL = 80
-MAX_URL = 512
-MAX_ROW_BUTTONS = 5
-MAX_SELECT_OPTIONS = 25
-MAX_PLACEHOLDER = 150
-MAX_OPTION_TEXT = 100
-MAX_SECTION_TEXTS = 3
-MAX_GALLERY_ITEMS = 10
-MAX_ALT_TEXT = 1024
-MAX_MODAL_TITLE = 45
-MAX_MODAL_COMPONENTS = 5
-MAX_LABEL = 45
-MAX_LABEL_DESCRIPTION = 100
-MAX_INPUT = 4000
-MAX_INPUT_PLACEHOLDER = 100
-MAX_UPLOADS = 10
-MAX_FILE_TYPES = 10
-MAX_GROUP_OPTIONS = 10
-SELECT_TYPES = frozenset(
+_MAX_BUTTON_LABEL = 80
+_MAX_URL = 512
+_MAX_ROW_BUTTONS = 5
+_MAX_SELECT_OPTIONS = 25
+_MAX_PLACEHOLDER = 150
+_MAX_OPTION_TEXT = 100
+_MAX_SECTION_TEXTS = 3
+_MAX_GALLERY_ITEMS = 10
+_MAX_ALT_TEXT = 1024
+_MAX_MODAL_TITLE = 45
+_MAX_MODAL_COMPONENTS = 5
+_MAX_LABEL = 45
+_MAX_LABEL_DESCRIPTION = 100
+_MAX_INPUT = 4000
+_MAX_INPUT_PLACEHOLDER = 100
+_MAX_UPLOADS = 10
+_MAX_FILE_TYPES = 10
+_MAX_GROUP_OPTIONS = 10
+_SELECT_TYPES = frozenset(
     {
         ComponentType.STRING_SELECT,
         ComponentType.USER_SELECT,
@@ -318,10 +318,10 @@ def raw(component: Mapping[str, Any]) -> RawComponent:
 
 def row(*components: _RowChild, id: int | None = None) -> RowDict:
     """An action row holding up to five buttons or one select menu."""
-    selects = [child for child in components if child.get("type") in SELECT_TYPES]
+    selects = [child for child in components if child.get("type") in _SELECT_TYPES]
     if selects and len(components) > 1:
         raise ValueError("a row holds one select menu and nothing else")
-    _count("a row", components, 1, MAX_ROW_BUTTONS)
+    _count("a row", components, 1, _MAX_ROW_BUTTONS)
     row: RowDict = {"type": ComponentType.ACTION_ROW, "components": list(components)}
     return _with(row, id=id)
 
@@ -386,7 +386,7 @@ def link_button(
     button: ButtonDict = {
         "type": ComponentType.BUTTON,
         "style": ButtonStyle.LINK,
-        "url": _short("url", url, MAX_URL),
+        "url": _short("url", url, _MAX_URL),
         "disabled": disabled,
     }
     return _labelled(button, label, emoji, id)
@@ -418,8 +418,8 @@ def string_select(
 ) -> StringSelectDict:
     """A select menu of fixed options; build them with `select_option`."""
     listed = list(options)
-    _count("a string select", listed, 1, MAX_SELECT_OPTIONS)
-    _check_values(min_values, max_values, MAX_SELECT_OPTIONS, required=required)
+    _count("a string select", listed, 1, _MAX_SELECT_OPTIONS)
+    _check_values(min_values, max_values, _MAX_SELECT_OPTIONS, required=required)
     select: StringSelectDict = {
         "type": ComponentType.STRING_SELECT,
         "custom_id": _checked(custom_id),
@@ -432,7 +432,7 @@ def string_select(
         select["required"] = required
     return _with(
         select,
-        placeholder=_short("placeholder", placeholder, MAX_PLACEHOLDER),
+        placeholder=_short("placeholder", placeholder, _MAX_PLACEHOLDER),
         id=id,
     )
 
@@ -553,13 +553,13 @@ def select_option(
 ) -> SelectOptionDict:
     """One entry of a select menu; `value` is what the bot receives."""
     option: SelectOptionDict = {
-        "label": _short("label", label, MAX_OPTION_TEXT),
-        "value": _short("value", value, MAX_OPTION_TEXT),
+        "label": _short("label", label, _MAX_OPTION_TEXT),
+        "value": _short("value", value, _MAX_OPTION_TEXT),
         "default": default,
     }
     return _with(
         option,
-        description=_short("description", description, MAX_OPTION_TEXT),
+        description=_short("description", description, _MAX_OPTION_TEXT),
         emoji=None if emoji is None else _emoji(emoji),
     )
 
@@ -576,7 +576,7 @@ def section(
     id: int | None = None,
 ) -> SectionDict:
     """One to three `text` components with a `button` or `thumbnail` beside them."""
-    _count("a section", texts, 1, MAX_SECTION_TEXTS)
+    _count("a section", texts, 1, _MAX_SECTION_TEXTS)
     section: SectionDict = {
         "type": ComponentType.SECTION,
         "components": list(texts),
@@ -600,7 +600,7 @@ def thumbnail(
     }
     return _with(
         thumbnail,
-        description=_short("description", description, MAX_ALT_TEXT),
+        description=_short("description", description, _MAX_ALT_TEXT),
         id=id,
     )
 
@@ -609,7 +609,7 @@ def media_gallery(
     *items: GalleryItemDict | RawComponent, id: int | None = None
 ) -> MediaGalleryDict:
     """One to ten images or videos built with `gallery_item`."""
-    _count("a media gallery", items, 1, MAX_GALLERY_ITEMS)
+    _count("a media gallery", items, 1, _MAX_GALLERY_ITEMS)
     gallery: MediaGalleryDict = {
         "type": ComponentType.MEDIA_GALLERY,
         "items": list(items),
@@ -622,7 +622,7 @@ def gallery_item(
 ) -> GalleryItemDict:
     """One entry of a `media_gallery`; `url` may be `attachment://<filename>`."""
     item: GalleryItemDict = {"media": {"url": url}, "spoiler": spoiler}
-    return _with(item, description=_short("description", description, MAX_ALT_TEXT))
+    return _with(item, description=_short("description", description, _MAX_ALT_TEXT))
 
 
 def file(filename: str, *, spoiler: bool = False, id: int | None = None) -> FileDict:
@@ -664,9 +664,9 @@ def container(
 
 def modal(custom_id: str, title: str, *components: _ModalChild) -> ModalDict:
     """A popup form of one to five `label` and `text` components."""
-    if not 1 <= len(title) <= MAX_MODAL_TITLE:
+    if not 1 <= len(title) <= _MAX_MODAL_TITLE:
         raise ValueError(f"a modal title must be 1-45 characters, got {title!r}")
-    _count("a modal", components, 1, MAX_MODAL_COMPONENTS)
+    _count("a modal", components, 1, _MAX_MODAL_COMPONENTS)
     return {
         "custom_id": _checked(custom_id),
         "title": title,
@@ -684,12 +684,12 @@ def label(
     """A modal field: `label` and `description` over one input, select or upload."""
     field: LabelDict = {
         "type": ComponentType.LABEL,
-        "label": _short("label", label, MAX_LABEL),
+        "label": _short("label", label, _MAX_LABEL),
         "component": component,
     }
     return _with(
         field,
-        description=_short("description", description, MAX_LABEL_DESCRIPTION),
+        description=_short("description", description, _MAX_LABEL_DESCRIPTION),
         id=id,
     )
 
@@ -707,9 +707,9 @@ def text_input(
 ) -> TextInputDict:
     """A text box in a `label`; `value` fills it in beforehand."""
     if min_length is not None:
-        _within("min_length", min_length, 0, MAX_INPUT)
+        _within("min_length", min_length, 0, _MAX_INPUT)
     if max_length is not None:
-        _within("max_length", max_length, 1, MAX_INPUT)
+        _within("max_length", max_length, 1, _MAX_INPUT)
     text_input: TextInputDict = {
         "type": ComponentType.TEXT_INPUT,
         "custom_id": _checked(custom_id),
@@ -720,8 +720,8 @@ def text_input(
         text_input,
         min_length=min_length,
         max_length=max_length,
-        value=_short("value", value, MAX_INPUT),
-        placeholder=_short("placeholder", placeholder, MAX_INPUT_PLACEHOLDER),
+        value=_short("value", value, _MAX_INPUT),
+        placeholder=_short("placeholder", placeholder, _MAX_INPUT_PLACEHOLDER),
         id=id,
     )
 
@@ -736,9 +736,9 @@ def file_upload(
     id: int | None = None,
 ) -> FileUploadDict:
     """Up to ten files uploaded in a `label`; `file_types` such as "image" or ".pdf"."""
-    _check_values(min_values, max_values, MAX_UPLOADS, required=required)
+    _check_values(min_values, max_values, _MAX_UPLOADS, required=required)
     types = list(file_types)
-    _count("file_types", types, 0, MAX_FILE_TYPES)
+    _count("file_types", types, 0, _MAX_FILE_TYPES)
     upload: FileUploadDict = {
         "type": ComponentType.FILE_UPLOAD,
         "custom_id": _checked(custom_id),
@@ -758,7 +758,7 @@ def radio_group(
 ) -> RadioGroupDict:
     """Two to ten options in a `label`, of which one is picked."""
     listed = list(options)
-    _count("a radio group", listed, 2, MAX_GROUP_OPTIONS)
+    _count("a radio group", listed, 2, _MAX_GROUP_OPTIONS)
     group: RadioGroupDict = {
         "type": ComponentType.RADIO_GROUP,
         "custom_id": _checked(custom_id),
@@ -779,11 +779,11 @@ def checkbox_group(
 ) -> CheckboxGroupDict:
     """Checkboxes in a `label`; without `max_values` all of them can be ticked."""
     listed = list(options)
-    _count("a checkbox group", listed, 1, MAX_GROUP_OPTIONS)
+    _count("a checkbox group", listed, 1, _MAX_GROUP_OPTIONS)
     _check_values(
         min_values,
         len(listed) if max_values is None else max_values,
-        MAX_GROUP_OPTIONS,
+        _MAX_GROUP_OPTIONS,
         required=required,
     )
     group: CheckboxGroupDict = {
@@ -801,12 +801,12 @@ def group_option(
 ) -> GroupOptionDict:
     """One entry of a `radio_group` or `checkbox_group`."""
     option: GroupOptionDict = {
-        "value": _short("value", value, MAX_OPTION_TEXT),
-        "label": _short("label", label, MAX_OPTION_TEXT),
+        "value": _short("value", value, _MAX_OPTION_TEXT),
+        "label": _short("label", label, _MAX_OPTION_TEXT),
         "default": default,
     }
     return _with(
-        option, description=_short("description", description, MAX_OPTION_TEXT)
+        option, description=_short("description", description, _MAX_OPTION_TEXT)
     )
 
 
@@ -834,7 +834,7 @@ def _entity_select(
     disabled: bool,
     id: int | None,
 ) -> EntitySelectDict:
-    _check_values(min_values, max_values, MAX_SELECT_OPTIONS, required=required)
+    _check_values(min_values, max_values, _MAX_SELECT_OPTIONS, required=required)
     if defaults and not min_values <= len(defaults) <= max_values:
         raise ValueError(
             f"{len(defaults)} defaults; the select takes {min_values}-{max_values}"
@@ -851,7 +851,7 @@ def _entity_select(
         select["required"] = required
     return _with(
         select,
-        placeholder=_short("placeholder", placeholder, MAX_PLACEHOLDER),
+        placeholder=_short("placeholder", placeholder, _MAX_PLACEHOLDER),
         id=id,
     )
 
@@ -865,7 +865,7 @@ def _labelled(
 ) -> ButtonDict:
     return _with(
         button,
-        label=_short("label", label, MAX_BUTTON_LABEL),
+        label=_short("label", label, _MAX_BUTTON_LABEL),
         emoji=None if emoji is None else _emoji(emoji),
         id=id,
     )

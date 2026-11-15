@@ -29,7 +29,7 @@ from bostie import (
     WebhookMessage,
     ui,
 )
-from bostie.context import ResponseState
+from bostie.context import _ResponseState
 from bostie.models import ComponentInteraction, ModalSubmitInteraction, decode
 from bostie.testing import FakeDiscord, Recorded, payloads, run, running, settle
 
@@ -111,12 +111,12 @@ def calls(requests: list[Recorded]) -> list[Call]:
     ]
 
 
-ENTER: dict[ResponseState, Callable[[ComponentContext], Awaitable[object]]] = {
-    ResponseState.PENDING: lambda ctx: asyncio.sleep(0),
-    ResponseState.DEFERRED: lambda ctx: ctx.defer(),
-    ResponseState.DEFERRED_UPDATE: lambda ctx: ctx.defer_update(),
-    ResponseState.RESPONDED: lambda ctx: ctx.respond("first"),
-    ResponseState.MODAL: lambda ctx: ctx.modal(FORM),
+ENTER: dict[_ResponseState, Callable[[ComponentContext], Awaitable[object]]] = {
+    _ResponseState.PENDING: lambda ctx: asyncio.sleep(0),
+    _ResponseState.DEFERRED: lambda ctx: ctx.defer(),
+    _ResponseState.DEFERRED_UPDATE: lambda ctx: ctx.defer_update(),
+    _ResponseState.RESPONDED: lambda ctx: ctx.respond("first"),
+    _ResponseState.MODAL: lambda ctx: ctx.modal(FORM),
 }
 CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "respond": lambda ctx: ctx.respond("hi"),
@@ -129,7 +129,7 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "modal": lambda ctx: ctx.modal(FORM),
     "launch_activity": lambda ctx: ctx.launch_activity(),
 }
-PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, MODAL, EXPIRED = ResponseState
+PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, MODAL, EXPIRED = _ResponseState
 CALLBACK_4 = ("POST", "callback", 4)
 CALLBACK_5 = ("POST", "callback", 5)
 CALLBACK_6 = ("POST", "callback", 6)
@@ -189,10 +189,10 @@ TABLE = [
     ids=[f"{state.value}-{call}" for state, call, _, _ in TABLE],
 )
 def test_response_state_machine(
-    state: ResponseState,
+    state: _ResponseState,
     call: str,
     sent: Call | tuple[()] | type[Exception],
-    after: ResponseState,
+    after: _ResponseState,
 ) -> None:
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: ComponentContext) -> None:
@@ -205,7 +205,7 @@ def test_response_state_machine(
             else:
                 await CALLS[call](ctx)
                 assert calls(on.fake.requests[start:]) == ([sent] if sent else [])
-            assert ctx.state is after
+            assert ctx._state is after
 
         await on.answer(ComponentContext, handler)
 
@@ -221,7 +221,7 @@ def test_every_call_after_a_modal_is_refused() -> None:
                 with pytest.raises(REFUSED):
                     await call(ctx)
             assert on.fake.requests[start:] == []
-            assert ctx.state is MODAL
+            assert ctx._state is MODAL
 
         await on.answer(ComponentContext, handler)
 
@@ -677,7 +677,7 @@ def test_command_name_includes_groups_and_subcommands() -> None:
 
 
 def test_an_expired_interaction_sends_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("bostie.context.TOKEN_LIFETIME", -1)
+    monkeypatch.setattr("bostie.context._TOKEN_LIFETIME", -1)
 
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: ComponentContext) -> None:
@@ -807,7 +807,7 @@ def test_a_response_waits_for_an_auto_defer_in_flight_and_edits_it() -> None:
             await settle()
             release.set()
             await answer
-            assert ctx.state is ResponseState.RESPONDED
+            assert ctx._state is _ResponseState.RESPONDED
 
         assert calls(await on.answer(Context, handler)) == [CALLBACK_5, EDIT]
 
@@ -823,7 +823,7 @@ def test_a_dead_token_expires_the_context_and_nothing_is_sent_again(
             on.fake.fail("POST", CALLBACK, status, {"code": code, "message": "dead"})
             with pytest.raises(HTTPException):
                 await ctx.respond("hi")
-            assert ctx.state is ResponseState.EXPIRED
+            assert ctx._state is _ResponseState.EXPIRED
 
             for call in CALLS.values():
                 with pytest.raises(InteractionExpired):
@@ -857,7 +857,7 @@ def test_an_unknown_follow_up_message_keeps_the_context_alive() -> None:
             with pytest.raises(NotFound):
                 await ctx.followup("gone")
             await ctx.followup("still works")
-            assert ctx.state is ResponseState.RESPONDED
+            assert ctx._state is _ResponseState.RESPONDED
 
         requests = await on.answer(Context, handler)
         assert calls(requests) == [CALLBACK_4, FOLLOWUP, FOLLOWUP]

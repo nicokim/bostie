@@ -25,7 +25,7 @@ from bostie.context import (
     ComponentContext,
     Context,
     ModalContext,
-    ResponseState,
+    _ResponseState,
 )
 from bostie.custom_id import ComponentRoute
 from bostie.errors import CheckFailure, InteractionResponded
@@ -53,7 +53,7 @@ STALE_INTERACTION = 5.0
 SLOW_HANDLER_START = 1.0
 FAILURE_ANSWER = "Something went wrong."
 UNANSWERED = frozenset(
-    {ResponseState.PENDING, ResponseState.DEFERRED, ResponseState.DEFERRED_UPDATE}
+    {_ResponseState.PENDING, _ResponseState.DEFERRED, _ResponseState.DEFERRED_UPDATE}
 )
 CLAIMED_INTERACTIONS: dict[
     type, type[ComponentInteraction | ModalSubmitInteraction]
@@ -288,13 +288,13 @@ class Interactions:
             for check in passed:
                 if isinstance(check, ReleasingCheck):
                     check.release(ctx)
-        if ctx.state is ResponseState.PENDING:
+        if ctx._state is _ResponseState.PENDING:
             log.warning(
                 "%s returned without answering; Discord shows "
                 "'The application did not respond'",
                 qualified_name(handler),
             )
-        elif ctx.state is ResponseState.DEFERRED:
+        elif ctx._state is _ResponseState.DEFERRED:
             log.warning(
                 "%s returned after deferring without answering; the user sees "
                 "'thinking' until the interaction expires",
@@ -307,11 +307,11 @@ class Interactions:
         if seconds is None:
             return None
         return asyncio.get_running_loop().call_at(
-            ctx.received + seconds, self._defer_if_unanswered, ctx
+            ctx._received + seconds, self._defer_if_unanswered, ctx
         )
 
     def _defer_if_unanswered(self, ctx: AnyContext) -> None:
-        if ctx.state is ResponseState.PENDING:
+        if ctx._state is _ResponseState.PENDING:
             spawn(self._tasks, _defer_unanswered(ctx))
 
     async def _autocomplete(
@@ -349,7 +349,7 @@ class Interactions:
                     qualified_name(hook),
                     error,
                 )
-            if ctx.state in UNANSWERED:
+            if ctx._state in UNANSWERED:
                 log.warning(
                     "the error hook %s left interaction %d unanswered; "
                     "bostie answered %r",
@@ -387,11 +387,11 @@ async def _answer_failure(
 ) -> None:
     try:
         if isinstance(ctx, AutocompleteContext):
-            if ctx.state is ResponseState.PENDING:
+            if ctx._state is _ResponseState.PENDING:
                 await ctx.respond([])
-        elif ctx.state in (ResponseState.PENDING, ResponseState.DEFERRED_UPDATE):
+        elif ctx._state in (_ResponseState.PENDING, _ResponseState.DEFERRED_UPDATE):
             await ctx.respond(answer, ephemeral=True)
-        elif ctx.state is ResponseState.DEFERRED:
+        elif ctx._state is _ResponseState.DEFERRED:
             await ctx.respond(answer)
     except Exception:
         log.exception("answering interaction %d failed", ctx.interaction.id)

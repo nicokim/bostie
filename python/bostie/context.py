@@ -69,17 +69,17 @@ if TYPE_CHECKING:
     from bostie.bot import Bot
     from bostie.rest.channels import Typing
 
-log = logging.getLogger("bostie.context")
+_log = logging.getLogger("bostie.context")
 
-TOKEN_LIFETIME = 15 * 60
-CALLBACK_ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
-ORIGINAL_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/@original"
-FOLLOWUP_ROUTE = "/webhooks/{application_id}/{interaction_token}"
-MESSAGE_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/{message_id}"
-USER_INSTALL_FOLLOWUPS = 5
+_TOKEN_LIFETIME = 15 * 60
+_CALLBACK_ROUTE = "/interactions/{interaction_id}/{interaction_token}/callback"
+_ORIGINAL_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/@original"
+_FOLLOWUP_ROUTE = "/webhooks/{application_id}/{interaction_token}"
+_MESSAGE_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/{message_id}"
+_USER_INSTALL_FOLLOWUPS = 5
 
 
-class ResponseState(Enum):
+class _ResponseState(Enum):
     PENDING = "pending"
     DEFERRED = "deferred"
     DEFERRED_UPDATE = "deferred_update"
@@ -120,10 +120,10 @@ class ReplyEditParts(EditParts, total=False):
     ephemeral: bool
 
 
-type AnyReplyParts = ReplyParts | ReplyEditParts
+type _AnyReplyParts = ReplyParts | ReplyEditParts
 
-REPLY_PARTS = ReplyParts.__optional_keys__
-REPLY_EDIT_PARTS = ReplyEditParts.__optional_keys__
+_REPLY_PARTS = ReplyParts.__optional_keys__
+_REPLY_EDIT_PARTS = ReplyEditParts.__optional_keys__
 
 
 class _InteractionContext[
@@ -135,8 +135,8 @@ class _InteractionContext[
     def __init__(self, interaction: I, bot: "Bot", *, received: float) -> None:
         self.interaction = interaction
         self.bot = bot
-        self.received = received
-        self.state = ResponseState.PENDING
+        self._received = received
+        self._state = _ResponseState.PENDING
         self._lock = asyncio.Lock()
         self._loop = asyncio.get_running_loop()
 
@@ -171,13 +171,13 @@ class _InteractionContext[
         return ContextVoice(self.bot.voice, self.guild_id, self.user.id)
 
     def _ensure_alive(self) -> None:
-        if self.state is ResponseState.EXPIRED:
+        if self._state is _ResponseState.EXPIRED:
             raise InteractionExpired("Discord no longer accepts this interaction")
-        if self._loop.time() - self.received > TOKEN_LIFETIME:
+        if self._loop.time() - self._received > _TOKEN_LIFETIME:
             raise InteractionExpired(
                 "interactions can only be answered within 15 minutes"
             )
-        if self.state is ResponseState.MODAL:
+        if self._state is _ResponseState.MODAL:
             raise InteractionResponded(
                 "the interaction was answered with a modal; answer its submit instead"
             )
@@ -193,7 +193,7 @@ class _InteractionContext[
             body["data"] = data
         return await self._send(
             "POST",
-            CALLBACK_ROUTE,
+            _CALLBACK_ROUTE,
             json=body,
             files=files,
             query={"with_response": True},
@@ -228,7 +228,7 @@ class _InteractionContext[
                 and error.code
                 in (JSONErrorCode.UNKNOWN_WEBHOOK, JSONErrorCode.UNKNOWN_INTERACTION)
             ):
-                self.state = ResponseState.EXPIRED
+                self._state = _ResponseState.EXPIRED
             raise
         return response
 
@@ -273,20 +273,20 @@ class _ReplyingContext[
 
         `delete_after` deletes that message so many seconds later, within 15 minutes.
         """
-        body, files = self._message_body(content, REPLY_PARTS, parts)
+        body, files = self._message_body(content, _REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
-            match self.state:
-                case ResponseState.PENDING:
+            match self._state:
+                case _ResponseState.PENDING:
                     response = await self._respond_with_callback(body, files, parts)
                     decode, original = _from_callback(_webhook_message), True
-                case ResponseState.DEFERRED:
+                case _ResponseState.DEFERRED:
                     response = await self._edit_original(body, files, parts)
                     decode, original = _webhook_message, True
                 case _:
                     response = await self._send_followup(body, files, parts)
                     decode, original = _webhook_message, False
-            self.state = ResponseState.RESPONDED
+            self._state = _ResponseState.RESPONDED
             message = self._answer(decode, response)
         self._delete_later(delete_after, None if original else message.id)
         return message
@@ -295,9 +295,9 @@ class _ReplyingContext[
         """Show "thinking…" and answer later with `respond`."""
         async with self._lock:
             self._ensure_alive()
-            if self.state is ResponseState.RESPONDED:
+            if self._state is _ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
-            if self.state is ResponseState.PENDING:
+            if self._state is _ResponseState.PENDING:
                 await self._defer(
                     ephemeral=self._ephemeral if ephemeral is None else ephemeral
                 )
@@ -318,13 +318,13 @@ class _ReplyingContext[
         A part not given stays and None clears it. With `files` or `attachments`,
         only the listed `attachments` stay.
         """
-        body, files = self._message_body(None, REPLY_EDIT_PARTS, parts)
+        body, files = self._message_body(None, _REPLY_EDIT_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("edit")
             if message_id is not None:
                 response = await self._webhook(
-                    "PATCH", MESSAGE_ROUTE, body, files, message_id=message_id
+                    "PATCH", _MESSAGE_ROUTE, body, files, message_id=message_id
                 )
                 return self._answer(_webhook_message, response)
             response = await self._edit_original(body, files, parts)
@@ -344,10 +344,10 @@ class _ReplyingContext[
             self._ensure_answered("fetch the answer of")
             if message_id is not None:
                 response = await self._webhook(
-                    "GET", MESSAGE_ROUTE, message_id=message_id
+                    "GET", _MESSAGE_ROUTE, message_id=message_id
                 )
                 return self._answer(_webhook_message, response)
-            response = await self._webhook("GET", ORIGINAL_ROUTE)
+            response = await self._webhook("GET", _ORIGINAL_ROUTE)
             return self._answer(self._decode_original, response)
 
     async def followup(
@@ -358,11 +358,11 @@ class _ReplyingContext[
         **parts: Unpack[ReplyParts],
     ) -> WebhookMessage:
         """Send another message, or fill in the answer right after `defer()`."""
-        body, files = self._message_body(content, REPLY_PARTS, parts)
+        body, files = self._message_body(content, _REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
-            original = self.state is ResponseState.DEFERRED
+            original = self._state is _ResponseState.DEFERRED
             if original:
                 response = await self._edit_original(body, files, parts)
             else:
@@ -378,21 +378,21 @@ class _ReplyingContext[
             self._ensure_alive()
             self._ensure_answered("delete the answer of")
             if message_id is not None:
-                await self._webhook("DELETE", MESSAGE_ROUTE, message_id=message_id)
+                await self._webhook("DELETE", _MESSAGE_ROUTE, message_id=message_id)
                 return
-            await self._webhook("DELETE", ORIGINAL_ROUTE)
+            await self._webhook("DELETE", _ORIGINAL_ROUTE)
             self._finish_deferred()
 
     async def launch_activity(self) -> str:
         """Open the app's Activity for the user; return the id of its instance."""
         async with self._lock:
             self._ensure_alive()
-            if self.state is not ResponseState.PENDING:
+            if self._state is not _ResponseState.PENDING:
                 raise InteractionResponded(
                     "an Activity launch must be the first answer"
                 )
             response = await self._callback(InteractionCallbackType.LAUNCH_ACTIVITY)
-            self.state = ResponseState.RESPONDED
+            self._state = _ResponseState.RESPONDED
         launched: _LaunchResponse = decode_answer(
             decoder(_LaunchResponse).decode, response, took_effect=True
         )
@@ -401,10 +401,10 @@ class _ReplyingContext[
     async def _open_modal(self, modal: ModalDict) -> None:
         async with self._lock:
             self._ensure_alive()
-            if self.state is not ResponseState.PENDING:
+            if self._state is not _ResponseState.PENDING:
                 raise InteractionResponded("a modal can only be the first answer")
             await self._callback(InteractionCallbackType.MODAL, modal)
-            self.state = ResponseState.MODAL
+            self._state = _ResponseState.MODAL
 
     def _delete_later(self, delay: float | None, message_id: int | None) -> None:
         if delay is not None:
@@ -413,21 +413,21 @@ class _ReplyingContext[
             )
 
     def _ensure_answered(self, action: str) -> None:
-        if self.state is ResponseState.PENDING:
+        if self._state is _ResponseState.PENDING:
             raise InteractionNotAnswered(
                 f"cannot {action} an interaction that was not answered yet"
             )
 
     def _finish_deferred(self) -> None:
-        if self.state is ResponseState.DEFERRED:
-            self.state = ResponseState.RESPONDED
+        if self._state is _ResponseState.DEFERRED:
+            self._state = _ResponseState.RESPONDED
 
     async def _defer(self, *, ephemeral: bool) -> None:
         await self._callback(
             InteractionCallbackType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
             {"flags": MessageFlags.EPHEMERAL} if ephemeral else None,
         )
-        self.state = ResponseState.DEFERRED
+        self._state = _ResponseState.DEFERRED
         self._original_ephemeral = ephemeral
 
     async def _respond_with_callback(
@@ -447,32 +447,32 @@ class _ReplyingContext[
     ) -> bytes:
         self._followups += 1
         owners = self.interaction.authorizing_integration_owners
-        if self._followups == USER_INSTALL_FOLLOWUPS + 1 and owners.keys() == {
+        if self._followups == _USER_INSTALL_FOLLOWUPS + 1 and owners.keys() == {
             ApplicationIntegrationType.USER_INSTALL
         }:
-            log.warning(
+            _log.warning(
                 "%s: Discord allows 5 follow-ups to an interaction of an app "
                 "installed only to the user",
                 self._label,
             )
         flagged = parts.get("ephemeral", self._ephemeral)
         return await self._webhook(
-            "POST", FOLLOWUP_ROUTE, _with_ephemeral(body, ephemeral=flagged), files
+            "POST", _FOLLOWUP_ROUTE, _with_ephemeral(body, ephemeral=flagged), files
         )
 
     async def _edit_original(
-        self, body: dict[str, Any], files: Sequence[File], parts: AnyReplyParts
+        self, body: dict[str, Any], files: Sequence[File], parts: _AnyReplyParts
     ) -> bytes:
         self._warn_if_ephemeral_differs(parts)
-        return await self._webhook("PATCH", ORIGINAL_ROUTE, body, files)
+        return await self._webhook("PATCH", _ORIGINAL_ROUTE, body, files)
 
-    def _warn_if_ephemeral_differs(self, parts: AnyReplyParts) -> None:
+    def _warn_if_ephemeral_differs(self, parts: _AnyReplyParts) -> None:
         ephemeral = parts.get("ephemeral", self._original_ephemeral)
         if ephemeral == self._original_ephemeral:
             return
         if not self._warned_ephemeral:
             self._warned_ephemeral = True
-            log.warning(
+            _log.warning(
                 "%s: ephemeral=%s is ignored because the message being edited is %s",
                 self._label,
                 ephemeral,
@@ -483,7 +483,7 @@ class _ReplyingContext[
         self,
         content: str | None,
         allowed: frozenset[str],
-        parts: AnyReplyParts,
+        parts: _AnyReplyParts,
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
         sent = {name: value for name, value in parts.items() if name != "ephemeral"}
@@ -534,9 +534,9 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
         async with self._lock:
             self._ensure_alive()
             self._ensure_message()
-            if self.state is ResponseState.RESPONDED:
+            if self._state is _ResponseState.RESPONDED:
                 raise InteractionResponded("the interaction was already answered")
-            if self.state is ResponseState.PENDING:
+            if self._state is _ResponseState.PENDING:
                 await self._defer_update()
 
     async def update(self, **parts: Unpack[ReplyEditParts]) -> Message | WebhookMessage:
@@ -544,27 +544,27 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = self._message_body(None, REPLY_EDIT_PARTS, parts)
+        body, files = self._message_body(None, _REPLY_EDIT_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_message()
-            match self.state:
-                case ResponseState.PENDING:
+            match self._state:
+                case _ResponseState.PENDING:
                     response = await self._update_with_callback(body, files, parts)
-                    self.state = ResponseState.RESPONDED
+                    self._state = _ResponseState.RESPONDED
                     return self._answer(_from_callback(decode_message), response)
-                case ResponseState.DEFERRED_UPDATE:
+                case _ResponseState.DEFERRED_UPDATE:
                     response = await self._edit_original(body, files, parts)
                 case _:
                     raise InteractionResponded(
                         "update() needs an unanswered interaction or defer_update()"
                     )
-            self.state = ResponseState.RESPONDED
+            self._state = _ResponseState.RESPONDED
             return self._answer(decode_message, response)
 
     async def _defer_update(self) -> None:
         await self._callback(InteractionCallbackType.DEFERRED_UPDATE_MESSAGE)
-        self.state = ResponseState.DEFERRED_UPDATE
+        self._state = _ResponseState.DEFERRED_UPDATE
         self._original_ephemeral = self._component_message_is_ephemeral()
 
     async def _update_with_callback(
@@ -752,13 +752,13 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
         """Answer with these Discord choice objects; autocomplete results go here."""
         async with self._lock:
             self._ensure_alive()
-            if self.state is not ResponseState.PENDING:
+            if self._state is not _ResponseState.PENDING:
                 raise InteractionResponded("the interaction was already answered")
             await self._callback(
                 InteractionCallbackType.APPLICATION_COMMAND_AUTOCOMPLETE_RESULT,
                 {"choices": choices},
             )
-            self.state = ResponseState.RESPONDED
+            self._state = _ResponseState.RESPONDED
 
 
 type AnyContext = Context | ComponentContext | ModalContext

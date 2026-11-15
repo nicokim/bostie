@@ -101,7 +101,9 @@ extend-ignore-names = [  # the internal seams one bostie module reaches in anoth
     "_option_payload",
     "_parent",
     "_payload",
+    "_received",
     "_run",
+    "_state",
 ]
 
 [tool.ruff.lint.mccabe]
