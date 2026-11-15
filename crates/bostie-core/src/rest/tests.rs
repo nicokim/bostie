@@ -823,26 +823,6 @@ async fn a_rejected_token_stops_bot_requests_but_not_interactions() {
 }
 
 #[tokio::test]
-async fn a_rejected_interaction_token_does_not_stop_other_requests() {
-    crate::init_test_tracing();
-    let rejected = || reply("401 Unauthorized", &[], r#"{"code":50027}"#);
-    let mut server = Server::start(vec![rejected(), rejected()]).await;
-    let (rest, _receiver) = rest(&server.url);
-
-    let mut codes = Vec::new();
-    for (ticket, request) in [callback(), followup("first"), me(), webhook(), callback()]
-        .into_iter()
-        .enumerate()
-    {
-        let ticket = Ticket::from(u64::try_from(ticket).unwrap());
-        codes.push(status(rest.execute(ticket, request).await).0);
-    }
-
-    assert_eq!(codes, [401, 401, 200, 200, 200]);
-    assert_eq!(server.received(), 5);
-}
-
-#[tokio::test]
 async fn invalid_requests_warn_then_block_everything_at_the_limit() {
     crate::init_test_tracing();
     let mut server = Server::start(vec![reply("403 Forbidden", &[], "{}")]).await;

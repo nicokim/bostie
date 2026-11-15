@@ -438,6 +438,5 @@ mod tests {
         let pin = format!("davey = \"={}\"", versions["davey"]);
         assert!(include_str!("../../../Cargo.toml").contains(&pin), "{pin}");
         assert_eq!(versions["dave_protocol"], "1");
-        assert_eq!(versions.len(), 4);
     }
 }

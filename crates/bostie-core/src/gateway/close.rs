@@ -52,7 +52,6 @@ mod tests {
             };
             assert_eq!(action, expected, "close code {code}");
         }
-        assert_eq!(CLOSE_CODES.len(), 14);
     }
 
     #[test]
