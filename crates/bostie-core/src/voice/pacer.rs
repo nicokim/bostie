@@ -140,7 +140,7 @@ impl Pace for PacerPool {
 
 impl Placement {
     fn origin(&self, index: usize) -> Instant {
-        self.epoch + phase(index)
+        self.epoch + van_der_corput_offset(index)
     }
 
     fn weight(&self, load: &Load) -> u128 {
@@ -384,9 +384,10 @@ impl Clock for Wall {
     }
 }
 
-fn phase(index: usize) -> Duration {
-    let turn = u128::from(u32::try_from(index).unwrap_or(u32::MAX).reverse_bits());
-    Duration::from_nanos(u64::try_from((FRAME.as_nanos() * turn) >> u32::BITS).unwrap_or(0))
+fn van_der_corput_offset(index: usize) -> Duration {
+    let fraction_of_frame = u128::from(u32::try_from(index).unwrap_or(u32::MAX).reverse_bits());
+    let nanos = (FRAME.as_nanos() * fraction_of_frame) >> u32::BITS;
+    Duration::from_nanos(u64::try_from(nanos).unwrap_or(0))
 }
 
 fn grid_floor(origin: Instant, at: Instant) -> Instant {
@@ -846,7 +847,7 @@ mod tests {
 
     #[test]
     fn threads_tick_at_offsets_spread_across_the_frame() {
-        let offsets: Vec<Duration> = (0..8).map(phase).collect();
+        let offsets: Vec<Duration> = (0..8).map(van_der_corput_offset).collect();
 
         assert_eq!(
             offsets,
@@ -1059,7 +1060,7 @@ mod tests {
         });
         let (sender, calls) = mpsc::channel();
         let thread_name = || thread::current().name().unwrap_or_default().to_owned();
-        let receive_work = phase(1) / 2 + Duration::from_millis(1);
+        let receive_work = van_der_corput_offset(1) / 2 + Duration::from_millis(1);
         for connection in 0..2 {
             let (lane_calls, after_calls) = (sender.clone(), sender.clone());
             let mut sent = 0_u32;

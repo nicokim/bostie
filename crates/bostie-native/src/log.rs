@@ -19,11 +19,17 @@ const ROUTES: [(&str, usize); 5] = [
     ("twilight_http_ratelimiting", 2),
 ];
 const ROOT: usize = 3;
-const OFF: u8 = 0;
-const WARN: u8 = 2;
-const TRACE: u8 = 5;
+const FILTERS: [LevelFilter; 6] = [
+    LevelFilter::OFF,
+    LevelFilter::ERROR,
+    LevelFilter::WARN,
+    LevelFilter::INFO,
+    LevelFilter::DEBUG,
+    LevelFilter::TRACE,
+];
+const DEFAULT_FILTER: u8 = 2;
 
-static LEVELS: [AtomicU8; 4] = [const { AtomicU8::new(WARN) }; 4];
+static LEVELS: [AtomicU8; 4] = [const { AtomicU8::new(DEFAULT_FILTER) }; 4];
 static SINKS: Mutex<Vec<LogSink>> = Mutex::new(Vec::new());
 static INSTALL: Once = Once::new();
 
@@ -41,7 +47,12 @@ pub(crate) fn register(sink: LogSink) {
 
 pub(crate) fn set_levels(python_levels: [i32; 4]) {
     for (level, python) in LEVELS.iter().zip(python_levels) {
-        level.store(rank_for_python(python), Ordering::Relaxed);
+        let filter = filter_for_python(python);
+        let index = FILTERS
+            .iter()
+            .position(|&known| known == filter)
+            .and_then(|index| u8::try_from(index).ok());
+        level.store(index.unwrap_or_default(), Ordering::Relaxed);
     }
     tracing::callsite::rebuild_interest_cache();
 }
@@ -56,25 +67,20 @@ pub(crate) fn python_level(level: Level) -> u8 {
     }
 }
 
-fn rank_for_python(python: i32) -> u8 {
+fn filter_for_python(python: i32) -> LevelFilter {
     match python {
-        ..=5 => TRACE,
-        6..=10 => 4,
-        11..=20 => 3,
-        21..=30 => WARN,
-        31..=40 => 1,
-        _ => OFF,
+        ..=5 => LevelFilter::TRACE,
+        6..=10 => LevelFilter::DEBUG,
+        11..=20 => LevelFilter::INFO,
+        21..=30 => LevelFilter::WARN,
+        31..=40 => LevelFilter::ERROR,
+        _ => LevelFilter::OFF,
     }
 }
 
-fn rank(level: Level) -> u8 {
-    match level {
-        Level::ERROR => 1,
-        Level::WARN => WARN,
-        Level::INFO => 3,
-        Level::DEBUG => 4,
-        Level::TRACE => TRACE,
-    }
+fn filter(level: &AtomicU8) -> LevelFilter {
+    let index = usize::from(level.load(Ordering::Relaxed));
+    FILTERS.get(index).copied().unwrap_or(LevelFilter::OFF)
 }
 
 fn route(target: &str) -> usize {
@@ -90,13 +96,11 @@ fn route(target: &str) -> usize {
 
 fn allowed(level: Level, target: &str) -> bool {
     let logger = route(target);
-    let mut most = LEVELS
-        .get(logger)
-        .map_or(OFF, |level| level.load(Ordering::Relaxed));
+    let mut most = LEVELS.get(logger).map_or(LevelFilter::OFF, filter);
     if logger == ROOT && !target.starts_with("bostie_core") {
-        most = most.min(WARN);
+        most = most.min(LevelFilter::WARN);
     }
-    rank(level) <= most
+    level <= most
 }
 
 fn deliver(level: Level, logger: &'static str, mut message: String) {
@@ -128,19 +132,7 @@ impl Subscriber for Forward {
     }
 
     fn max_level_hint(&self) -> Option<LevelFilter> {
-        let most = LEVELS
-            .iter()
-            .map(|level| level.load(Ordering::Relaxed))
-            .max()
-            .unwrap_or(OFF);
-        Some(match most {
-            OFF => LevelFilter::OFF,
-            1 => LevelFilter::ERROR,
-            WARN => LevelFilter::WARN,
-            3 => LevelFilter::INFO,
-            4 => LevelFilter::DEBUG,
-            _ => LevelFilter::TRACE,
-        })
+        LEVELS.iter().map(filter).max()
     }
 
     fn new_span(&self, _: &Attributes<'_>) -> Id {
