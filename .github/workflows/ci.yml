@@ -111,17 +111,30 @@ jobs:
           - { os: windows-latest, target: x86_64, smoke: true }
           - { os: ubuntu-latest, target: x86_64, manylinux: "2_28", interpreters: "-i python3.14t -i python3.15t" }
           - { os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28", interpreters: "-i python3.14t -i python3.15t" }
+          - { os: macos-latest, target: aarch64, freethreaded: true }
+          - { os: macos-latest, target: x86_64, freethreaded: true }
+          - { os: windows-latest, target: x86_64, freethreaded: true }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - if: matrix.freethreaded
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - if: matrix.freethreaded
+        id: freethreaded
+        shell: bash
+        run: |
+          uv python install 3.14t 3.15t
+          echo "interpreters=-i $(uv python find 3.14t | tr '\\' /) -i $(uv python find 3.15t | tr '\\' /)" >> "$GITHUB_OUTPUT"
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --profile dist --locked --out dist ${{ matrix.interpreters }}
+          args: --profile dist --locked --out dist ${{ matrix.interpreters }} ${{ steps.freethreaded.outputs.interpreters }}
       - if: matrix.smoke
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - if: matrix.smoke
@@ -129,7 +142,7 @@ jobs:
         run: uv run --isolated --no-project --python 3.12 --with pytest --with aiohttp --with cryptography --with dist/*.whl pytest -p no:cacheprovider
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: wheel-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}${{ matrix.interpreters && '-freethreaded' || '' }}
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}${{ (matrix.interpreters || matrix.freethreaded) && '-freethreaded' || '' }}
           path: dist
 
   ci-passed:
