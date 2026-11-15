@@ -20,19 +20,10 @@ def test_install_settings_and_role_connection_metadata_go_back_as_read() -> None
                 install_params=app.install_params,
                 integration_types_config=app.integration_types_config,
             )
-            install = payloads.fixture("rest/application_me")["install_params"]
-            params = install | {"permissions": int(install["permissions"])}
+            read = payloads.fixture("rest/application_me")
             assert fake.requests[-1].json == {
-                "install_params": params,
-                "integration_types_config": {
-                    "0": {"oauth2_install_params": params},
-                    "1": {
-                        "oauth2_install_params": {
-                            "scopes": ["applications.commands"],
-                            "permissions": 0,
-                        }
-                    },
-                },
+                "install_params": read["install_params"],
+                "integration_types_config": read["integration_types_config"],
             }
 
             record = ApplicationRoleConnectionMetadata(

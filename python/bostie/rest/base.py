@@ -2,7 +2,7 @@ import base64
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import PurePath
-from typing import Any
+from typing import Any, cast
 
 import msgspec
 
@@ -64,18 +64,29 @@ def each[T](
 def wire(options: Mapping[str, object], shape: type[Any]) -> dict[str, object]:
     """`options` checked against the TypedDict `shape`, ready for the wire.
 
-    A File becomes a data URI and Permissions their string of bits.
+    A File becomes a data URI, and Permissions at any depth their string of bits.
     """
     check_keys(options, shape.__required_keys__ | shape.__optional_keys__, "options")
-    return {name: _wire_value(value) for name, value in options.items()}
+    return {
+        name: _data_uri(value) if isinstance(value, File) else _permission_bits(value)
+        for name, value in options.items()
+    }
 
 
-def _wire_value(value: object) -> object:
+def _permission_bits(value: object) -> object:
     match value:
-        case File():
-            return _data_uri(value)
         case Permissions():
             return str(value.value)
+        case msgspec.Struct():
+            fields = value.__struct_fields__
+            bits = {name: _permission_bits(getattr(value, name)) for name in fields}
+            return msgspec.structs.replace(value, **bits)
+        case Mapping():
+            mapping = cast("Mapping[object, object]", value)
+            return {key: _permission_bits(item) for key, item in mapping.items()}
+        case tuple() | list():
+            items = [_permission_bits(item) for item in cast("Sequence[object]", value)]
+            return items if isinstance(value, list) else tuple(items)
         case _:
             return value
 

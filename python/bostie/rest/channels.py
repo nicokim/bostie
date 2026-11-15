@@ -2,8 +2,6 @@ from collections.abc import Mapping, Sequence
 from functools import partial
 from typing import Any, Required, TypedDict, Unpack
 
-import msgspec
-
 from bostie.enums import (
     ChannelFlags,
     ChannelType,
@@ -21,8 +19,8 @@ from bostie.models import (
     ForumTag,
     decode,
 )
-from bostie.models.base import decoder
 from bostie.rest.base import Group, each, wire
+from bostie.rest.members import decode_permissions
 
 
 class PermissionOverwrite(TypedDict, total=False):
@@ -123,10 +121,6 @@ class ChannelCreateDm(TypedDict, total=False):
 class ChannelCreateGroupDm(TypedDict, total=False):
     access_tokens: Required[Sequence[str]]
     nicks: Required[Mapping[int, str]]
-
-
-class _Permissions(msgspec.Struct):
-    permissions: str
 
 
 class Channels(Group):
@@ -265,7 +259,7 @@ class Channels(Group):
     ) -> Permissions:
         """The member's permissions in the channel, with its roles and overwrites."""
         return await self._http._decoded(
-            _permissions,
+            decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/member/{user_id}",
             query=wire(options, ChannelFetchPermissions),
@@ -282,7 +276,7 @@ class Channels(Group):
     ) -> Permissions:
         """The permissions of the role and @everyone in the channel."""
         return await self._http._decoded(
-            _permissions,
+            decode_permissions,
             "GET",
             "/channels/{channel_id}/permissions/role/{role_id}",
             query=wire(options, ChannelFetchPermissions),
@@ -343,11 +337,6 @@ class Channels(Group):
         await self._http._request(
             "POST", "/channels/{channel_id}/typing", channel_id=channel_id
         )
-
-
-def _permissions(data: bytes) -> Permissions:
-    answer: _Permissions = decoder(_Permissions).decode(data)
-    return Permissions(int(answer.permissions))
 
 
 def _with_overwrites(body: dict[str, Any]) -> dict[str, Any]:
