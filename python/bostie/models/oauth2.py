@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from bostie.enums import ConnectionService, ConnectionVisibility
+from bostie.enums import ConnectionService, ConnectionVisibility, OAuth2Scope
 from bostie.models.application import PartialApplication
 from bostie.models.base import Model
 from bostie.models.guild import Guild, PartialIntegration
@@ -29,7 +29,7 @@ class Authorization(Model, kw_only=True):
     """What an access token grants; `user` comes with the `identify` scope."""
 
     application: PartialApplication
-    scopes: tuple[str, ...]
+    scopes: tuple[OAuth2Scope, ...]
     expires: datetime
     user: User | None = None
 

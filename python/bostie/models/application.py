@@ -7,6 +7,7 @@ from bostie.enums import (
     ApplicationIntegrationType,
     ApplicationRoleConnectionMetadataType,
     MembershipState,
+    OAuth2Scope,
     Permissions,
     TeamMemberRole,
     WebhookEventType,
@@ -31,7 +32,7 @@ class PartialApplication(Model, Snowflake, kw_only=True):
 class InstallParams(Builder, kw_only=True):
     """The scopes and bot permissions an install link asks for."""
 
-    scopes: tuple[str, ...]
+    scopes: tuple[OAuth2Scope, ...]
     permissions: Permissions
 
 

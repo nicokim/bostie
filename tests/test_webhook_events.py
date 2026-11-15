@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from bostie import decode_webhook_event
+from bostie import OAuth2Scope, decode_webhook_event
 from bostie.events import (
     ApplicationAuthorized,
     ApplicationDeauthorized,
@@ -59,3 +59,14 @@ def test_a_ping_has_no_event_and_an_unmodelled_type_comes_raw() -> None:
     event = decode_webhook_event(json.dumps(future).encode())
     assert isinstance(event, RawEvent)
     assert (event.name, event.raw) == ("BOSTIE_FUTURE", {"a": 1})
+
+
+def test_authorized_scopes_are_typed_and_keep_ones_bostie_does_not_know() -> None:
+    body = json.loads(payload(ApplicationAuthorized.NAME))
+    body["event"]["data"]["scopes"] = ["bot", "bostie.future"]
+
+    event = decode_webhook_event(json.dumps(body).encode())
+
+    assert isinstance(event, ApplicationAuthorized)
+    assert event.scopes == (OAuth2Scope.BOT, "bostie.future")
+    assert event.scopes[1].name == "UNKNOWN_bostie.future"

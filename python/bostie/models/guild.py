@@ -13,6 +13,7 @@ from bostie.enums import (
     MemberFlags,
     MFALevel,
     NSFWLevel,
+    OAuth2Scope,
     Permissions,
     PremiumTier,
     RoleFlags,
@@ -379,7 +380,7 @@ class Integration(Model, Snowflake, kw_only=True):
     subscriber_count: int | None = None
     revoked: bool | None = None
     application: IntegrationApplication | None = None
-    scopes: tuple[str, ...] = ()
+    scopes: tuple[OAuth2Scope, ...] = ()
 
 
 class PartialIntegration(Model, Snowflake, kw_only=True):

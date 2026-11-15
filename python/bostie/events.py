@@ -13,6 +13,7 @@ from bostie.enums import (
     Intents,
     InviteTargetType,
     MemberFlags,
+    OAuth2Scope,
     ReactionType,
 )
 from bostie.models import (
@@ -891,7 +892,7 @@ class ApplicationAuthorized(Event, kw_only=True):
 
     integration_type: ApplicationIntegrationType | None = None
     user: User
-    scopes: tuple[str, ...]
+    scopes: tuple[OAuth2Scope, ...]
     guild: Guild | None = None
 
 
