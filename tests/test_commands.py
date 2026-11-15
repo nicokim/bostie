@@ -227,6 +227,68 @@ def test_annotated_text_wins_over_option_description() -> None:
     assert only_option(command_with(hint))["description"] == "from text"
 
 
+async def google_style(
+    ctx: object,
+    sides: int,
+    count: Annotated[int, "From the hint"] = 1,
+    mode: Annotated[str, Option(description="From the option")] = "sum",
+    unit: str = "metric",
+) -> None:
+    """Roll some dice.
+
+    Args:
+        sides (int): Sides on each die,
+            from 2 to 100.
+        count: Ignored, the hint says it.
+        mode: Ignored, the option says it.
+
+    Returns:
+        Nothing.
+    """
+
+
+async def numpy_style(
+    ctx: object,
+    sides: int,
+    count: Annotated[int, "From the hint"] = 1,
+    mode: Annotated[str, Option(description="From the option")] = "sum",
+    unit: str = "metric",
+) -> None:
+    """Roll some dice.
+
+    Parameters
+    ----------
+    sides : int
+        Sides on each die,
+        from 2 to 100.
+    count
+        Ignored, the hint says it.
+    mode : str
+        Ignored, the option says it.
+
+    Returns
+    -------
+    None
+    """
+
+
+@pytest.mark.parametrize("callback", [google_style, numpy_style])
+def test_option_descriptions_come_from_the_docstring_after_hints_and_options(
+    callback: CommandCallback,
+) -> None:
+    command = Router().command(callback)
+
+    assert command.description == "Roll some dice."
+    assert [
+        option["description"] for option in command.payload("guild")["options"]
+    ] == [
+        "Sides on each die, from 2 to 100.",
+        "From the hint",
+        "From the option",
+        "\N{HORIZONTAL ELLIPSIS}",
+    ]
+
+
 def test_command_name_and_description_come_from_the_function() -> None:
     router = Router()
 

@@ -1,5 +1,6 @@
 import contextlib
 import inspect
+import re
 import typing
 import unicodedata
 import warnings
@@ -115,6 +116,7 @@ TEXT_BUDGET = 8000
 MAX_FILE_TYPES = 10
 CONVERTER_ARITY = 2
 DEFAULT_DESCRIPTION = "\N{HORIZONTAL ELLIPSIS}"
+GOOGLE_ENTRY = re.compile(r"(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<text>.*)")
 NAME_SYMBOLS = frozenset({"-", "_", "\N{MODIFIER LETTER APOSTROPHE}"})
 NAME_SCRIPTS = (range(0x0900, 0x0980), range(0x0E00, 0x0E80))
 CONTEXT_POSITIONAL = (
@@ -781,7 +783,11 @@ def _parameters(callback: CommandCallback) -> list[_Parameter]:
             "the first parameter must take the context positionally"
         )
     hints = typing.get_type_hints(callback, include_extras=True)
-    parameters = [_parameter(parameter, hints) for parameter in signature[1:]]
+    documented = _documented(callback)
+    parameters = [
+        _parameter(parameter, hints, documented.get(parameter.name))
+        for parameter in signature[1:]
+    ]
     if len(parameters) > MAX_OPTIONS:
         raise CommandDefinitionError(f"{len(parameters)} options; Discord allows 25")
     seen: set[str] = set()
@@ -846,9 +852,11 @@ def _scopes(
     return [settings, *(router.defaults for router in router._chain())]
 
 
-def _parameter(parameter: inspect.Parameter, hints: Mapping[str, object]) -> _Parameter:
+def _parameter(
+    parameter: inspect.Parameter, hints: Mapping[str, object], documented: str | None
+) -> _Parameter:
     try:
-        return _infer(parameter, _hint(parameter, hints))
+        return _infer(parameter, _hint(parameter, hints), documented)
     except CommandDefinitionError as error:
         raise CommandDefinitionError(f"parameter {parameter.name!r}: {error}") from None
 
@@ -863,7 +871,9 @@ def _hint(parameter: inspect.Parameter, hints: Mapping[str, object]) -> object:
     return hints[parameter.name]
 
 
-def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
+def _infer(
+    parameter: inspect.Parameter, hint: object, documented: str | None
+) -> _Parameter:
     members, optional, metadata = _unwrap(hint)
     converter = next(
         (item.function for item in reversed(metadata) if isinstance(item, Convert)),
@@ -901,7 +911,7 @@ def _infer(parameter: inspect.Parameter, hint: object) -> _Parameter:
     elif settings.description is not None:
         description = settings.description
     else:
-        description = DEFAULT_DESCRIPTION
+        description = documented or DEFAULT_DESCRIPTION
     payload: dict[str, Any] = {
         "type": option_type,
         "name": parameter.name if settings.name is None else settings.name,
@@ -1145,6 +1155,47 @@ def _command_description(callback: CommandCallback, description: str | None) -> 
         return description
     docstring = inspect.getdoc(callback)
     return docstring.splitlines()[0] if docstring else DEFAULT_DESCRIPTION
+
+
+def _documented(callback: CommandCallback) -> dict[str, str]:
+    lines = (inspect.getdoc(callback) or "").splitlines()
+    for index, line in enumerate(lines):
+        following = lines[index + 1 : index + 2]
+        if line.strip() == "Args:":
+            return _described(lines[index + 1 :], _indent(line), google=True)
+        if (
+            line.strip() == "Parameters"
+            and following
+            and set(following[0].strip()) == {"-"}
+        ):
+            return _described(lines[index + 2 :], _indent(line) - 1, google=False)
+    return {}
+
+
+def _described(lines: list[str], header: int, *, google: bool) -> dict[str, str]:
+    found: dict[str, str] = {}
+    entry: int | None = None
+    name: str | None = None
+    for line in lines:
+        if not line.strip() or _indent(line) <= header:
+            break
+        text = line.strip()
+        entry = _indent(line) if entry is None else entry
+        if _indent(line) > entry and name is not None:
+            found[name] = f"{found[name]} {text}".strip()
+        elif google:
+            match = GOOGLE_ENTRY.fullmatch(text)
+            if match is None:
+                break
+            name, found[name] = match.group("name", "text")
+        else:
+            name = text.split(":")[0].strip()
+            found[name] = ""
+    return found
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
 
 
 def _warn_if_over_budget(node: _Node) -> None:

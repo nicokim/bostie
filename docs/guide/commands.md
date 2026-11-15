@@ -34,7 +34,13 @@ An option without a default is required. A default, or `| None` in the hint, mak
 
 ## Descriptions
 
-A string in `Annotated` is the option's description: `Annotated[str, "What happened"]`. Without one, the description is `…`.
+A string in `Annotated` is the option's description: `Annotated[str, "What happened"]`. The docstring can hold the descriptions instead:
+
+```python
+--8<-- "docs/snippets/commands/docstring_options.py"
+```
+
+bostie reads an `Args:` section, as above, and a `Parameters` section underlined with dashes; a description may run over several lines. A string in `Annotated` wins over `Option(description=)`, which wins over the docstring. An option described nowhere gets `…`.
 
 ## Ranges and option settings
 
