@@ -25,6 +25,7 @@ pub use self::request::RestRequest;
 use self::invalid::InvalidRequests;
 use self::ratelimit::{GlobalGate, InteractionBuckets, Limited, ResponseLimits, Scope};
 use self::request::RouteClass;
+use crate::backoff::backoff;
 use crate::error::{CoreError, describe};
 use crate::ids::Ticket;
 use crate::inbox::{Delivery, FailureKind, Inbox};
@@ -521,12 +522,11 @@ impl Retries {
         if self.failed == self.limits.retries {
             return None;
         }
-        let wait = self
-            .limits
-            .backoff_base
-            .saturating_mul(2_u32.saturating_pow(self.failed))
-            .min(self.limits.max_retry_wait)
-            .mul_f64(1.0 + fastrand::f64() / 2.0);
+        let wait = backoff(
+            self.limits.backoff_base,
+            self.limits.max_retry_wait,
+            self.failed,
+        );
         self.failed += 1;
         Some(wait)
     }
@@ -809,11 +809,7 @@ pub(crate) mod tests {
         let waits: Vec<_> = iter::from_fn(|| retries.backoff()).collect();
 
         assert_eq!(waits.len(), 64);
-        assert!(
-            waits
-                .iter()
-                .all(|wait| *wait <= LIMITS.max_retry_wait * 3 / 2)
-        );
+        assert!(waits.iter().all(|wait| *wait <= LIMITS.max_retry_wait));
     }
 
     #[test]
@@ -825,8 +821,8 @@ pub(crate) mod tests {
         let third = retries.after_response(&Method::GET, StatusCode::BAD_GATEWAY, None);
 
         let base = LIMITS.backoff_base;
-        assert!(first.is_some_and(|wait| wait >= base && wait <= base * 3 / 2));
-        assert!(second.is_some_and(|wait| wait >= base * 2 && wait <= base * 3));
+        assert!(first.is_some_and(|wait| wait >= base / 2 && wait <= base));
+        assert!(second.is_some_and(|wait| wait >= base && wait <= base * 2));
         assert_eq!(third, None);
         let short = Some(Limited {
             scope: Scope::Route,
@@ -1552,7 +1548,7 @@ pub(crate) mod tests {
 
         let delivery = rest.execute(Ticket::from(1), webhook).await;
 
-        assert!(started.elapsed() >= LIMITS.backoff_base * 3);
+        assert!(started.elapsed() >= LIMITS.backoff_base * 3 / 2);
         let Delivery::Failure {
             kind: FailureKind::Transport,
             detail,

@@ -20,6 +20,7 @@ use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
 use super::ws::Timeouts;
 use super::{Shared, nanos};
+use crate::backoff::backoff;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
 
@@ -60,9 +61,7 @@ impl Default for ConnectionTuning {
 
 impl ConnectionTuning {
     fn backoff(&self, failures: u32) -> Duration {
-        let base = self.resume_backoff.saturating_mul(1 << failures.min(16));
-        base.mul_f64(0.5 + fastrand::f64() / 2.0)
-            .min(self.resume_backoff_max)
+        backoff(self.resume_backoff, self.resume_backoff_max, failures)
     }
 }
 
@@ -811,32 +810,6 @@ pub(super) async fn until(deadline: Option<Instant>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn backoff_doubles_with_jitter_and_stays_under_its_cap() {
-        let cap = Duration::from_secs(5);
-        let tuning = ConnectionTuning {
-            resume_backoff: Duration::from_millis(500),
-            resume_backoff_max: cap,
-            ..ConnectionTuning::default()
-        };
-        for (failures, base) in [
-            (0, 500),
-            (1, 1_000),
-            (3, 4_000),
-            (4, 8_000),
-            (39, 32_768_000),
-        ] {
-            let base = Duration::from_millis(base);
-            for _ in 0..100 {
-                let delay = tuning.backoff(failures);
-                assert!(
-                    (base / 2).min(cap) <= delay && delay <= base.min(cap),
-                    "{failures}: {delay:?}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn latency_is_unknown_until_measured() {
