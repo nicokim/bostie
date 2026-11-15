@@ -180,7 +180,7 @@ impl Coalescer {
 struct Keepalive {
     interval: Duration,
     next: Instant,
-    sent_at: Option<std::time::Instant>,
+    sent_at: Option<Instant>,
     listening: bool,
 }
 
@@ -382,7 +382,7 @@ impl<'c> Session<'c> {
                 {
                     let mut ssrcs = self.conn.info.ssrcs.lock();
                     if ssrcs.get(&ssrc).is_none_or(|&(owner, _)| owner != user) {
-                        ssrcs.insert(ssrc, (user, std::time::Instant::now()));
+                        ssrcs.insert(ssrc, (user, Instant::now().into_std()));
                     }
                 }
                 self.conn.push(Delivery::VoiceSpeaking {
@@ -597,7 +597,7 @@ impl<'c> Session<'c> {
                 self.conn
                     .media
                     .with_dave(|dave| dave.client_disconnect(user));
-                self.conn.media.depart(user, std::time::Instant::now());
+                self.conn.media.depart(user, Instant::now().into_std());
                 self.conn.push(Delivery::VoiceClientLeft { guild, user });
             }
             Inbound::Dave(op) => self.dave(op).await?,
@@ -638,7 +638,7 @@ impl<'c> Session<'c> {
         let (result, out) = spawn_blocking(move || {
             media.with_dave(|dave| {
                 let mut out = Vec::new();
-                let result = call(dave, std::time::Instant::now(), &mut out);
+                let result = call(dave, Instant::now().into_std(), &mut out);
                 (result, out)
             })
         })
@@ -714,7 +714,7 @@ impl<'c> Session<'c> {
         };
         match udp.socket.send(&udp::discovery_request(udp.ssrc)).await {
             Ok(_) => {
-                keepalive.sent_at = Some(std::time::Instant::now());
+                keepalive.sent_at = Some(Instant::now());
             }
             Err(error) => debug!(%error, "a voice keepalive was not sent"),
         }
@@ -729,17 +729,18 @@ impl<'c> Session<'c> {
             keepalive.listening = false;
             return;
         }
-        let answer = self
+        let answered = self
             .conn
             .voice
             .as_mut()
             .and_then(|voice| voice.udp.as_mut())
-            .and_then(|udp| *udp.answers.borrow_and_update());
-        if let (Some(answer), Some(sent)) = (answer, keepalive.sent_at)
-            && answer.at >= sent
+            .and_then(|udp| *udp.answers.borrow_and_update())
+            .map(|answer| Instant::from_std(answer.at));
+        if let (Some(answered), Some(sent)) = (answered, keepalive.sent_at)
+            && answered >= sent
         {
             keepalive.sent_at = None;
-            self.conn.info.udp_latency.set(answer.at - sent);
+            self.conn.info.udp_latency.set(answered - sent);
         }
     }
 
