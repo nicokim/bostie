@@ -55,3 +55,19 @@ A shard is ready once every guild its `READY` listed has arrived as a `GuildCrea
 The same computation is available without the cache: `bostie.permissions.compute_permissions(guild, member, channel=None, *, parent=None)`, where `parent` is a thread's parent channel. That module also holds `Permissions` sets taken from Discord's documentation: `ALL`, `NONE`, `TEXT`, `VOICE` and `STAGE` (the permissions that apply to each kind of channel), `ELEVATED` (those that need two-factor authentication on the moderator's account when the guild requires it) and `TIMED_OUT` (those a timed-out member keeps).
 
 Inside an interaction there is no need for the cache: `ctx.interaction.app_permissions` holds the bot's permissions in the channel, and `ctx.member.permissions` the user's.
+
+## Role hierarchy
+
+A member can kick, ban, time out or edit only members whose highest role is lower than its own, and Discord shows a member's name in the color of its highest colored role. `bostie.permissions` has the three helpers, which take the `Guild` and members from the cache, an interaction or REST:
+
+| Helper | Returns |
+|---|---|
+| `top_role(guild, member)` | the member's highest `Role`, or `None` when it has only `@everyone` |
+| `display_colors(guild, member)` | the `RoleColors` of its highest role with a color, or `None` |
+| `can_act_on(guild, actor, target)` | whether `actor` outranks `target`: the owner outranks everyone, nobody outranks the owner, and otherwise the highest roles compare by position |
+
+Roles at the same position rank by id, the older role first, as Discord orders them.
+
+```python
+--8<-- "docs/snippets/cache/role_hierarchy.py"
+```

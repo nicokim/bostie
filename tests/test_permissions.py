@@ -5,9 +5,15 @@ import msgspec
 import pytest
 
 from bostie import Permissions
-from bostie.models import Channel, Guild, ResolvedMember, Role
+from bostie.models import Channel, Guild, ResolvedMember, Role, RoleColors
 from bostie.models.base import Model, decode
-from bostie.permissions import ALL, compute_permissions
+from bostie.permissions import (
+    ALL,
+    can_act_on,
+    compute_permissions,
+    display_colors,
+    top_role,
+)
 from bostie.testing import payloads
 
 GUILD = 1
@@ -25,15 +31,15 @@ def model[M: Model](cls: type[M], **fields: Any) -> M:
     return decode(cls, msgspec.json.encode(fields))
 
 
-def role(id: int, permissions: Permissions) -> Role:
-    colors = {"primary_color": 0, "secondary_color": None, "tertiary_color": None}
+def role(id: int, permissions: Permissions, position: int = 0, color: int = 0) -> Role:
+    colors = {"primary_color": color, "secondary_color": None, "tertiary_color": None}
     return model(
         Role,
         id=id,
         name=str(id),
         colors=colors,
         hoist=False,
-        position=0,
+        position=position,
         permissions=str(int(permissions)),
         managed=False,
         mentionable=False,
@@ -139,3 +145,59 @@ def test_permissions_follow_discords_order_and_implicit_rules(
 def test_a_thread_without_its_parent_raises() -> None:
     with pytest.raises(ValueError, match="parent"):
         compute_permissions(GUILD_MODEL, member(), channel(11, parent_id=PARENT))
+
+
+HIGH = 10
+TIE = 11
+LOW = 12
+RED = 0xFF0000
+RANKED = msgspec.structs.replace(
+    GUILD_MODEL,
+    roles=(
+        role(GUILD, EVERYONE),
+        role(HIGH, P(0), position=2),
+        role(TIE, P(0), position=2, color=0x00FF00),
+        role(LOW, P(0), position=1, color=RED),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("roles", "top", "color"),
+    [
+        ((), None, None),
+        ((LOW,), LOW, RED),
+        ((LOW, HIGH), HIGH, RED),
+        ((TIE, HIGH), HIGH, 0x00FF00),
+    ],
+)
+def test_the_top_role_and_display_colors_follow_position_then_id(
+    roles: tuple[int, ...], top: int | None, color: int | None
+) -> None:
+    highest = top_role(RANKED, member(roles=roles))
+    colors = display_colors(RANKED, member(roles=roles))
+
+    assert (None if highest is None else highest.id) == top
+    assert colors == (
+        None
+        if color is None
+        else RoleColors(primary_color=color, secondary_color=None, tertiary_color=None)
+    )
+
+
+@pytest.mark.parametrize(
+    ("actor", "target", "expected"),
+    [
+        (member(OWNER), member(roles=(HIGH,)), True),
+        (member(roles=(HIGH,)), member(OWNER), False),
+        (member(roles=(HIGH,)), member(roles=(LOW,)), True),
+        (member(roles=(LOW,)), member(roles=(HIGH,)), False),
+        (member(roles=(HIGH,)), member(roles=(HIGH,)), False),
+        (member(roles=(HIGH,)), member(roles=(TIE,)), True),
+        (member(roles=(LOW,)), member(), True),
+    ],
+)
+def test_a_member_acts_only_on_members_it_outranks(
+    actor: ResolvedMember, target: ResolvedMember, expected: bool
+) -> None:
+    assert can_act_on(RANKED, actor, target) is expected

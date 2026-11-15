@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from bostie.enums import ChannelType, Permissions
-from bostie.models import Channel, Guild, Member, ResolvedMember
+from bostie.models import Channel, Guild, Member, ResolvedMember, Role, RoleColors
 
 type AnyMember = Member | ResolvedMember
 
@@ -185,6 +185,35 @@ def compute_permissions(
     if source.type in VOICE_TYPES and not permissions & Permissions.CONNECT:
         permissions &= ~NEEDS_CONNECTING
     return permissions
+
+
+def top_role(guild: Guild, member: AnyMember) -> Role | None:
+    """The member's highest role, or None when it has only @everyone."""
+    held = [role for role in guild.roles if role.id in member.roles]
+    return max(held, key=_rank, default=None)
+
+
+def display_colors(guild: Guild, member: AnyMember) -> RoleColors | None:
+    """The colors of the member's highest colored role, which its name shows."""
+    colored = [
+        role
+        for role in guild.roles
+        if role.id in member.roles and role.colors.primary_color
+    ]
+    return max(colored, key=_rank).colors if colored else None
+
+
+def can_act_on(guild: Guild, actor: AnyMember, target: AnyMember) -> bool:
+    """Whether `actor` outranks `target`: the owner outranks all, nobody the owner."""
+    if target.id == guild.owner_id:
+        return False
+    if actor.id == guild.owner_id:
+        return True
+    return _rank(top_role(guild, actor)) > _rank(top_role(guild, target))
+
+
+def _rank(role: Role | None) -> tuple[int, int]:
+    return (-1, 0) if role is None else (role.position, -role.id)
 
 
 def _overwrite(
