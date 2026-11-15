@@ -1,5 +1,6 @@
 [project]
 site_name = "bostie"
+site_url = "https://nicokim.github.io/bostie/"
 site_description = "A Discord library for Python with a Rust core, built around reliable voice."
 exclude_docs = """
 snippets/
@@ -92,6 +93,9 @@ font.code = "JetBrains Mono"
 features = [
   "content.code.copy",
   "navigation.footer",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.instant.progress",
   "navigation.sections",
   "navigation.tabs",
   "navigation.top",
