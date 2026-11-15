@@ -1,9 +1,12 @@
 from datetime import datetime
 from typing import Any
 
+import msgspec
+
 from bostie.enums import LobbyMemberFlags, MessageFlags, MessageType, ProfileFieldType
 from bostie.models.base import Builder, Model
 from bostie.models.channel import Channel
+from bostie.models.components import Component, decode_components
 from bostie.models.message import Attachment
 from bostie.models.user import User
 
@@ -43,6 +46,8 @@ class LobbyMessage(Model, kw_only=True):
     moderation_metadata: dict[str, str] | None = None
     flags: MessageFlags
     application_id: int | None = None
+    timestamp: datetime | None = None
+    edited_timestamp: datetime | None = None
 
 
 class GameDirectMessage(Model, kw_only=True):
@@ -65,6 +70,11 @@ class GameDirectMessage(Model, kw_only=True):
     timestamp: datetime | None = None
     edited_timestamp: datetime | None = None
     attachments: tuple[Attachment, ...] = ()
+    _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
+
+    @property
+    def components(self) -> tuple[Component, ...]:
+        return decode_components(self._components)
 
 
 class ApplicationIdentity(Model, kw_only=True):

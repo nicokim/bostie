@@ -103,21 +103,16 @@ UNMODELLED_KEYS = {
         "CommandData": "version",
         "PartialEntitlement": "gift_code_flags promotion_id",
         "Entitlement": "subscription_id",
-        "GameDirectMessage": "components",
         "Guild": "activity_instances embedded_activities home_header hub_type "
         "inventory_settings latest_onboarding_question_id lazy nsfw version",
-        "LobbyMessage": "edited_timestamp timestamp",
-        "Member": "unusual_dm_activity_until",
-        "PartialMember": "unusual_dm_activity_until",
-        "MemberUpdate": "unusual_dm_activity_until",
         "Nameplate": "expires_at",
         "PartialChannel": "recipients",
         "PartialUser": "avatar_decoration_data clan collectibles discriminator "
         "display_name_styles flags global_name primary_guild public_flags",
-        "User": "banner_color clan display_name_styles member",
+        "User": "banner_color clan",
         "Ready": "_trace auth game_relationships geo_ordered_rtc_regions "
         "guild_join_requests presences private_channels relationships "
-        "resume_gateway_url session_type user_settings v",
+        "session_type user_settings",
         "Resumed": "_trace",
         "Role": "description",
         "ScheduledEvent": "sku_ids",

@@ -515,6 +515,7 @@ class Cache:
                 mute=old.mute if event.mute is None else event.mute,
                 pending=event.pending,
                 communication_disabled_until=event.communication_disabled_until,
+                unusual_dm_activity_until=event.unusual_dm_activity_until,
                 flags=event.flags,
                 avatar_decoration_data=event.avatar_decoration_data,
                 collectibles=event.collectibles,

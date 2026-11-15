@@ -370,6 +370,12 @@ def decode_interaction_metadata(data: bytes) -> InteractionMetadata:
     return metadata
 
 
+class MentionedUser(User, kw_only=True):
+    """A user a message mentions, with their member when it was sent in a guild."""
+
+    member: PartialMember | None = None
+
+
 class SnapshotMessage(Model, kw_only=True):
     """The fields of a forwarded message that its snapshot keeps."""
 
@@ -380,7 +386,7 @@ class SnapshotMessage(Model, kw_only=True):
     timestamp: datetime
     edited_timestamp: datetime | None
     flags: MessageFlags = MessageFlags(0)
-    mentions: tuple[User, ...]
+    mentions: tuple[MentionedUser, ...]
     mention_roles: tuple[int, ...]
     sticker_items: tuple[StickerItem, ...] = ()
     _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
@@ -444,7 +450,7 @@ class _Message(PartialMessage, kw_only=True):
     edited_timestamp: datetime | None
     tts: bool
     mention_everyone: bool
-    mentions: tuple[User, ...]
+    mentions: tuple[MentionedUser, ...]
     mention_roles: tuple[int, ...]
     attachments: tuple[Attachment, ...]
     embeds: tuple[Embed, ...]

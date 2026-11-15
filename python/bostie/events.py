@@ -102,10 +102,12 @@ class Ready(Event, kw_only=True):
 
     NAME = "READY"
 
+    v: int
     user: CurrentUser
     guilds: tuple[UnavailableGuild, ...]
     application: PartialApplication
     session_id: str
+    resume_gateway_url: str
     shard: tuple[int, int] | None = None
 
 
@@ -549,6 +551,7 @@ class MemberUpdate(Event, kw_only=True):
     mute: bool | None = None
     pending: bool = False
     communication_disabled_until: datetime | None = None
+    unusual_dm_activity_until: datetime | None = None
     flags: MemberFlags = MemberFlags(0)
     avatar_decoration_data: AvatarDecorationData | None = None
     collectibles: Collectibles | None = None

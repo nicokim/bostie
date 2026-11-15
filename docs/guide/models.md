@@ -15,10 +15,11 @@ Each field is typed as Discord's documentation describes it:
 - Ids are `int`, timestamps are timezone-aware `datetime` objects in UTC, and colors are `int`.
 - Where Discord sends a partial object, the field has a partial model: `PartialUser`, `PartialMember`, `PartialChannel`, `PartialMessage`, `PartialEmoji`, `PartialApplication`, `PartialIntegration`, `PartialEntitlement`, `UnavailableGuild`. A partial model has only the fields the partial payload has, so a missing field is a type error, not a `None` at run time.
 
-Two places where one payload has two shapes get two classes:
+Three places where one payload has two shapes get two classes:
 
 - A message sent by a webhook, interaction answers included, is a `WebhookMessage`, whose `author` is a `PartialUser`. Any other message is a `Message` with a full `User` author. Fields that accept both are typed `Message | WebhookMessage`.
 - A member resolved from an option, a select or a command target is a `ResolvedMember`, which carries its `user` and has no `deaf` and `mute`. A `Member` from the gateway or REST has both.
+- A user in `message.mentions` is a `MentionedUser`: a `User` with the `member` Discord adds when the message was sent in a guild.
 
 Interactions are `CommandInteraction`, `ComponentInteraction`, `ModalSubmitInteraction` or `AutocompleteInteraction` by their type, each with typed `data`.
 

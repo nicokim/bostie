@@ -53,6 +53,14 @@ class PrimaryGuild(Model, kw_only=True):
     badge: str | None = None
 
 
+class DisplayNameStyles(Model, kw_only=True):
+    """The font, effect and colors a user's display name is drawn with."""
+
+    font_id: int
+    effect_id: int
+    colors: tuple[int, ...]
+
+
 class User(PartialUser, kw_only=True):
     """A Discord user or bot account."""
 
@@ -65,6 +73,7 @@ class User(PartialUser, kw_only=True):
     avatar_decoration_data: AvatarDecorationData | None = None
     collectibles: Collectibles | None = None
     primary_guild: PrimaryGuild | None = None
+    display_name_styles: DisplayNameStyles | None = None
 
     @property
     @override

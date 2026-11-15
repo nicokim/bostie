@@ -23,6 +23,7 @@ from bostie.enums import (
     OptionType,
     UnfurledMediaItemFlags,
 )
+from bostie.events import Ready, decode_event
 from bostie.file import File
 from bostie.models import (
     ActionRow,
@@ -40,11 +41,13 @@ from bostie.models import (
     ComponentInteractionMetadata,
     Container,
     ContentScanMetadata,
+    DisplayNameStyles,
     Embed,
     Entitlement,
     FileComponent,
     Guild,
     InteractionMetadata,
+    LobbyMessage,
     MediaGallery,
     Member,
     Message,
@@ -527,6 +530,49 @@ def test_mentions_and_display_names() -> None:
     assert msgspec.structs.replace(user, global_name=None).display_name == user.username
     assert member.display_name == "linus"
     assert msgspec.structs.replace(member, nick="Lin").display_name == "Lin"
+
+
+def test_the_newer_user_member_lobby_and_ready_fields_decode() -> None:
+    forward = decode(Message, payload("events/MESSAGE_CREATE.forward.json"))
+    user = decode(User, payload("rest/user.json"))
+    until = {"unusual_dm_activity_until": "2026-11-20T00:00:00+00:00"}
+    member = decode(Member, msgspec.json.encode(payloads.member() | until))
+    edited = {"timestamp": "2026-11-01T10:00:00+00:00", "edited_timestamp": None}
+    lobby = decode(
+        LobbyMessage,
+        msgspec.json.encode(
+            {
+                "id": "1",
+                "type": 0,
+                "content": "gg",
+                "lobby_id": "2",
+                "channel_id": "2",
+                "author": payloads.user(),
+                "flags": 0,
+            }
+            | edited
+        ),
+    )
+    ready = decode_event(Ready, 0, payload("events/READY.json"))
+
+    (mentioned,) = forward.message_snapshots[0].message.mentions
+    assert mentioned.member is not None
+    assert mentioned.member.joined_at == datetime(
+        2025, 4, 18, 19, 3, 11, 987000, tzinfo=UTC
+    )
+    assert user.display_name_styles == DisplayNameStyles(
+        font_id=3, effect_id=4, colors=(0xFFFFFF,)
+    )
+    assert member.unusual_dm_activity_until == datetime(2026, 11, 20, tzinfo=UTC)
+    assert (lobby.timestamp, lobby.edited_timestamp) == (
+        datetime(2026, 11, 1, 10, tzinfo=UTC),
+        None,
+    )
+    assert ready is not None
+    assert (ready.v, ready.resume_gateway_url) == (
+        10,
+        "wss://gateway-us-east1-d.discord.gg",
+    )
 
 
 def test_a_messages_author_member_joins_its_member_and_author() -> None:

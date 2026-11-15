@@ -105,6 +105,7 @@ class _MemberFields(Model, kw_only=True):
     pending: bool = False
     _permissions: str | None = msgspec.field(default=None, name="permissions")
     communication_disabled_until: datetime | None = None
+    unusual_dm_activity_until: datetime | None = None
     avatar_decoration_data: AvatarDecorationData | None = None
     collectibles: Collectibles | None = None
 
