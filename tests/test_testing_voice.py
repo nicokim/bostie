@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from bostie.testing import FakeDiscord, Order, payloads
 from bostie.testing.payloads import Json
-from bostie.testing.voice import AES_GCM, DISCOVERY, MODES
+from bostie.testing.voice import _AES_GCM, _DISCOVERY, _MODES
 
 type Scenario = Callable[
     [FakeDiscord, aiohttp.ClientSession], Coroutine[Any, Any, None]
@@ -95,7 +95,7 @@ def voice_resume(state: Json, server: Json, seq_ack: int) -> Json:
     return {"op": 7, "d": d}
 
 
-def select_protocol(mode: str = AES_GCM, protocol: str = "udp") -> Json:
+def select_protocol(mode: str = _AES_GCM, protocol: str = "udp") -> Json:
     data = {"address": "127.0.0.1", "port": 50000, "mode": mode}
     return {"op": 1, "d": {"protocol": protocol, "data": data}}
 
@@ -227,7 +227,7 @@ def test_voice_handshake_runs_from_hello_to_session_description() -> None:
                 "ssrc": ssrc,
                 "ip": "127.0.0.1",
                 "port": fake.voice.udp_port,
-                "modes": MODES,
+                "modes": _MODES,
                 "heartbeat_interval": 1,
             },
             "seq": 1,
@@ -238,14 +238,14 @@ def test_voice_handshake_runs_from_hello_to_session_description() -> None:
         assert description == {
             "op": 4,
             "d": {
-                "mode": AES_GCM,
+                "mode": _AES_GCM,
                 "secret_key": list(voice_session.secret_key),
                 "dave_protocol_version": 0,
             },
             "seq": 2,
         }
         assert len(voice_session.secret_key) == 32
-        assert voice_session.mode == AES_GCM
+        assert voice_session.mode == _AES_GCM
         assert fake.voice.sockets[0].session is voice_session
         assert await fake.voice.next_identify() == voice_identify(state, server)["d"]
         received = [fake.voice.received.get_nowait() for _ in range(3)]
@@ -353,8 +353,8 @@ def test_audio_sent_to_the_bot_opens_with_its_key_in_consecutive_packets() -> No
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
                 udp.setblocking(False)
                 udp.connect(("127.0.0.1", fake.voice.udp_port))
-                udp.send(DISCOVERY.pack(1, 70, ssrc, b"", 0))
-                await loop.sock_recv(udp, DISCOVERY.size)
+                udp.send(_DISCOVERY.pack(1, 70, ssrc, b"", 0))
+                await loop.sock_recv(udp, _DISCOVERY.size)
                 await fake.voice.send_audio(
                     4321,
                     [b"first", b"second"],

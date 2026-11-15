@@ -59,7 +59,7 @@ from bostie.models.base import decoder
 from bostie.testing import payloads
 from bostie.webhook_events import _WEBHOOK_EVENTS
 
-FIXTURES = payloads.FIXTURES
+FIXTURES = payloads._FIXTURES
 WEBHOOK_FIXTURES = Path(__file__).parent / "fixtures" / "webhook_events"
 REST_MODELS: dict[str, Any] = {
     "user": User,

@@ -76,7 +76,7 @@ from bostie.models.base import decoder
 from bostie.models.message import _decode_interaction_metadata, _message_body
 from bostie.testing import payloads
 
-FIXTURES = payloads.FIXTURES
+FIXTURES = payloads._FIXTURES
 MESSAGE = json.loads((FIXTURES / "events" / "MESSAGE_CREATE.json").read_bytes())
 ROLE = json.loads((FIXTURES / "events" / "GUILD_ROLE_CREATE.json").read_bytes())["role"]
 

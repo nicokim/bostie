@@ -25,7 +25,7 @@ from bostie.events import (
 )
 from bostie.testing import payloads
 
-EVENT_FIXTURES = payloads.FIXTURES / "events"
+EVENT_FIXTURES = payloads._FIXTURES / "events"
 GUILD = 1335172792320131073
 GENERAL = 1335173295636611073
 STAFF_ONLY = 1335175308902531073

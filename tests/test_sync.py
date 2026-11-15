@@ -17,7 +17,7 @@ from bostie.models import Attachment, Message, PartialChannel, Role, User
 from bostie.router import Router
 from bostie.testing import FakeDiscord, payloads
 
-FIXTURES = payloads.FIXTURES / "rest"
+FIXTURES = payloads._FIXTURES / "rest"
 REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_text())
 INSTALL_TYPES = [0, 1]
 

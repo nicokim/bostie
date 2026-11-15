@@ -7,31 +7,37 @@ import struct
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, override
+from typing import Any, TypeGuard, override
 
 import msgspec
 from aiohttp import WSCloseCode, WSMessage, WSMsgType, web
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from bostie.testing.payloads import Json, is_object
+from bostie.testing.payloads import Json
 
-AES_GCM = "aead_aes256_gcm_rtpsize"
-MODES = [AES_GCM, "aead_xchacha20_poly1305_rtpsize"]
-DAVE_PROTOCOL_VERSION = 1
-FIRST_SSRC = 0x8000_0001
-DISCOVERY = struct.Struct(">HHI64sH")
-DISCOVERY_REQUEST = b"\x00\x01\x00\x46"
-RTP_HEADER = struct.Struct(">2xHII")
-RTCP_HEADER_SIZE = 8
-RTP_FIRST_BYTES = b"\x80\x78"
-RTP_EXTENDED_FIRST_BYTES = b"\x90\x78"
-RTP_ONE_BYTE_PROFILE = 0xBEDE
-SAMPLES_PER_PACKET = 960
-RTP_PAYLOAD_TYPE = 120
-RTP_VERSION = 2
-NONCE_SIZE = 4
-TAG_SIZE = 16
+_AES_GCM = "aead_aes256_gcm_rtpsize"
+_MODES = [_AES_GCM, "aead_xchacha20_poly1305_rtpsize"]
+_DAVE_PROTOCOL_VERSION = 1
+_FIRST_SSRC = 0x8000_0001
+_DISCOVERY = struct.Struct(">HHI64sH")
+_DISCOVERY_REQUEST = b"\x00\x01\x00\x46"
+_RTP_HEADER = struct.Struct(">2xHII")
+_RTCP_HEADER_SIZE = 8
+_RTP_FIRST_BYTES = b"\x80\x78"
+_RTP_EXTENDED_FIRST_BYTES = b"\x90\x78"
+_RTP_ONE_BYTE_PROFILE = 0xBEDE
+_SAMPLES_PER_PACKET = 960
+_RTP_PAYLOAD_TYPE = 120
+_RTP_VERSION = 2
+_NONCE_SIZE = 4
+_TAG_SIZE = 16
+
+
+def is_object(value: object) -> TypeGuard[Json]:
+    """Whether a decoded JSON value is an object."""
+    return isinstance(value, dict)
+
 
 type Frame = tuple[WSMsgType, bytes]
 type Address = tuple[str | Any, int]
@@ -118,7 +124,7 @@ class VoiceGateway:
         self._grants: dict[str, tuple[str, str, str]] = {}
         self._current_sessions: dict[str, VoiceSession] = {}
         self._sessions_by_ssrc: dict[int, VoiceSession] = {}
-        self._ssrcs = itertools.count(FIRST_SSRC)
+        self._ssrcs = itertools.count(_FIRST_SSRC)
         self._packet_arrived = asyncio.Event()
         self._udp: asyncio.DatagramTransport | None = None
 
@@ -152,32 +158,32 @@ class VoiceGateway:
         """Send Opus `packets` from whoever speaks on `ssrc` to the bot, all at once."""
         session, address = self._sealing()
         if extension is None:
-            first, preamble, body = RTP_FIRST_BYTES, b"", b""
+            first, preamble, body = _RTP_FIRST_BYTES, b"", b""
         else:
             body = extension + bytes(-len(extension) % 4)
-            preamble = struct.pack(">HH", RTP_ONE_BYTE_PROFILE, len(body) // 4)
-            first = RTP_EXTENDED_FIRST_BYTES
+            preamble = struct.pack(">HH", _RTP_ONE_BYTE_PROFILE, len(body) // 4)
+            first = _RTP_EXTENDED_FIRST_BYTES
         aead = AESGCM(session.secret_key)
         for index, payload in enumerate(packets):
             fields = (
                 (sequence + index) % 2**16,
-                (timestamp + index * SAMPLES_PER_PACKET) % 2**32,
+                (timestamp + index * _SAMPLES_PER_PACKET) % 2**32,
                 ssrc,
             )
             header = first + struct.pack(">HII", *fields) + preamble
-            nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE, "little")
+            nonce = (next(session.nonces) % 2**32).to_bytes(_NONCE_SIZE, "little")
             sealed = aead.encrypt(
-                nonce + bytes(12 - NONCE_SIZE), body + payload, header
+                nonce + bytes(12 - _NONCE_SIZE), body + payload, header
             )
             self._send_datagram(header + sealed + nonce, address)
 
     async def send_rtcp(self, packet: bytes) -> None:
         """Send one RTCP `packet` to the bot, sealed behind its 8-byte header."""
         session, address = self._sealing()
-        header, body = packet[:RTCP_HEADER_SIZE], packet[RTCP_HEADER_SIZE:]
-        nonce = (next(session.nonces) % 2**32).to_bytes(NONCE_SIZE, "little")
+        header, body = packet[:_RTCP_HEADER_SIZE], packet[_RTCP_HEADER_SIZE:]
+        nonce = (next(session.nonces) % 2**32).to_bytes(_NONCE_SIZE, "little")
         aead = AESGCM(session.secret_key)
-        sealed = aead.encrypt(nonce + bytes(12 - NONCE_SIZE), body, header)
+        sealed = aead.encrypt(nonce + bytes(12 - _NONCE_SIZE), body, header)
         self._send_datagram(header + sealed + nonce, address)
 
     async def send_datagram(self, data: bytes) -> None:
@@ -188,7 +194,7 @@ class VoiceGateway:
     def _sealing(self) -> tuple[VoiceSession, Address]:
         session = self.sessions[-1] if self.sessions else None
         address = None if session is None else session.address
-        if session is None or address is None or session.mode != AES_GCM:
+        if session is None or address is None or session.mode != _AES_GCM:
             raise RuntimeError("no AES-GCM voice session with a discovered address")
         return session, address
 
@@ -218,7 +224,7 @@ class VoiceGateway:
         else:
             self._udp.close()
 
-    def grant(self, guild_id: str, user_id: str, session_id: str) -> str:
+    def _grant(self, guild_id: str, user_id: str, session_id: str) -> str:
         """A new token for the voice Identify of `session_id` in `guild_id`."""
         token = secrets.token_hex(8)
         self._grants[guild_id] = (user_id, session_id, token)
@@ -238,7 +244,7 @@ class VoiceGateway:
         if session.socket is not None:
             await session.socket.close(code)
 
-    async def serve(self, request: web.Request) -> web.StreamResponse:
+    async def _serve(self, request: web.Request) -> web.StreamResponse:
         """Run one voice gateway WebSocket."""
         if request.query.get("v") != "8":
             return web.Response(status=400, text="voice gateway version 8 required")
@@ -307,7 +313,7 @@ class VoiceGateway:
             await voice_socket.close(4005)
         elif self._grants.get(identify.get("server_id", "")) != grant:
             await voice_socket.close(4004)
-        elif identify.get("max_dave_protocol_version") != DAVE_PROTOCOL_VERSION:
+        elif identify.get("max_dave_protocol_version") != _DAVE_PROTOCOL_VERSION:
             await voice_socket.close(4017)
         else:
             session = VoiceSession(identify, next(self._ssrcs), socket=voice_socket)
@@ -319,7 +325,7 @@ class VoiceGateway:
                 "ssrc": session.ssrc,
                 "ip": "127.0.0.1",
                 "port": self.udp_port,
-                "modes": MODES,
+                "modes": _MODES,
                 "heartbeat_interval": 1,
             }
             await self._send_sequenced(session, 2, ready)
@@ -351,7 +357,7 @@ class VoiceGateway:
         self, voice_socket: VoiceSocket, session: VoiceSession, select: Json
     ) -> None:
         match select:
-            case {"protocol": "udp", "data": {"mode": str() as mode}} if mode in MODES:
+            case {"protocol": "udp", "data": {"mode": str() as mode}} if mode in _MODES:
                 session.mode = mode
                 description = {
                     "mode": mode,
@@ -376,16 +382,16 @@ class VoiceGateway:
             await session.socket.send(frame)
 
     def _on_datagram(self, data: bytes, addr: Address) -> None:
-        if len(data) == DISCOVERY.size and data.startswith(DISCOVERY_REQUEST):
-            ssrc = DISCOVERY.unpack(data)[2]
+        if len(data) == _DISCOVERY.size and data.startswith(_DISCOVERY_REQUEST):
+            ssrc = _DISCOVERY.unpack(data)[2]
             if (session := self._sessions_by_ssrc.get(ssrc)) is not None:
                 session.address = addr
-            answer = DISCOVERY.pack(2, 70, ssrc, addr[0].encode(), addr[1])
+            answer = _DISCOVERY.pack(2, 70, ssrc, addr[0].encode(), addr[1])
             self._send_datagram(answer, addr)
         elif (
-            len(data) >= RTP_HEADER.size
-            and data[0] >> 6 == RTP_VERSION
-            and data[1] & 0x7F == RTP_PAYLOAD_TYPE
+            len(data) >= _RTP_HEADER.size
+            and data[0] >> 6 == _RTP_VERSION
+            and data[1] & 0x7F == _RTP_PAYLOAD_TYPE
         ):
             packet = self._open(data)
             if packet is None:
@@ -399,23 +405,23 @@ class VoiceGateway:
             self._udp.sendto(data, addr)
 
     def _open(self, data: bytes) -> Packet | None:
-        sequence, timestamp, ssrc = RTP_HEADER.unpack_from(data)
+        sequence, timestamp, ssrc = _RTP_HEADER.unpack_from(data)
         session = self._sessions_by_ssrc.get(ssrc)
         if (
             session is None
-            or session.mode != AES_GCM
-            or not data.startswith(RTP_FIRST_BYTES)
-            or len(data) < RTP_HEADER.size + TAG_SIZE + NONCE_SIZE
+            or session.mode != _AES_GCM
+            or not data.startswith(_RTP_FIRST_BYTES)
+            or len(data) < _RTP_HEADER.size + _TAG_SIZE + _NONCE_SIZE
         ):
             return None
         header, sealed, nonce = (
-            data[: RTP_HEADER.size],
-            data[RTP_HEADER.size : -NONCE_SIZE],
-            data[-NONCE_SIZE:],
+            data[: _RTP_HEADER.size],
+            data[_RTP_HEADER.size : -_NONCE_SIZE],
+            data[-_NONCE_SIZE:],
         )
         try:
             payload = AESGCM(session.secret_key).decrypt(
-                nonce + bytes(12 - NONCE_SIZE), sealed, header
+                nonce + bytes(12 - _NONCE_SIZE), sealed, header
             )
         except InvalidTag:
             return None

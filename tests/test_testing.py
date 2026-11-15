@@ -13,7 +13,7 @@ import pytest
 import bostie.testing
 from bostie.testing import FakeDiscord, payloads
 from bostie.testing.payloads import Json
-from bostie.testing.server import ROUTE_LIMIT
+from bostie.testing.server import _ROUTE_LIMIT
 
 type Scenario = Callable[
     [FakeDiscord, aiohttp.ClientSession], Coroutine[Any, Any, None]
@@ -164,18 +164,20 @@ def test_closing_around_a_heartbeat_in_flight_logs_no_error(
 def test_route_windows_are_counted_per_major_parameter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("bostie.testing.server.ROUTE_WINDOW", 60.0)
+    monkeypatch.setattr("bostie.testing.server._ROUTE_WINDOW", 60.0)
 
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         responses = []
-        for channel_id in ["1"] * (ROUTE_LIMIT + 1) + ["2"]:
+        for channel_id in ["1"] * (_ROUTE_LIMIT + 1) + ["2"]:
             url = f"{fake.api_url}/channels/{channel_id}"
             async with session.get(url, headers=auth(fake)) as r:
                 responses.append((r.status, r.headers.copy(), await r.json()))
 
         remaining = [headers["X-RateLimit-Remaining"] for _, headers, _ in responses]
-        assert remaining[:ROUTE_LIMIT] == [str(n) for n in reversed(range(ROUTE_LIMIT))]
-        status, headers, body = responses[ROUTE_LIMIT]
+        assert remaining[:_ROUTE_LIMIT] == [
+            str(n) for n in reversed(range(_ROUTE_LIMIT))
+        ]
+        status, headers, body = responses[_ROUTE_LIMIT]
         assert (status, headers["X-RateLimit-Scope"], body["global"]) == (
             429,
             "user",
@@ -184,7 +186,7 @@ def test_route_windows_are_counted_per_major_parameter(
         assert body["retry_after"] > 0
         assert headers["Retry-After"] == str(body["retry_after"])
         assert responses[-1][0] == 404
-        assert remaining[-1] == str(ROUTE_LIMIT - 1)
+        assert remaining[-1] == str(_ROUTE_LIMIT - 1)
         assert len({headers["X-RateLimit-Bucket"] for _, headers, _ in responses}) == 1
 
     run(scenario)

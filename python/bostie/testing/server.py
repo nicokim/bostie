@@ -19,28 +19,28 @@ from aiohttp import BodyPartReader, WSCloseCode, WSMsgType, hdrs, web
 from aiohttp.typedefs import Handler
 
 from bostie.testing import payloads
-from bostie.testing.payloads import Json, is_object
-from bostie.testing.voice import VoiceGateway
+from bostie.testing.payloads import _DISCORD_EPOCH_MS, Json
+from bostie.testing.voice import VoiceGateway, is_object
 
-API = "/api/v10"
-CDN = "/cdn"
-BULK_DELETE_MIN = 2
-BULK_DELETE_MAX = 100
-BULK_DELETE_AGE = 14 * 24 * 3600
-UNDELETABLE = frozenset({1, 2, 3, 4, 5, 21})
-ROUTE_LIMIT = 5
-ROUTE_WINDOW = 1.0
-MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
-MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
-GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
-CLEARED: Json = {"content": "", "embeds": []}
-EPHEMERAL = 1 << 6
-LOADING = 1 << 7
-LOCALIZATIONS = ("name_localizations", "description_localizations")
-TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
-FAKE_TOKEN = "fake-token"
+_API = "/api/v10"
+_CDN = "/cdn"
+_BULK_DELETE_MIN = 2
+_BULK_DELETE_MAX = 100
+_BULK_DELETE_AGE = 14 * 24 * 3600
+_UNDELETABLE = frozenset({1, 2, 3, 4, 5, 21})
+_ROUTE_LIMIT = 5
+_ROUTE_WINDOW = 1.0
+_MAJOR_PARAMETERS = ("channel_id", "guild_id", "interaction_token")
+_MESSAGE_FIELDS = ("content", "embeds", "components", "flags", "tts")
+_GATEWAY_ONLY_MESSAGE_FIELDS = ("guild_id", "member", "nonce", "channel_type")
+_CLEARED: Json = {"content": "", "embeds": []}
+_EPHEMERAL = 1 << 6
+_LOADING = 1 << 7
+_LOCALIZATIONS = ("name_localizations", "description_localizations")
+_TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
+_FAKE_TOKEN = "fake-token"
 
-type Respond = Callable[[dict[str, str]], web.Response]
+type _Respond = Callable[[dict[str, str]], web.Response]
 type Order = Literal["state_first", "server_first"]
 
 
@@ -117,7 +117,7 @@ class Connection:
 class _Fault:
     method: str
     route_prefix: str
-    respond: Respond
+    respond: _Respond
 
 
 @dataclass
@@ -134,7 +134,7 @@ class _Hold:
     release: asyncio.Event
 
 
-RECORD = web.RequestKey("record", Recorded)
+_RECORD = web.RequestKey("record", Recorded)
 
 
 class FakeDiscord:
@@ -153,7 +153,7 @@ class FakeDiscord:
     def __init__(
         self,
         *,
-        token: str = FAKE_TOKEN,
+        token: str = _FAKE_TOKEN,
         heartbeat_interval: int = 41_250,
         compress: bool = False,
         voice: bool = False,
@@ -164,7 +164,7 @@ class FakeDiscord:
         self._listener = socket.create_server(("127.0.0.1", 0))
         port = self._listener.getsockname()[1]
         self.voice = VoiceGateway(voice_heartbeat_interval, port)
-        self.api_url = f"http://127.0.0.1:{port}{API}"
+        self.api_url = f"http://127.0.0.1:{port}{_API}"
         self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
         self.token = token
         application = payloads.fixture("rest/application_me")
@@ -270,7 +270,7 @@ class FakeDiscord:
         routes = [
             web.get("/gateway", self._gateway),
             web.get("/gateway-resume", self._gateway),
-            web.get(CDN + "/{path:.+}", self._cdn),
+            web.get(_CDN + "/{path:.+}", self._cdn),
         ]
         if self._serves_voice:
             rest_routes += [
@@ -281,13 +281,13 @@ class FakeDiscord:
                     self._edit_voice_state,
                 ),
             ]
-            routes.append(web.get("/voice", self.voice.serve))
+            routes.append(web.get("/voice", self.voice._serve))
         app = web.Application(middlewares=[self._rest])
         app.add_routes(
             [
                 *routes,
                 *(
-                    web.route(method, API + path, handler)
+                    web.route(method, _API + path, handler)
                     for method, path, handler in rest_routes
                 ),
             ]
@@ -455,7 +455,7 @@ class FakeDiscord:
     def cdn_file(self, path: str, data: bytes) -> str:
         """Serve `data` at a CDN path like `attachments/1/2/a.png`; return its URL."""
         self._cdn_files[unquote(path)] = data
-        return f"{self.api_url.removesuffix(API)}{CDN}/{path}"
+        return f"{self.api_url.removesuffix(_API)}{_CDN}/{path}"
 
     def expect_request(
         self, method: str, route_prefix: str
@@ -496,7 +496,7 @@ class FakeDiscord:
         self.connections.append(connection)
         if self._hello_holds:
             await self._hello_holds.pop(0).wait()
-        hello = {"heartbeat_interval": self._heartbeat_interval, "_trace": [TRACE]}
+        hello = {"heartbeat_interval": self._heartbeat_interval, "_trace": [_TRACE]}
         await connection.send(_frame(None, None, 10, hello))
         while (message := await ws.receive()).type in (
             WSMsgType.TEXT,
@@ -575,7 +575,7 @@ class FakeDiscord:
             await connection.ws.close(code=4007, message=b"Invalid seq")
         else:
             connection.shard = shard
-            self._append(session, "RESUMED", {"_trace": [TRACE]})
+            self._append(session, "RESUMED", {"_trace": [_TRACE]})
             await self._catch_up(connection, session, seq)
 
     async def _update_voice_state(self, connection: Connection, update: Any) -> None:
@@ -620,7 +620,7 @@ class FakeDiscord:
             guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
         )
         self.voice_states[key] = state
-        token = self.voice.grant(guild_id, state["user_id"], state["session_id"])
+        token = self.voice._grant(guild_id, state["user_id"], state["session_id"])
         server = {"token": token, "guild_id": guild_id, "endpoint": self.voice.endpoint}
         events = [("VOICE_STATE_UPDATE", state), ("VOICE_SERVER_UPDATE", server)]
         for name, d in events if order == "state_first" else events[::-1]:
@@ -668,10 +668,10 @@ class FakeDiscord:
 
     @web.middleware
     async def _rest(self, request: web.Request, handler: Handler) -> web.StreamResponse:
-        if not request.path.startswith(API + "/"):
+        if not request.path.startswith(_API + "/"):
             return await handler(request)
         record = await _record(request)
-        request[RECORD] = record
+        request[_RECORD] = record
         self.requests.append(record)
         for expected in list(self._expected):
             if expected.method == request.method and record.path.startswith(
@@ -714,26 +714,26 @@ class FakeDiscord:
         self, method: str, route: str, params: Mapping[str, str]
     ) -> tuple[dict[str, str], float | None]:
         bucket = f"{zlib.crc32(f'{method} {route}'.encode()):08x}"
-        key = (bucket, "/".join(params.get(name, "") for name in MAJOR_PARAMETERS))
+        key = (bucket, "/".join(params.get(name, "") for name in _MAJOR_PARAMETERS))
         now = time.monotonic()
         start, used = self._windows.get(key, (-math.inf, 0))
-        if now - start >= ROUTE_WINDOW:
+        if now - start >= _ROUTE_WINDOW:
             start, used = now, 0
-        exhausted = used >= ROUTE_LIMIT
+        exhausted = used >= _ROUTE_LIMIT
         if not exhausted:
             used += 1
         self._windows[key] = (start, used)
-        reset_after = round(start + ROUTE_WINDOW - now, 3)
+        reset_after = round(start + _ROUTE_WINDOW - now, 3)
         headers = {
-            "X-RateLimit-Limit": str(ROUTE_LIMIT),
-            "X-RateLimit-Remaining": str(ROUTE_LIMIT - used),
+            "X-RateLimit-Limit": str(_ROUTE_LIMIT),
+            "X-RateLimit-Remaining": str(_ROUTE_LIMIT - used),
             "X-RateLimit-Reset": f"{time.time() + reset_after:.3f}",
             "X-RateLimit-Reset-After": str(reset_after),
             "X-RateLimit-Bucket": bucket,
         }
         return headers, reset_after if exhausted else None
 
-    def _take_fault(self, method: str, path: str) -> Respond | None:
+    def _take_fault(self, method: str, path: str) -> _Respond | None:
         for fault in self._faults:
             if fault.method == method and path.startswith(fault.route_prefix):
                 self._faults.remove(fault)
@@ -766,7 +766,7 @@ class FakeDiscord:
             else self.guild_commands.setdefault(guild_id, [])
         )
         if request.method == "PUT":
-            body = request[RECORD].json
+            body = request[_RECORD].json
             known = {
                 (command["type"], command["name"]): command["id"]
                 for command in commands
@@ -811,7 +811,7 @@ class FakeDiscord:
             return _error(404, 10062, "Unknown interaction")
         if token in self._responses:
             return _error(400, 40060, "Interaction has already been acknowledged.")
-        record = request[RECORD]
+        record = request[_RECORD]
         kind = record.json["type"]
         original = self._original_response(
             interaction, kind, record.json.get("data") or {}
@@ -831,7 +831,7 @@ class FakeDiscord:
             case _Callback.CHANNEL_MESSAGE_WITH_SOURCE:
                 return self._interaction_message(interaction, data)
             case _Callback.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE:
-                loading = {"flags": LOADING | data.get("flags", 0)}
+                loading = {"flags": _LOADING | data.get("flags", 0)}
                 return self._interaction_message(interaction, loading)
             case _Callback.DEFERRED_UPDATE_MESSAGE | _Callback.UPDATE_MESSAGE:
                 message: Json = interaction["message"]
@@ -851,7 +851,7 @@ class FakeDiscord:
         return {
             key: value
             for key, value in (message | _message_fields(body)).items()
-            if key not in GATEWAY_ONLY_MESSAGE_FIELDS
+            if key not in _GATEWAY_ONLY_MESSAGE_FIELDS
         }
 
     def _webhook(self, request: web.Request) -> dict[str, Json] | None:
@@ -864,7 +864,7 @@ class FakeDiscord:
         if messages is None:
             return _error(404, 10015, "Unknown Webhook")
         interaction = self._interactions[request.match_info["interaction_token"]]
-        message = self._interaction_message(interaction, request[RECORD].json)
+        message = self._interaction_message(interaction, request[_RECORD].json)
         messages[message["id"]] = message
         return _json(message)
 
@@ -876,7 +876,7 @@ class FakeDiscord:
 
     async def _create_message(self, request: web.Request) -> web.Response:
         channel_id = request.match_info["channel_id"]
-        message = self._new_message(channel_id, request[RECORD].json)
+        message = self._new_message(channel_id, request[_RECORD].json)
         self.messages.setdefault(channel_id, {})[message["id"]] = message
         return _json(message)
 
@@ -894,15 +894,15 @@ class FakeDiscord:
 
     async def _bulk_delete(self, request: web.Request) -> web.Response:
         messages = self.messages.get(request.match_info["channel_id"], {})
-        ids: list[str] = [str(id) for id in request[RECORD].json["messages"]]
-        oldest = (time.time() - BULK_DELETE_AGE) * 1000 - payloads.DISCORD_EPOCH_MS
-        if not BULK_DELETE_MIN <= len(ids) <= BULK_DELETE_MAX:
+        ids: list[str] = [str(id) for id in request[_RECORD].json["messages"]]
+        oldest = (time.time() - _BULK_DELETE_AGE) * 1000 - _DISCORD_EPOCH_MS
+        if not _BULK_DELETE_MIN <= len(ids) <= _BULK_DELETE_MAX:
             return _error(400, 50016, "Provide 2 to 100 messages to delete")
         if any(int(id) >> 22 < oldest for id in ids):
             return _error(
                 400, 50034, "You can only bulk delete messages under 14 days old"
             )
-        if any(messages.get(id, {}).get("type") in UNDELETABLE for id in ids):
+        if any(messages.get(id, {}).get("type") in _UNDELETABLE for id in ids):
             return _error(400, 50021, "Cannot execute action on a system message")
         for id in ids:
             messages.pop(id, None)
@@ -940,7 +940,7 @@ class FakeDiscord:
         )
         if state is None:
             return _error(404, 10065, "Unknown Voice State")
-        edit: Json = request[RECORD].json or {}
+        edit: Json = request[_RECORD].json or {}
         state |= {
             key: edit[key]
             for key in ("suppress", "request_to_speak_timestamp")
@@ -978,7 +978,7 @@ async def _record(request: web.Request) -> Recorded:
     elif request.content_type == "application/x-www-form-urlencoded":
         body = dict(await request.post())
     headers = {name.lower(): value for name, value in request.headers.items()}
-    path = request.path.removeprefix(API)
+    path = request.path.removeprefix(_API)
     return Recorded(request.method, path, dict(request.query), headers, body, parts)
 
 
@@ -987,7 +987,7 @@ def _query_flag(request: web.Request, name: str) -> bool:
 
 
 def _localizable(entity: Json) -> Json:
-    stored: Json = dict.fromkeys(LOCALIZATIONS)
+    stored: Json = dict.fromkeys(_LOCALIZATIONS)
     for key, value in entity.items():
         if key == "options":
             stored[key] = [_localizable(option) for option in value]
@@ -1006,7 +1006,7 @@ def _without_localizations(value: Any) -> Any:
             return {
                 key: _without_localizations(item)
                 for key, item in fields.items()
-                if key not in LOCALIZATIONS
+                if key not in _LOCALIZATIONS
             }
         case _:
             return value
@@ -1018,13 +1018,13 @@ def _message_route(request: web.Request, messages: dict[str, Json]) -> web.Respo
     if message is None:
         return _error(404, 10008, "Unknown Message")
     if request.method == "DELETE":
-        if message.get("type") in UNDELETABLE:
+        if message.get("type") in _UNDELETABLE:
             return _error(400, 50021, "Cannot execute action on a system message")
         del messages[message_id]
         return web.Response(status=204)
     if request.method == "PATCH":
-        edit = _message_fields(request[RECORD].json)
-        flags = message["flags"] & ~LOADING | edit.get("flags", 0)
+        edit = _message_fields(request[_RECORD].json)
+        flags = message["flags"] & ~_LOADING | edit.get("flags", 0)
         message |= edit | {
             "flags": flags,
             "edited_timestamp": datetime.now(UTC).isoformat(),
@@ -1037,8 +1037,10 @@ def _snowflake(entity: Json) -> int:
 
 
 def _message_fields(body: Json) -> Json:
-    fields = {key: body[key] for key in MESSAGE_FIELDS if key in body}
-    return fields | {key: CLEARED[key] for key in CLEARED if fields.get(key, 0) is None}
+    fields = {key: body[key] for key in _MESSAGE_FIELDS if key in body}
+    return fields | {
+        key: _CLEARED[key] for key in _CLEARED if fields.get(key, 0) is None
+    }
 
 
 def _callback_response(interaction: Json, kind: int, original: Json | None) -> Json:
@@ -1049,7 +1051,7 @@ def _callback_response(interaction: Json, kind: int, original: Json | None) -> J
         summary |= {
             "response_message_id": original["id"],
             "response_message_loading": loading,
-            "response_message_ephemeral": bool(original["flags"] & EPHEMERAL),
+            "response_message_ephemeral": bool(original["flags"] & _EPHEMERAL),
         }
     if kind in (_Callback.CHANNEL_MESSAGE_WITH_SOURCE, _Callback.UPDATE_MESSAGE):
         resource["message"] = original

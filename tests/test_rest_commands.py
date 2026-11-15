@@ -61,7 +61,7 @@ def test_commands_go_out_with_option_builders_and_come_back_decoded() -> None:
             )
             assert listed.default_member_permissions == Permissions.MANAGE_GUILD
 
-            remote = json.loads((payloads.FIXTURES / "rest/commands.json").read_text())
+            remote = json.loads((payloads._FIXTURES / "rest/commands.json").read_text())
             route = f"/applications/{fake.application_id}/commands"
             fake.fail("GET", route, 200, remote)
             listed_remote = await commands.list(fake.application_id)

@@ -58,7 +58,7 @@ from bostie.models import (
 )
 from bostie.testing import FakeDiscord, payloads, run, running
 
-EVENT_FIXTURES = payloads.FIXTURES / "events"
+EVENT_FIXTURES = payloads._FIXTURES / "events"
 MODELLED = sorted(EVENT_FIXTURES.glob("*.json"))
 
 

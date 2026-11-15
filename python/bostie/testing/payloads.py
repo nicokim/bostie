@@ -2,36 +2,31 @@ import itertools
 import secrets
 import time
 from pathlib import Path
-from typing import Any, TypeGuard
+from typing import Any
 
 import msgspec
 
 type Json = dict[str, Any]
 
-FIXTURES = Path(__file__).parent / "fixtures"
-DISCORD_EPOCH_MS = 1_420_070_400_000
-INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete", 5: "modal"}
-GUILD_VOICE = 2
-STAGE_CHANNEL_ID = "1335174052137131073"
+_FIXTURES = Path(__file__).parent / "fixtures"
+_DISCORD_EPOCH_MS = 1_420_070_400_000
+_INTERACTION_FIXTURES = {2: "command", 3: "button", 4: "autocomplete", 5: "modal"}
+_GUILD_VOICE = 2
+_STAGE_CHANNEL_ID = "1335174052137131073"
 
 _increments = itertools.count()
-
-
-def is_object(value: object) -> TypeGuard[Json]:
-    """Whether a decoded JSON value is an object."""
-    return isinstance(value, dict)
 
 
 def fixture(name: str) -> Json:
     """A fresh copy of the documented payload `fixtures/{name}.json`."""
     return msgspec.json.decode(
-        (FIXTURES / f"{name}.json").read_bytes(), type=dict[str, Any]
+        (_FIXTURES / f"{name}.json").read_bytes(), type=dict[str, Any]
     )
 
 
 def snowflake(at: float | None = None) -> str:
     """A unique snowflake created at `at` (Unix seconds, now by default)."""
-    millis = int((time.time() if at is None else at) * 1000) - DISCORD_EPOCH_MS
+    millis = int((time.time() if at is None else at) * 1000) - _DISCORD_EPOCH_MS
     return str(millis << 22 | next(_increments) % 4096)
 
 
@@ -69,7 +64,7 @@ def message(**fields: Any) -> Json:
 def interaction(type: int, data: Json, **fields: Any) -> Json:
     """An INTERACTION_CREATE payload of `type` with a fresh id and token."""
     base = fixture(
-        f"events/INTERACTION_CREATE.{INTERACTION_FIXTURES.get(type, 'command')}"
+        f"events/INTERACTION_CREATE.{_INTERACTION_FIXTURES.get(type, 'command')}"
     )
     fresh = {"id": snowflake(), "type": type, "token": secrets.token_urlsafe(48)}
     return base | fresh | {"data": data} | fields
@@ -141,13 +136,13 @@ def modal(custom_id: str) -> Json:
 def voice_channel(**fields: Any) -> Json:
     """The guild's voice channel, as `GET /channels/{id}` returns it."""
     guild = fixture("events/GUILD_CREATE")
-    channel: Json = next(c for c in guild["channels"] if c["type"] == GUILD_VOICE)
+    channel: Json = next(c for c in guild["channels"] if c["type"] == _GUILD_VOICE)
     return channel | {"guild_id": guild["id"]} | fields
 
 
 def stage_channel(**fields: Any) -> Json:
     """A stage channel in the same guild."""
-    return voice_channel(id=STAGE_CHANNEL_ID, type=13, name="Town Hall") | fields
+    return voice_channel(id=_STAGE_CHANNEL_ID, type=13, name="Town Hall") | fields
 
 
 def voice_state(**fields: Any) -> Json:
