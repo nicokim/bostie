@@ -1,8 +1,15 @@
-from enum import KEEP, IntEnum, IntFlag, StrEnum
+from enum import KEEP, Enum, IntEnum, IntFlag, StrEnum
 from typing import Self, override
 
 FLAG_WIDTH = 128
 MSGSPEC_ENUM_MAX = (1 << 63) - 1
+
+
+def _named_unknown[E: Enum](cls: type[E], unknown: E, value: int | str) -> E:
+    unknown._name_ = f"UNKNOWN_{value}"
+    unknown._value_ = value
+    cls._value2member_map_.setdefault(value, unknown)
+    return cls(value)
 
 
 class DiscordIntEnum(IntEnum):
@@ -13,11 +20,7 @@ class DiscordIntEnum(IntEnum):
     def _missing_(cls, value: object) -> Self | None:
         if not isinstance(value, int):
             return None
-        unknown = int.__new__(cls, value)
-        unknown._name_ = f"UNKNOWN_{value}"
-        unknown._value_ = value
-        cls._value2member_map_.setdefault(value, unknown)
-        return cls(value)
+        return _named_unknown(cls, int.__new__(cls, value), value)
 
 
 class DiscordIntFlag(IntFlag, boundary=KEEP):
@@ -46,11 +49,7 @@ class DiscordStrEnum(StrEnum):
     def _missing_(cls, value: object) -> Self | None:
         if not isinstance(value, str):
             return None
-        unknown = str.__new__(cls, value)
-        unknown._name_ = f"UNKNOWN_{value}"
-        unknown._value_ = value
-        cls._value2member_map_.setdefault(value, unknown)
-        return cls(value)
+        return _named_unknown(cls, str.__new__(cls, value), value)
 
 
 class ChannelType(DiscordIntEnum):
