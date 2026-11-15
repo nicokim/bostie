@@ -454,6 +454,19 @@ def test_edit_returns_once_discord_applied_it_or_raises_on_timeout() -> None:
     run(scenario)
 
 
+def test_edit_raises_when_the_connection_ends_while_it_waits() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        vc = await connected(bot)
+        bot.core.applies_self = False
+        editing = asyncio.ensure_future(vc.edit(self_deaf=True))
+        await settle()
+        bot.deliver(disconnected("removed"))
+        with pytest.raises(voice.VoiceNotConnected, match="has ended"):
+            await editing
+
+    run(scenario)
+
+
 def test_disconnect_returns_once_ended_and_is_idempotent() -> None:
     async def scenario(bot: FakeBot) -> None:
         vc = await connected(bot)

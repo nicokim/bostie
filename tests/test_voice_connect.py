@@ -459,6 +459,18 @@ def test_connect_external_hands_on_later_servers_and_bot_states() -> None:
     run(scenario)
 
 
+def test_a_cancelled_connect_external_leaves_the_channel_it_asked_for() -> None:
+    async def scenario(bot: FakeBot) -> None:
+        task = asyncio.ensure_future(bot.voice.connect_external(GUILD_ID, VOICE))
+        await settle()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert bot.core.sent == [voice_state(VOICE), voice_state(None)]
+
+    run(scenario)
+
+
 def test_connect_external_refuses_a_guild_bostie_already_runs() -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(bot)
