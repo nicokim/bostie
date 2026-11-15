@@ -157,6 +157,22 @@ class GuildCreate(Event, kw_only=True):
         )
         return presences
 
+    def _member(self, user_id: int) -> Member | None:
+        items: tuple[msgspec.Raw, ...] = decoder(tuple[msgspec.Raw, ...]).decode(
+            self._members
+        )
+        joined = b"\0".join(items)
+        needle = str(user_id).encode()
+        found = joined.find(needle)
+        while found != -1:
+            member: Member = decoder(Member).decode(
+                items[joined.count(b"\0", 0, found)]
+            )
+            if member.user.id == user_id:
+                return member
+            found = joined.find(needle, found + 1)
+        return None
+
     @classmethod
     @override
     def decode(cls, shard_id: int, data: bytes) -> Self:

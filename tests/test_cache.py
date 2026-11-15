@@ -413,6 +413,20 @@ def test_the_bots_member_follows_only_its_own_updates(cache: Cache) -> None:
     )
 
 
+def test_the_bots_member_is_found_past_members_whose_fields_hold_its_id() -> None:
+    members = event("GUILD_CREATE").raw["members"]
+    cache = Cache()
+    cache.apply(event("READY"))
+
+    cache.apply(
+        event("GUILD_CREATE", members=[members[0] | {"nick": str(BOT)}, *members])
+    )
+    me = cache.me(GUILD)
+
+    assert me is not None
+    assert (me.user.id, cache.guild_members(GUILD)) == (BOT, [me])
+
+
 def test_the_member_cache_follows_creates_joins_updates_chunks_and_leaves() -> None:
     cache = Cache(members=True)
     cache.apply(event("READY"))

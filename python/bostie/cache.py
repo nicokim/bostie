@@ -282,10 +282,13 @@ class Cache:
             self._store_channel(_in_guild(channel, guild_id))
         for state in event.voice_states:
             self._store_voice_state(msgspec.structs.replace(state, guild_id=guild_id))
+        if self._all_members:
+            members = event.members
+        else:
+            me = None if self._current is None else event._member(self._current.id)
+            members = () if me is None else (me,)
         self._members[guild_id] = {
-            member.user.id: _stored(member)
-            for member in event.members
-            if self._keeps(member.user.id)
+            member.user.id: _stored(member) for member in members
         }
         self._presences[guild_id] = {}
         if self._keeps_presences:
