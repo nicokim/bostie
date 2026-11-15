@@ -226,13 +226,10 @@ fn init_test_tracing() {
 }
 
 #[cfg(test)]
-fn refusing_socket() -> tokio::net::TcpSocket {
-    let socket = tokio::net::TcpSocket::new_v4().unwrap();
-    socket
-        .bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
-        .unwrap();
-    socket
-}
+const REFUSING: std::net::SocketAddr = std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
+    std::net::Ipv4Addr::LOCALHOST,
+    1,
+));
 
 #[cfg(test)]
 mod tests {

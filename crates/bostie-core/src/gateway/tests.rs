@@ -114,10 +114,6 @@ fn assert_identify(payload: &Value) {
     assert_eq!(payload["op"].as_u64(), Some(2), "{payload:?}");
 }
 
-fn address_of(socket: &TcpSocket) -> SocketAddr {
-    socket.local_addr().unwrap()
-}
-
 struct FakeGateway {
     address: SocketAddr,
     connections: mpsc::UnboundedReceiver<TcpStream>,
@@ -294,7 +290,6 @@ struct Harness {
     _bell: BellReceiver,
     fake: FakeGateway,
     received: VecDeque<Delivery>,
-    _refusing_api: Option<TcpSocket>,
 }
 
 impl Drop for Harness {
@@ -309,24 +304,11 @@ impl Harness {
     }
 
     fn limited(zstd: bool, tuning: GatewayTuning) -> Self {
-        let refusing = crate::refusing_socket();
-        let api_url = format!("http://{}/api/v10", address_of(&refusing));
-        Self::with(
-            FakeGateway::start(zstd),
-            &api_url,
-            tuning,
-            Some(refusing),
-            None,
-        )
+        let api_url = format!("http://{}/api/v10", crate::REFUSING);
+        Self::with(FakeGateway::start(zstd), &api_url, tuning, None)
     }
 
-    fn with(
-        fake: FakeGateway,
-        api_url: &str,
-        tuning: GatewayTuning,
-        refusing_api: Option<TcpSocket>,
-        proxy: Option<Proxy>,
-    ) -> Self {
+    fn with(fake: FakeGateway, api_url: &str, tuning: GatewayTuning, proxy: Option<Proxy>) -> Self {
         crate::init_test_tracing();
         let (bell, receiver) = bell::pair().unwrap();
         let inbox = Arc::new(Inbox::with_dispatch_limit(bell, INBOX_LIMIT));
@@ -359,7 +341,6 @@ impl Harness {
             _bell: receiver,
             fake,
             received: VecDeque::new(),
-            _refusing_api: refusing_api,
         }
     }
 
@@ -620,9 +601,8 @@ async fn a_refusing_base_url_falls_back_to_get_gateway() {
         connect_timeout: Duration::from_millis(500),
         ..TUNING
     };
-    let mut harness = Harness::with(fake, &api.url, tuning, None, None);
-    let closed = crate::refusing_socket();
-    let refusing = format!("ws://{}", address_of(&closed));
+    let mut harness = Harness::with(fake, &api.url, tuning, None);
+    let refusing = format!("ws://{}", crate::REFUSING);
 
     harness
         .gateway
@@ -654,9 +634,8 @@ async fn a_failed_reconnect_resumes_on_the_base_url_without_refreshing_it() {
         hello_timeout: Duration::from_millis(200),
         ..TUNING
     };
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, tuning, None, None);
-    let closed = crate::refusing_socket();
-    let dead = address_of(&closed).to_string();
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, tuning, None);
+    let dead = crate::REFUSING.to_string();
     harness.start();
 
     let _without_hello = harness.fake.accept().await;
@@ -691,9 +670,8 @@ async fn closing_during_a_get_gateway_that_never_answers_stops_at_once() {
         connect_timeout: NEVER,
         ..TUNING
     };
-    let mut harness = Harness::with(FakeGateway::start(false), &api.url, tuning, None, None);
-    let closed = crate::refusing_socket();
-    let refusing = format!("ws://{}", address_of(&closed));
+    let mut harness = Harness::with(FakeGateway::start(false), &api.url, tuning, None);
+    let refusing = format!("ws://{}", crate::REFUSING);
     harness
         .gateway
         .start(shard(), &refusing, IDENTIFY, None)
@@ -1443,9 +1421,8 @@ async fn a_proxied_shard_tunnels_with_connect_and_the_proxy_credentials() {
     });
     let fake = FakeGateway::start(false);
     let address = fake.address;
-    let refusing = crate::refusing_socket();
-    let api_url = format!("http://{}/api/v10", address_of(&refusing));
-    let mut harness = Harness::with(fake, &api_url, TUNING, Some(refusing), proxy.ok());
+    let api_url = format!("http://{}/api/v10", crate::REFUSING);
+    let mut harness = Harness::with(fake, &api_url, TUNING, proxy.ok());
 
     harness.ready(41_250).await;
 

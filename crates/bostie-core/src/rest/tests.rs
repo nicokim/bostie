@@ -978,8 +978,7 @@ async fn responses_count_as_invalid_pause_the_gate_or_reject_the_token() {
 #[tokio::test]
 async fn connection_failures_are_retried_and_reported_without_the_url() {
     crate::init_test_tracing();
-    let refusing = crate::refusing_socket();
-    let address = refusing.local_addr().unwrap();
+    let address = crate::REFUSING;
     let (rest, _receiver) = rest(&format!("http://{address}/api/v10"));
     let webhook = request(
         "POST",

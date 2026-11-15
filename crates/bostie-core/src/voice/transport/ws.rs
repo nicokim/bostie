@@ -286,6 +286,10 @@ mod tests {
         connect: Duration::from_millis(100),
         close: Duration::from_millis(200),
     };
+    const PATIENT: SocketTuning = SocketTuning {
+        connect: WAIT,
+        ..TUNING
+    };
 
     fn url(endpoint: &str) -> String {
         endpoint_url(endpoint).unwrap().to_string()
@@ -293,7 +297,7 @@ mod tests {
 
     async fn dial(endpoint: &str) -> VoiceSocket {
         let url = endpoint_url(endpoint).unwrap();
-        VoiceSocket::dial(&url, &Connector::Plain, TUNING)
+        VoiceSocket::dial(&url, &Connector::Plain, PATIENT)
             .await
             .unwrap()
     }
@@ -617,11 +621,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_dial_is_a_socket_error() {
-        let refusing = crate::refusing_socket();
-        let address = refusing.local_addr().unwrap();
-        let url = endpoint_url(&format!("ws://{address}")).unwrap();
+        let url = endpoint_url(&format!("ws://{}", crate::REFUSING)).unwrap();
 
-        let dialed = VoiceSocket::dial(&url, &Connector::Plain, TUNING).await;
+        let dialed = VoiceSocket::dial(&url, &Connector::Plain, PATIENT).await;
 
         assert!(matches!(dialed, Err(WsError::Socket(_))));
     }
