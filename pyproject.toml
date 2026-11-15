@@ -97,7 +97,8 @@ banned-module-level-imports = [
 "bostie._native".msg = "voice layers use only the public voice API"
 
 [tool.ruff.lint.per-file-ignores]
-"!python/bostie/voice/layers.py" = ["SLF001", "TID251", "TID253", "PLC0415"]
+"!python/bostie/voice/layers.py" = ["TID251", "TID253", "PLC0415"]
+"python/bostie/voice/*.py" = ["SLF001"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 "python/bostie/{_bridge,bot,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
 "python/bostie/voice/layers.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
@@ -105,7 +106,7 @@ banned-module-level-imports = [
 "crates/**/vectors.py" = ["T201"]  # the script prints the vectors
 "examples/**" = ["ARG"]  # listeners and hooks take their event, context or error even when unused
 "docs/**" = ["ARG", "FBT001", "FBT002", "PLR0917", "S101"]  # command options are parameters; tests assert
-"tests/**" = ["ARG", "FBT", "PLR0917", "PLR2004", "S101", "S106", "S107", "S603"]
+"tests/**" = ["ARG", "FBT", "PLR0917", "PLR2004", "S101", "S106", "S107", "S603", "SLF001"]
 "tests/{test_context,test_mutations}.py" = ["BLE001"]  # they hand back whatever the code under test raises
 "tests/{test_voice_recording,test_voice_receive}.py" = ["PERF401"]  # a concurrent check watches the list grow item by item
 
