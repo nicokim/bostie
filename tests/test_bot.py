@@ -917,6 +917,21 @@ def test_startup_waits_for_the_ready_guilds_and_sends_started_once() -> None:
     run(scenario)
 
 
+def test_a_guild_create_of_an_unexpected_shape_still_counts_toward_ready() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        fake.ready_guilds = [GUILD]
+        bot = Bot(api_url=fake.api_url, guild_ready_timeout=60)
+        started = asyncio.create_task(bot.start(fake.token))
+        await fake.next_identify()
+
+        await fake.dispatch("GUILD_CREATE", payloads.guild(name=5))
+        await asyncio.wait_for(bot.wait_until_ready(), 5)
+        await bot.close()
+        await started
+
+    run(scenario)
+
+
 @pytest.mark.parametrize(
     ("intents", "large", "chunked"),
     [

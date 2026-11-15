@@ -189,7 +189,6 @@ class _Dispatch:
     seq: int
     name: str
     data: bytes
-    fields: dict[str, Any] = field(default_factory=dict[str, Any])
     decoded: dict[type[Event], Event | None] = field(
         default_factory=dict[type[Event], Event | None]
     )
@@ -204,10 +203,7 @@ class _Dispatch:
                     seq=self.seq,
                 )
             else:
-                event = decode_event(cls, self.shard_id, self.data)
-                if event is not None and self.fields:
-                    event = msgspec.structs.replace(event, **self.fields)
-                self.decoded[cls] = event
+                self.decoded[cls] = decode_event(cls, self.shard_id, self.data)
         return cast("E | None", self.decoded[cls])
 
 
@@ -1019,8 +1015,16 @@ class Bot(Router):
                 if update is not None:
                     self.user = update.user
             case GuildCreate.NAME if readiness is not None:
-                joined, readied = readiness.created(dispatch.shard_id, dispatch.data)
-                dispatch.fields["joined"] = joined
+                created = dispatch.event(GuildCreate)
+                joined, readied = readiness.created(
+                    dispatch.shard_id,
+                    dispatch.data,
+                    None if created is None else created.guild,
+                )
+                if created is not None:
+                    dispatch.decoded[GuildCreate] = msgspec.structs.replace(
+                        created, joined=joined
+                    )
                 return readied
             case GuildDelete.NAME if readiness is not None:
                 return readiness.deleted(dispatch.shard_id, dispatch.data)

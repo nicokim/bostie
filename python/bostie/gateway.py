@@ -25,7 +25,7 @@ from bostie.errors import (
     ShardingRequired,
     StateError,
 )
-from bostie.models import Member, Presence
+from bostie.models import Guild, Member, Presence, UnavailableGuild
 from bostie.models.base import decoder, encoder
 
 CLOSE_TIMEOUT = 2.0
@@ -407,6 +407,11 @@ class _ReadyGuilds(msgspec.Struct):
     guilds: tuple[_GuildPresence, ...] = ()
 
 
+def _presence(guild: Guild | UnavailableGuild) -> _GuildPresence:
+    large = isinstance(guild, Guild) and bool(guild.large)
+    return _GuildPresence(guild.id, unavailable=guild.unavailable, large=large)
+
+
 def _decoded[S: msgspec.Struct](cls: type[S], data: bytes) -> S | None:
     try:
         decoded: S = decoder(cls).decode(data)
@@ -479,9 +484,13 @@ class Readiness:
         self._wait(shard_id, self._timeout)
         return False
 
-    def created(self, shard_id: int, data: bytes) -> tuple[bool, bool]:
+    def created(
+        self, shard_id: int, data: bytes, decoded: Guild | UnavailableGuild | None
+    ) -> tuple[bool, bool]:
         """Note a GUILD_CREATE: whether the bot joined, and the shard is now ready."""
-        guild = _decoded(_GuildPresence, data)
+        guild = (
+            _decoded(_GuildPresence, data) if decoded is None else _presence(decoded)
+        )
         shard = self._shards[shard_id]
         if guild is None:
             return False, False
