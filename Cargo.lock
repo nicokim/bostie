@@ -265,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "bostie-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "audio_thread_priority",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "bostie-native"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bostie-core",
  "mimalloc",
