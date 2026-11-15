@@ -1283,18 +1283,20 @@ class _Connection(VoiceConnection):
     async def _follow(self, channel_id: int) -> None:
         try:
             _, channel = await _voice_channel(self._bot, channel_id)
-            if self._channel_id != channel_id or self._state is State.DISCONNECTED:
-                return
-            self._stage_channel = channel.type is ChannelType.GUILD_STAGE_VOICE
-            self._channel_bitrate = channel.bitrate
-            if self._encoder.bitrate is None:
-                self._apply_encoder(self._encoder)
         except (BostieError, ValueError):
             log.warning(
                 "could not read channel %d to follow its bitrate",
                 channel_id,
                 exc_info=True,
             )
+            return
+        if self._channel_id != channel_id or self._state is State.DISCONNECTED:
+            return
+        self._stage_channel = channel.type is ChannelType.GUILD_STAGE_VOICE
+        self._channel_bitrate = channel.bitrate
+        if self._encoder.bitrate is None:
+            with contextlib.suppress(VoiceNotConnected):
+                self._apply_encoder(self._encoder)
 
     def _stop_speech(self) -> None:
         now = time.monotonic()
