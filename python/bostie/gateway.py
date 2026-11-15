@@ -27,6 +27,7 @@ from bostie.errors import (
 )
 from bostie.models import Guild, Member, Presence, UnavailableGuild
 from bostie.models.base import decoder, encoder
+from bostie.snowflake import shard_of
 
 CLOSE_TIMEOUT = 2.0
 PRESENCE_UPDATE = 3
@@ -200,7 +201,7 @@ class GatewayClient:
 
     def shard_for(self, guild_id: int) -> int:
         """The shard Discord sends this guild's events to."""
-        return (guild_id >> 22) % self.shard_count
+        return shard_of(guild_id, self.shard_count)
 
     def send(self, op: int, d: Any = None) -> None:
         """Send a gateway command to the shards it belongs to.

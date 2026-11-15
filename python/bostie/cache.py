@@ -62,6 +62,7 @@ from bostie.models import (
     WebhookMessage,
 )
 from bostie.permissions import THREAD_TYPES, AnyMember, compute_permissions
+from bostie.snowflake import shard_of
 
 type CachedMessage = Message | WebhookMessage
 type Changes = dict[str, Any] | None
@@ -347,7 +348,7 @@ class Cache:
     def _start_session(self, event: Ready) -> Changes:
         self._current = event.user
         shard_id, count = (0, 1) if event.shard is None else event.shard
-        ended = {id for id in self._guilds if (id >> 22) % count == shard_id}
+        ended = {id for id in self._guilds if shard_of(id, count) == shard_id}
         for guild_id in ended:
             self._remove_guild(guild_id)
         self._forget_messages(
