@@ -589,6 +589,21 @@ mod tests {
     }
 
     #[test]
+    fn a_dropped_body_of_known_length_fails_on_a_server_without_ranges() {
+        let harness = Harness::new();
+        let body = body_of(100_000);
+        let server = Server::start(body.clone(), false);
+        let mut media = HttpMedia::new(&harness.http, &server.url("/cut-once"), &[]).unwrap();
+        media.connect().unwrap();
+        let mut read = Vec::new();
+
+        media.read_to_end(&mut read).unwrap_err();
+
+        assert_eq!(read, body[..50_000]);
+        assert_eq!(server.received().len(), 1);
+    }
+
+    #[test]
     fn a_dropped_body_of_unknown_length_resumes_with_a_range_when_the_server_takes_ranges() {
         let harness = Harness::new();
         let body = body_of(10_000);
