@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::voice::rtcp;
+use crate::voice::transport::rtcp;
 
 pub(crate) const HEADER_LEN: usize = 12;
 pub(crate) const PAYLOAD_TYPE: u8 = 120;

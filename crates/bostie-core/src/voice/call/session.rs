@@ -13,18 +13,20 @@ use tokio::task::{AbortHandle, spawn_blocking};
 use tokio::time::Instant;
 use tracing::{debug, warn};
 
-use super::Throttle;
-use super::connection::{ConnectStep, Connection, ConnectionCommand, GatewayEvent, until};
-use super::crypto::{Cipher, Mode};
-use super::dave::{Dave, Outbound, SendMode};
-use super::media::Transport;
-use super::proto::{self, Inbound, ProtoError, SessionDescription};
-use super::receive::Intake;
-use super::types::{DaveOp, DisconnectReason};
-use super::udp::{self, Answer, DiscoveryError};
-use super::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
 use crate::error::describe;
 use crate::inbox::Delivery;
+use crate::voice::Throttle;
+use crate::voice::call::connection::{
+    ConnectStep, Connection, ConnectionCommand, GatewayEvent, until,
+};
+use crate::voice::dave::{Dave, Outbound, SendMode};
+use crate::voice::media::Transport;
+use crate::voice::receive::Intake;
+use crate::voice::transport::crypto::{Cipher, Mode};
+use crate::voice::transport::proto::{self, Inbound, ProtoError, SessionDescription};
+use crate::voice::transport::udp::{self, Answer, DiscoveryError};
+use crate::voice::transport::ws::{self, Close, Heartbeat, Received, SeqAck, VoiceSocket};
+use crate::voice::types::{DaveOp, DisconnectReason};
 
 pub(super) struct Credentials {
     pub(super) session_id: Box<str>,

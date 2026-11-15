@@ -7,10 +7,10 @@ use bytes::Bytes;
 use serde::{Serialize, Serializer};
 use sonic_rs::{JsonValueTrait, LazyValue, PointerTree};
 
-use super::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp};
-use super::ws::WS_MAX_MESSAGE;
 use crate::gateway::command;
 use crate::ids::{ChannelId, GuildId, UserId};
+use crate::voice::transport::ws::WS_MAX_MESSAGE;
+use crate::voice::types::{DaveOp, MAX_DAVE_PROTOCOL_VERSION, ProposalsOp};
 
 pub(crate) mod op {
     pub(crate) const IDENTIFY: u8 = 0;
@@ -526,7 +526,7 @@ mod tests {
 
     use super::*;
 
-    const SESSION: &str = include_str!("testdata/session.jsonl");
+    const SESSION: &str = include_str!("../testdata/session.jsonl");
 
     fn fixture(needle: &str) -> &'static str {
         SESSION

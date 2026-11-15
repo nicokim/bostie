@@ -34,7 +34,7 @@ use crate::inbox::Inbox;
 use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::tasks::{PendingTicket, TaskTable};
-use crate::voice::tap::GatewayTap;
+use crate::voice::call::tap::GatewayTap;
 use crate::voice::types::MAX_DAVE_PROTOCOL_VERSION;
 use crate::voice::{GatewaySend, Voice};
 

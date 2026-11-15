@@ -5,8 +5,8 @@ use aes_gcm::aead::array::Array;
 use aes_gcm::aead::{AeadInOut, KeyInit};
 use chacha20poly1305::XChaCha20Poly1305;
 
-use super::rtcp;
-use super::rtp::{Header, RtpError};
+use crate::voice::transport::rtcp;
+use crate::voice::transport::rtp::{Header, RtpError};
 
 pub(crate) const KEY_LEN: usize = 32;
 pub(crate) const TAG_LEN: usize = 16;
@@ -250,8 +250,8 @@ mod tests {
     use proptest::sample::select;
 
     use super::*;
-    use crate::voice::rtp::tests::{any_extension, header_bytes, padded};
-    use crate::voice::rtp::{HEADER_LEN, write_header};
+    use crate::voice::transport::rtp::tests::{any_extension, header_bytes, padded};
+    use crate::voice::transport::rtp::{HEADER_LEN, write_header};
 
     const OVERHEAD: usize = TAG_LEN + NONCE_LEN;
 

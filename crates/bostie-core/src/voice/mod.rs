@@ -1,32 +1,18 @@
-pub(crate) mod close;
+pub(crate) mod call;
 pub(crate) mod codec;
-pub(crate) mod connection;
 pub(crate) mod convert;
-pub(crate) mod crypto;
 pub(crate) mod dave;
-pub(crate) mod effects;
 pub(crate) mod media;
-pub(crate) mod mixer;
 pub(crate) mod pacer;
-pub(crate) mod peak;
-pub(crate) mod playout;
-pub(crate) mod proto;
 pub(crate) mod receive;
-pub(crate) mod receiver;
-pub(crate) mod rtcp;
-pub(crate) mod rtp;
-pub(crate) mod session;
-pub(crate) mod sink;
+pub(crate) mod send;
 pub(crate) mod source;
-pub(crate) mod speech;
-pub(crate) mod tap;
 #[cfg(test)]
 pub(crate) mod testkit;
 #[cfg(test)]
 mod tests;
+pub(crate) mod transport;
 pub mod types;
-pub(crate) mod udp;
-pub(crate) mod ws;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -43,19 +29,22 @@ use tokio::task::JoinHandle;
 use tokio_websockets::Connector;
 use tracing::{debug, error};
 
+use self::call::connection::{
+    Connection, ConnectionCommand, ConnectionTuning, Ending, Info, Inputs,
+};
+use self::call::tap::GatewayTap;
 pub use self::codec::FrameEncoder;
-use self::connection::{Connection, ConnectionCommand, ConnectionTuning, Ending, Info, Inputs};
 pub use self::dave::DaveInfo;
 use self::media::Media;
 use self::pacer::{Pace, PacerPool};
 use self::receive::Reception;
-pub use self::receiver::{Ended, Item, ReceiveRead, Receiver, ReceiverStats};
-pub use self::rtcp::{ReceptionReport, RtcpPacket};
-pub use self::sink::{Sink, SinkStats};
+pub use self::receive::receiver::{Ended, Item, ReceiveRead, Receiver, ReceiverStats};
+pub use self::send::sink::{Sink, SinkStats};
 use self::source::http::Http;
 pub use self::source::waveform::voice_message;
 pub use self::source::{Source, SourceKind, SourceRead};
-use self::tap::GatewayTap;
+use self::transport::proto;
+pub use self::transport::rtcp::{ReceptionReport, RtcpPacket};
 use self::types::{
     ConnectRequest, DisconnectReason, EncoderSettings, FRAME, ReceiveOptions, SPEECH_HANGOVERS,
     SinkOptions, SourceSpec, VoiceStatus,

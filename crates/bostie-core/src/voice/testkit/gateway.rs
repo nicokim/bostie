@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tokio_websockets::{CloseCode, Message, ServerBuilder, WebSocketStream};
 
 use crate::ids::{GuildId, UserId};
-use crate::voice::proto::op;
+use crate::voice::transport::proto::op;
 use crate::voice::types::VOICE_GATEWAY_VERSION;
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -534,8 +534,8 @@ mod tests {
     use tokio_websockets::Connector;
 
     use super::*;
-    use crate::voice::proto;
-    use crate::voice::ws::{Received, SocketTuning, VoiceSocket, endpoint_url};
+    use crate::voice::transport::proto;
+    use crate::voice::transport::ws::{Received, SocketTuning, VoiceSocket, endpoint_url};
 
     const PATIENCE: Duration = Duration::from_secs(1);
 

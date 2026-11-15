@@ -7,7 +7,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::watch;
 use tokio::time::timeout;
 
-use super::rtp::{self, Kind};
+use crate::voice::transport::rtp::{self, Kind};
 
 pub(crate) const DISCOVERY_LEN: usize = 74;
 

@@ -1,4 +1,4 @@
-use super::types::DisconnectReason;
+use crate::voice::types::DisconnectReason;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CloseAction {

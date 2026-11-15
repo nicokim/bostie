@@ -26,7 +26,7 @@ use crate::ids::ShardId;
 use crate::inbox::Delivery;
 use crate::latency::Latency;
 use crate::proxy::Proxy;
-use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
+use crate::voice::call::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
 const HEARTBEAT: u8 = 1;
 const RESUME: u8 = 6;

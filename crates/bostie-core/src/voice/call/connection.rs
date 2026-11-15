@@ -10,19 +10,19 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::debug;
 
-use super::VoiceShared;
-use super::close::{self, CloseAction};
-use super::media::Media;
-use super::proto;
-use super::receiver::Ended;
-use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
-use super::tap::Snapshot;
-use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
-use super::ws::SocketTuning;
 use crate::backoff::backoff;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
 use crate::latency::Latency;
+use crate::voice::VoiceShared;
+use crate::voice::call::close::{self, CloseAction};
+use crate::voice::call::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
+use crate::voice::call::tap::Snapshot;
+use crate::voice::media::Media;
+use crate::voice::receive::receiver::Ended;
+use crate::voice::transport::proto;
+use crate::voice::transport::ws::SocketTuning;
+use crate::voice::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
 
 const REJOIN_LIMIT: u32 = 3;
 const RESUME_ATTEMPTS: u32 = 2;
@@ -225,7 +225,7 @@ struct Failures {
     last: Option<String>,
 }
 
-pub(super) struct Connection {
+pub(in crate::voice) struct Connection {
     pub(super) shared: Arc<VoiceShared>,
     pub(super) guild: GuildId,
     pub(super) user: UserId,
@@ -250,14 +250,14 @@ pub(super) struct Connection {
     connected: bool,
 }
 
-pub(super) struct Inputs {
-    pub(super) commands: mpsc::Receiver<ConnectionCommand>,
-    pub(super) stop: watch::Receiver<bool>,
-    pub(super) gateway: watch::Receiver<Snapshot>,
+pub(in crate::voice) struct Inputs {
+    pub(in crate::voice) commands: mpsc::Receiver<ConnectionCommand>,
+    pub(in crate::voice) stop: watch::Receiver<bool>,
+    pub(in crate::voice) gateway: watch::Receiver<Snapshot>,
 }
 
 impl Connection {
-    pub(super) fn new(
+    pub(in crate::voice) fn new(
         shared: Arc<VoiceShared>,
         request: &ConnectRequest,
         info: Arc<Info>,
@@ -309,7 +309,7 @@ impl Connection {
         }
     }
 
-    pub(super) async fn run(mut self) -> Ending {
+    pub(in crate::voice) async fn run(mut self) -> Ending {
         self.announce(VoiceStatus::Connecting, ConnectStep::VoiceEvents.as_str());
         let mut next = Next::Wait;
         loop {

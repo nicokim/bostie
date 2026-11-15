@@ -6,13 +6,13 @@ use bytes::{Bytes, BytesMut};
 use parking_lot::MutexGuard;
 use tracing::{debug, warn};
 
+use super::peak::Peak;
+use super::playout::Check;
 use super::{Key, ReceiveContext, Work};
 use crate::ids::{GuildId, UserId};
 use crate::voice::Throttle;
 use crate::voice::dave::{Dave, DecryptFailure};
 use crate::voice::media::Arrival;
-use crate::voice::peak::Peak;
-use crate::voice::playout::Check;
 use crate::voice::types::ReceiveTuning;
 
 const PAYLOAD_CHUNK: usize = 8 * 1024;

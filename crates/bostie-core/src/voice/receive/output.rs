@@ -10,15 +10,15 @@ use tracing::debug;
 
 use super::decrypt::Hold;
 use super::owners::Owners;
+use super::peak::Peak;
+use super::playout::{Cursor, Release, is_before, to_samples};
+use super::receiver::{Item, Receiver};
+use super::speech::{self, Activity, Edge};
 use super::{Feed, Key, Moment, ReceiveContext, instant, samples_since, speaking};
 use crate::ids::{Handle, UserId};
 use crate::voice::codec::{self, OpusDecoder};
 use crate::voice::media::{Arrival, Media};
-use crate::voice::peak::Peak;
-use crate::voice::playout::{Cursor, Release, is_before, to_samples};
-use crate::voice::receiver::{Item, Receiver};
-use crate::voice::rtp;
-use crate::voice::speech::{self, Activity, Edge};
+use crate::voice::transport::rtp;
 use crate::voice::types::{
     FRAME, FRAME_48K, FRAME_SAMPLES, PcmFormat, ReceiveFormat, ReceiveOptions, SAMPLE_RATE,
 };

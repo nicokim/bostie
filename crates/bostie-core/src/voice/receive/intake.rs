@@ -9,11 +9,11 @@ use tracing::{debug, error};
 
 use crate::ids::UserId;
 use crate::inbox::Delivery;
-use crate::voice::connection::Info;
-use crate::voice::crypto::ReplayWindow;
+use crate::voice::call::connection::Info;
 use crate::voice::media::{Arrival, Media, Transport};
-use crate::voice::rtcp;
-use crate::voice::rtp::Kind;
+use crate::voice::transport::crypto::ReplayWindow;
+use crate::voice::transport::rtcp;
+use crate::voice::transport::rtp::Kind;
 use crate::voice::types::SILENCE_FRAME;
 use crate::voice::{Throttle, panic_message};
 
@@ -166,10 +166,10 @@ mod tests {
 
     use super::*;
     use crate::ids::{ChannelId, GuildId, Handle, ShardId};
-    use crate::voice::crypto::{Cipher, Mode};
-    use crate::voice::receiver::Receiver;
-    use crate::voice::sink::tests::Fixture;
+    use crate::voice::receive::receiver::Receiver;
+    use crate::voice::send::sink::tests::Fixture;
     use crate::voice::testkit::sfu::{self, Sealing};
+    use crate::voice::transport::crypto::{Cipher, Mode};
     use crate::voice::types::{
         Overflow, ReceiveFormat, ReceiveOptions, ReceiveStall, ReceiveTuning,
     };

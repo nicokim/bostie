@@ -4,9 +4,9 @@ use super::*;
 use crate::bell;
 use crate::ids::Handle;
 use crate::voice::codec::{FrameEncoder, packet_samples};
-use crate::voice::crypto::Mode;
 use crate::voice::testkit::mls::Call;
 use crate::voice::testkit::sfu::{Packet, Sfu};
+use crate::voice::transport::crypto::Mode;
 use crate::voice::types::{
     Application, Bandwidth, FRAME, FRAME_SAMPLES, PcmFormat, SampleFormat, SignalType, SinkFormat,
     SinkOptions, StallPolicy,

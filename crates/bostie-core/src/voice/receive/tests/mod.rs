@@ -7,14 +7,14 @@ use proptest::prelude::*;
 use super::*;
 use crate::ids::{ChannelId, Handle, ShardId};
 use crate::voice::codec::FrameEncoder;
-use crate::voice::crypto::{Cipher, Mode};
 use crate::voice::dave::{Outbound, SendMode};
 use crate::voice::media::Transport;
-use crate::voice::receiver::{Ended, Item, ReceiveRead, Receiver};
-use crate::voice::rtp::{self, Kind};
-use crate::voice::sink::tests::Fixture;
+use crate::voice::receive::receiver::{Ended, Item, ReceiveRead, Receiver};
+use crate::voice::send::sink::tests::Fixture;
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::sfu::{self, Sealing};
+use crate::voice::transport::crypto::{Cipher, Mode};
+use crate::voice::transport::rtp::{self, Kind};
 use crate::voice::types::{
     Application, Bandwidth, DaveOp, EncoderSettings, FRAME, Overflow, PcmFormat, ReceiveFormat,
     ReceiveOptions, ReceiveStall, SampleFormat, SignalType,

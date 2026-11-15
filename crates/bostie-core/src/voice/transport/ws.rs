@@ -10,8 +10,8 @@ use tokio_websockets::{
 };
 use tracing::debug;
 
-use super::proto::{self, Frame, ProtoError};
-use super::types::VOICE_GATEWAY_VERSION;
+use crate::voice::transport::proto::{self, Frame, ProtoError};
+use crate::voice::types::VOICE_GATEWAY_VERSION;
 
 pub(crate) const WS_MAX_MESSAGE: usize = 1024 * 1024;
 
@@ -277,8 +277,8 @@ mod tests {
     use tokio_websockets::ServerBuilder;
 
     use super::*;
-    use crate::voice::proto::Inbound;
     use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway};
+    use crate::voice::transport::proto::Inbound;
     use crate::voice::types::DaveOp;
 
     const INTERVAL: Duration = Duration::from_millis(13_750);

@@ -30,7 +30,7 @@ use crate::proxy::Proxy;
 use crate::rest::Rest;
 use crate::rest::tests::{NO_REPLY, SETTINGS as REST_SETTINGS, Server, reply};
 use crate::testkit;
-use crate::voice::tap::GatewayTap;
+use crate::voice::call::tap::GatewayTap;
 
 const TOKEN: &str = "test-token";
 const SESSION_ID: &str = "70374e9c7263b9d5e16c4f418ff85dc1";

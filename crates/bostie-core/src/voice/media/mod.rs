@@ -13,14 +13,14 @@ use tracing::debug;
 use crate::error::CoreError;
 use crate::ids::{ChannelId, GuildId, UserId};
 use crate::inbox::{Delivery, Inbox};
-use crate::voice::crypto::Cipher;
 use crate::voice::dave::{Dave, DaveInfo, SendMode};
-use crate::voice::mixer::Mixer;
 use crate::voice::nanos;
 use crate::voice::pacer::Tick;
-use crate::voice::receiver::{Ended, Receiver};
-use crate::voice::rtp::{self, HEADER_LEN};
-use crate::voice::sink::Sink;
+use crate::voice::receive::receiver::{Ended, Receiver};
+use crate::voice::send::mixer::Mixer;
+use crate::voice::send::sink::Sink;
+use crate::voice::transport::crypto::Cipher;
+use crate::voice::transport::rtp::{self, HEADER_LEN};
 use crate::voice::types::{
     Direction, EncoderSettings, FRAME_48K, ReceiveFormat, ReceiveStall, ReceiveTuning,
     SILENCE_FRAME,

@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 
 use parking_lot::{Condvar, Mutex, MutexGuard};
 
-use crate::voice::crypto::{Cipher, KEY_LEN, Mode};
-use crate::voice::rtp::{self, HEADER_LEN, Header, Kind};
+use crate::voice::transport::crypto::{Cipher, KEY_LEN, Mode};
+use crate::voice::transport::rtp::{self, HEADER_LEN, Header, Kind};
+use crate::voice::transport::udp::DISCOVERY_LEN;
 use crate::voice::types::SILENCE_FRAME;
-use crate::voice::udp::DISCOVERY_LEN;
 
 const POLL: Duration = Duration::from_millis(10);
 const REQUEST_HEAD: [u8; 4] = [0, 1, 0, 70];

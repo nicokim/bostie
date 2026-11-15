@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use parking_lot::Mutex;
 
+use super::peak::Peak;
 use crate::error::CoreError;
 use crate::ids::{Handle, UserId};
 use crate::inbox::{Delivery, Inbox};
 use crate::runtime;
-use crate::voice::peak::Peak;
 use crate::voice::types::{Overflow, ReceiveOptions, Speaking};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,7 +163,7 @@ impl Receiver {
             return Err(CoreError::ReceiverClosed(self.id));
         }
         let id = queue.next_mark;
-        queue.next_mark += 1;
+        queue.next_mark = queue.next_mark.saturating_add(1);
         if queue.ended.is_some() {
             self.resolve(id, false);
         } else {
@@ -229,7 +229,7 @@ impl Receiver {
         let full = self.options.overflow == Overflow::DropNewest && queue.is_full(now, buffer);
         for item in items {
             if full && !item.is_marker() {
-                queue.stats.dropped += 1;
+                queue.stats.dropped = queue.stats.dropped.saturating_add(1);
             } else {
                 queue.add(item, now);
             }
@@ -245,11 +245,13 @@ impl Receiver {
     }
 
     pub(crate) fn add_lost(&self, packets: u64) {
-        self.queue.lock().stats.lost += packets;
+        let stats = &mut self.queue.lock().stats;
+        stats.lost = stats.lost.saturating_add(packets);
     }
 
     pub(crate) fn add_dropped(&self, frames: u64) {
-        self.queue.lock().stats.dropped += frames;
+        let stats = &mut self.queue.lock().stats;
+        stats.dropped = stats.dropped.saturating_add(frames);
     }
 
     fn abandon_marks(&self, queue: &mut Queue) {
@@ -278,10 +280,10 @@ impl Queue {
     fn add(&mut self, item: Item, now: Instant) {
         match &item {
             Item::Frame { lost, .. } => {
-                self.stats.delivered += 1;
-                self.stats.lost += u64::from(*lost);
+                self.stats.delivered = self.stats.delivered.saturating_add(1);
+                self.stats.lost = self.stats.lost.saturating_add(u64::from(*lost));
             }
-            Item::Packet { .. } => self.stats.delivered += 1,
+            Item::Packet { .. } => self.stats.delivered = self.stats.delivered.saturating_add(1),
             Item::Leave { .. } => {}
             Item::Speech { user, .. } => {
                 let user = *user;
@@ -309,7 +311,9 @@ impl Queue {
                     }
                 }
                 Item::Leave { .. } => self.stale_markers.push((queued, item)),
-                Item::Frame { .. } | Item::Packet { .. } => self.stats.dropped += 1,
+                Item::Frame { .. } | Item::Packet { .. } => {
+                    self.stats.dropped = self.stats.dropped.saturating_add(1);
+                }
             }
         }
     }
@@ -324,7 +328,7 @@ impl Queue {
     fn take(&mut self, limit: usize) -> Vec<(Instant, Item)> {
         let stale = limit.min(self.stale_markers.len());
         let fresh = limit.saturating_sub(stale).min(self.items.len());
-        let mut taken = Vec::with_capacity(stale + fresh);
+        let mut taken = Vec::with_capacity(stale.saturating_add(fresh));
         taken.extend(self.stale_markers.drain(..stale));
         taken.extend(self.items.drain(..fresh));
         taken
@@ -347,13 +351,14 @@ impl Item {
 }
 
 #[cfg(test)]
+#[expect(clippy::arithmetic_side_effects)]
 mod tests {
     use std::collections::HashSet;
 
     use proptest::prelude::*;
 
     use super::*;
-    use crate::voice::sink::tests::Fixture;
+    use crate::voice::send::sink::tests::Fixture;
     use crate::voice::types::{ReceiveFormat, ReceiveStall, SILENCE_FRAME};
 
     const ALICE: u64 = 1;

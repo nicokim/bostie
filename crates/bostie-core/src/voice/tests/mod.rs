@@ -8,20 +8,20 @@ use tokio_websockets::Message;
 
 use super::*;
 use crate::bell::{self, BellReceiver};
-use crate::voice::crypto::Mode;
+use crate::voice::call::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::dave::{Outbound, SendMode};
 use crate::voice::media::tests::{queued_frames, tone};
-use crate::voice::proto::op;
-use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 use crate::voice::testkit::gateway::{ClientMessage, Config, FakeVoiceGateway, Outgoing};
 use crate::voice::testkit::mls::{Call, Signal};
 use crate::voice::testkit::pacer::ManualPacer;
 use crate::voice::testkit::sfu::Sfu;
+use crate::voice::transport::crypto::Mode;
+use crate::voice::transport::proto::op;
+use crate::voice::transport::ws::SocketTuning;
 use crate::voice::types::{
     Application, Bandwidth, DaveOp, FRAME, FRAME_SAMPLES, Overflow, PcmFormat, ProposalsOp,
     ReceiveFormat, ReceiveStall, ReceiveTuning, SampleFormat, SignalType, SinkFormat, StallPolicy,
 };
-use crate::voice::ws::SocketTuning;
 
 mod e2ee;
 mod lifecycle;

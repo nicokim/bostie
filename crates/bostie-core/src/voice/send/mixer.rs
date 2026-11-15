@@ -7,8 +7,8 @@ use opus::{Channels, Decoder, SoftClip};
 use crate::error::CoreError;
 use crate::ids::Handle;
 use crate::voice::codec::{self, Encoder};
-use crate::voice::effects::{Equalizer, Rate};
-use crate::voice::sink::Sink;
+use crate::voice::send::effects::{Equalizer, Rate};
+use crate::voice::send::sink::Sink;
 use crate::voice::types::{
     CHANNELS, EncoderSettings, FRAME_LEN, FRAME_SAMPLES, Filters, SAMPLE_RATE, SinkFormat,
 };
@@ -422,7 +422,7 @@ impl Fade {
 mod tests {
     use super::*;
     use crate::voice::codec::tests::{packet, settings};
-    use crate::voice::sink::tests::{Fixture, frames_of, stereo_48k};
+    use crate::voice::send::sink::tests::{Fixture, frames_of, stereo_48k};
     use std::time::Duration;
 
     use crate::inbox::Delivery;

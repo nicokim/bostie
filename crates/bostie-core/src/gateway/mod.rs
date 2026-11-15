@@ -31,7 +31,7 @@ use crate::ids::ShardId;
 use crate::inbox::Inbox;
 use crate::proxy::Proxy;
 use crate::rest::Rest;
-use crate::voice::tap::GatewayTap;
+use crate::voice::call::tap::GatewayTap;
 
 const COMMAND_QUEUE: usize = 128;
 

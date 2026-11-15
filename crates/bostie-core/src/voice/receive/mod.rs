@@ -4,6 +4,10 @@ mod decrypt;
 mod intake;
 mod output;
 mod owners;
+mod peak;
+mod playout;
+pub(crate) mod receiver;
+mod speech;
 
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
@@ -19,16 +23,16 @@ use self::decrypt::Hold;
 pub(crate) use self::intake::Intake;
 use self::output::Subscribers;
 use self::owners::Owners;
+use self::peak::Peak;
+use self::playout::{Check, Slot, Stream, to_samples};
+use self::speech::{Activity, Edge};
 use crate::ids::{GuildId, UserId};
 use crate::inbox::Delivery;
+use crate::voice::call::connection::Info;
 use crate::voice::codec;
-use crate::voice::connection::Info;
 use crate::voice::dave;
 use crate::voice::media::{Arrival, Media, Stall};
 use crate::voice::pacer::Tick;
-use crate::voice::peak::Peak;
-use crate::voice::playout::{Check, Slot, Stream, to_samples};
-use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
     Direction, FRAME_48K, ReceiveTuning, SAMPLE_RATE, SILENCE_FRAME, Speaking, duration_of,
 };
