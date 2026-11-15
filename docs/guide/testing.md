@@ -1,5 +1,7 @@
 # Testing your bot
 
+![Bostie searching with a magnifying glass until a check mark appears](../assets/mascot/bostie-detective.webp){ align=right width="180" loading=lazy }
+
 `bostie.testing` runs a fake Discord on localhost: a gateway, a REST API with the routes a bot uses most, and optionally a voice server. Your real bot connects to it, and the test drives Discord's side: it sends events and interactions, then checks what the bot sent back. It needs the `testing` extra ([Install](../install.md)), and bostie's own test suite runs on it.
 
 ```python

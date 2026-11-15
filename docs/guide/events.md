@@ -1,5 +1,7 @@
 # Events
 
+![Bostie greeting a ringing bell](../assets/mascot/bostie-events.webp){ align=right width="180" loading=lazy }
+
 Discord tells the bot what happens through gateway events: a message was sent, a member joined, a role changed. A listener is an async function that takes one event.
 
 ```python

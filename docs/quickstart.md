@@ -4,6 +4,8 @@ render_macros: true
 
 # Quickstart
 
+![Bostie typing code into a terminal](assets/mascot/bostie-quickstart.webp){ align=right width="180" loading=lazy }
+
 This page creates a Discord application, adds it to a server and runs a bot with one slash command. It assumes bostie is [installed](install.md).
 
 {% include "callout.md" %}

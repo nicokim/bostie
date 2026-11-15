@@ -2,7 +2,7 @@
 
 # bostie
 
-<img src="docs/assets/mascot/bostie-waving.svg" alt="Bostie, a Boston Terrier, waving" width="110" align="right">
+<img src="docs/assets/mascot/bostie-wave.gif" alt="Bostie, a Boston Terrier, waving" width="160" align="right">
 
 A Discord library for Python with a Rust core, built around reliable voice.
 

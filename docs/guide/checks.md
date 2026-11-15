@@ -1,5 +1,7 @@
 # Checks, hooks and errors
 
+![Bostie with crossed arms, fuming](../assets/mascot/bostie-angry.webp){ align=right width="180" loading=lazy }
+
 A check decides whether a handler may run. Hooks run code before and after handlers. Error hooks answer when something raises.
 
 ## Checks

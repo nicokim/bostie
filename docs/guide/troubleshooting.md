@@ -1,5 +1,7 @@
 # Troubleshooting
 
+![Bostie thinking until the question mark turns into a light bulb](../assets/mascot/bostie-thinking.webp){ align=right width="180" loading=lazy }
+
 bostie logs a warning for each mistake it can see. This page lists them by what you observe, with the log line to look for and the fix.
 
 ## A command says "The application did not respond"

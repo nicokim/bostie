@@ -1,5 +1,7 @@
 # Running a bot
 
+![Bostie celebrating with confetti](../assets/mascot/bostie-celebrating.webp){ align=right width="180" loading=lazy }
+
 ## `bot.run()`
 
 `bot.run()` is the whole program for most bots. It configures logging at INFO on stderr, unless the root logger has handlers already, starts an event loop, and runs the bot until it stops. Ctrl+C and, on the main thread, SIGTERM close it cleanly.

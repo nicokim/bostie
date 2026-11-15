@@ -1,5 +1,7 @@
 # Background tasks
 
+![Bostie asleep while an alarm clock rings](../assets/mascot/bostie-sleeping.webp){ align=right width="180" loading=lazy }
+
 `@bot.every` runs an async function without arguments on a schedule, while the bot is ready.
 
 ```python

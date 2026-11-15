@@ -1,5 +1,7 @@
 # REST API
 
+![Bostie jumping for a ball](../assets/mascot/bostie-jumping.webp){ align=right width="180" loading=lazy }
+
 `bot.rest` has a method for every operation of Discord's REST API that a bot can call, grouped by the resource it acts on: `bot.rest.messages.create`, `bot.rest.members.add_role`, `bot.rest.guilds.fetch`. Requests go through bostie's Rust HTTP client, which follows Discord's rate limits.
 
 ```python

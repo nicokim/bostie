@@ -1,5 +1,7 @@
 # Sharding and resuming
 
+![Three Bosties running in a row](../assets/mascot/bostie-running.webp){ align=right width="220" loading=lazy }
+
 Discord splits a bot's guilds across gateway connections called shards: guild `g` belongs to shard `(g >> 22) % shard_count`. A bot in more than 2500 guilds must shard; Discord closes an unsharded connection with code 4011 and `start()` raises `ShardingRequired`.
 
 ## Shards in one process

@@ -4,6 +4,8 @@ render_macros: true
 
 # AI coding assistants
 
+![Bostie chatting while a speech bubble fills with dots](assets/mascot/bostie-assistants.webp){ align=right width="180" loading=lazy }
+
 The bostie skill teaches a coding assistant how a bostie bot is written: commands, components, modals, events, REST, voice and tests, with complete examples and the habits from other code that fail in bostie. Assistants that support skills load it when a task involves bostie. It lives in the repository at `docs/skills/bostie`, and bostie's tests type-check and run every example in it and check that every name it mentions exists.
 
 {% set expanded = true %}

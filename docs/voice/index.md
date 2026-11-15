@@ -1,5 +1,7 @@
 # Voice connections
 
+![Bostie listening with headphones](../assets/mascot/bostie-listen.webp){ align=right width="180" loading=lazy }
+
 bostie's voice engine runs in its Rust core: the voice WebSocket, the UDP transport, the 20 ms send clock, decoding and resampling, the mixer, Opus encoding and decoding, transport encryption, and DAVE end-to-end encryption. Python asks it to join, play and receive; the timing never depends on the event loop, except that Python has to keep each sink's buffer filled.
 
 Voice needs `Intents.GUILD_VOICE_STATES`, which `Intents.DEFAULT` includes. The bot has at most one voice connection per guild.

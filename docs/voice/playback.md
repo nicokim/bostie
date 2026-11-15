@@ -1,5 +1,7 @@
 # Playing audio
 
+![Bostie nodding along to music](../assets/mascot/bostie-playback.webp){ align=right width="180" loading=lazy }
+
 `await vc.play(source)` plays a source on a [voice connection](index.md) and returns a `Track` at once. Several tracks play at the same time and are mixed; a `Queue` plays them one after another.
 
 ```python

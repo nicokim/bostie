@@ -1,5 +1,7 @@
 # Receiving and recording
 
+![Bostie holding a microphone as sound waves arrive](../assets/mascot/bostie-receiving.webp){ align=right width="180" loading=lazy }
+
 `vc.receive()` opens a receiver: a bounded async iterator over the audio the bot hears. Each speaker arrives on their own, decrypted, put back in order and decoded in Rust. Several receivers can be open on one connection, each with its own format and filters.
 
 ```python

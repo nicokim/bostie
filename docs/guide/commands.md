@@ -1,5 +1,7 @@
 # Slash commands
 
+![Bostie writing a slash command in a speech bubble](../assets/mascot/bostie-commands.webp){ align=right width="180" loading=lazy }
+
 A slash command is an async function decorated with `@bot.command`. Its first parameter takes the [`Context`](responses.md); every parameter after it is an option of the command.
 
 ```python

@@ -1,5 +1,7 @@
 # Cache and permissions
 
+![Bostie dropping a bone into a box](../assets/mascot/bostie-cache.webp){ align=right width="180" loading=lazy }
+
 `bot.cache` keeps what the gateway told the bot, so handlers can look things up without a request. It is filled from events, never from REST calls you make.
 
 ```python

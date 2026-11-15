@@ -1,5 +1,7 @@
 # Components
 
+![Bostie pressing a big button](../assets/mascot/bostie-components.webp){ align=right width="180" loading=lazy }
+
 Components are the buttons, select menus and layout blocks of a message. `bostie.ui` builds them as plain dictionaries in Discord's JSON shape, and checks Discord's limits as it builds them. A handler registered with `@bot.on_component` answers their uses.
 
 `bostie.ui` is how you build components. The component models, such as `bostie.Button` or `bostie.ActionRow`, are what a decoded message's `components` hold; `components=` takes them too, so a message's components can be sent back, edited with `msgspec.structs.replace`, without rebuilding them, but they do not check Discord's limits.

@@ -4,6 +4,8 @@ render_macros: true
 
 # bostie
 
+![Bostie, a Boston Terrier, welcoming you with open arms](assets/mascot/bostie-welcoming.webp){ align=right width="180" loading=lazy }
+
 bostie is a Discord library for Python whose gateway, HTTP client and voice engine run in Rust. You write the bot in typed, async Python.
 
 !!! warning "Pre-alpha"

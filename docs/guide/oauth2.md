@@ -1,5 +1,7 @@
 # OAuth2 and linked roles
 
+![Bostie holding up a shining key](../assets/mascot/bostie-oauth2.webp){ align=right width="180" loading=lazy }
+
 OAuth2 lets a user grant your app access to their account: their profile, their guilds, their linked accounts, the right to add them to a guild, or a role connection for linked roles. bostie builds the authorization URLs and calls the API with the token the user grants.
 
 ```python

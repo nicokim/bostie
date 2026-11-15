@@ -1,5 +1,7 @@
 # Modals
 
+![Bostie filling in a form and sending it](../assets/mascot/bostie-modals.webp){ align=right width="180" loading=lazy }
+
 A modal is a popup form. A command or a component answers with one, and the user's submit arrives as a new interaction that a modal route handles.
 
 ```python
