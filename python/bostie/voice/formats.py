@@ -2,7 +2,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal, TypedDict, get_args
+from typing import Literal, get_args
 
 from bostie import _native
 from bostie.enums import SpeakingFlags
@@ -246,32 +246,6 @@ class Defaults:
         if self.history < 0:
             raise ValueError(f"history must be at least 0, got {self.history}")
         check_choice("receive_stall", self.receive_stall, _native.RECEIVE_STALLS)
-
-
-class SinkOptions(TypedDict, total=False):
-    """Settings for one sink; each overrides voice.Defaults."""
-
-    buffer: float
-    stall: SinkStall
-
-
-class PacketReceiveOptions(TypedDict, total=False):
-    """Settings for one receiver of voice.Packets(); each overrides voice.Defaults."""
-
-    buffer: float
-    overflow: Overflow
-    stall: ReceiveStall
-
-
-class ReceiveOptions(PacketReceiveOptions, total=False):
-    """Settings for one receiver; each overrides voice.Defaults."""
-
-    jitter: float
-
-
-SINK_OPTIONS = SinkOptions.__optional_keys__
-PACKET_RECEIVE_OPTIONS = PacketReceiveOptions.__optional_keys__
-RECEIVE_OPTIONS = ReceiveOptions.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)

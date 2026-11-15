@@ -37,7 +37,7 @@ A join that is not ready within `timeout` seconds raises `VoiceConnectError` wit
 | `receive_buffer`, `jitter`, `overflow`, `receive_stall` | 2.0, 0.1, `"drop_oldest"`, `"wait"` | the defaults of every [receiver](receiving.md) |
 | `crossfade`, `history` | 0.0, 0 | the defaults of every [queue](playback.md#queues) |
 
-`connect()` takes `self_mute`, `self_deaf`, `timeout`, `server_change_delay`, `encoder`, `speaking_flags`, `stage`, `speech_hangover`, `speech_activity` and `stall_after`. Invalid values raise `ValueError` when the `Defaults` is built. For annotations, the options of `connect()`, `move()`, `edit()` and `connect_external()` are the typed dictionaries `voice.ConnectOptions`, `voice.MoveOptions`, `voice.EditOptions` and `voice.ExternalConnectOptions`, and the string settings have the literal types `voice.StageRole`, `voice.SinkStall`, `voice.ReceiveStall`, `voice.Overflow`, `voice.Sample`, `voice.OpusApplication`, `voice.OpusBandwidth` and `voice.OpusSignal`. `ctx.voice` is a `voice.ContextVoice` and `bot.voice` a `voice.VoiceManager`.
+`connect()` takes `self_mute`, `self_deaf`, `timeout`, `server_change_delay`, `encoder`, `speaking_flags`, `stage`, `speech_hangover`, `speech_activity` and `stall_after` as keyword arguments; one left out, or `None`, keeps the default. `connect_external()` takes the first three, `move()` takes `timeout`, and `edit()` takes `self_mute`, `self_deaf` and `timeout`. Invalid values raise `ValueError` when the `Defaults` is built. The string settings have the literal types `voice.StageRole`, `voice.SinkStall`, `voice.ReceiveStall`, `voice.Overflow`, `voice.Sample`, `voice.OpusApplication`, `voice.OpusBandwidth` and `voice.OpusSignal`. `ctx.voice` is a `voice.ContextVoice` and `bot.voice` a `voice.VoiceManager`.
 
 ## The connection
 
@@ -56,7 +56,7 @@ A join that is not ready within `timeout` seconds raises `VoiceConnectError` wit
 | `encoder`, `speaking_flags`, `speech_hangover`, `speech_activity`, `stall_after` | settable while connected |
 
 - `await vc.move(channel_id)` moves to another voice or stage channel of the guild and returns once media flows there.
-- `await vc.edit(self_mute=..., self_deaf=...)` changes the bot's own mute or deafen and returns once Discord applied it.
+- `await vc.edit(self_mute=..., self_deaf=...)` changes the bot's own mute or deafen, leaving the one not given as it is, and returns once Discord applied it.
 - `await vc.stage("request")` asks to speak on a stage, `"speak"` speaks (with the permission to), `"listen"` goes back to the audience.
 - `await vc.wait_until(voice.State.READY)` waits for a state, and raises `VoiceNotConnected` if the connection ends first.
 - `vc.reconnect()` drops the voice WebSocket and resumes on a new one.

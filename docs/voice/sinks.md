@@ -28,7 +28,7 @@ A sink is a bounded buffer that Python writes audio into and the Rust mixer read
 
 ## Settings
 
-`vc.sink` takes these keyword arguments; `buffer` and `stall` are its `voice.SinkOptions`, which `vc.play` and `voice.Queue` take too.
+`vc.sink` takes these keyword arguments; `vc.play` and `voice.Queue` take `buffer` and `stall` too.
 
 | Setting | Default | Meaning |
 |---|---|---|

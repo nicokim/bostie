@@ -13,7 +13,7 @@ from collections.abc import (
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, Unpack, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from bostie import _native
 from bostie._aio import spawn
@@ -39,7 +39,6 @@ from bostie.errors import (
 from bostie.events import VoiceServerUpdate, VoiceStateUpdate
 from bostie.gateway import CLOSE_TIMEOUT
 from bostie.models import Channel, User
-from bostie.models.base import check_keys
 from bostie.voice import player
 from bostie.voice._link import CoreLink, Handle
 from bostie.voice.encoder import DEFAULT_BITRATE
@@ -60,10 +59,7 @@ from bostie.voice.events import (
 from bostie.voice.formats import (
     DEFAULT_PCM,
     NO_FILTERS,
-    PACKET_RECEIVE_OPTIONS,
     PCM,
-    RECEIVE_OPTIONS,
-    SINK_OPTIONS,
     STAGE_ROLES,
     Defaults,
     EncoderSettings,
@@ -71,11 +67,11 @@ from bostie.voice.formats import (
     Format,
     Latency,
     Opus,
-    PacketReceiveOptions,
+    Overflow,
     Packets,
     ReceiveFormat,
-    ReceiveOptions,
-    SinkOptions,
+    ReceiveStall,
+    SinkStall,
     StageRole,
     check_choice,
     check_stall_after,
@@ -109,45 +105,6 @@ type ConnectionDelivery = (
 type VoiceDelivery = (
     ConnectionDelivery | _native.VoiceWakeDelivery | _native.VoiceMarkerDelivery
 )
-
-
-class EditOptions(TypedDict, total=False):
-    """The bot's own mute and deafen; any you leave out stays as it is."""
-
-    self_mute: bool
-    self_deaf: bool
-    timeout: float
-
-
-class MoveOptions(TypedDict, total=False):
-    """Settings for one move() call; each overrides voice.Defaults."""
-
-    timeout: float
-
-
-class ExternalConnectOptions(TypedDict, total=False):
-    """Settings for one connect_external() call; each overrides voice.Defaults."""
-
-    self_deaf: bool
-    self_mute: bool
-    timeout: float
-
-
-class ConnectOptions(ExternalConnectOptions, total=False):
-    """Settings for one connect() call; each overrides voice.Defaults."""
-
-    server_change_delay: float
-    encoder: EncoderSettings
-    speaking_flags: SpeakingFlags
-    stage: StageRole
-    speech_hangover: float
-    speech_activity: bool
-
-
-CONNECT_OPTIONS = ConnectOptions.__optional_keys__
-EXTERNAL_CONNECT_OPTIONS = ExternalConnectOptions.__optional_keys__
-MOVE_OPTIONS = MoveOptions.__optional_keys__
-EDIT_OPTIONS = EditOptions.__optional_keys__
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,22 +207,40 @@ class VoiceManager:
         self,
         channel_id: int,
         *,
+        self_deaf: bool | None = None,
+        self_mute: bool | None = None,
+        timeout: float | None = None,
+        server_change_delay: float | None = None,
+        encoder: EncoderSettings | None = None,
+        speaking_flags: SpeakingFlags | None = None,
+        stage: StageRole | None = None,
+        speech_hangover: float | None = None,
+        speech_activity: bool | None = None,
         stall_after: float | None = None,
-        **options: Unpack[ConnectOptions],
     ) -> "VoiceConnection":
         """Connect to a voice or stage channel and return once media can flow.
 
-        In a guild where the bot is already connected, this moves it and applies
-        only the options given.
+        Each setting given overrides voice.Defaults. In a guild where the bot is
+        already connected, this moves it and applies only the settings given.
         """
         user = self._running_user("bot.voice.connect()")
-        settings = self._settings(options, CONNECT_OPTIONS)
-        if stall_after is not None:
-            settings = replace(settings, stall_after=stall_after)
+        options = _given(
+            self_deaf=self_deaf,
+            self_mute=self_mute,
+            timeout=timeout,
+            server_change_delay=server_change_delay,
+            encoder=encoder,
+            speaking_flags=speaking_flags,
+            stage=stage,
+            speech_hangover=speech_hangover,
+            speech_activity=speech_activity,
+            stall_after=stall_after,
+        )
+        settings = replace(self.defaults, **options)
         guild_id, channel = await _voice_channel(self._bot, channel_id)
         vc = self._connections.get(guild_id)
         if vc is not None:
-            await vc.connect_again(channel, options, stall_after)
+            await vc.connect_again(channel, options)
             return vc
         vc = _Connection(self, guild_id, channel, settings, self._forget)
         self._connections[guild_id] = vc
@@ -276,7 +251,10 @@ class VoiceManager:
         self,
         guild_id: int,
         channel_id: int,
-        **options: Unpack[ExternalConnectOptions],
+        *,
+        self_deaf: bool | None = None,
+        self_mute: bool | None = None,
+        timeout: float | None = None,
     ) -> ExternalVoice:
         """Join a voice channel for an external voice engine and return its credentials.
 
@@ -288,7 +266,10 @@ class VoiceManager:
             raise AlreadyConnected(
                 f"bostie already runs a voice connection in guild {guild_id}"
             )
-        settings = self._settings(options, EXTERNAL_CONNECT_OPTIONS)
+        settings = replace(
+            self.defaults,
+            **_given(self_deaf=self_deaf, self_mute=self_mute, timeout=timeout),
+        )
         try:
             async with (
                 self._bot.stream(
@@ -358,12 +339,6 @@ class VoiceManager:
                 "voice needs Intents.GUILD_VOICE_STATES; add it to Bot(intents=...)"
             )
         return user
-
-    def _settings(
-        self, options: ExternalConnectOptions, allowed: frozenset[str]
-    ) -> Defaults:
-        check_keys(options, allowed, "options")
-        return replace(self.defaults, **options)
 
     def _forget(self, vc: "VoiceConnection") -> None:
         if self._connections.get(vc.guild_id) is vc:
@@ -547,7 +522,8 @@ class VoiceConnection:
         after: Sink | None = None,
         crossfade: float = 0.0,
         filters: Filters = NO_FILTERS,
-        **options: Unpack[SinkOptions],
+        buffer: float | None = None,
+        stall: SinkStall | None = None,
     ) -> Sink:
         """Open a bounded writer whose audio is mixed into this connection.
 
@@ -555,12 +531,11 @@ class VoiceConnection:
         written before its last drain(). With `crossfade` too, it starts that many
         seconds before `after` ends and fades across, buffering that much more.
         """
-        check_keys(options, SINK_OPTIONS, "options")
         self._check_live()
         if after is not None and not after.closed and after not in self._sinks:
             raise ValueError("after must be a sink of this connection")
-        buffer = options.get("buffer", self._settings.sink_buffer)
-        stall = options.get("stall", self._settings.stall)
+        buffer = self._settings.sink_buffer if buffer is None else buffer
+        stall = self._settings.stall if stall is None else stall
         pcm = DEFAULT_PCM if isinstance(format, Opus) else format
         native = self._core().voice_sink(
             self.guild_id,
@@ -599,7 +574,9 @@ class VoiceConnection:
         exclude: Iterable[int] = (),
         include_self: bool = False,
         markers: Literal[False] = False,
-        **options: Unpack[PacketReceiveOptions],
+        buffer: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet]: ...
     @overload
     def receive(
@@ -610,7 +587,9 @@ class VoiceConnection:
         exclude: Iterable[int] = (),
         include_self: bool = False,
         markers: Literal[True],
-        **options: Unpack[PacketReceiveOptions],
+        buffer: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
@@ -621,7 +600,9 @@ class VoiceConnection:
         exclude: Iterable[int] = (),
         include_self: bool = False,
         markers: bool,
-        **options: Unpack[PacketReceiveOptions],
+        buffer: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Packet | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
@@ -633,7 +614,10 @@ class VoiceConnection:
         include_self: bool = False,
         markers: Literal[False] = False,
         mix: bool = False,
-        **options: Unpack[ReceiveOptions],
+        buffer: float | None = None,
+        jitter: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame]: ...
     @overload
     def receive(
@@ -645,7 +629,10 @@ class VoiceConnection:
         include_self: bool = False,
         markers: Literal[True],
         mix: bool = False,
-        **options: Unpack[ReceiveOptions],
+        buffer: float | None = None,
+        jitter: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame | SpeechStart | SpeechStop | UserLeave]: ...
     @overload
     def receive(
@@ -657,7 +644,10 @@ class VoiceConnection:
         include_self: bool = False,
         markers: bool,
         mix: bool = False,
-        **options: Unpack[ReceiveOptions],
+        buffer: float | None = None,
+        jitter: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Frame | SpeechStart | SpeechStop | UserLeave]: ...
     def receive(
         self,
@@ -668,21 +658,22 @@ class VoiceConnection:
         include_self: bool = False,
         markers: bool = False,
         mix: bool = False,
-        **options: Unpack[ReceiveOptions],
+        buffer: float | None = None,
+        jitter: float | None = None,
+        overflow: Overflow | None = None,
+        stall: ReceiveStall | None = None,
     ) -> Receiver[Any]:
         """Open a bounded iterator over the audio this connection receives."""
-        allowed = (
-            PACKET_RECEIVE_OPTIONS if isinstance(format, Packets) else RECEIVE_OPTIONS
-        )
-        check_keys(options, allowed, "options")
+        if jitter is not None and isinstance(format, Packets):
+            raise TypeError("Packets() take no jitter: they arrive before that buffer")
         self._check_live()
         settings = self._settings
         wanted = None if users is None else frozenset(users)
         excluded = frozenset(exclude)
-        buffer = options.get("buffer", settings.receive_buffer)
-        jitter = options.get("jitter", settings.jitter)
-        overflow = options.get("overflow", settings.overflow)
-        stall = options.get("stall", settings.receive_stall)
+        buffer = settings.receive_buffer if buffer is None else buffer
+        jitter = settings.jitter if jitter is None else jitter
+        overflow = settings.overflow if overflow is None else overflow
+        stall = settings.receive_stall if stall is None else stall
         pcm = DEFAULT_PCM if isinstance(format, Opus | Packets) else format
         native = self._core().voice_receive(
             self.guild_id,
@@ -735,12 +726,19 @@ class VoiceConnection:
         volume: float = 1.0,
         filters: Filters = NO_FILTERS,
         meta: Any = None,
-        **options: Unpack[SinkOptions],
+        buffer: float | None = None,
+        stall: SinkStall | None = None,
     ) -> player.Track:
         """Play a source on its own sink, mixed with anything else playing."""
         self._check_live()
         return await player.play(
-            self, source, volume=volume, filters=filters, meta=meta, **options
+            self,
+            source,
+            volume=volume,
+            filters=filters,
+            meta=meta,
+            buffer=buffer,
+            stall=stall,
         )
 
     def stop(self) -> None:
@@ -748,9 +746,8 @@ class VoiceConnection:
         for sink in tuple(self._sinks):
             sink.close()
 
-    async def move(self, channel_id: int, **options: Unpack[MoveOptions]) -> None:
+    async def move(self, channel_id: int, *, timeout: float | None = None) -> None:
         """Move to another voice or stage channel and wait until media flows there."""
-        check_keys(options, MOVE_OPTIONS, "options")
         self._check_live()
         guild_id, channel = await _voice_channel(self._bot, channel_id)
         if guild_id != self.guild_id:
@@ -761,18 +758,28 @@ class VoiceConnection:
             channel,
             self_mute=mute,
             self_deaf=deaf,
-            timeout=options.get("timeout", self._settings.timeout),
+            timeout=self._settings.timeout if timeout is None else timeout,
             restage=False,
         )
 
-    async def edit(self, **options: Unpack[EditOptions]) -> None:
+    async def edit(
+        self,
+        *,
+        self_mute: bool | None = None,
+        self_deaf: bool | None = None,
+        timeout: float | None = None,
+    ) -> None:
         """Change the bot's own mute or deafen, and return once Discord applied it."""
-        check_keys(options, EDIT_OPTIONS, "options")
         self._check_live()
         mute, deaf = self._requested
-        wanted = (options.get("self_mute", mute), options.get("self_deaf", deaf))
+        wanted = (
+            mute if self_mute is None else self_mute,
+            deaf if self_deaf is None else self_deaf,
+        )
         self._update(self._channel_id, self_mute=wanted[0], self_deaf=wanted[1])
-        async with asyncio.timeout(options.get("timeout", self._settings.timeout)):
+        async with asyncio.timeout(
+            self._settings.timeout if timeout is None else timeout
+        ):
             applied = await self._until(
                 lambda: (self._self_mute, self._self_deaf) == wanted
             )
@@ -1003,9 +1010,7 @@ class _Connection(VoiceConnection):
                 await self.disconnect()
                 raise
 
-    async def connect_again(
-        self, channel: Channel, options: ConnectOptions, stall_after: float | None
-    ) -> None:
+    async def connect_again(self, channel: Channel, options: Mapping[str, Any]) -> None:
         """Move to `channel` if needed and apply only the options given."""
         mute, deaf = self._requested
         if "stage" in options:
@@ -1029,8 +1034,8 @@ class _Connection(VoiceConnection):
             self._core().voice_server_change_delay(
                 self.guild_id, options["server_change_delay"]
             )
-        if stall_after is not None:
-            self.stall_after = stall_after
+        if "stall_after" in options:
+            self.stall_after = options["stall_after"]
 
     def apply(self, delivery: ConnectionDelivery) -> None:
         """Update the connection from a delivery of the core and emit its event."""
@@ -1228,10 +1233,20 @@ class ContextVoice:
         return None if self._guild_id is None else self._manager.get(self._guild_id)
 
     async def connect(
-        self, *, stall_after: float | None = None, **options: Unpack[ConnectOptions]
+        self,
+        *,
+        self_deaf: bool | None = None,
+        self_mute: bool | None = None,
+        timeout: float | None = None,
+        server_change_delay: float | None = None,
+        encoder: EncoderSettings | None = None,
+        speaking_flags: SpeakingFlags | None = None,
+        stage: StageRole | None = None,
+        speech_hangover: float | None = None,
+        speech_activity: bool | None = None,
+        stall_after: float | None = None,
     ) -> VoiceConnection:
         """Connect to the voice channel of the user who ran the command."""
-        check_keys(options, CONNECT_OPTIONS, "options")
         if self._guild_id is None:
             raise NotInVoice("voice needs a guild; this interaction came from a DM")
         channel_id = await self._channel_id(self._guild_id)
@@ -1241,7 +1256,17 @@ class ContextVoice:
                 f"{self._guild_id}"
             )
         return await self._manager.connect(
-            channel_id, stall_after=stall_after, **options
+            channel_id,
+            self_deaf=self_deaf,
+            self_mute=self_mute,
+            timeout=timeout,
+            server_change_delay=server_change_delay,
+            encoder=encoder,
+            speaking_flags=speaking_flags,
+            stage=stage,
+            speech_hangover=speech_hangover,
+            speech_activity=speech_activity,
+            stall_after=stall_after,
         )
 
     async def _channel_id(self, guild_id: int) -> int | None:
@@ -1256,6 +1281,10 @@ class ContextVoice:
                 raise
             return None
         return state.channel_id
+
+
+def _given(**options: object) -> dict[str, Any]:
+    return {name: value for name, value in options.items() if value is not None}
 
 
 async def _voice_channel(bot: "Bot", channel_id: int) -> tuple[int, Channel]:

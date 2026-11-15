@@ -3,7 +3,7 @@ from collections import deque
 from collections.abc import Buffer, Callable, Coroutine, Generator
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, ClassVar, Self, Unpack, cast, override
+from typing import Any, ClassVar, Self, cast, override
 
 import pytest
 
@@ -23,7 +23,6 @@ from bostie.voice.formats import (
     Filters,
     Format,
     Opus,
-    SinkOptions,
 )
 from bostie.voice.player import Queue, Track
 
@@ -266,12 +265,13 @@ class FakeConnection:
         after: FakeSink | None = None,
         crossfade: float = 0.0,
         filters: Filters | None = None,
-        **options: Unpack[SinkOptions],
+        buffer: float | None = None,
+        stall: str | None = None,
     ) -> FakeSink:
         if self.state is State.DISCONNECTED:
             raise VoiceNotConnected("the voice connection has ended")
-        buffer = options.get("buffer", 0.2)
-        stall = options.get("stall", "hold")
+        buffer = 0.2 if buffer is None else buffer
+        stall = "hold" if stall is None else stall
         sink = FakeSink(self, format, buffer, volume, stall, after, filters)
         sink.crossfade = crossfade
         self.sinks.append(sink)

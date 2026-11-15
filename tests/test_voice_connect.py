@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -105,34 +105,11 @@ def test_connect_applies_its_arguments_over_the_bot_defaults() -> None:
     run(scenario, voice=True)
 
 
-@pytest.mark.parametrize(
-    ("call", "option", "error"),
-    [
-        ("connect", "timeout", ValueError),
-        ("connect", "jitter", TypeError),
-        ("connect", "sink_buffer", TypeError),
-        ("connect_external", "encoder", TypeError),
-        ("context", "overflow", TypeError),
-    ],
-)
-def test_invalid_connect_options_raise_before_anything_is_sent(
-    call: str, option: str, error: type[Exception]
-) -> None:
-    options: dict[str, Any] = {option: 0.0}
-
+def test_an_invalid_connect_setting_raises_before_anything_is_sent() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
-            attempts: dict[str, Callable[[], Awaitable[object]]] = {
-                "connect": lambda: bot.voice.connect(VOICE_ID, **options),
-                "connect_external": lambda: bot.voice.connect_external(
-                    GUILD_ID, VOICE_ID, **options
-                ),
-                "context": lambda: voice.ContextVoice(
-                    bot.voice, GUILD_ID, USER_ID
-                ).connect(**options),
-            }
-            with pytest.raises(error, match=option):
-                await attempts[call]()
+            with pytest.raises(ValueError, match="timeout"):
+                await bot.voice.connect(VOICE_ID, timeout=0.0)
         assert (sent(fake, 4), lookups(fake)) == ([], [])
 
     run(scenario, voice=True)
@@ -202,7 +179,7 @@ def test_only_guild_voice_and_stage_channels_connect(channel: Json) -> None:
 def test_a_first_connect_asks_for_the_stage_role_on_a_stage_channel(
     default: StageRole,
     channel: int,
-    options: voice.ConnectOptions,
+    options: dict[str, Any],
     asked: list[Json],
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
@@ -227,7 +204,7 @@ def test_entering_a_stage_asks_for_the_connections_stage_role(
     default: StageRole,
     start: int,
     entry: str,
-    options: voice.ConnectOptions,
+    options: dict[str, Any],
     asked: list[Json],
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:

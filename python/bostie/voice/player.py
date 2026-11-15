@@ -6,22 +6,19 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Literal, Unpack
+from typing import TYPE_CHECKING, Any, Literal
 
 from bostie._aio import spawn
 from bostie.enums import EndReason, State
 from bostie.errors import SinkClosed, SourceError, StateError, VoiceNotConnected
-from bostie.models.base import check_keys
 from bostie.voice.encoder import DEFAULT_ENCODER, OpusEncoder
 from bostie.voice.formats import (
     NO_FILTERS,
     PCM,
-    SINK_OPTIONS,
     EncoderSettings,
     Filters,
     Format,
     Opus,
-    SinkOptions,
     SinkStall,
     check_choice,
     check_crossfade,
@@ -196,9 +193,9 @@ class Queue:
         filters: Filters = NO_FILTERS,
         crossfade: float | None = None,
         history: int | None = None,
-        **options: Unpack[SinkOptions],
+        buffer: float | None = None,
+        stall: SinkStall | None = None,
     ) -> None:
-        check_keys(options, SINK_OPTIONS, "options")
         defaults = vc.manager.defaults
         self.vc = vc
         self.crossfade = check_crossfade(
@@ -211,7 +208,8 @@ class Queue:
         )
         self._volume = volume
         self._filters = filters
-        self._options = options
+        self._buffer = buffer
+        self._stall: SinkStall | None = stall
         self._closed = False
         self._loop: Loop = None
         self._entries: list[_Entry] = []
@@ -655,7 +653,8 @@ class Queue:
             filters=self._filters,
             after=previous,
             crossfade=self.crossfade,
-            **self._options,
+            buffer=self._buffer,
+            stall=self._stall,
         )
         self._format = format
         if previous is not None:
@@ -749,10 +748,17 @@ async def play(
     volume: float = 1.0,
     filters: Filters = NO_FILTERS,
     meta: Any = None,
-    **options: Unpack[SinkOptions],
+    buffer: float | None = None,
+    stall: SinkStall | None = None,
 ) -> Track:
     queue = Queue(
-        vc, volume=volume, filters=filters, crossfade=0.0, history=0, **options
+        vc,
+        volume=volume,
+        filters=filters,
+        crossfade=0.0,
+        history=0,
+        buffer=buffer,
+        stall=stall,
     )
     try:
         await source.open(vc.manager)

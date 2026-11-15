@@ -69,37 +69,14 @@ async def moved(bot: Bot, fake: FakeDiscord, channel_id: int) -> None:
     await asyncio.gather(bot.wait_for(voice.Moved), fake.move_bot(channel_id))
 
 
-@pytest.mark.parametrize(
-    ("call", "option"),
-    [
-        ("sink", "jitter"),
-        ("play", "overflow"),
-        ("queue", "timeout"),
-        ("receive", "volume"),
-        ("packets", "jitter"),
-        ("move", "self_mute"),
-        ("edit", "stage"),
-    ],
-)
-def test_options_a_call_does_not_take_raise_type_error(call: str, option: str) -> None:
-    options: dict[str, Any] = {option: 0.1}
+def test_a_packet_receiver_refuses_a_jitter_buffer() -> None:
+    options: dict[str, Any] = {"jitter": 0.1}
 
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
             vc = await bot.voice.connect(VOICE_ID)
-            attempts: dict[str, Callable[[], object]] = {
-                "sink": lambda: vc.sink(**options),
-                "play": lambda: vc.play(voice.File("a.ogg"), **options),
-                "queue": lambda: voice.Queue(vc, **options),
-                "receive": lambda: vc.receive(**options),
-                "packets": lambda: vc.receive(voice.Packets(), **options),
-                "move": lambda: vc.move(OTHER_ID, **options),
-                "edit": lambda: vc.edit(**options),
-            }
-            with pytest.raises(TypeError, match=option):
-                await awaited(attempts[call]())
-            assert vc.sinks == ()
-        assert sent(fake, 4) == [joined(VOICE_ID), joined(None)]
+            with pytest.raises(TypeError, match="jitter"):
+                vc.receive(voice.Packets(), **options)
 
     run(scenario, voice=True)
 

@@ -29,7 +29,7 @@ A `Frame` has the `user_id`, the `ssrc`, the RTP `timestamp`, `offset` and `samp
 
 ## Settings
 
-The settings are the `voice.ReceiveOptions` of `vc.receive`, or `voice.PacketReceiveOptions` for `Packets()`, which has no jitter buffer.
+`vc.receive` takes these keyword arguments; `Packets()` has no jitter buffer, so it takes no `jitter`.
 
 | Setting | Default | Meaning |
 |---|---|---|
