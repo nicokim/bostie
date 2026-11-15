@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from bostie import Bot, Context, voice
+from bostie import Bot, Context, ShardNotRunning, voice
 from bostie.enums import SpeakingFlags
 from bostie.gateway import GatewayClient
 from bostie.testing import FakeDiscord, Packet, payloads, running
@@ -162,6 +162,18 @@ def test_connect_uses_the_bot_defaults_and_closing_the_bot_leaves_first() -> Non
         assert sent(fake, 4) == [join(VOICE_ID, self_deaf=True), LEAVE]
         assert fake.voice_sockets[-1].close_code == 1000
         assert fake.connections[-1].close_code == 1000
+
+    run(scenario)
+
+
+def test_a_connect_the_core_refuses_raises_and_registers_nothing() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        other_shard = 1 - (GUILD_ID >> 22) % 2
+        async with started(fake, shard_count=2, shard_ids=[other_shard]) as bot:
+            with pytest.raises(ShardNotRunning):
+                await bot.voice.connect(VOICE_ID)
+
+            assert bot.voice.get(GUILD_ID) is None
 
     run(scenario)
 
