@@ -22,7 +22,7 @@ use crate::voice::types::{
 };
 use crate::voice::{Throttle, panic_message};
 
-pub(crate) const DAVEY_VERSION: &str = "0.2.0-beta.1";
+pub(crate) const DAVEY_VERSION: &str = "0.2.0";
 
 const MARKER: [u8; 2] = [0xFA, 0xFA];
 const VERIFICATION_CODE_DIGITS: u32 = 45;

@@ -5753,7 +5753,7 @@ SOFTWARE.
 
 Used by:
 
-- [davey 0.2.0-beta.1](https://github.com/Snazzah/davey)
+- [davey 0.2.0](https://github.com/Snazzah/davey)
 
 ````text
 MIT License
