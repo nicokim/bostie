@@ -12,6 +12,7 @@ from bostie.events import (
     Event,
     MemberRemove,
     MemberUpdate,
+    MessageCreate,
     MessageDelete,
     MessageDeleteBulk,
     MessageUpdate,
@@ -452,6 +453,19 @@ def test_the_member_cache_follows_creates_joins_updates_chunks_and_leaves() -> N
     assert cache.me(GUILD) == cache.member(GUILD, BOT)
 
 
+def test_a_member_who_leaves_takes_their_presence_along() -> None:
+    cache = Cache(presences=True)
+    cache.apply(event("READY"))
+    cache.apply(event("GUILD_CREATE"))
+
+    applied(
+        cache, MemberRemove, "GUILD_MEMBER_REMOVE", user=payloads.user(id=str(SUPPORT))
+    )
+
+    assert cache.presence(GUILD, SUPPORT) is None
+    assert cache.presence(GUILD, OWNER) is not None
+
+
 def test_the_presence_cache_drops_offline_members() -> None:
     cache = Cache(presences=True)
     cache.apply(event("READY"))
@@ -532,6 +546,24 @@ def test_the_message_cache_keeps_the_latest_and_hands_them_to_events() -> None:
     assert cache.message(int(ids[1])) is None
     assert "MESSAGE_CREATE" in cache.names
     assert "MESSAGE_CREATE" not in Cache().names
+
+
+@pytest.mark.parametrize(
+    ("fixture", "dm_kept"), [("GUILD_DELETE.left", True), ("READY", False)]
+)
+def test_leaving_a_guild_or_a_new_session_forgets_its_messages(
+    fixture: str, dm_kept: bool
+) -> None:
+    cache = Cache(max_messages=10)
+    cache.apply(event("READY"))
+    cache.apply(event("GUILD_CREATE"))
+    guild = applied(cache, MessageCreate, "MESSAGE_CREATE").message
+    dm = applied(cache, MessageCreate, "MESSAGE_CREATE", id="1", guild_id=None)
+
+    cache.apply(event(fixture))
+
+    assert cache.message(guild.id) is None
+    assert (cache.message(dm.message.id) is not None) is dm_kept
 
 
 def test_dm_messages_keep_the_latest_dm_channels_without_the_messages() -> None:
