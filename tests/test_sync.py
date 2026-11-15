@@ -19,6 +19,7 @@ from bostie.testing import FakeDiscord, payloads
 
 FIXTURES = payloads.FIXTURES / "rest"
 REMOTE: list[dict[str, Any]] = json.loads((FIXTURES / "commands.json").read_text())
+INSTALL_TYPES = [0, 1]
 
 type Scenario = Callable[[FakeDiscord, HTTPClient], Coroutine[Any, Any, None]]
 
@@ -140,7 +141,9 @@ def test_matching_commands_send_only_the_get() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote()
 
-        results = await sync_commands(http, fake.application_id, COMMANDS, ())
+        results = await sync_commands(
+            http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+        )
 
         assert results == [SyncResult(None, (), (), ())]
         assert requests(fake) == [
@@ -155,7 +158,14 @@ def test_explicit_sync_puts_ours_then_other_types_verbatim() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote()
 
-        await sync_commands(http, fake.application_id, COMMANDS, (), always_put=True)
+        await sync_commands(
+            http,
+            fake.application_id,
+            COMMANDS,
+            (),
+            always_put=True,
+            install_types=INSTALL_TYPES,
+        )
 
         put = fake.requests[1]
         assert put.method == "PUT"
@@ -184,7 +194,14 @@ def test_pass_through_commands_drop_deprecated_keys_and_keep_settings(
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote(launch=deprecated)
 
-        await sync_commands(http, fake.application_id, COMMANDS, (), always_put=True)
+        await sync_commands(
+            http,
+            fake.application_id,
+            COMMANDS,
+            (),
+            always_put=True,
+            install_types=INSTALL_TYPES,
+        )
 
         (launch,) = fake.requests[1].json[3:]
         assert not {"dm_permission", "default_permission"} & launch.keys()
@@ -199,7 +216,14 @@ def test_guild_pass_through_commands_drop_dm_permission_as_is() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.guild_commands["11"] = remote(launch=hidden_in_dms)
 
-        await sync_commands(http, fake.application_id, COMMANDS, [11], always_put=True)
+        await sync_commands(
+            http,
+            fake.application_id,
+            COMMANDS,
+            [11],
+            always_put=True,
+            install_types=INSTALL_TYPES,
+        )
 
         (launch,) = fake.requests[1].json[3:]
         assert "dm_permission" not in launch
@@ -245,11 +269,45 @@ def test_a_difference_sends_one_put_with_the_other_types(
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.commands = remote(**changes)
 
-        (result,) = await sync_commands(http, fake.application_id, COMMANDS, ())
+        (result,) = await sync_commands(
+            http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+        )
 
         assert result.changed == changed
         assert [method for method, _ in requests(fake)] == ["GET", "PUT"]
         assert put_names(fake) == ["kit", "search", "User Info", "launch"]
+
+    run(scenario)
+
+
+async def ping(ctx: object) -> None:
+    """Check that the bot answers."""
+
+
+@pytest.mark.parametrize(
+    ("stored", "changed"),
+    [
+        ({}, ()),
+        ({"contexts": [0]}, ("ping",)),
+        ({"integration_types": [1]}, ("ping",)),
+    ],
+)
+def test_a_global_command_naming_no_contexts_or_install_types_wants_the_defaults(
+    stored: dict[str, Any], changed: tuple[str, ...]
+) -> None:
+    command = Router().command()(ping)
+
+    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
+        await sync_commands(
+            http, fake.application_id, [command], (), install_types=INSTALL_TYPES
+        )
+        fake.commands[0] |= stored
+
+        (result,) = await sync_commands(
+            http, fake.application_id, [command], (), install_types=INSTALL_TYPES
+        )
+
+        assert result.changed == changed
 
     run(scenario)
 
@@ -259,7 +317,9 @@ def test_missing_and_extra_commands_are_matched_by_type_and_name() -> None:
         user_search = copy.deepcopy(REMOTE[2]) | {"name": "search"}
         fake.commands = [c for c in remote() if c["name"] != "kit"] + [user_search]
 
-        (result,) = await sync_commands(http, fake.application_id, COMMANDS, ())
+        (result,) = await sync_commands(
+            http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+        )
 
         assert (result.added, result.removed, result.changed) == (
             ("kit",),
@@ -273,7 +333,12 @@ def test_missing_and_extra_commands_are_matched_by_type_and_name() -> None:
 
 def test_no_local_commands_means_no_request() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        assert await sync_commands(http, fake.application_id, [], ()) == []
+        assert (
+            await sync_commands(
+                http, fake.application_id, [], (), install_types=INSTALL_TYPES
+            )
+            == []
+        )
         assert fake.requests == []
 
     run(scenario)
@@ -282,7 +347,12 @@ def test_no_local_commands_means_no_request() -> None:
 def test_guild_scope_syncs_each_guild_and_ignores_contexts() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         results = await sync_commands(
-            http, fake.application_id, COMMANDS, [11, 22], always_put=True
+            http,
+            fake.application_id,
+            COMMANDS,
+            [11, 22],
+            always_put=True,
+            install_types=INSTALL_TYPES,
         )
 
         assert [result.guild_id for result in results] == [11, 22]
@@ -308,7 +378,12 @@ def test_a_command_with_guilds_syncs_there_and_the_others_as_before(
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         results = await sync_commands(
-            http, fake.application_id, [*COMMANDS, admin], dev_guilds, always_put=True
+            http,
+            fake.application_id,
+            [*COMMANDS, admin],
+            dev_guilds,
+            always_put=True,
+            install_types=INSTALL_TYPES,
         )
 
         assert [result.guild_id for result in results] == scopes
@@ -330,11 +405,20 @@ def test_an_entry_point_takes_over_the_remote_one_by_id_and_stays_global() -> No
         fake.commands = remote()
 
         (result,) = await sync_commands(
-            http, fake.application_id, [*COMMANDS, launch], ()
+            http,
+            fake.application_id,
+            [*COMMANDS, launch],
+            (),
+            install_types=INSTALL_TYPES,
         )
         with pytest.warns(UserWarning, match="'Launch' is global"):
             await sync_commands(
-                http, fake.application_id, [*COMMANDS, launch], [11], always_put=True
+                http,
+                fake.application_id,
+                [*COMMANDS, launch],
+                [11],
+                always_put=True,
+                install_types=INSTALL_TYPES,
             )
 
         assert (result.added, result.removed) == (("Launch",), ("launch",))
@@ -373,6 +457,7 @@ def test_translate_fills_the_localizations_a_command_leaves_out() -> None:
             (),
             translate=translate,
             always_put=True,
+            install_types=INSTALL_TYPES,
         )
 
         kit_payload = fake.requests[1].json[0]
@@ -388,7 +473,9 @@ def test_guild_scope_without_differences_sends_no_put() -> None:
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         fake.guild_commands["11"] = remote(kit={"contexts": [0]})
 
-        await sync_commands(http, fake.application_id, COMMANDS, [11])
+        await sync_commands(
+            http, fake.application_id, COMMANDS, [11], install_types=INSTALL_TYPES
+        )
 
         assert [method for method, _ in requests(fake)] == ["GET"]
 
@@ -409,7 +496,9 @@ def test_a_400_names_the_command_option_and_function_of_each_error() -> None:
         fake.fail("PUT", route, 400, error)
 
         with pytest.raises(CommandSyncError) as raised:
-            await sync_commands(http, fake.application_id, COMMANDS, ())
+            await sync_commands(
+                http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+            )
 
         assert str(raised.value).splitlines() == [
             (
@@ -443,7 +532,9 @@ def test_a_400_whose_path_misses_the_commands_names_what_it_can() -> None:
         fake.fail("PUT", route, 400, {"code": 50035, "errors": errors})
 
         with pytest.raises(CommandSyncError) as raised:
-            await sync_commands(http, fake.application_id, COMMANDS, ())
+            await sync_commands(
+                http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+            )
 
         assert str(raised.value).splitlines() == [
             "9.name: Bad name.",
@@ -468,7 +559,9 @@ def test_a_400_on_a_command_without_a_slash_names_it_as_is(
         fake.fail("PUT", route, 400, {"code": 50035, "errors": errors})
 
         with pytest.raises(CommandSyncError) as raised:
-            await sync_commands(http, fake.application_id, COMMANDS, ())
+            await sync_commands(
+                http, fake.application_id, COMMANDS, (), install_types=INSTALL_TYPES
+            )
 
         assert str(raised.value) == f"{command}: name: Bad name."
 
@@ -491,7 +584,9 @@ def test_more_commands_of_a_type_than_discord_allows_warns() -> None:
 
     async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
         with pytest.warns(UserWarning, match="commands; Discord allows") as warned:
-            await sync_commands(http, fake.application_id, commands, ())
+            await sync_commands(
+                http, fake.application_id, commands, (), install_types=INSTALL_TYPES
+            )
 
         assert [str(warning.message) for warning in warned] == [
             "101 slash commands; Discord allows 100 per scope",

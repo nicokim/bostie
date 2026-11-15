@@ -18,7 +18,8 @@
       1
     ],
     "integration_types": [
-      0
+      0,
+      1
     ],
     "nsfw": false,
     "options": [
@@ -147,7 +148,8 @@
       0
     ],
     "integration_types": [
-      0
+      0,
+      1
     ],
     "nsfw": false,
     "options": [
@@ -219,7 +221,8 @@
       0
     ],
     "integration_types": [
-      0
+      0,
+      1
     ],
     "nsfw": false
   },

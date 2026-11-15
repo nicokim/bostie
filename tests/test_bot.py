@@ -237,7 +237,7 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
         }
 
         fake.requests.clear()
-        again = example_bot(fake)
+        again = example_bot(fake, contexts=[InteractionContextType.BOT_DM])
         async with running(again, fake):
             assert fake.put_count == 1
             assert await again.sync_commands() == [SyncResult(None, (), (), ())]

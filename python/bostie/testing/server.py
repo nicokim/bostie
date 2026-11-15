@@ -143,7 +143,9 @@ class FakeDiscord(VoiceGateway):
         self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
         self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
         self.token = token
-        self.application_id = int(payloads.fixture("rest/application_me")["id"])
+        application = payloads.fixture("rest/application_me")
+        self.application_id = int(application["id"])
+        self._install_types = sorted(map(int, application["integration_types_config"]))
         self.bot_user: Json = payloads.fixture("events/READY")["user"]
         guild = payloads.fixture("rest/guild")
         channel = payloads.channel()
@@ -717,8 +719,8 @@ class FakeDiscord(VoiceGateway):
             "type": 1,
             "default_member_permissions": None,
             "nsfw": False,
-            "integration_types": [0],
-            "contexts": [0, 1, 2],
+            "integration_types": [*self._install_types],
+            "contexts": None,
         }
         stored = defaults | _localizable(command)
         key = (stored["type"], stored["name"])

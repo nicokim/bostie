@@ -87,7 +87,7 @@ class ASGIApp:
 
     async def _prepare(self, bot: Bot) -> None:
         application = await bot.rest.application.fetch()
-        bot.application_id = application.id
+        bot._adopt(application)
         if self._public_key is None:
             self._public_key = application.verify_key
         bot.user = bot.cache._current = await bot.rest.users.fetch_current()

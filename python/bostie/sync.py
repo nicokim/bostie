@@ -86,6 +86,7 @@ async def sync_commands(
     commands: Sequence[AnyCommand],
     guild_ids: Iterable[int],
     *,
+    install_types: Iterable[int],
     defaults: CommandDefaults | None = None,
     translate: Translate | None = None,
     always_put: bool = False,
@@ -93,7 +94,8 @@ async def sync_commands(
     """Make Discord's commands match `commands`, one PUT per differing scope.
 
     Commands of a type bostie does not define, such as an Activity's entry point,
-    are kept as they are.
+    are kept as they are. `install_types` are the app's, which Discord gives a
+    global command that names none.
     """
     if not commands and not always_put:
         return []
@@ -113,6 +115,7 @@ async def sync_commands(
             application_id,
             scoped,
             guild_id,
+            install_types=install_types,
             defaults=defaults,
             translate=translate,
             always_put=always_put,
@@ -127,6 +130,7 @@ async def _sync_scope(
     commands: Sequence[AnyCommand],
     guild_id: int | None,
     *,
+    install_types: Iterable[int],
     defaults: CommandDefaults | None,
     translate: Translate | None,
     always_put: bool,
@@ -136,9 +140,14 @@ async def _sync_scope(
     if guild_id is None:
         scope, route, label = "global", GLOBAL_ROUTE, "global"
         params = {"application_id": application_id}
+        fields = COMMAND_DEFAULTS | {
+            "contexts": None,
+            "integration_types": sorted(install_types),
+        }
     else:
         scope, route, label = "guild", GUILD_ROUTE, f"guild {guild_id}"
         params = {"application_id": application_id, "guild_id": guild_id}
+        fields = COMMAND_DEFAULTS
     local = [command.payload(scope, defaults) for command in commands]
     if translate is not None:
         local = [_translated(command, translate) for command in local]
@@ -150,7 +159,7 @@ async def _sync_scope(
     passthrough = [
         _passthrough(command) for command in remote if _key(command)[0] not in managed
     ]
-    result = _diff(guild_id, local, ours)
+    result = _diff(guild_id, local, ours, fields)
     if not (result.added or result.removed or result.changed or always_put):
         log.info("commands up to date (%s)", label)
         return replace(result, ids=slash_ids(remote))
@@ -273,6 +282,7 @@ def _diff(
     guild_id: int | None,
     local: Sequence[Mapping[str, Any]],
     remote: Mapping[tuple[int, str], Mapping[str, Any]],
+    fields: Mapping[str, Any],
 ) -> SyncResult:
     by_key = {_key(command): command for command in local}
     return SyncResult(
@@ -283,16 +293,16 @@ def _diff(
             key[1]
             for key, command in by_key.items()
             if key in remote
-            and _canonical_command(remote[key], command)
-            != _canonical_command(command, command)
+            and _canonical_command(remote[key], command, fields)
+            != _canonical_command(command, command, fields)
         ),
     )
 
 
 def _canonical_command(
-    command: Mapping[str, Any], local: Mapping[str, Any]
+    command: Mapping[str, Any], local: Mapping[str, Any], fields: Mapping[str, Any]
 ) -> dict[str, Any]:
-    canonical = _project(command, local, COMMAND_DEFAULTS)
+    canonical = _project(command, local, fields)
     canonical["options"] = _canonical_options(
         canonical["options"], local.get("options", [])
     )

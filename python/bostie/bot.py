@@ -109,6 +109,7 @@ from bostie.gateway import (
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import (
     AllowedMentions,
+    Application,
     AutocompleteInteraction,
     CommandData,
     CommandInteraction,
@@ -215,6 +216,7 @@ class Bot(Router):
 
     user: CurrentUser | None = None
     application_id: int | None = None
+    _install_types: tuple[ApplicationIntegrationType, ...] = ()
     _bridge: Bridge | None = None
     _http: HTTPClient | None = None
     _rest: REST | None = None
@@ -431,8 +433,7 @@ class Bot(Router):
             else None,
             small_guilds_complete=bool(self._intents & Intents.GUILD_PRESENCES),
         )
-        application = await http.request("GET", "/applications/@me")
-        self.application_id = int(application["id"])
+        self._adopt(await self.rest.application.fetch())
         await self._setup()
         if self._auto_sync:
             await self._sync(always_put=False)
@@ -662,6 +663,12 @@ class Bot(Router):
         """Overwrite the commands on Discord now and return what differed."""
         return await self._sync(always_put=True)
 
+    def _adopt(self, application: Application) -> None:
+        self.application_id = application.id
+        self._install_types = tuple(sorted(application.integration_types_config)) or (
+            ApplicationIntegrationType.GUILD_INSTALL,
+        )
+
     async def _sync(self, *, always_put: bool) -> list[sync.SyncResult]:
         if self.application_id is None:
             raise StateError("sync_commands() needs a running bot")
@@ -670,6 +677,7 @@ class Bot(Router):
             self.application_id,
             [*self.commands.values(), *self.context_menus.values()],
             self._dev_guilds,
+            install_types=self._install_types,
             defaults=self._command_defaults,
             translate=self._translate,
             always_put=always_put,

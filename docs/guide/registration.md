@@ -31,7 +31,7 @@ The sync only touches scopes that have commands. When you drop `dev_guilds`, the
 - `contexts`: `InteractionContextType.GUILD`, `BOT_DM` (the bot's DMs) and `PRIVATE_CHANNEL` (other DMs and group DMs, for a user-installed app).
 - `integration_types`: `ApplicationIntegrationType.GUILD_INSTALL` and `USER_INSTALL`.
 
-`Bot(contexts=[...], integration_types=[...])` is the default for every global command that does not set its own. Left unset everywhere, bostie sends neither field and Discord applies its defaults; for `integration_types` that is the installation contexts configured for the app.
+`Bot(contexts=[...], integration_types=[...])` is the default for every global command that does not set its own. Left unset everywhere, bostie sends neither field and Discord applies its defaults; for `integration_types` that is the installation contexts configured for the app. Removing a setting you had set counts as a change, so the next sync gives the command Discord's defaults again.
 
 ## Command mentions
 
