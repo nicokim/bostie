@@ -108,7 +108,7 @@ from bostie.gateway import (
     member_request,
     presence_fields,
 )
-from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
 from bostie.lookup import Lookup
 from bostie.models import (
     AllowedMentions,
@@ -875,8 +875,8 @@ class Bot(Router):
                 self._emit(
                     ShardBackpressure(shard_id=shard_id, queued_bytes=queued_bytes)
                 )
-            case ("invalid_requests", *_):
-                self._running_shards().handle(delivery)
+            case ("invalid_requests", count):
+                warn_invalid_requests(count)
             case (
                 "voice_state"
                 | "voice_moved"

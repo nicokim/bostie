@@ -385,12 +385,6 @@ class Shards(GatewayClient):
                     shard_id,
                     queued_bytes,
                 )
-            case ("invalid_requests", count):
-                log.warning(
-                    "%d invalid requests (401, 403, 429) in the last 10 minutes; "
-                    "Discord bans the IP at 10 000",
-                    count,
-                )
 
 
 def _close_error(code: int, reason: str) -> BostieError:

@@ -35,10 +35,13 @@ type StatusDelivery = (
     _native.DisconnectedDelivery
     | _native.StoppedDelivery
     | _native.BackpressureDelivery
-    | _native.InvalidRequestsDelivery
 )
 type GatewayDelivery = (
-    _native.DispatchDelivery | StatusDelivery | _native.IdentifyDelivery | VoiceDelivery
+    _native.DispatchDelivery
+    | StatusDelivery
+    | _native.InvalidRequestsDelivery
+    | _native.IdentifyDelivery
+    | VoiceDelivery
 )
 type OnGateway = Callable[[GatewayDelivery, float], object]
 

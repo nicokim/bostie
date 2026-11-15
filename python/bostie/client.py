@@ -12,7 +12,7 @@ from bostie._bridge import Bridge, GatewayDelivery
 from bostie._util import resolve_token
 from bostie.cache import Cache
 from bostie.errors import StateError
-from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
+from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings, warn_invalid_requests
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
 from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST, BearerREST
@@ -316,10 +316,6 @@ class SyncWebhookClient:
 def _on_delivery(delivery: GatewayDelivery, _received: float) -> None:
     match delivery:
         case ("invalid_requests", count):
-            log.warning(
-                "%d invalid requests (401, 403, 429) in the last 10 minutes; "
-                "Discord bans the IP at 10 000",
-                count,
-            )
+            warn_invalid_requests(count)
         case _:
             pass

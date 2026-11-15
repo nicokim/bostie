@@ -41,7 +41,7 @@ class Harness:
     def _on_gateway(self, delivery: GatewayDelivery, received: float) -> None:
         self.deliveries.put_nowait(delivery)
         match delivery:
-            case ("disconnected" | "stopped" | "backpressure" | "invalid_requests", *_):
+            case ("disconnected" | "stopped" | "backpressure", *_):
                 self.gateway.handle(delivery)
             case _:
                 pass
@@ -307,7 +307,6 @@ def test_close_code_4002_resumes_and_is_reported_as_a_bostie_bug(
         (("disconnected", 0, None, "reconnect requested", True), logging.INFO),
         (("disconnected", 0, 4009, "session timed out", False), logging.WARNING),
         (("backpressure", 0, 70_000_000), logging.WARNING),
-        (("invalid_requests", 1000), logging.WARNING),
     ],
 )
 def test_status_deliveries_are_logged_at_their_level(

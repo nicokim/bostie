@@ -1744,6 +1744,14 @@ def test_gateway_rate_limits_and_latency_reach_the_bot(
     assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
 
+def test_the_invalid_request_count_is_logged_as_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="bostie.rest")
+    Bot()._on_gateway(("invalid_requests", 1000), 0.0)
+    assert [record.levelno for record in caplog.records] == [logging.WARNING]
+
+
 @pytest.mark.parametrize(
     ("delivery", "event"),
     [

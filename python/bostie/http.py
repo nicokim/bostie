@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import math
 import mimetypes
 import os
@@ -41,6 +42,8 @@ CLIENT_SECRET_ROUTES = (
     "/partner-sdk/provisional-accounts/unmerge",
 )
 MAX_REASON = 512
+
+log = logging.getLogger("bostie.rest")
 
 type QueryValue = str | int | float | bool | datetime
 type Query = Mapping[str, QueryValue | Sequence[QueryValue] | None]
@@ -217,6 +220,15 @@ class HTTPClient:
             )
             raise _status_error(status, data, bot_route=bot_route)
         return data
+
+
+def warn_invalid_requests(count: int) -> None:
+    """Warn that Discord counted `count` invalid requests in the last 10 minutes."""
+    log.warning(
+        "%d invalid requests (401, 403, 429) in the last 10 minutes; "
+        "Discord bans the IP at 10 000",
+        count,
+    )
 
 
 def decode_answer[T](
