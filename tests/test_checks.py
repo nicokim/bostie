@@ -1,5 +1,4 @@
 import asyncio
-import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -68,16 +67,23 @@ def test_permission_checks_name_what_the_user_or_the_bot_lacks() -> None:
     assert str(bot.value) == "The bot needs the Ban Members permission."
 
 
-def test_a_cooldown_counts_uses_per_key_until_its_window_passes() -> None:
-    per_guild = Cooldown(2, 0.05, per="guild")
+def test_a_cooldown_counts_uses_per_key_until_its_window_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(
+        "bostie.checks.time", SimpleNamespace(monotonic=lambda: clock.now)
+    )
+    per_guild = Cooldown(2, 5.0, per="guild")
 
     assert per_guild(context(user=1))
+    clock.now += 1.0
     assert per_guild(context(user=2))
     with pytest.raises(CooldownActive) as refused:
         per_guild(context(user=3))
     assert per_guild(context(guild=11))
-    assert 0 < refused.value.retry_after <= 0.05
-    time.sleep(0.06)
+    assert refused.value.retry_after == 4.0
+    clock.now += 4.0
     assert per_guild(context(user=3))
 
 

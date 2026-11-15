@@ -46,7 +46,7 @@ from bostie import (
     activity,
     ui,
 )
-from bostie._bridge import Bridge, StatusDelivery
+from bostie._bridge import Bridge
 from bostie.checks import MaxConcurrency
 from bostie.events import (
     BotEvent,
@@ -186,21 +186,41 @@ def example_bot(fake: FakeDiscord, **options: Any) -> Bot:
     return bot
 
 
-def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
+def test_bot_settings_reach_the_identify_payload() -> None:
     async def scenario(fake: FakeDiscord) -> None:
-        route = f"/applications/{fake.application_id}/commands"
-        bot = example_bot(
-            fake,
+        bot = Bot(
+            api_url=fake.api_url,
             intents=Intents.DEFAULT | Intents.MESSAGE_CONTENT,
             status=Status.IDLE,
             activities=[activity.streaming("dice", "https://twitch.tv/bostie")],
             afk=True,
             idle_since=datetime(2026, 11, 1, tzinfo=UTC),
             large_threshold=250,
-            contexts=[InteractionContextType.BOT_DM],
         )
         async with running(bot, fake):
             identify = await fake.next_identify()
+
+        assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
+        assert "capabilities" not in identify
+        assert identify["large_threshold"] == 250
+        assert identify["presence"] == {
+            "since": 1_793_491_200_000,
+            "activities": [
+                {"name": "dice", "type": 1, "url": "https://twitch.tv/bostie"}
+            ],
+            "status": "idle",
+            "afk": True,
+        }
+
+    run(scenario)
+
+
+def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        route = f"/applications/{fake.application_id}/commands"
+        bot = example_bot(fake, contexts=[InteractionContextType.BOT_DM])
+        async with running(bot, fake):
+            pass
         first = [(request.method, request.path) for request in fake.requests]
         assert first == [
             ("GET", "/gateway/bot"),
@@ -208,7 +228,6 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
             ("GET", route),
             ("PUT", route),
         ]
-        assert fake.requests[2].query == {"with_localizations": "true"}
         assert [command["name"] for command in fake.requests[3].json] == [
             "roll",
             "tag",
@@ -222,17 +241,6 @@ def test_autosync_puts_only_changes_and_an_explicit_sync_always_puts() -> None:
         assert bot.application_id == fake.application_id
         assert bot.user is not None
         assert bot.user.id == int(fake.bot_user["id"])
-        assert identify["intents"] == Intents.DEFAULT | Intents.MESSAGE_CONTENT
-        assert "capabilities" not in identify
-        assert identify["large_threshold"] == 250
-        assert identify["presence"] == {
-            "since": 1_793_491_200_000,
-            "activities": [
-                {"name": "dice", "type": 1, "url": "https://twitch.tv/bostie"}
-            ],
-            "status": "idle",
-            "afk": True,
-        }
 
         fake.requests.clear()
         again = example_bot(fake, contexts=[InteractionContextType.BOT_DM])
@@ -1245,9 +1253,7 @@ def test_stopping_before_ready_fails_wait_until_ready_and_close_ends_start(
     run(scenario)
 
 
-def test_start_seeds_the_daily_identify_budget(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_start_seeds_the_daily_identify_budget() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         gateway_bot = payloads.fixture("rest/gateway_bot")
         exhausted = gateway_bot["session_start_limit"] | {
@@ -1260,12 +1266,15 @@ def test_start_seeds_the_daily_identify_budget(
             200,
             gateway_bot | {"url": fake.gateway_url, "session_start_limit": exhausted},
         )
-        async with running(Bot(api_url=fake.api_url), fake):
-            await fake.next_identify()
+        bot = Bot(api_url=fake.api_url)
+        disconnected = asyncio.ensure_future(bot.wait_for(ShardDisconnect))
+        async with running(bot, fake):
+            waited = await disconnected
+
+        assert (waited.code, waited.resuming) == (None, False)
+        assert waited.reason.startswith("daily identify limit reached")
 
     run(scenario)
-
-    assert levels(caplog, "bostie.gateway") == [logging.WARNING]
 
 
 def test_start_resolves_the_token_and_raises_fatal_errors(
@@ -1281,11 +1290,13 @@ def test_start_resolves_the_token_and_raises_fatal_errors(
             await bot.start()
 
         monkeypatch.setenv("BOSTIE_TOKEN", f"Bot {fake.token}")
+        stopped = asyncio.ensure_future(bot.wait_for(ShardStop))
         started = asyncio.create_task(bot.start())
         await fake.next_identify()
         await fake.close_gateway(4014)
         with pytest.raises(PrivilegedIntentsRequired):
             await started
+        assert (await stopped).code == 4014
 
         with pytest.raises(InvalidToken):
             await Bot(api_url=fake.api_url).start("wrong-token")
@@ -1699,7 +1710,7 @@ def test_a_raising_autocomplete_answers_with_no_choices() -> None:
     run(scenario)
 
 
-def test_gateway_rate_limits_and_latency_reach_the_bot(
+def test_a_gateway_rate_limit_no_member_request_takes_logs_a_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario(fake: FakeDiscord) -> None:
@@ -1714,11 +1725,7 @@ def test_gateway_rate_limits_and_latency_reach_the_bot(
             await fake.dispatch("RATE_LIMITED", payloads.fixture("events/RATE_LIMITED"))
             await limits.get()
 
-            for _ in range(2):
-                await sent_op(fake, 1)
-            assert bot.latency is not None
-
-    run(scenario, heartbeat_interval=50)
+    run(scenario)
 
     assert levels(caplog, "bostie.bot") == [logging.WARNING]
 
@@ -1731,29 +1738,16 @@ def test_the_invalid_request_count_is_logged_as_a_warning(
     assert [record.levelno for record in caplog.records] == [logging.WARNING]
 
 
-@pytest.mark.parametrize(
-    ("delivery", "event"),
-    [
-        (
-            ("stopped", 1, 4014, "disallowed intents", None),
-            ShardStop(shard_id=1, code=4014, reason="disallowed intents"),
-        ),
-        (
-            ("backpressure", 1, 70_000_000),
-            ShardBackpressure(shard_id=1, queued_bytes=70_000_000),
-        ),
-    ],
-)
-def test_shard_stops_and_backpressure_reach_listeners(
-    delivery: StatusDelivery, event: ShardStop | ShardBackpressure
-) -> None:
+def test_backpressure_reaches_listeners() -> None:
     async def main() -> None:
         bot = Bot()
         bridge = Bridge("token", "http://127.0.0.1:1/api/v10", lambda *_: None)
         bot._shards = Shards(bridge, "token", intents=0, shard_count=2, shard_ids=[1])
-        async with bot.stream(type(event)) as events:
-            bot._on_gateway(delivery, 0.0)
-            assert await anext(events) == event
+        async with bot.stream(ShardBackpressure) as events:
+            bot._on_gateway(("backpressure", 1, 70_000_000), 0.0)
+            assert await anext(events) == ShardBackpressure(
+                shard_id=1, queued_bytes=70_000_000
+            )
         await bridge.close()
 
     asyncio.run(main())

@@ -154,7 +154,7 @@ def test_a_cluster_process_identifies_only_its_shards() -> None:
     run(scenario)
 
 
-def test_shards_identify_once_before_identify_returns() -> None:
+def test_shards_identify_only_after_before_identify_returns() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         recommend(fake, shards=2, max_concurrency=2)
         asked: asyncio.Queue[int] = asyncio.Queue()
@@ -167,17 +167,17 @@ def test_shards_identify_once_before_identify_returns() -> None:
         bot = Bot(api_url=fake.api_url, before_identify=before_identify)
         async with starting(bot, fake):
             first = sorted([await asked.get(), await asked.get()])
-            held = asyncio.ensure_future(fake.next_identify())
-            await asyncio.sleep(0.05)
-            waited = not held.done()
+            await received(fake, 1, 1)
+            waited = [2 in ops(connection) for connection in fake.connections]
             release.set()
-            later = await fake.next_identify()
-            identified = sorted([(await held)["shard"], later["shard"]])
+            identified = sorted(
+                [(await fake.next_identify())["shard"] for _ in range(2)]
+            )
 
-        assert (first, waited) == ([0, 1], True)
+        assert (first, waited) == ([0, 1], [False, False])
         assert identified == [[0, 2], [1, 2]]
 
-    run(scenario)
+    run(scenario, heartbeat_interval=50)
 
 
 def test_a_before_identify_that_raises_is_logged_and_the_shard_identifies(

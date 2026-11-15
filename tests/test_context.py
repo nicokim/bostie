@@ -666,16 +666,14 @@ def test_command_name_includes_groups_and_subcommands() -> None:
     run(scenario)
 
 
-@pytest.mark.parametrize("call", list(CALLS))
-def test_an_expired_interaction_sends_nothing(
-    call: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_expired_interaction_sends_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("bostie.context.TOKEN_LIFETIME", -1)
 
     async def scenario(on: Interactions) -> None:
         async def handler(ctx: ComponentContext) -> None:
-            with pytest.raises(InteractionExpired):
-                await CALLS[call](ctx)
+            for call in CALLS.values():
+                with pytest.raises(InteractionExpired):
+                    await call(ctx)
 
         assert await on.answer(ComponentContext, handler) == []
 

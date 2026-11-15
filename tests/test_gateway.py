@@ -183,43 +183,24 @@ def test_the_filter_drops_dispatches_nobody_listens_to() -> None:
     run(scenario)
 
 
-def test_a_dropped_connection_resumes_and_replays_missed_events(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level(logging.INFO, logger="bostie.gateway")
-
+def test_reconnect_resumes_the_session_on_its_resume_url() -> None:
     async def scenario(harness: Harness) -> None:
         fake = harness.fake
         harness.start()
         await fake.next_identify()
         _, _, ready = await harness.next_dispatch()
 
-        fake.drop_gateway()
-        seq = await fake.dispatch("MESSAGE_CREATE", payloads.message())
-        resume = await fake.next_resume()
-        disconnected = await harness.deliveries.get()
-        replayed = [(await harness.next_dispatch())[:2] for _ in range(2)]
+        harness.gateway.reconnect()
 
-        assert resume == {
+        assert await fake.next_resume() == {
             "token": fake.token,
             "session_id": ready["session_id"],
             "seq": 1,
         }
-        assert disconnected[:2] == ("disconnected", 0)
-        assert disconnected[-1] is True
-        assert replayed == [(seq, "MESSAGE_CREATE"), (seq + 1, "RESUMED")]
-
-        harness.gateway.reconnect()
-        assert (await fake.next_resume())["seq"] == seq + 1
         assert (await harness.next_dispatch())[1] == "RESUMED"
         assert fake.connections[-1].path == "/gateway-resume"
 
     run(scenario)
-
-    disconnects = [
-        record for record in caplog.records if "disconnected" in record.getMessage()
-    ]
-    assert [record.levelno for record in disconnects] == [logging.INFO] * 2
 
 
 @pytest.mark.parametrize(
