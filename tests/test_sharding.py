@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import Literal
 
@@ -7,7 +8,7 @@ import pytest
 
 from bostie import Bot, Status, activity
 from bostie.events import GuildCreate, Ready
-from bostie.testing import Connection, FakeDiscord, payloads, run
+from bostie.testing import Connection, FakeDiscord, payloads, run, running
 
 GUILD_ON_SHARD_1 = 1 << 22
 
@@ -177,3 +178,21 @@ def test_shards_identify_once_before_identify_returns() -> None:
         assert identified == [[0, 2], [1, 2]]
 
     run(scenario)
+
+
+def test_a_before_identify_that_raises_is_logged_and_the_shard_identifies(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def before_identify(shard_id: int) -> None:
+        raise LookupError(shard_id)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, before_identify=before_identify)
+        async with running(bot, fake):
+            assert bot.is_ready
+
+    with caplog.at_level(logging.ERROR, "bostie.bot"):
+        run(scenario)
+    assert caplog.messages == [
+        "before_identify raised for shard 0; it identifies anyway"
+    ]

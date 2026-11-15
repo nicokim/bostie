@@ -1483,6 +1483,79 @@ FAILED = {"content": "Something went wrong.", "allowed_mentions": MENTIONS}
 FAILED_EPHEMERALLY = FAILED | {"flags": EPHEMERAL}
 
 
+def test_an_error_hook_that_raises_ends_the_chain_with_the_failure_answer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, auto_defer=None)
+        reached: list[str] = []
+
+        @bot.command
+        async def odd(ctx: Context) -> None:
+            """Raise a ValueError."""
+            raise ValueError("odd")
+
+        @odd.on_error(ValueError)
+        async def broken(ctx: ErrorContext, error: ValueError) -> None:
+            raise LookupError("broken hook")
+
+        @bot.on_error
+        async def fallback(ctx: ErrorContext, error: Exception) -> None:
+            reached.append("fallback")
+
+        async with running(bot, fake):
+            answer = await fake.interaction(2, payloads.command("odd"))
+
+        assert answer.json == {"type": 4, "data": FAILED_EPHEMERALLY}
+        assert reached == []
+
+    run(scenario)
+    assert failures(caplog) == [(logging.ERROR, "broken hook")]
+
+
+def test_an_after_invoke_hook_that_raises_lets_the_others_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        ran: list[str] = []
+
+        async def broken(ctx: object) -> None:
+            raise LookupError("broken hook")
+
+        async def note(ctx: object) -> None:
+            ran.append("after")
+
+        bot.after_invoke(broken)
+        bot.after_invoke(note)
+
+        @bot.command
+        async def ping(ctx: Context) -> None:
+            """Answer pong."""
+            await ctx.respond("pong")
+
+        async with running(bot, fake):
+            answer = await fake.interaction(2, payloads.command("ping"))
+            await settle()
+
+        assert answer.json["data"]["content"] == "pong"
+        assert ran == ["after"]
+
+    run(scenario)
+    assert failures(caplog) == [(logging.ERROR, "broken hook")]
+
+
+def test_starting_a_running_bot_raises_and_leaves_it_running() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            with pytest.raises(StateError, match="already running"):
+                await bot.start(fake.token)
+            assert bot.is_ready
+
+    run(scenario)
+
+
 def answered_with(request: Recorded) -> tuple[str, str, Any]:
     target = request.path.rsplit("/", 1)[-1]
     if target not in ("callback", "@original"):
