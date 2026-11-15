@@ -68,7 +68,9 @@ class ASGIApp:
             await bridge.__aenter__()
             bot._bridge = bridge
             bot._http = HTTPClient(bridge)
-            bot._rest = REST(bot._http, bot._allowed_mentions, bot.cache)
+            bot._rest = REST(
+                bot._http, bot._allowed_mentions, bot.cache, bot._deletions
+            )
             self._owns_bot = True
             try:
                 await self._prepare(bot)

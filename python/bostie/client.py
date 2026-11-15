@@ -112,6 +112,7 @@ class RESTClient(_Client[REST]):
             http_settings=http_settings,
         )
         self._allowed_mentions = allowed_mentions
+        self._deletions: set[asyncio.Task[None]] = set()
 
     @property
     def rest(self) -> REST:
@@ -119,8 +120,19 @@ class RESTClient(_Client[REST]):
         return self._opened
 
     @override
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        for deletion in self._deletions:
+            deletion.cancel()
+        await super().__aexit__(exc_type, exc, traceback)
+
+    @override
     def _open(self, http: HTTPClient) -> REST:
-        return REST(http, self._allowed_mentions, Cache())
+        return REST(http, self._allowed_mentions, Cache(), self._deletions)
 
 
 class BearerClient(_Client[BearerREST]):

@@ -63,6 +63,7 @@ from bostie.models import (
 )
 from bostie.models.base import check_keys, decoder
 from bostie.models.message import NULL, in_guild, message_body
+from bostie.rest.messages import delete_later
 from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
 
@@ -292,23 +293,33 @@ class _ReplyingContext[
         return self.bot.rest.channels.trigger_typing_indicator(self.channel_id)
 
     async def respond(
-        self, content: str | None = None, **parts: Unpack[ReplyParts]
+        self,
+        content: str | None = None,
+        *,
+        delete_after: float | None = None,
+        **parts: Unpack[ReplyParts],
     ) -> WebhookMessage:
-        """Answer, fill in the deferred answer, or send a follow-up, whichever fits."""
+        """Answer, fill in the deferred answer, or send a follow-up, whichever fits.
+
+        `delete_after` deletes that message so many seconds later, within 15 minutes.
+        """
         body, files = self._message_body(content, REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             match self.state:
                 case ResponseState.PENDING:
                     response = await self._respond_with_callback(body, files, parts)
-                    self.state = ResponseState.RESPONDED
-                    return self._answer(_from_callback(_webhook_message), response)
+                    decode, original = _from_callback(_webhook_message), True
                 case ResponseState.DEFERRED:
                     response = await self._edit_original(body, files, parts)
+                    decode, original = _webhook_message, True
                 case _:
                     response = await self._send_followup(body, files, parts)
+                    decode, original = _webhook_message, False
             self.state = ResponseState.RESPONDED
-            return self._answer(_webhook_message, response)
+            message = self._answer(decode, response)
+        self._delete_later(delete_after, None if original else message.id)
+        return message
 
     async def defer(self, **options: Unpack[DeferOptions]) -> None:
         """Show "thinking…" and answer later with `respond`."""
@@ -369,19 +380,26 @@ class _ReplyingContext[
             return self._answer(self._decode_original, response)
 
     async def followup(
-        self, content: str | None = None, **parts: Unpack[ReplyParts]
+        self,
+        content: str | None = None,
+        *,
+        delete_after: float | None = None,
+        **parts: Unpack[ReplyParts],
     ) -> WebhookMessage:
         """Send another message; right after `defer()` it fills the deferred answer."""
         body, files = self._message_body(content, REPLY_PARTS, parts)
         async with self._lock:
             self._ensure_alive()
             self._ensure_answered("send a follow-up to")
-            if self.state is ResponseState.DEFERRED:
+            original = self.state is ResponseState.DEFERRED
+            if original:
                 response = await self._edit_original(body, files, parts)
             else:
                 response = await self._send_followup(body, files, parts)
             self._finish_deferred()
-            return self._answer(_webhook_message, response)
+            message = self._answer(_webhook_message, response)
+        self._delete_later(delete_after, None if original else message.id)
+        return message
 
     async def delete(self, message_id: int | None = None, /) -> None:
         """Delete the original answer, or the follow-up `message_id`."""
@@ -416,6 +434,12 @@ class _ReplyingContext[
                 raise InteractionResponded("a modal can only be the first answer")
             await self._callback(InteractionCallbackType.MODAL, modal)
             self.state = ResponseState.MODAL
+
+    def _delete_later(self, delay: float | None, message_id: int | None) -> None:
+        if delay is not None:
+            delete_later(
+                self.bot._deletions, delay, functools.partial(self.delete, message_id)
+            )
 
     def _ensure_answered(self, action: str) -> None:
         if self.state is ResponseState.PENDING:

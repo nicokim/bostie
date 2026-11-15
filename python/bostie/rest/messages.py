@@ -1,13 +1,19 @@
 import asyncio
-from collections.abc import AsyncIterator, Callable, Sequence
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal, Required, TypedDict, Unpack
 
 import msgspec
 
+from bostie._aio import spawn
+from bostie.cache import Cache
 from bostie.enums import JSONErrorCode
+from bostie.errors import BostieError, NotFound
+from bostie.http import HTTPClient
 from bostie.models import (
+    AllowedMentions,
     Channel,
     EditParts,
     Message,
@@ -87,6 +93,27 @@ MESSAGE_CREATE = MessageCreate.__optional_keys__
 BULK_DELETE_MAX = 100
 BULK_DELETABLE_FOR = timedelta(days=14) - timedelta(minutes=1)
 
+log = logging.getLogger("bostie.rest")
+
+
+def delete_later(
+    tasks: set[asyncio.Task[None]],
+    delay: float,
+    delete: Callable[[], Awaitable[None]],
+) -> None:
+    """Run `delete` after `delay` seconds as a task in `tasks`, its owner's."""
+    spawn(tasks, _delete_after(delay, delete), eager=True)
+
+
+async def _delete_after(delay: float, delete: Callable[[], Awaitable[None]]) -> None:
+    await asyncio.sleep(delay)
+    try:
+        await delete()
+    except NotFound:
+        pass
+    except BostieError as error:
+        log.warning("deleting a message after %s s failed: %s", delay, error)
+
 
 class _Pin(msgspec.Struct):
     pinned_at: datetime
@@ -108,6 +135,16 @@ class _Found(msgspec.Struct, kw_only=True):
 
 
 class Messages(Group):
+    def __init__(
+        self,
+        http: HTTPClient,
+        allowed_mentions: AllowedMentions,
+        cache: Cache,
+        deletions: set[asyncio.Task[None]],
+    ) -> None:
+        super().__init__(http, allowed_mentions, cache)
+        self._deletions = deletions
+
     async def create(
         self,
         channel_id: int,
@@ -115,9 +152,13 @@ class Messages(Group):
         content: str | None = None,
         *,
         reply_to: int | None = None,
+        delete_after: float | None = None,
         **parts: Unpack[MessageCreate],
     ) -> Message:
-        """Send a message; `reply_to` takes the id of a message in the same channel."""
+        """Send a message; `reply_to` takes the id of a message in the same channel.
+
+        `delete_after` deletes it that many seconds later, unless the bot stops first.
+        """
         check_keys(parts, MESSAGE_CREATE, "message parts")
         body, files = message_body(
             content, parts, reply_to=reply_to, mentions=self._allowed_mentions
@@ -130,6 +171,12 @@ class Messages(Group):
             files=files,
             channel_id=channel_id,
         )
+        if delete_after is not None:
+            delete_later(
+                self._deletions,
+                delete_after,
+                partial(self.delete, channel_id, message.id),
+            )
         return self._in_guild(message)
 
     async def edit(

@@ -31,6 +31,14 @@ Every slash command, context menu command, button, select and modal submit is an
 
 `respond` and `followup` take `content` and the parts listed in [Message content](messages.md): `embeds`, `components`, `files`, `allowed_mentions`, `flags`, `tts`, `poll`, plus `ephemeral`. An edit takes the same parts by keyword: a part you leave out stays as it is, and `None` clears it.
 
+## Messages that delete themselves
+
+```python
+--8<-- "docs/snippets/responses/short_lived.py"
+```
+
+`delete_after=` on `respond`, `followup` and `bot.rest.messages.create` deletes the message it sent that many seconds later. The bot runs the deletion in the background and cancels it when it closes, so a message due after the bot stops stays. An interaction's messages are deleted through its token, which works for ephemeral ones too but ends 15 minutes after the interaction; a deletion due later fails with a logged warning. A message someone deleted already is skipped quietly.
+
 ## Ephemeral answers
 
 `ephemeral=True` on a call makes that message visible only to the user. `ephemeral=True` on a command, a component route, a modal route or a router makes it the default for their answers, and a call can still pass `ephemeral=False`. An existing message cannot change between ephemeral and public: an edit that asks for it logs a warning once and keeps the message as it is.

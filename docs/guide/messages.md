@@ -14,7 +14,7 @@ A message is built from the same parts wherever you send it: `ctx.respond`, `ctx
 | `poll` | `PollCreateRequest` | a poll; see below |
 | `ephemeral` | `bool` | interaction answers only |
 
-`bot.rest.messages.create` also takes `reply_to`, `message_reference`, `sticker_ids`, `nonce`, `enforce_nonce` and `shared_client_theme`.
+`bot.rest.messages.create` also takes `reply_to`, `message_reference`, `sticker_ids`, `nonce`, `enforce_nonce` and `shared_client_theme`, and `delete_after`, as [interaction answers](responses.md#messages-that-delete-themselves) do.
 
 ## Embeds and files
 

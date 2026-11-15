@@ -130,7 +130,8 @@ def test_the_rest_groups_implement_every_table_row_not_pending(
         if ("bearer" in row[3:]) == bearer
     ]
     pending = {row[2] for path in pending_files() for row in rows(path)}
-    rest = surface(cast("HTTPClient", None), AllowedMentions(), Cache())
+    shared = (cast("HTTPClient", None), AllowedMentions(), Cache())
+    rest = REST(*shared, set()) if surface is REST else BearerREST(*shared)
 
     groups = {name.split(".")[0] for _, _, name, *_ in table}
     assert {name: type(group).__module__ for name, group in vars(rest).items()} == {

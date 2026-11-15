@@ -577,7 +577,7 @@ class FakeBot:
         )
         self.cache = Cache()
         self.http = HTTPClient(cast("Bridge", self.api))
-        self.rest = REST(self.http, AllowedMentions(), self.cache)
+        self.rest = REST(self.http, AllowedMentions(), self.cache, set())
         self.gateway = GatewayClient(
             cast("Bridge", self.api),
             "token",

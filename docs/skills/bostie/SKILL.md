@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
 - Discord waits 3 seconds for the first answer. `await ctx.respond(...)` answers, and calling it again sends a follow-up. Before slow work, `await ctx.defer()`; the next `respond` fills in the deferred answer. bostie defers by itself after 2.5 seconds (`auto_defer`).
 - Answer on every path, early returns included. A handler that returns without answering leaves the user with "The application did not respond".
-- `ephemeral=True` on a call, or `@bot.command(ephemeral=True)`, shows the answer only to the user who ran the command.
+- `ephemeral=True` on a call, or `@bot.command(ephemeral=True)`, shows the answer only to the user who ran the command. `delete_after=30` on `respond`, `followup` or `bot.rest.messages.create` deletes the message 30 seconds later.
 - `ctx.edit(...)` edits the first answer and `ctx.followup(...)` always sends a new message.
 - `async with ctx.typing():` shows the bot typing during slow work, renewed until the block ends.
 - Blocking work (reading files, CPU work, synchronous HTTP clients) goes through `asyncio.to_thread`. Blocking the event loop delays every handler past Discord's deadline.

@@ -311,6 +311,7 @@ class Bot(Router):
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
         self._claims: list[_Claim] = []
         self._tasks: set[asyncio.Task[None]] = set()
+        self._deletions: set[asyncio.Task[None]] = set()
         self._running_tasks: dict[TaskCallback, asyncio.Task[None]] = {}
         self._replaying: set[int] = set()
         self._failed_dispatches: set[str] = set()
@@ -396,7 +397,9 @@ class Bot(Router):
         self._command_ids.clear()
         async with bridge:
             self._http = HTTPClient(bridge)
-            self._rest = REST(self._http, self._allowed_mentions, self.cache)
+            self._rest = REST(
+                self._http, self._allowed_mentions, self.cache, self._deletions
+            )
             self._gateway = None
             try:
                 await self._connect(bridge, token)
@@ -740,7 +743,7 @@ class Bot(Router):
             await self._gateway.close()
         if self._readiness is not None:
             self._readiness.close()
-        for task in self._running_tasks.values():
+        for task in [*self._running_tasks.values(), *self._deletions]:
             task.cancel()
         busy = self._tasks - set(self._running_tasks.values())
         if self._shutdown_grace and busy:

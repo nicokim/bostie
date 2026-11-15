@@ -6,6 +6,7 @@ from functools import partial
 from typing import Annotated, Any, Literal
 
 import pytest
+from clock import SteppedLoop, run_stepped
 from msgspec.json import encode
 
 from bostie import (
@@ -36,6 +37,7 @@ EPHEMERAL = 64
 MENTIONS = {"parse": ["users", "roles"]}
 CALLBACK = "/interactions/"
 WEBHOOK = "/webhooks/"
+CHANNEL = int(payloads.interaction(2, {})["channel_id"])
 
 type Call = tuple[str, str, int | None]
 
@@ -931,3 +933,85 @@ def test_answers_send_files_and_edits_keep_only_the_listed_attachments() -> None
         assert update.json["data"]["attachments"] == [{"id": kept}]
 
     run_bot(scenario)
+
+
+async def answer_then_delete(ctx: Context) -> int | None:
+    await ctx.respond("Gone soon.", delete_after=5)
+    return None
+
+
+async def defer_then_delete(ctx: Context) -> int | None:
+    await ctx.defer()
+    await ctx.respond("Gone soon.", delete_after=5)
+    return None
+
+
+async def follow_up_then_delete(ctx: Context) -> int | None:
+    await ctx.respond("Here.")
+    return (await ctx.followup("Gone soon.", delete_after=5)).id
+
+
+async def send_then_delete(ctx: Context) -> int | None:
+    message = await ctx.bot.rest.messages.create(CHANNEL, "Gone soon.", delete_after=5)
+    await ctx.respond("Sent.")
+    return message.id
+
+
+@pytest.mark.parametrize(
+    ("send", "route"),
+    [
+        (answer_then_delete, WEBHOOK),
+        (defer_then_delete, WEBHOOK),
+        (follow_up_then_delete, WEBHOOK),
+        (send_then_delete, f"/channels/{CHANNEL}/messages/"),
+    ],
+)
+def test_delete_after_deletes_the_message_it_sent_once_its_seconds_pass(
+    send: Callable[[Context], Awaitable[int | None]], route: str
+) -> None:
+    async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
+        bot = Bot(api_url=fake.api_url)
+        sent: asyncio.Future[int | None] = asyncio.get_running_loop().create_future()
+
+        @bot.command
+        async def notice(ctx: Context) -> None:
+            """Post a short notice."""
+            sent.set_result(await send(ctx))
+
+        async with running(bot, fake):
+            await fake.interaction(2, payloads.command("notice"))
+            message_id = await sent
+            deleted = fake.expect_request("DELETE", route)
+            loop.advance(4)
+            await settle()
+            early = deleted.done()
+            loop.advance(1)
+            request = await deleted
+
+        assert not early
+        assert request.path.endswith(
+            "/messages/@original" if message_id is None else f"/messages/{message_id}"
+        )
+
+    run_stepped(scenario)
+
+
+def test_closing_the_bot_cancels_the_deletions_still_waiting(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario(fake: FakeDiscord, loop: SteppedLoop) -> None:
+        bot = Bot(api_url=fake.api_url)
+        async with running(bot, fake):
+            await bot.rest.messages.create(CHANNEL, "Gone soon.", delete_after=60)
+        loop.advance(60)
+        await settle()
+
+        assert [
+            request for request in fake.requests if request.method == "DELETE"
+        ] == []
+
+    run_stepped(scenario)
+
+    assert [
+        record for record in caplog.records if record.levelno >= logging.WARNING
+    ] == []

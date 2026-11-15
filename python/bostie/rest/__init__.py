@@ -1,3 +1,5 @@
+import asyncio
+
 from bostie.cache import Cache
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
@@ -35,10 +37,17 @@ from bostie.rest.webhooks import Webhooks
 
 
 class REST:
-    """`bot.rest`: each attribute is a group of Discord's REST operations."""
+    """`bot.rest`: each attribute is a group of Discord's REST operations.
+
+    `deletions` holds the pending `delete_after` tasks, for its owner to cancel.
+    """
 
     def __init__(
-        self, http: HTTPClient, allowed_mentions: AllowedMentions, cache: Cache
+        self,
+        http: HTTPClient,
+        allowed_mentions: AllowedMentions,
+        cache: Cache,
+        deletions: set[asyncio.Task[None]],
     ) -> None:
         shared = (http, allowed_mentions, cache)
         self.application = Application(*shared)
@@ -55,7 +64,7 @@ class REST:
         self.invites = Invites(*shared)
         self.lobbies = Lobbies(*shared)
         self.members = Members(*shared)
-        self.messages = Messages(*shared)
+        self.messages = Messages(*shared, deletions)
         self.monetization = Monetization(*shared)
         self.onboarding = Onboarding(*shared)
         self.partner_sdk = PartnerSDK(*shared)
