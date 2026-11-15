@@ -26,8 +26,12 @@ class DiscordIntFlag(IntFlag, boundary=KEEP):
     @classmethod
     @override
     def _missing_(cls, value: object) -> Self:
-        if isinstance(value, int) and value < 0:
-            return cls(value & ((1 << FLAG_WIDTH) - 1))
+        if isinstance(value, int):
+            if value < 0:
+                return cls(value & ((1 << FLAG_WIDTH) - 1))
+            known = cls._value2member_map_.get(value)
+            if isinstance(known, cls):
+                return known
         flag: Self = super()._missing_(value)
         if flag > MSGSPEC_ENUM_MAX:
             cls._value2member_map_.pop(value, None)

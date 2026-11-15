@@ -1445,4 +1445,4 @@ def decode_event[E: Event](event: type[E], shard_id: int, data: bytes) -> E | No
 
 
 def _narrow[M: Model](model: type[M], value: M) -> M:
-    return model(**{field: getattr(value, field) for field in model.__struct_fields__})
+    return msgspec.convert(value, model, from_attributes=True)
