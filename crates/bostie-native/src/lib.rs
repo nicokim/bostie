@@ -770,6 +770,8 @@ mod _native {
     };
     #[pymodule_export]
     const LOGGERS: [&str; 4] = super::log::LOGGERS;
+    #[pymodule_export]
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     #[pyfunction]
     fn log_levels(levels: [i32; 4]) {

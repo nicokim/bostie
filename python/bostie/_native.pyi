@@ -34,6 +34,7 @@ __all__ = [
     "SAMPLE_RATE",
     "SINK_KINDS",
     "SINK_STALLS",
+    "VERSION",
     "VOICE_STATES",
     "Core",
     "OpusEncoder",
@@ -79,6 +80,7 @@ DISCONNECT_REASONS: Final[list[str]]
 DIRECTIONS: Final[list[str]]
 CLOSED_REASONS: Final[list[str]]
 LOGGERS: Final[list[str]]
+VERSION: Final[str]
 
 type FailureKind = Literal[
     "transport", "invalid_token", "no_token", "request_budget", "bug"
