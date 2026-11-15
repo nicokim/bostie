@@ -9,11 +9,12 @@ from typing import Any, Self, Unpack, override
 from urllib.parse import urlsplit
 
 from bostie._bridge import Bridge, GatewayDelivery
-from bostie.bot import DEFAULT_ALLOWED_MENTIONS, _resolve_token
+from bostie._util import resolve_token
 from bostie.cache import Cache
 from bostie.errors import StateError
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import AllowedMentions, Webhook, WebhookMessage
+from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST, BearerREST
 from bostie.rest.webhooks import (
     WebhookEditMessage,
@@ -106,7 +107,7 @@ class RESTClient(_Client[REST]):
         allowed_mentions: AllowedMentions = DEFAULT_ALLOWED_MENTIONS,
     ) -> None:
         super().__init__(
-            _resolve_token(token),
+            resolve_token(token),
             bearer=False,
             api_url=api_url,
             http_settings=http_settings,

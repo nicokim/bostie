@@ -18,6 +18,7 @@ from typing import (
     overload,
 )
 
+from bostie._util import qualified_name
 from bostie.commands import (
     Check,
     Command,
@@ -30,7 +31,6 @@ from bostie.commands import (
     Group,
     GroupSettings,
     TargetType,
-    _python_name,
 )
 from bostie.custom_id import ComponentRoute, RouteSettings
 from bostie.enums import (
@@ -464,7 +464,7 @@ MODAL_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
 )
 TASKS: _Registry[TaskCallback, Task] = _Registry(
     lambda router: router.tasks,
-    lambda callback: ValueError(f"{_python_name(callback)} already runs as a task"),
+    lambda callback: ValueError(f"{qualified_name(callback)} already runs as a task"),
 )
 REGISTRIES: tuple[_Registry[Any, Any], ...] = (
     COMMANDS,

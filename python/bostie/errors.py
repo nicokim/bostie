@@ -78,7 +78,7 @@ class HTTPException(BostieError):
             f"{status} {message}{coded}",
             *(
                 f"{'.'.join(path)}: {text}" if path else text
-                for path, text in _form_errors(errors)
+                for path, text in form_errors(errors)
             ),
         ]
         super().__init__("\n".join(lines))
@@ -89,7 +89,7 @@ class HTTPException(BostieError):
         self.body = body
 
 
-def _form_errors(
+def form_errors(
     tree: object, path: tuple[str, ...] = ()
 ) -> list[tuple[tuple[str, ...], str]]:
     if not isinstance(tree, Mapping):
@@ -97,7 +97,7 @@ def _form_errors(
     found: list[tuple[tuple[str, ...], str]] = []
     for key, value in cast("Mapping[object, object]", tree).items():
         if key != "_errors":
-            found += _form_errors(value, (*path, str(key)))
+            found += form_errors(value, (*path, str(key)))
         elif isinstance(value, list):
             for error in cast("list[object]", value):
                 fields = cast("Mapping[str, object]", error)

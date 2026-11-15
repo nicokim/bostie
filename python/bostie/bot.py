@@ -25,6 +25,7 @@ import msgspec
 from bostie import fmt, sync
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery
+from bostie._util import qualified_name, resolve_token, split_subcommands
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
 from bostie.checks import MaxConcurrency
@@ -36,7 +37,6 @@ from bostie.commands import (
     ContextMenuCommand,
     EntryPointCommand,
     Group,
-    _python_name,
     autocomplete_choices,
 )
 from bostie.context import (
@@ -45,7 +45,6 @@ from bostie.context import (
     Context,
     ModalContext,
     ResponseState,
-    _split_subcommands,
 )
 from bostie.custom_id import ANSWER_SETTINGS, AnswerSettings, ComponentRoute
 from bostie.enums import (
@@ -126,6 +125,7 @@ from bostie.models import (
     VoiceChannelInfo,
 )
 from bostie.models.base import check_keys
+from bostie.models.message import DEFAULT_ALLOWED_MENTIONS
 from bostie.rest import REST
 from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router, scoped
 from bostie.snowflake import snowflake_time
@@ -136,7 +136,6 @@ from bostie.voice.formats import Defaults
 
 log = logging.getLogger("bostie.bot")
 
-TOKEN_VARIABLE = "BOSTIE_TOKEN"
 STALE_INTERACTION = 5.0
 SLOW_HANDLER_START = 1.0
 TASK_CANCEL_TIMEOUT = 5.0
@@ -148,7 +147,6 @@ CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
     "status",
     "voice_start_time",
 )
-DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
 DEFAULT_VOICE = Defaults()
 OWNER_ROLES = frozenset({TeamMemberRole.ADMIN, TeamMemberRole.DEVELOPER})
 
@@ -382,7 +380,7 @@ class Bot(Router):
         if self._bridge is not None:
             raise StateError("the bot is already running")
         try:
-            token = _resolve_token(token)
+            token = resolve_token(token)
             bridge = Bridge(
                 token,
                 self._api_url,
@@ -824,7 +822,7 @@ class Bot(Router):
             log.warning(
                 "%s listens to %s, which needs the %s intent; add it to "
                 "Bot(intents=...)%s",
-                _python_name(listener.callback),
+                qualified_name(listener.callback),
                 event.NAME,
                 event.INTENTS.name,
                 " and turn it on in the Developer Portal" if privileged else "",
@@ -928,13 +926,13 @@ class Bot(Router):
             if isinstance(event, ListenerError):
                 log.exception(
                     "the ListenerError listener %s raised",
-                    _python_name(listener.callback),
+                    qualified_name(listener.callback),
                 )
                 return
             if ListenerError.NAME not in self.listeners:
                 log.exception(
                     "the listener %s raised on %s",
-                    _python_name(listener.callback),
+                    qualified_name(listener.callback),
                     name,
                 )
             self._emit(
@@ -959,7 +957,9 @@ class Bot(Router):
 
     def _task_failed(self, task: Task, error: Exception) -> None:
         if TaskError.NAME not in self.listeners:
-            log.error("the task %s raised", _python_name(task.callback), exc_info=error)
+            log.error(
+                "the task %s raised", qualified_name(task.callback), exc_info=error
+            )
         self._emit(TaskError(task=task, error=error))
 
     def _shard_ready(self, shard_id: int) -> None:
@@ -1223,7 +1223,7 @@ class Bot(Router):
     ) -> tuple[Command, tuple[InteractionDataOption, ...]] | None:
         if data.type is not CommandType.CHAT_INPUT:
             return None
-        names, options = _split_subcommands(data.options)
+        names, options = split_subcommands(data.options)
         node: Command | Group | None = scoped(
             self.commands, (data.name,), data.guild_id
         )
@@ -1280,13 +1280,13 @@ class Bot(Router):
             log.warning(
                 "%s returned without answering; Discord shows "
                 "'The application did not respond'",
-                _python_name(handler),
+                qualified_name(handler),
             )
         elif ctx.state is ResponseState.DEFERRED:
             log.warning(
                 "%s returned after deferring without answering; the user sees "
                 "'thinking' until the interaction expires",
-                _python_name(handler),
+                qualified_name(handler),
             )
 
     async def _autocomplete(
@@ -1321,32 +1321,25 @@ class Bot(Router):
                     continue
                 log.exception(
                     "the error hook %s raised while handling %r",
-                    _python_name(hook),
+                    qualified_name(hook),
                     error,
                 )
             if ctx.state in UNANSWERED:
                 log.warning(
                     "the error hook %s left interaction %d unanswered; "
                     "bostie answered %r",
-                    _python_name(hook),
+                    qualified_name(hook),
                     ctx.interaction.id,
                     FAILURE_ANSWER,
                 )
                 await _answer_failure(ctx)
             return
         if isinstance(error, CheckFailure):
-            log.debug("a check refused %s: %s", _python_name(handler), error)
+            log.debug("a check refused %s: %s", qualified_name(handler), error)
             await _answer_failure(ctx, str(error))
             return
-        log.error("%s raised", _python_name(handler), exc_info=error)
+        log.error("%s raised", qualified_name(handler), exc_info=error)
         await _answer_failure(ctx)
-
-
-def _resolve_token(token: str | None) -> str:
-    token = token or os.environ.get(TOKEN_VARIABLE)
-    if not token:
-        raise ValueError(f"pass a token or set {TOKEN_VARIABLE}")
-    return token.removeprefix("Bot ")
 
 
 def _resolve[E: AnyEvent](waiter: _Waiter[E], event: E | None) -> None:
@@ -1476,7 +1469,7 @@ async def _after(
             try:
                 await hook(ctx)
             except Exception:
-                log.exception("the after_invoke hook %s raised", _python_name(hook))
+                log.exception("the after_invoke hook %s raised", qualified_name(hook))
 
 
 async def _run_check(

@@ -3,7 +3,6 @@ import inspect
 import re
 import typing
 import unicodedata
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import (
     Awaitable,
@@ -15,7 +14,6 @@ from collections.abc import (
 )
 from dataclasses import dataclass, field, fields, replace
 from enum import Enum
-from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
     TYPE_CHECKING,
@@ -33,6 +31,7 @@ from typing import (
     override,
 )
 
+from bostie._util import qualified_name, warn_user
 from bostie.enums import (
     ApplicationIntegrationType,
     ChannelType,
@@ -104,7 +103,6 @@ type TargetModel = type[User | ResolvedMember | Message | WebhookMessage]
 type TargetType = Literal[CommandType.USER, CommandType.MESSAGE]
 type Scope = Literal["global", "guild"]
 
-LIBRARY_DIRECTORY = str(Path(__file__).parent)
 MAX_OPTIONS = 25
 MAX_CHOICES = 25
 MAX_NAME = 32
@@ -495,7 +493,9 @@ class Command(_Node):
             )
             self._parameters = _parameters(callback)
         except CommandDefinitionError as error:
-            raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
+            raise CommandDefinitionError(
+                f"{qualified_name(callback)}: {error}"
+            ) from None
         self.callback = callback
         self.autocompletes: dict[str, AutocompleteCallback] = {
             parameter.name: parameter.autocomplete
@@ -673,7 +673,9 @@ class ContextMenuCommand(_Registered):
             _check_name(name, spaced=True)
             self._target, self._models = _target(callback, TARGET_MODELS[type])
         except CommandDefinitionError as error:
-            raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
+            raise CommandDefinitionError(
+                f"{qualified_name(callback)}: {error}"
+            ) from None
         super().__init__(type, name, router=router, settings=settings)
         self.callback = callback
 
@@ -719,7 +721,9 @@ class EntryPointCommand(_Registered):
             _check_description(description)
             _check_takes_only_the_context(callback)
         except CommandDefinitionError as error:
-            raise CommandDefinitionError(f"{_python_name(callback)}: {error}") from None
+            raise CommandDefinitionError(
+                f"{qualified_name(callback)}: {error}"
+            ) from None
         super().__init__(
             CommandType.PRIMARY_ENTRY_POINT, name, router=router, settings=settings
         )
@@ -762,17 +766,17 @@ def autocomplete_choices(
             continue
         truncated = truncated or len(choice.name) > MAX_TEXT
         choices.append(_choice(replace(choice, name=choice.name[:MAX_TEXT])))
-    where = _python_name(function)
+    where = qualified_name(function)
     if dropped:
-        _warn(
+        warn_user(
             f"{where} returned empty names, values that are not "
             f"{option_type.name} or strings over 100 characters; "
             "those choices were dropped"
         )
     if truncated:
-        _warn(f"{where} returned choice names over 100 characters; they were cut")
+        warn_user(f"{where} returned choice names over 100 characters; they were cut")
     if len(choices) > MAX_CHOICES:
-        _warn(f"{where} returned more than 25 choices; only the first 25 were sent")
+        warn_user(f"{where} returned more than 25 choices; only the first 25 were sent")
     return choices[:MAX_CHOICES]
 
 
@@ -1203,7 +1207,7 @@ def _warn_if_over_budget(node: _Node) -> None:
         node = node.parent
     size = _text_size(node.payload("guild"))
     if size > TEXT_BUDGET:
-        _warn(
+        warn_user(
             f"/{node.name} uses {size} characters for names, descriptions and "
             "choice values; Discord allows 8000 per command"
         )
@@ -1219,11 +1223,3 @@ def _text_size(payload: Mapping[str, Any]) -> int:
         )
         + sum(map(_text_size, payload.get("options", ())))
     )
-
-
-def _python_name(function: Callable[..., object]) -> str:
-    return f"{function.__module__}.{function.__qualname__}"
-
-
-def _warn(message: str) -> None:
-    warnings.warn(message, stacklevel=2, skip_file_prefixes=(LIBRARY_DIRECTORY,))

@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from bostie._util import qualified_name, warn_user
 from bostie.commands import (
     Command,
     CommandDefaults,
@@ -11,11 +12,9 @@ from bostie.commands import (
     EntryPointCommand,
     Group,
     Scope,
-    _python_name,
-    _warn,
 )
 from bostie.enums import CommandType, InteractionContextType, Locale, OptionType
-from bostie.errors import BadRequest, CommandSyncError, SyncProblem, _form_errors
+from bostie.errors import BadRequest, CommandSyncError, SyncProblem, form_errors
 
 if TYPE_CHECKING:
     from bostie.http import HTTPClient
@@ -115,7 +114,7 @@ async def sync_commands(
         for type, count in Counter(command.type for command in scoped).items():
             label, limit = LIMITS[type]
             if count > limit:
-                _warn(f"{count} {label} commands; Discord allows {limit} per scope")
+                warn_user(f"{count} {label} commands; Discord allows {limit} per scope")
     return [
         await _sync_scope(
             http,
@@ -190,7 +189,7 @@ def _targets(command: AnyCommand, base: list[int | None]) -> Sequence[int | None
     if command.type is not CommandType.PRIMARY_ENTRY_POINT:
         return command.guilds or base
     if None not in base:
-        _warn(
+        warn_user(
             f"the entry point {command.name!r} is global, which dev_guilds leaves out"
         )
         return ()
@@ -359,7 +358,7 @@ def _sync_error(
     body: Sequence[Mapping[str, Any]],
     commands: Sequence[AnyCommand],
 ) -> CommandSyncError:
-    found = _form_errors(error.errors) or [((), error.message)]
+    found = form_errors(error.errors) or [((), error.message)]
     return CommandSyncError(
         _problem(path, message, body, commands) for path, message in found
     )
@@ -410,4 +409,4 @@ def _callback_name(node: AnyCommand, names: Sequence[str]) -> str | None:
         node = node.commands[name]
     if isinstance(node, Group):
         return None
-    return _python_name(node.callback)
+    return qualified_name(node.callback)

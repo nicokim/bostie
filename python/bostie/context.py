@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Unpack, overload, override
 
 import msgspec
 
+from bostie._util import split_subcommands
 from bostie.enums import (
     ApplicationIntegrationType,
     CommandType,
@@ -17,7 +18,6 @@ from bostie.enums import (
     JSONErrorCode,
     Locale,
     MessageFlags,
-    OptionType,
 )
 from bostie.errors import (
     HTTPException,
@@ -38,7 +38,6 @@ from bostie.models import (
     ComponentInteraction,
     EditParts,
     EntitySelectData,
-    InteractionDataOption,
     Member,
     Message,
     MessageParts,
@@ -79,9 +78,6 @@ ORIGINAL_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/@origi
 FOLLOWUP_ROUTE = "/webhooks/{application_id}/{interaction_token}"
 MESSAGE_ROUTE = "/webhooks/{application_id}/{interaction_token}/messages/{message_id}"
 USER_INSTALL_FOLLOWUPS = 5
-
-
-SUBCOMMAND_TYPES = (OptionType.SUB_COMMAND, OptionType.SUB_COMMAND_GROUP)
 
 
 class ResponseState(Enum):
@@ -800,7 +796,7 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
         Required ones may be missing, and the focused one is the text typed so far.
         """
         data = self.interaction.data
-        _, leaves = _split_subcommands(data.options)
+        _, leaves = split_subcommands(data.options)
         found = self.bot._command(data)
         if found is None:
             return {option.name: option.value for option in leaves}
@@ -818,18 +814,8 @@ class AutocompleteContext(_InteractionContext[AutocompleteInteraction]):
             self.state = ResponseState.RESPONDED
 
 
-def _split_subcommands(
-    options: tuple[InteractionDataOption, ...],
-) -> tuple[list[str], tuple[InteractionDataOption, ...]]:
-    names: list[str] = []
-    while options and options[0].type in SUBCOMMAND_TYPES:
-        names.append(options[0].name)
-        options = options[0].options
-    return names, options
-
-
 def _command_name(data: CommandData) -> str:
-    names, _ = _split_subcommands(data.options)
+    names, _ = split_subcommands(data.options)
     return " ".join((data.name, *names))
 
 

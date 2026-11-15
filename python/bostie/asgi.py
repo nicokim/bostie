@@ -5,7 +5,8 @@ from typing import Any
 import msgspec
 
 from bostie._bridge import Bridge
-from bostie.bot import Bot, _resolve_token
+from bostie._util import resolve_token
+from bostie.bot import Bot
 from bostie.client import _on_delivery
 from bostie.enums import InteractionType
 from bostie.errors import BostieError
@@ -13,7 +14,7 @@ from bostie.events import InteractionCreate
 from bostie.http import HTTPClient
 from bostie.models.base import decoder
 from bostie.rest import REST
-from bostie.webhook_events import _webhook_event, verify_signature
+from bostie.webhook_events import split_webhook_event, verify_signature
 
 MAX_BODY = 4 * 1024 * 1024
 PONG = b'{"type":1}'
@@ -60,7 +61,7 @@ class ASGIApp:
         bot = self.bot
         if bot._bridge is None:
             bridge = Bridge(
-                _resolve_token(self._token),
+                resolve_token(self._token),
                 bot._api_url,
                 _on_delivery,
                 http=bot._http_settings,
@@ -139,7 +140,7 @@ class ASGIApp:
         received = asyncio.get_running_loop().time()
         kind = decoder(_Kind).decode(body)
         if kind.token is None:
-            named = _webhook_event(body)
+            named = split_webhook_event(body)
             if named is not None:
                 self.bot._dispatch(0, 0, *named, received)
             await _respond(send, 204)

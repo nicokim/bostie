@@ -57,7 +57,7 @@ def verify_signature(
 
 def decode_webhook_event(body: bytes) -> Event | None:
     """A webhook event request's event, as a RawEvent if untyped; None for a PING."""
-    named = _webhook_event(body)
+    named = split_webhook_event(body)
     if named is None:
         return None
     name, data = named
@@ -66,6 +66,7 @@ def decode_webhook_event(body: bytes) -> Event | None:
     return decoded or RawEvent(raw_json=data, name=name, seq=0)
 
 
-def _webhook_event(body: bytes) -> tuple[str, bytes] | None:
+def split_webhook_event(body: bytes) -> tuple[str, bytes] | None:
+    """The type and data of a webhook event request's event; None for a PING."""
     event = decoder(_Payload).decode(body).event
     return None if event is None else (event.type, bytes(event.data))

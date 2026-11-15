@@ -288,6 +288,9 @@ class AllowedMentions(Builder, kw_only=True):
     replied_user: bool | None = None
 
 
+DEFAULT_ALLOWED_MENTIONS = AllowedMentions(parse=("users", "roles"))
+
+
 class MessageActivity(Model, kw_only=True):
     """The Rich Presence invite a message carries."""
 
