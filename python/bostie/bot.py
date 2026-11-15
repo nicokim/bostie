@@ -502,7 +502,7 @@ class Bot(Router):
         The shards end their sessions with code 1000, or save them to the session file.
         """
         if self._closing is None or self._closing.done():
-            self._closing = asyncio.ensure_future(self._shut_down())
+            self._closing = asyncio.create_task(self._shut_down())
         await asyncio.shield(self._closing)
 
     async def __aenter__(self) -> Self:
@@ -768,7 +768,7 @@ class Bot(Router):
             self._command_ids[result.guild_id] = result.ids
 
     async def _run(self, token: str | None) -> None:
-        started = asyncio.ensure_future(self.start(token))
+        started = asyncio.create_task(self.start(token))
         if threading.current_thread() is threading.main_thread():
             with contextlib.suppress(NotImplementedError):
                 asyncio.get_running_loop().add_signal_handler(
@@ -996,7 +996,7 @@ class Bot(Router):
         for task in self._running_tasks.keys() - wanted:
             self._running_tasks.pop(task).cancel()
         for task in wanted - self._running_tasks.keys():
-            running = asyncio.ensure_future(task.run(self._task_failed))
+            running = asyncio.create_task(task.run(self._task_failed))
             running.add_done_callback(self._tasks.discard)
             self._tasks.add(running)
             self._running_tasks[task] = running
