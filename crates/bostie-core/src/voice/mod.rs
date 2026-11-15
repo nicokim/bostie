@@ -315,7 +315,9 @@ impl Voice {
         &self,
         guild: GuildId,
     ) -> Result<(Option<Duration>, Option<Duration>), CoreError> {
-        self.with_connection(guild, |handle| handle.info.latency())
+        self.with_connection(guild, |handle| {
+            (handle.info.ws_latency.get(), handle.info.udp_latency.get())
+        })
     }
 
     pub fn dave(&self, guild: GuildId) -> Result<DaveInfo, CoreError> {

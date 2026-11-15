@@ -3,7 +3,6 @@ use std::future;
 use std::mem;
 use std::pin::pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -11,6 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::debug;
 
+use super::Shared;
 use super::close::{self, CloseAction};
 use super::media::Media;
 use super::proto;
@@ -19,14 +19,13 @@ use super::session::{self, Attempt, Credentials, SessionEnd, VoiceSession};
 use super::tap::Snapshot;
 use super::types::{ConnectRequest, DisconnectReason, ReceiveTuning, VoiceStatus};
 use super::ws::Timeouts;
-use super::{Shared, nanos};
 use crate::backoff::backoff;
 use crate::ids::{ChannelId, GuildId, ShardId, UserId};
 use crate::inbox::Delivery;
+use crate::latency::Latency;
 
 const REJOIN_LIMIT: u32 = 3;
 const RESUME_ATTEMPTS: u32 = 2;
-const UNKNOWN_LATENCY: u64 = u64::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ConnectionTuning {
@@ -131,8 +130,8 @@ pub(crate) struct Info {
     pub shard: ShardId,
     pub ssrcs: Mutex<HashMap<u32, (UserId, std::time::Instant)>>,
     pub members: Mutex<HashSet<UserId>>,
-    latency_ws: AtomicU64,
-    latency_udp: AtomicU64,
+    pub ws_latency: Latency,
+    pub udp_latency: Latency,
 }
 
 impl Info {
@@ -142,27 +141,9 @@ impl Info {
             shard,
             ssrcs: Mutex::new(HashMap::new()),
             members: Mutex::new(HashSet::new()),
-            latency_ws: AtomicU64::new(UNKNOWN_LATENCY),
-            latency_udp: AtomicU64::new(UNKNOWN_LATENCY),
+            ws_latency: Latency::default(),
+            udp_latency: Latency::default(),
         }
-    }
-
-    pub(crate) fn latency(&self) -> (Option<Duration>, Option<Duration>) {
-        let read = |latency: &AtomicU64| match latency.load(Ordering::Relaxed) {
-            UNKNOWN_LATENCY => None,
-            nanos => Some(Duration::from_nanos(nanos)),
-        };
-        (read(&self.latency_ws), read(&self.latency_udp))
-    }
-
-    pub(crate) fn set_latency_ws(&self, latency: Duration) {
-        self.latency_ws
-            .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
-    }
-
-    pub(crate) fn set_latency_udp(&self, latency: Duration) {
-        self.latency_udp
-            .store(nanos(latency).min(UNKNOWN_LATENCY - 1), Ordering::Relaxed);
     }
 }
 
@@ -810,23 +791,6 @@ pub(super) async fn until(deadline: Option<Instant>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn latency_is_unknown_until_measured() {
-        let info = Info::new(GuildId::from(1), ShardId::from(0));
-        assert_eq!(info.latency(), (None, None));
-
-        info.set_latency_ws(Duration::from_millis(12));
-        info.set_latency_udp(Duration::from_millis(3));
-
-        assert_eq!(
-            info.latency(),
-            (
-                Some(Duration::from_millis(12)),
-                Some(Duration::from_millis(3))
-            )
-        );
-    }
 
     #[test]
     fn only_removed_and_closed_endings_stay_in_the_channel() {

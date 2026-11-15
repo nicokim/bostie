@@ -694,7 +694,7 @@ impl<'c> Session<'c> {
         else {
             return;
         };
-        self.conn.info.set_latency_ws(latency);
+        self.conn.info.ws_latency.set(latency);
         if self.progress == Progress::Ready && !mem::replace(&mut self.stable, true) {
             self.conn.stable();
         }
@@ -755,7 +755,7 @@ impl<'c> Session<'c> {
             && answer.at >= sent
         {
             keepalive.sent_at = None;
-            self.conn.info.set_latency_udp(answer.at - sent);
+            self.conn.info.udp_latency.set(answer.at - sent);
         }
     }
 

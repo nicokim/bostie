@@ -23,6 +23,7 @@ use crate::backoff::backoff;
 use crate::error::describe;
 use crate::ids::ShardId;
 use crate::inbox::Delivery;
+use crate::latency::Latency;
 use crate::proxy::Proxy;
 use crate::voice::tap::{VOICE_SERVER_UPDATE, VOICE_STATE_UPDATE};
 
@@ -30,7 +31,6 @@ const NORMAL_CLOSE: u16 = 1000;
 const SESSION_KEEPING_CLOSE: u16 = 4000;
 const GATEWAY_QUERY: &str = "v=10&encoding=json&compress=zstd-stream";
 const STALE_URL_FAILURES: u32 = 2;
-pub(super) const UNKNOWN_LATENCY: u64 = u64::MAX;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -49,7 +49,7 @@ pub(super) struct Signals {
     pub(super) reconnect: Notify,
     pub(super) approved: Notify,
     pub(super) approved_request: AtomicU64,
-    pub(super) latency: AtomicU64,
+    pub(super) latency: Latency,
     pub(super) stopped: AtomicBool,
     pub(super) keep_session: AtomicBool,
 }
@@ -62,7 +62,7 @@ impl Signals {
             reconnect: Notify::new(),
             approved: Notify::new(),
             approved_request: AtomicU64::new(0),
-            latency: AtomicU64::new(UNKNOWN_LATENCY),
+            latency: Latency::default(),
             stopped: AtomicBool::new(false),
             keep_session: AtomicBool::new(false),
         }
@@ -595,8 +595,7 @@ impl Shard {
         let Some(sent_at) = heartbeat.sent_at else {
             return;
         };
-        let nanos = u64::try_from(sent_at.elapsed().as_nanos()).unwrap_or(UNKNOWN_LATENCY - 1);
-        self.signals.latency.store(nanos, Ordering::Relaxed);
+        self.signals.latency.set(sent_at.elapsed());
     }
 
     fn forward(&mut self, connection: &mut Connection, held: Held) {

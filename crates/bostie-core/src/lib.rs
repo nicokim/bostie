@@ -4,6 +4,7 @@ mod error;
 pub(crate) mod gateway;
 mod ids;
 pub(crate) mod inbox;
+mod latency;
 mod proxy;
 pub(crate) mod rest;
 mod runtime;

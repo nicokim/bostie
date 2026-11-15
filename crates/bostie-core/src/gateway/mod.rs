@@ -25,7 +25,7 @@ pub(crate) use self::envelope::tree;
 use self::identify::IdentifyGate;
 pub use self::identify::IdentifyLimit;
 use self::limits::Limits;
-use self::shard::{Session, Shard, Signals, UNKNOWN_LATENCY};
+use self::shard::{Session, Shard, Signals};
 use crate::error::CoreError;
 use crate::ids::ShardId;
 use crate::inbox::Inbox;
@@ -229,10 +229,7 @@ impl Gateway {
     }
 
     pub(crate) fn latency(&self, shard: ShardId) -> Result<Option<Duration>, CoreError> {
-        self.with_running(shard, |handle| {
-            let nanos = handle.signals.latency.load(Ordering::Relaxed);
-            Ok((nanos != UNKNOWN_LATENCY).then(|| Duration::from_nanos(nanos)))
-        })
+        self.with_running(shard, |handle| Ok(handle.signals.latency.get()))
     }
 
     pub(crate) fn shutdown(&self) {
