@@ -28,7 +28,7 @@ from bostie._bridge import Bridge, GatewayDelivery
 from bostie._util import qualified_name, resolve_token, routers_from
 from bostie.activity import ActivityDict
 from bostie.cache import Cache
-from bostie.checks import MaxConcurrency
+from bostie.checks import ReleasingCheck
 from bostie.commands import (
     AutocompleteCallback,
     Check,
@@ -1296,7 +1296,7 @@ class Bot(Router):
             if timer is not None:
                 timer.cancel()
             for check in passed:
-                if isinstance(check, MaxConcurrency):
+                if isinstance(check, ReleasingCheck):
                     check.release(ctx)
         if ctx.state is ResponseState.PENDING:
             log.warning(

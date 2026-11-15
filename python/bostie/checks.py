@@ -1,7 +1,7 @@
 import time
 from collections import deque
 from collections.abc import Callable, Hashable
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from bostie.context import AnyContext
 from bostie.enums import Permissions
@@ -18,6 +18,7 @@ __all__ = [
     "Cooldown",
     "MaxConcurrency",
     "Per",
+    "ReleasingCheck",
     "bot_has_permissions",
     "has_any_role",
     "has_permissions",
@@ -116,6 +117,15 @@ class Cooldown:
             key: uses for key, uses in self._uses.items() if uses[-1] > expired
         }
         self._sweep_at = now + self.seconds
+
+
+@runtime_checkable
+class ReleasingCheck(Protocol):
+    """A check that holds a slot while the handler runs, freed by `release(ctx)`."""
+
+    def __call__(self, ctx: AnyContext) -> bool: ...
+
+    def release(self, ctx: AnyContext) -> None: ...
 
 
 class MaxConcurrency:

@@ -24,6 +24,8 @@ The checks of the bot run first, then those of each router from the outermost in
 | `has_any_role(*roles)` | `MissingRole` | the user has none of the roles |
 | `is_owner` | `NotOwner` | the user is not one of `bot.owner_ids` |
 
+A check object that also has a `release(ctx)` method, a `checks.ReleasingCheck` like `MaxConcurrency`, is released once the handler ends, however it ends.
+
 `per` is `"user"`, `"guild"` (the user, in DMs), `"channel"`, `"global"`, or a function of the context that returns any hashable key. The permission checks read the permissions Discord sends with the interaction, so they need no cache and no request. Their errors carry `missing`, the `Permissions` lacking, and `CooldownActive` carries `retry_after` in seconds.
 
 ## Roles and owners
