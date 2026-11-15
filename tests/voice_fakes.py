@@ -115,10 +115,13 @@ class FakeSink:
 
     def write(self, data: Buffer) -> bool:
         self._check()
+        view = memoryview(data)
+        if view.format != "B":
+            raise BufferError("buffer contents are not compatible with u8")
         if self.queued() >= self.buffer:
             self.armed = True
             return False
-        chunk = bytes(data)
+        chunk = view.tobytes()
         self.writes.append(chunk)
         self.written += (
             0.02 if self.kind == "opus" else len(chunk) / self.bytes_per_second
