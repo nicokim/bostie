@@ -41,17 +41,19 @@ pub(super) enum Attempt {
 pub(super) enum SessionEnd {
     Closed(u16),
     Lost(String),
-    Invalid(String),
     Failed(String),
     Gateway(GatewayEvent),
     Disconnect,
     Reconnect,
-    DaveFailed(String),
     NonceExhausted,
     Fatal(DisconnectReason, String),
     TimedOut,
     Stopped,
     MediaLost,
+}
+
+fn dave_failed(text: String) -> SessionEnd {
+    SessionEnd::Fatal(DisconnectReason::DaveFailed, text)
 }
 
 pub(super) struct VoiceSession {
@@ -339,7 +341,7 @@ impl<'c> Session<'c> {
 
     fn on_invalid(&mut self, error: &ProtoError) -> Result<(), SessionEnd> {
         if self.progress != Progress::Ready {
-            return Err(SessionEnd::Invalid(format!("invalid frame: {error}")));
+            return Err(SessionEnd::Failed(format!("invalid frame: {error}")));
         }
         if self.invalid.allows(Instant::now().into_std()) {
             warn!(%error, guild = %self.conn.guild, "skipping an invalid voice frame");
@@ -400,7 +402,7 @@ impl<'c> Session<'c> {
                 ) {
                     let limit = self.conn.tuning.early_ops;
                     if self.early.len() >= limit {
-                        return Err(SessionEnd::Invalid(format!(
+                        return Err(SessionEnd::Failed(format!(
                             "invalid frame: more than {limit} messages arrived before the \
                              session description"
                         )));
@@ -544,9 +546,9 @@ impl<'c> Session<'c> {
         };
         let (dave, out) = match started {
             Ok(Ok(started)) => started,
-            Ok(Err(error)) => return Err(SessionEnd::DaveFailed(error.to_string())),
+            Ok(Err(error)) => return Err(dave_failed(error.to_string())),
             Err(error) => {
-                return Err(SessionEnd::DaveFailed(format!(
+                return Err(dave_failed(format!(
                     "the DAVE session could not start: {error}"
                 )));
             }
@@ -606,47 +608,44 @@ impl<'c> Session<'c> {
     }
 
     async fn dave(&mut self, op: DaveOp) -> Result<(), SessionEnd> {
-        let media = Arc::clone(&self.conn.media);
-        let handled = spawn_blocking(move || {
-            media.with_dave(|dave| {
-                let mut out = Vec::new();
-                let result = dave.handle(op, std::time::Instant::now(), &mut out);
-                (result, out)
-            })
-        })
-        .await;
-        let (result, out) = handled
-            .map_err(|error| SessionEnd::DaveFailed(format!("a DAVE call failed: {error}")))?;
-        self.send_outbound(out).await?;
-        match result {
-            Ok(Some(executed)) => self.conn.push(Delivery::VoiceDave {
+        let executed = self
+            .run_dave(|dave, now, out| dave.handle(op, now, out))
+            .await?
+            .map_err(|error| dave_failed(describe(&error)))?;
+        if let Some(executed) = executed {
+            self.conn.push(Delivery::VoiceDave {
                 guild: self.conn.guild,
                 protocol_version: executed.protocol_version,
                 epoch: executed.epoch,
                 transition_id: executed.transition_id,
-            }),
-            Ok(None) => {}
-            Err(error) => return Err(SessionEnd::DaveFailed(describe(&error))),
+            });
         }
         Ok(())
     }
 
     async fn receive_recovery(&mut self) -> Result<(), SessionEnd> {
+        self.run_dave(Dave::receive_recovery)
+            .await?
+            .map(drop)
+            .map_err(|error| dave_failed(error.to_string()))
+    }
+
+    async fn run_dave<T: Send + 'static>(
+        &mut self,
+        call: impl FnOnce(&mut Dave, std::time::Instant, &mut Vec<Outbound>) -> T + Send + 'static,
+    ) -> Result<T, SessionEnd> {
         let media = Arc::clone(&self.conn.media);
-        let handled = spawn_blocking(move || {
+        let (result, out) = spawn_blocking(move || {
             media.with_dave(|dave| {
                 let mut out = Vec::new();
-                let result = dave.receive_recovery(std::time::Instant::now(), &mut out);
+                let result = call(dave, std::time::Instant::now(), &mut out);
                 (result, out)
             })
         })
-        .await;
-        let (result, out) = handled
-            .map_err(|error| SessionEnd::DaveFailed(format!("a DAVE call failed: {error}")))?;
+        .await
+        .map_err(|error| dave_failed(format!("a DAVE call failed: {error}")))?;
         self.send_outbound(out).await?;
-        result
-            .map(|_| ())
-            .map_err(|error| SessionEnd::DaveFailed(error.to_string()))
+        Ok(result)
     }
 
     async fn send_outbound(&mut self, out: Vec<Outbound>) -> Result<(), SessionEnd> {

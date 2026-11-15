@@ -607,7 +607,7 @@ impl Connection {
                 fallback
             }
             SessionEnd::Reconnect => fallback,
-            SessionEnd::Invalid(text) | SessionEnd::Failed(text) => {
+            SessionEnd::Failed(text) => {
                 self.failures.last = Some(text);
                 Next::Rejoin
             }
@@ -617,9 +617,6 @@ impl Connection {
             }
             SessionEnd::Gateway(event) => Next::Event(event),
             SessionEnd::Disconnect => Next::End(Ending::new(DisconnectReason::Requested, None, "")),
-            SessionEnd::DaveFailed(text) => {
-                Next::End(Ending::new(DisconnectReason::DaveFailed, None, text))
-            }
             SessionEnd::Fatal(reason, text) => Next::End(Ending::new(reason, None, text)),
             SessionEnd::TimedOut => Next::End(self.timed_out()),
             SessionEnd::Stopped => Next::End(Ending::new(
@@ -652,7 +649,7 @@ impl Connection {
         }
         let failed = match &end {
             SessionEnd::Closed(code) => close::classify(*code).0 == CloseAction::Resume,
-            SessionEnd::Lost(_) | SessionEnd::Invalid(_) | SessionEnd::Failed(_) => true,
+            SessionEnd::Lost(_) | SessionEnd::Failed(_) => true,
             _ => false,
         };
         match self.after(end) {
