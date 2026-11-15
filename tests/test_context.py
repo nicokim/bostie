@@ -125,6 +125,7 @@ CALLS: dict[str, Callable[[ComponentContext], Awaitable[object]]] = {
     "followup": lambda ctx: ctx.followup("hi"),
     "delete": lambda ctx: ctx.delete(),
     "modal": lambda ctx: ctx.modal(FORM),
+    "launch_activity": lambda ctx: ctx.launch_activity(),
 }
 PENDING, DEFERRED, DEFERRED_UPDATE, RESPONDED, MODAL, EXPIRED = ResponseState
 CALLBACK_4 = ("POST", "callback", 4)
@@ -132,6 +133,7 @@ CALLBACK_5 = ("POST", "callback", 5)
 CALLBACK_6 = ("POST", "callback", 6)
 CALLBACK_7 = ("POST", "callback", 7)
 CALLBACK_9 = ("POST", "callback", 9)
+CALLBACK_12 = ("POST", "callback", 12)
 EDIT = ("PATCH", "original", None)
 FOLLOWUP = ("POST", "followup", None)
 DELETE = ("DELETE", "original", None)
@@ -172,6 +174,10 @@ TABLE = [
     (DEFERRED, "modal", REFUSED, DEFERRED),
     (DEFERRED_UPDATE, "modal", REFUSED, DEFERRED_UPDATE),
     (RESPONDED, "modal", REFUSED, RESPONDED),
+    (PENDING, "launch_activity", CALLBACK_12, RESPONDED),
+    (DEFERRED, "launch_activity", REFUSED, DEFERRED),
+    (DEFERRED_UPDATE, "launch_activity", REFUSED, DEFERRED_UPDATE),
+    (RESPONDED, "launch_activity", REFUSED, RESPONDED),
     *[(MODAL, call, REFUSED, MODAL) for call in CALLS],
 ]
 
