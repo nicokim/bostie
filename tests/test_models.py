@@ -274,11 +274,11 @@ def test_resolved_options_convert_to_their_models() -> None:
         CommandInteraction, payload("events/INTERACTION_CREATE.command.json")
     ).data.resolved
 
-    member = ResolvedMember.from_resolved(resolved, 820774541721731073)
-    user = User.from_resolved(resolved, 308882807193731073)
-    role = Role.from_resolved(resolved, 1335174302269571073)
-    channel = PartialChannel.from_resolved(resolved, 1335173547294851073)
-    attachment = Attachment.from_resolved(resolved, 1564609863064092673)
+    member = ResolvedMember._from_resolved(resolved, 820774541721731073)
+    user = User._from_resolved(resolved, 308882807193731073)
+    role = Role._from_resolved(resolved, 1335174302269571073)
+    channel = PartialChannel._from_resolved(resolved, 1335173547294851073)
+    attachment = Attachment._from_resolved(resolved, 1564609863064092673)
 
     assert member is not None
     assert member.user.username == "linus"
@@ -292,7 +292,7 @@ def test_resolved_options_convert_to_their_models() -> None:
     assert channel.app_permissions == 4069281901182529
     assert attachment is not None
     assert attachment.ephemeral is True
-    assert ResolvedMember.from_resolved(resolved, 1) is None
+    assert ResolvedMember._from_resolved(resolved, 1) is None
 
 
 def test_option_values_keep_their_json_types() -> None:
@@ -326,8 +326,8 @@ def test_the_user_comes_from_the_member_in_guilds_and_the_user_in_dms() -> None:
     assert guild.user.username == "grace"
     assert dm.user.username == "grace"
     assert dm.member is None
-    assert ResolvedMember.from_resolved(dm.data.resolved, 820774541721731073) is None
-    assert User.from_resolved(dm.data.resolved, 820774541721731073) is not None
+    assert ResolvedMember._from_resolved(dm.data.resolved, 820774541721731073) is None
+    assert User._from_resolved(dm.data.resolved, 820774541721731073) is not None
 
 
 def test_interactions_decode_by_type_and_unknown_types_keep_their_payload() -> None:

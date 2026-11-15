@@ -139,7 +139,7 @@ class RtcpPacket(VoiceEvent, kw_only=True):
     data: bytes
 
     @classmethod
-    def decode(cls, guild_id: int, packet: "RtcpPacketItem") -> Self:
+    def _decode(cls, guild_id: int, packet: "RtcpPacketItem") -> Self:
         kind, count, ssrc, user_id, blocks, data = packet
         reports = tuple(
             ReceptionReport(

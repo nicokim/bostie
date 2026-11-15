@@ -102,6 +102,7 @@ extend-ignore-names = [  # the internal seams one bostie module reaches in anoth
     "_deliver",
     "_error_handler",
     "_filled",
+    "_from_resolved",
     "_grant",
     "_handle",
     "_link",

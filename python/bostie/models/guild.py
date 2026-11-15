@@ -91,7 +91,7 @@ class Role(Model, Snowflake, kw_only=True):
         return f"<@&{self.id}>"
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "Role | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "Role | None":
         return resolved.roles.get(id)
 
 
@@ -143,7 +143,7 @@ class ResolvedMember(_UserMember, kw_only=True):
     """A member as an option, a select or a command target resolves it."""
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "ResolvedMember | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "ResolvedMember | None":
         return resolved.member(id)
 
 

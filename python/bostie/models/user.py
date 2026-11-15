@@ -81,7 +81,7 @@ class User(PartialUser, kw_only=True):
         return self.global_name or self.username
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "User | None":
         return resolved.users.get(id)
 
 

@@ -130,7 +130,7 @@ class PartialChannel(Model, Snowflake, kw_only=True):
         return f"<#{self.id}>"
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "PartialChannel | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "PartialChannel | None":
         return resolved.channels.get(id)
 
 

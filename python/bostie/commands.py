@@ -264,7 +264,7 @@ class _Parameter:
         snowflake = int(value) if isinstance(value, str) and value.isdecimal() else None
         if snowflake is not None:
             for model in self.models:
-                found = model.from_resolved(resolved, snowflake)
+                found = model._from_resolved(resolved, snowflake)
                 if found is not None:
                     return found
         expected = " or ".join(model.__name__ for model in self.models)
@@ -619,7 +619,7 @@ class ContextMenuCommand(_Registered):
             found = (
                 None
                 if data.target_id is None
-                else model.from_resolved(data.resolved, data.target_id)
+                else model._from_resolved(data.resolved, data.target_id)
             )
             if isinstance(found, PartialMessage):
                 found = _in_guild(found, interaction.guild_id)

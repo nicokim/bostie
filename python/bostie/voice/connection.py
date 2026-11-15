@@ -1083,7 +1083,7 @@ class _Connection(VoiceConnection):
                 )
             case ("voice_rtcp", _, packets):
                 for packet in packets:
-                    self._emit(RtcpPacket.decode(self.guild_id, packet))
+                    self._emit(RtcpPacket._decode(self.guild_id, packet))
             case _:
                 pass
 

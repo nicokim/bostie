@@ -94,7 +94,7 @@ class Attachment(Model, Snowflake, kw_only=True):
     application: PartialApplication | None = None
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "Attachment | None":
         return resolved.attachments.get(id)
 
 
@@ -456,7 +456,7 @@ class PartialMessage(Model, Snowflake, kw_only=True):
         return f"https://discord.com/channels/{guild}/{self.channel_id}/{self.id}"
 
     @classmethod
-    def from_resolved(cls, resolved: "Resolved", id: int) -> "PartialMessage | None":
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> "PartialMessage | None":
         return resolved.messages.get(id)
 
 
@@ -495,7 +495,7 @@ class _Message(PartialMessage, kw_only=True):
 
     @classmethod
     @override
-    def from_resolved(cls, resolved: "Resolved", id: int) -> Self | None:
+    def _from_resolved(cls, resolved: "Resolved", id: int) -> Self | None:
         message = resolved.message(id)
         return message if isinstance(message, cls) else None
 
