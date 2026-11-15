@@ -151,6 +151,12 @@ CHANNEL_INFO_FIELDS: tuple[Literal["status", "voice_start_time"], ...] = (
 )
 DEFAULT_VOICE = Defaults()
 OWNER_ROLES = frozenset({TeamMemberRole.ADMIN, TeamMemberRole.DEVELOPER})
+CLAIMED_INTERACTIONS: dict[
+    type, type[ComponentInteraction | ModalSubmitInteraction]
+] = {
+    ComponentContext: ComponentInteraction,
+    ModalContext: ModalSubmitInteraction,
+}
 
 type Handler = Callable[..., Coroutine[Any, Any, None]]
 type Node = Command | ContextMenuCommand | EntryPointCommand | ComponentRoute[...]
@@ -168,12 +174,12 @@ class _Waiter[E: AnyEvent]:
 
 
 @dataclass(slots=True)
-class _Claim:
-    kind: type[ComponentInteraction | ModalSubmitInteraction]
+class _Claim[C: ComponentContext | ModalContext]:
+    context: type[C]
     custom_ids: frozenset[str]
-    check: Callable[[Any], bool] | None
+    check: Callable[[C], bool] | None
     settings: AnswerSettings
-    future: asyncio.Future[Any]
+    future: asyncio.Future[C]
 
 
 @dataclass(slots=True)
@@ -313,7 +319,7 @@ class Bot(Router):
         self._unready: set[int] = set()
         self._ready_waiters: list[asyncio.Future[None]] = []
         self._waiters: dict[str, list[_Waiter[Any]]] = {}
-        self._claims: list[_Claim] = []
+        self._claims: list[_Claim[Any]] = []
         self._tasks: set[asyncio.Task[None]] = set()
         self._deletions: set[asyncio.Task[None]] = set()
         self._running_tasks: dict[Task, asyncio.Task[None]] = {}
@@ -559,10 +565,7 @@ class Bot(Router):
         The context answers like a route's, and no route runs for that use. An
         exception from `check` is raised here; bound the wait with asyncio.timeout().
         """
-        context: ComponentContext = await self._claim(
-            ComponentInteraction, custom_ids, check, settings
-        )
-        return context
+        return await self._claim(ComponentContext, custom_ids, check, settings)
 
     async def wait_for_modal(
         self,
@@ -574,21 +577,18 @@ class Bot(Router):
 
         The context answers like a route's, and no route runs for that submit.
         """
-        context: ModalContext = await self._claim(
-            ModalSubmitInteraction, custom_ids, check, settings
-        )
-        return context
+        return await self._claim(ModalContext, custom_ids, check, settings)
 
-    async def _claim(
+    async def _claim[C: ComponentContext | ModalContext](
         self,
-        kind: type[ComponentInteraction | ModalSubmitInteraction],
+        context: type[C],
         custom_ids: Iterable[str],
-        check: Callable[[Any], bool] | None,
+        check: Callable[[C], bool] | None,
         settings: AnswerSettings,
-    ) -> Any:
+    ) -> C:
         check_keys(settings, ANSWER_SETTINGS, "settings")
-        future = asyncio.get_running_loop().create_future()
-        claim = _Claim(kind, frozenset(custom_ids), check, settings, future)
+        future: asyncio.Future[C] = asyncio.get_running_loop().create_future()
+        claim = _Claim(context, frozenset(custom_ids), check, settings, future)
         self._claims.append(claim)
         self._refresh_filter()
         try:
@@ -1169,21 +1169,20 @@ class Bot(Router):
 
     def _claimed(self, interaction: Interaction, received: float) -> bool:
         for claim in self._claims:
-            if claim.future.done() or not isinstance(interaction, claim.kind):
+            if claim.future.done() or not isinstance(
+                interaction, CLAIMED_INTERACTIONS[claim.context]
+            ):
                 continue
             if claim.custom_ids and interaction.data.custom_id not in claim.custom_ids:
                 continue
             settings = claim.settings
-            answer: dict[str, Any] = {
-                "received": received,
-                "ephemeral": settings.get("ephemeral", False),
-                "allowed_mentions": self._allowed_mentions,
-                "deletions": self._deletions,
-            }
-            ctx = (
-                ComponentContext(interaction, self, **answer)
-                if isinstance(interaction, ComponentInteraction)
-                else ModalContext(interaction, self, **answer)
+            ctx = claim.context(
+                interaction,
+                self,
+                received=received,
+                ephemeral=settings.get("ephemeral", False),
+                allowed_mentions=self._allowed_mentions,
+                deletions=self._deletions,
             )
             try:
                 matched = claim.check is None or claim.check(ctx)
