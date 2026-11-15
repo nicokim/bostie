@@ -380,10 +380,10 @@ def test_move_waits_for_the_new_channel_and_ready() -> None:
         moving = asyncio.ensure_future(vc.move(OTHER_VOICE))
         await settle()
         assert bot.core.sent[-1] == voice_state(OTHER_VOICE, self_deaf=True)
-        bot.deliver(ready())
+        bot.deliver(("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, True))
         await settle()
         assert not moving.done()
-        bot.deliver(("voice_moved", GUILD_ID, VOICE, OTHER_VOICE, True))
+        bot.deliver(ready())
         await moving
         assert vc.channel_id == OTHER_VOICE
 

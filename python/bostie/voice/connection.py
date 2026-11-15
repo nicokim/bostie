@@ -1209,7 +1209,6 @@ class _Connection(VoiceConnection):
                 by_us=by_us,
             )
         )
-        self._changed()
         spawn(self._tasks, self._follow(new))
 
     def _clients(self, user_ids: list[int]) -> None:
