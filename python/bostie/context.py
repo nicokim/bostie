@@ -2,8 +2,7 @@ import asyncio
 import functools
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack, overload, override
@@ -61,7 +60,7 @@ from bostie.models import (
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
-from bostie.models.message import NULL, in_guild, message_body
+from bostie.models.message import in_guild, message_body
 from bostie.rest.messages import delete_later
 from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
@@ -107,10 +106,6 @@ class _LaunchResource(msgspec.Struct):
 
 class _LaunchResponse(msgspec.Struct):
     resource: _LaunchResource
-
-
-class _MessageFlagsOnly(msgspec.Struct):
-    flags: MessageFlags = MessageFlags(0)
 
 
 class ReplyParts(MessageParts, total=False):
@@ -252,7 +247,6 @@ class _ReplyingContext[
     _original_ephemeral = False
     _warned_ephemeral = False
     _followups = 0
-    _auto_defer_task: "asyncio.Task[None] | None" = None
 
     def __init__(
         self,
@@ -261,26 +255,11 @@ class _ReplyingContext[
         *,
         received: float,
         ephemeral: bool,
-        auto_defer: float | None,
         allowed_mentions: AllowedMentions,
     ) -> None:
         super().__init__(interaction, bot, received=received)
         self._ephemeral = ephemeral
-        self._auto_defer = auto_defer
         self._allowed_mentions = allowed_mentions
-
-    @contextmanager
-    def auto_defer(self) -> Generator[None, None, None]:
-        """Use as `with ctx.auto_defer():` to defer when the block is slow to answer.
-
-        Slow means no answer `auto_defer` seconds after the interaction arrived.
-        """
-        timer = self._defer_when_slow()
-        try:
-            yield
-        finally:
-            if timer is not None:
-                timer.cancel()
 
     def typing(self) -> "Typing":
         """Typing in the interaction's channel, awaited once or kept in `async with`."""
@@ -447,28 +426,6 @@ class _ReplyingContext[
         if self.state is ResponseState.DEFERRED:
             self.state = ResponseState.RESPONDED
 
-    def _defer_when_slow(self) -> asyncio.TimerHandle | None:
-        if self._auto_defer is None:
-            return None
-        return self._loop.call_at(
-            self.received + self._auto_defer, self._auto_defer_due
-        )
-
-    def _auto_defer_due(self) -> None:
-        if self.state is ResponseState.PENDING:
-            self._auto_defer_task = self._loop.create_task(self._defer_unanswered())
-
-    async def _defer_unanswered(self) -> None:
-        try:
-            async with self._lock:
-                if self.state is ResponseState.PENDING:
-                    await self._defer_automatically()
-        except Exception:
-            logger.warning("automatic defer of %s failed", self._label, exc_info=True)
-
-    async def _defer_automatically(self) -> None:
-        await self._defer(ephemeral=self._ephemeral)
-
     async def _defer(self, *, ephemeral: bool) -> None:
         await self._callback(
             InteractionCallbackType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
@@ -609,13 +566,6 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
             self.state = ResponseState.RESPONDED
             return self._answer(decode_message, response)
 
-    @override
-    async def _defer_automatically(self) -> None:
-        if self.interaction._message == NULL:
-            await super()._defer_automatically()
-        else:
-            await self._defer_update()
-
     async def _defer_update(self) -> None:
         await self._callback(InteractionCallbackType.DEFERRED_UPDATE_MESSAGE)
         self.state = ResponseState.DEFERRED_UPDATE
@@ -629,14 +579,14 @@ class _UpdatingContext[I: ComponentInteraction | ModalSubmitInteraction](
         return await self._callback(InteractionCallbackType.UPDATE_MESSAGE, body, files)
 
     def _ensure_message(self) -> None:
-        if self.interaction._message == NULL:
+        if self.interaction.message_flags is None:
             raise InteractionResponded(
                 "only a modal opened from a message component can update its message"
             )
 
     def _component_message_is_ephemeral(self) -> bool:
-        message = decoder(_MessageFlagsOnly).decode(self.interaction._message)
-        return MessageFlags.EPHEMERAL in message.flags
+        flags = self.interaction.message_flags
+        return flags is not None and MessageFlags.EPHEMERAL in flags
 
     @override
     def _decode_original(self, body: bytes) -> Message | WebhookMessage:

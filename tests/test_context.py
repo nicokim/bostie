@@ -269,7 +269,6 @@ def test_selects_give_the_users_members_roles_and_channels_picked() -> None:
         options: Any = {
             "received": 0.0,
             "ephemeral": False,
-            "auto_defer": None,
             "allowed_mentions": AllowedMentions(),
         }
         component = ComponentContext(
@@ -767,11 +766,11 @@ def test_a_failed_auto_defer_expires_the_context_and_names_the_route(
         assert calls(await on.answer(ComponentContext, handler)) == [CALLBACK_6]
 
     custom_ids: list[str] = []
-    with caplog.at_level(logging.WARNING, logger="bostie.context"):
+    with caplog.at_level(logging.WARNING, logger="bostie.bot"):
         run_bot(scenario, auto_defer=0.0)
 
-    assert [r.getMessage() for r in caplog.records if r.name == "bostie.context"] == [
-        f"automatic defer of component {custom_ids[0]} failed"
+    assert [r.getMessage() for r in caplog.records if r.name == "bostie.bot"] == [
+        f"automatic defer of custom_id {custom_ids[0]!r} failed"
     ]
 
 

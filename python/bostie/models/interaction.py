@@ -12,6 +12,7 @@ from bostie.enums import (
     InteractionContextType,
     InteractionType,
     Locale,
+    MessageFlags,
     OptionType,
     Permissions,
 )
@@ -197,6 +198,10 @@ class AutocompleteInteraction(_Interaction, kw_only=True):
     data: CommandData
 
 
+class _MessageFlags(msgspec.Struct):
+    flags: MessageFlags = MessageFlags(0)
+
+
 class ComponentInteraction(_Interaction, kw_only=True):
     """A button press or a select menu pick."""
 
@@ -216,6 +221,12 @@ class ComponentInteraction(_Interaction, kw_only=True):
     def message(self) -> Message | WebhookMessage:
         """The message the component is on, decoded on each access."""
         return nested_message(self._message, self.guild_id)
+
+    @property
+    def message_flags(self) -> MessageFlags:
+        """The flags of the component's message, decoded without the rest of it."""
+        message: _MessageFlags = decoder(_MessageFlags).decode(self._message)
+        return message.flags
 
 
 class ModalSubmitData(Model, kw_only=True):
@@ -242,6 +253,14 @@ class ModalSubmitInteraction(_Interaction, kw_only=True):
         if self._message == NULL:
             return None
         return nested_message(self._message, self.guild_id)
+
+    @property
+    def message_flags(self) -> MessageFlags | None:
+        """The flags of that message, decoded without the rest; None without one."""
+        if self._message == NULL:
+            return None
+        message: _MessageFlags = decoder(_MessageFlags).decode(self._message)
+        return message.flags
 
 
 class UnknownInteraction(Model, Snowflake, kw_only=True):

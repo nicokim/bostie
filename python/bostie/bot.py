@@ -59,6 +59,7 @@ from bostie.enums import (
 from bostie.errors import (
     CheckFailure,
     Forbidden,
+    InteractionResponded,
     MemberRequestRateLimited,
     MissingIntent,
     StateError,
@@ -1132,7 +1133,6 @@ class Bot(Router):
             answer: dict[str, Any] = {
                 "received": received,
                 "ephemeral": settings.get("ephemeral", False),
-                "auto_defer": settings.get("auto_defer", self.auto_defer),
                 "allowed_mentions": self._allowed_mentions,
             }
             ctx = (
@@ -1146,7 +1146,7 @@ class Bot(Router):
                 claim.future.set_exception(error)
                 continue
             if matched:
-                ctx._defer_when_slow()
+                self._defer_when_slow(ctx, settings.get("auto_defer", self.auto_defer))
                 claim.future.set_result(ctx)
                 return True
         return False
@@ -1187,7 +1187,6 @@ class Bot(Router):
             self,
             received=received,
             ephemeral=route.ephemeral,
-            auto_defer=route.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
         return self._run_handler(ctx, route, route.handler, params.copy)
@@ -1212,7 +1211,6 @@ class Bot(Router):
             self,
             received=received,
             ephemeral=command.ephemeral,
-            auto_defer=command.auto_defer,
             allowed_mentions=self._allowed_mentions,
         )
         arguments: Arguments = dict
@@ -1258,28 +1256,30 @@ class Bot(Router):
     ) -> None:
         passed: list[Check] = []
         routers = [*node.router._chain()][::-1]
-        with ctx.auto_defer():
+        timer = self._defer_when_slow(ctx, node.auto_defer)
+        try:
+            for check in _checks(node, routers):
+                await _run_check(check, ctx)
+                passed.append(check)
+            for router in routers:
+                for hook in router.before_hooks:
+                    await hook(ctx)
             try:
-                for check in _checks(node, routers):
-                    await _run_check(check, ctx)
-                    passed.append(check)
-                for router in routers:
-                    for hook in router.before_hooks:
-                        await hook(ctx)
-                try:
-                    bound = arguments()
-                    if inspect.isawaitable(bound):
-                        bound = await bound
-                    await handler(ctx, **bound)
-                finally:
-                    await _after(ctx, routers)
-            except Exception as error:
-                await self._handle_error(ctx, node, handler, error)
-                return
+                bound = arguments()
+                if inspect.isawaitable(bound):
+                    bound = await bound
+                await handler(ctx, **bound)
             finally:
-                for check in passed:
-                    if isinstance(check, MaxConcurrency):
-                        check.release(ctx)
+                await _after(ctx, routers)
+        except Exception as error:
+            await self._handle_error(ctx, node, handler, error)
+            return
+        finally:
+            if timer is not None:
+                timer.cancel()
+            for check in passed:
+                if isinstance(check, MaxConcurrency):
+                    check.release(ctx)
         if ctx.state is ResponseState.PENDING:
             log.warning(
                 "%s returned without answering; Discord shows "
@@ -1292,6 +1292,21 @@ class Bot(Router):
                 "'thinking' until the interaction expires",
                 qualified_name(handler),
             )
+
+    def _defer_when_slow(
+        self, ctx: Context | ComponentContext | ModalContext, seconds: float | None
+    ) -> asyncio.TimerHandle | None:
+        if seconds is None:
+            return None
+        return asyncio.get_running_loop().call_at(
+            ctx.received + seconds, self._defer_if_unanswered, ctx
+        )
+
+    def _defer_if_unanswered(
+        self, ctx: Context | ComponentContext | ModalContext
+    ) -> None:
+        if ctx.state is ResponseState.PENDING:
+            spawn(self._tasks, _defer_unanswered(ctx))
 
     async def _autocomplete(
         self,
@@ -1369,6 +1384,20 @@ async def _queued[T](
         if isinstance(item, Exception):
             raise item
         yield item
+
+
+async def _defer_unanswered(ctx: Context | ComponentContext | ModalContext) -> None:
+    try:
+        if isinstance(ctx, Context) or ctx.interaction.message_flags is None:
+            await ctx.defer()
+        else:
+            await ctx.defer_update()
+    except InteractionResponded:
+        pass
+    except Exception:
+        log.warning(
+            "automatic defer of %s failed", _described(ctx.interaction), exc_info=True
+        )
 
 
 async def _answer_failure(
