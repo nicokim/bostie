@@ -35,6 +35,16 @@ pub const SPEEDS: RangeInclusive<f32> = 0.5..=2.0;
 
 const MAX_PACKET_LOSS: u8 = 100;
 
+pub(crate) fn samples_in(duration: Duration, rate: u32) -> u64 {
+    let samples = duration.as_nanos().saturating_mul(u128::from(rate)) / NANOS_PER_SECOND;
+    u64::try_from(samples).unwrap_or(u64::MAX)
+}
+
+pub(crate) fn duration_of(samples: u64, rate: u32) -> Duration {
+    let nanos = u128::from(samples) * NANOS_PER_SECOND / u128::from(rate);
+    Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceStatus {
     Connecting,

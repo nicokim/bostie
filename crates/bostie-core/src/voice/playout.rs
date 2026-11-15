@@ -5,7 +5,7 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::ids::UserId;
-use crate::voice::types::{NANOS_PER_SECOND, SAMPLE_RATE};
+use crate::voice::types::{SAMPLE_RATE, samples_in};
 
 const RING: usize = OLDEST as usize + 1;
 const MAX_DROPOUT: u16 = 3_000;
@@ -17,8 +17,7 @@ const OLDEST: u16 = 63;
 const TIMESTAMP_SLACK: u32 = 960;
 
 pub(crate) fn to_samples(duration: Duration) -> i64 {
-    let samples = duration.as_nanos().saturating_mul(u128::from(SAMPLE_RATE)) / NANOS_PER_SECOND;
-    i64::try_from(samples).unwrap_or(i64::MAX)
+    i64::try_from(samples_in(duration, SAMPLE_RATE)).unwrap_or(i64::MAX)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

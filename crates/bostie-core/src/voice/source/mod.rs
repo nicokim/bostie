@@ -19,7 +19,7 @@ use crate::runtime::Owner;
 use crate::voice::panic_message;
 use crate::voice::source::decode::{Decoder, Input, Step};
 use crate::voice::source::http::{Http, HttpMedia};
-use crate::voice::types::{SAMPLE_RATE, SourceSpec};
+use crate::voice::types::{SAMPLE_RATE, SourceSpec, samples_in};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
@@ -124,7 +124,7 @@ impl Source {
         let shared = Arc::new(Shared {
             id,
             inbox,
-            prefetch: frames_in(prefetch),
+            prefetch: samples_in(prefetch, SAMPLE_RATE),
             state: Mutex::new(State {
                 info: None,
                 tags: Tags::default(),
@@ -334,11 +334,6 @@ fn play(shared: &Shared, input: Input) {
             },
         }
     }
-}
-
-fn frames_in(duration: Duration) -> u64 {
-    let frames = duration.as_millis() * u128::from(SAMPLE_RATE) / 1_000;
-    u64::try_from(frames).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -729,7 +724,7 @@ pub(crate) mod tests {
         let source = harness.file("tone-s16.wav");
         wait_for_info(&source);
 
-        let prefetch = frames_in(PREFETCH);
+        let prefetch = samples_in(PREFETCH, SAMPLE_RATE);
         wait_until(
             || source.shared.state.lock().buffered >= prefetch,
             "the prefetch",

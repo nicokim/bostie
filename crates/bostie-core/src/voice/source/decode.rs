@@ -24,7 +24,9 @@ use crate::voice::convert::Converter;
 use crate::voice::source::hls::HlsMedia;
 use crate::voice::source::http::HttpMedia;
 use crate::voice::source::{SourceInfo, SourceKind, Tags};
-use crate::voice::types::{CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, SampleFormat};
+use crate::voice::types::{
+    CHANNELS, NANOS_PER_SECOND, PcmFormat, SAMPLE_RATE, SampleFormat, duration_of, samples_in,
+};
 
 const MINUS_3_DB: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
@@ -303,7 +305,7 @@ impl Decoder {
             return Step::Skipped;
         };
         if let Some(resume) = self.resume_at {
-            let length = Duration::from_secs(u64::from(samples)) / SAMPLE_RATE;
+            let length = duration_of(u64::from(samples), SAMPLE_RATE);
             if span(self.time_base, packet.pts, resume).is_some_and(|ahead| ahead >= length) {
                 return Step::Skipped;
             }
@@ -352,7 +354,9 @@ impl Pcm {
             return Ok(Step::Skipped);
         }
         buffer.copy_to_vec_interleaved(&mut self.decoded);
-        let skipped = skip.map_or(0, |skip| frames_in(skip, rate));
+        let skipped = skip.map_or(0, |skip| {
+            usize::try_from(samples_in(skip, rate)).unwrap_or(usize::MAX)
+        });
         let samples = self
             .decoded
             .get(skipped.saturating_mul(count)..)
@@ -492,11 +496,6 @@ fn span(time_base: Option<TimeBase>, from: Timestamp, to: Timestamp) -> Option<D
     let start = time_base.calc_time(from)?.as_nanos();
     let end = time_base.calc_time(to)?.as_nanos();
     Some(nanos(end.saturating_sub(start)).unwrap_or_default())
-}
-
-fn frames_in(duration: Duration, rate: u32) -> usize {
-    let frames = duration.as_nanos() * u128::from(rate) / NANOS_PER_SECOND;
-    usize::try_from(frames).unwrap_or(usize::MAX)
 }
 
 fn duration(track: &Track) -> Option<Duration> {

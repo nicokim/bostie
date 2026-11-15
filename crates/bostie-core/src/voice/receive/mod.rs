@@ -31,11 +31,10 @@ use crate::voice::peak::Peak;
 use crate::voice::playout::{Check, Slot, Stream, to_samples};
 use crate::voice::speech::{self, Activity, Edge};
 use crate::voice::types::{
-    Direction, FRAME_48K, ReceiveTuning, SAMPLE_RATE, SILENCE_FRAME, Speaking,
+    Direction, FRAME_48K, ReceiveTuning, SAMPLE_RATE, SILENCE_FRAME, Speaking, duration_of,
 };
 use crate::voice::{Throttle, panic_message};
 
-const NANOS_PER_3_SAMPLES: u64 = 3_000_000_000 / SAMPLE_RATE as u64;
 const MEDIA_RECENT: Duration = Duration::from_millis(100);
 
 type Key = (u32, UserId);
@@ -594,13 +593,12 @@ fn samples_since(epoch: Instant, instant: Instant) -> i64 {
     to_samples(instant.saturating_duration_since(epoch))
 }
 
-fn duration_of(samples: i64) -> Duration {
-    let samples = u64::try_from(samples).unwrap_or(0);
-    Duration::from_nanos(samples.saturating_mul(NANOS_PER_3_SAMPLES) / 3)
+fn span(samples: i64) -> Duration {
+    duration_of(u64::try_from(samples).unwrap_or(0), SAMPLE_RATE)
 }
 
 fn instant(epoch: Instant, samples: i64) -> Instant {
-    epoch.checked_add(duration_of(samples)).unwrap_or(epoch)
+    epoch.checked_add(span(samples)).unwrap_or(epoch)
 }
 
 fn speech_delivery(guild: GuildId, epoch: Instant, user: UserId, edge: Edge) -> Delivery {
@@ -617,11 +615,9 @@ fn speech_delivery(guild: GuildId, epoch: Instant, user: UserId, edge: Edge) -> 
 fn speaking(epoch: Instant, edge: Edge) -> (u32, Instant, Speaking) {
     match edge {
         Edge::Start { ssrc, at } => (ssrc, instant(epoch, at), Speaking::Started),
-        Edge::Stop { ssrc, at, duration } => (
-            ssrc,
-            instant(epoch, at),
-            Speaking::Stopped(duration_of(duration)),
-        ),
+        Edge::Stop { ssrc, at, duration } => {
+            (ssrc, instant(epoch, at), Speaking::Stopped(span(duration)))
+        }
     }
 }
 

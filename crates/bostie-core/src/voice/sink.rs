@@ -13,8 +13,8 @@ use crate::runtime::Owner;
 use crate::voice::codec;
 use crate::voice::convert::Converter;
 use crate::voice::types::{
-    CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters, NANOS_PER_SECOND, SAMPLE_RATE, SinkFormat,
-    SinkOptions, StallPolicy,
+    CHANNELS, FRAME_LEN, FRAME_SAMPLES, Filters, SAMPLE_RATE, SinkFormat, SinkOptions, StallPolicy,
+    duration_of, samples_in,
 };
 
 const FRAME_FRAMES: u64 = FRAME_SAMPLES as u64;
@@ -94,7 +94,7 @@ impl Sink {
             },
             SinkFormat::Opus => Producer::Opus,
         };
-        let high_water = frames_in(options.buffer + options.crossfade);
+        let high_water = samples_in(options.buffer + options.crossfade, SAMPLE_RATE);
         Ok(Self {
             id,
             options,
@@ -254,7 +254,7 @@ impl Sink {
     pub fn queued(&self) -> Result<Duration, CoreError> {
         self.owner.check()?;
         let frames = self.queue.lock().queued;
-        Ok(Duration::from_secs(frames) / SAMPLE_RATE)
+        Ok(duration_of(frames, SAMPLE_RATE))
     }
 
     pub fn passthrough(&self) -> Result<bool, CoreError> {
@@ -389,7 +389,7 @@ impl Sink {
     }
 
     pub(crate) fn crossfade(&self) -> u64 {
-        frames_in(self.options.crossfade)
+        samples_in(self.options.crossfade, SAMPLE_RATE)
     }
 
     pub(crate) fn release(&self) {
@@ -540,11 +540,6 @@ impl Queue {
             self.stats.underruns += 1;
         }
     }
-}
-
-fn frames_in(duration: Duration) -> u64 {
-    let frames = duration.as_nanos() * u128::from(SAMPLE_RATE) / NANOS_PER_SECOND;
-    u64::try_from(frames).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
