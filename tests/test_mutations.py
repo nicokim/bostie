@@ -108,7 +108,6 @@ UNMODELLED_KEYS = {
         "Guild": "activity_instances embedded_activities home_header hub_type "
         "inventory_settings latest_onboarding_question_id lazy nsfw version",
         "Nameplate": "expires_at",
-        "PartialApplication": "name",
         "PartialChannel": "recipients",
         "PartialUser": "avatar_decoration_data clan collectibles discriminator "
         "display_name_styles flags global_name primary_guild public_flags",

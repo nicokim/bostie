@@ -306,6 +306,15 @@ class MessageActivity(Model, kw_only=True):
     party_id: str | None = None
 
 
+class MessageApplication(PartialApplication, kw_only=True):
+    """The app behind the Rich Presence invite a message carries."""
+
+    name: str
+    icon: str | None = None
+    description: str | None = None
+    cover_image: str | None = None
+
+
 class ChannelMention(Model, Snowflake, kw_only=True):
     """A channel mentioned in a crossposted message."""
 
@@ -467,7 +476,7 @@ class _Message(PartialMessage, kw_only=True):
     shared_client_theme: SharedClientTheme | None = None
     mention_channels: tuple[ChannelMention, ...] = ()
     activity: MessageActivity | None = None
-    application: PartialApplication | None = None
+    application: MessageApplication | None = None
     application_id: int | None = None
     message_snapshots: tuple[MessageSnapshot, ...] = ()
     _interaction_metadata: msgspec.Raw = msgspec.field(
