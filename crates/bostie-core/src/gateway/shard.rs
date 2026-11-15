@@ -18,6 +18,7 @@ use super::close::{self, CloseAction};
 use super::envelope::{self, Forward, Frame};
 use super::inflate::Inflater;
 use super::limiter::SendLimiter;
+use super::limits;
 use super::{SavedSession, Shared};
 use crate::error::describe;
 use crate::ids::ShardId;
@@ -261,7 +262,8 @@ impl Shard {
     pub(super) async fn run(mut self) {
         let mut delay = Duration::ZERO;
         loop {
-            if !self.idle(delay.saturating_add(self.backoff())).await
+            let backoff = backoff(self.failures, &self.shared.limits);
+            if !self.idle(delay.saturating_add(backoff)).await
                 || !self.await_identify_budget().await
                 || !self.refresh_stale_url().await
             {
@@ -329,19 +331,6 @@ impl Shard {
             debug!(shard = %self.id, "could not refresh the gateway URL");
         }
         true
-    }
-
-    fn backoff(&self) -> Duration {
-        let Some(doublings) = self.failures.checked_sub(1) else {
-            return Duration::ZERO;
-        };
-        let factor = 1_u32.checked_shl(doublings).unwrap_or(u32::MAX);
-        let limits = &self.shared.limits;
-        limits
-            .backoff_base
-            .saturating_mul(factor)
-            .min(limits.backoff_max)
-            .mul_f64(0.5 + fastrand::f64() / 2.0)
     }
 
     async fn connect_and_serve(&mut self) -> Ending {
@@ -808,9 +797,37 @@ async fn connect(
     Ok(socket)
 }
 
+fn backoff(failures: u32, limits: &limits::Limits) -> Duration {
+    let Some(doublings) = failures.checked_sub(1) else {
+        return Duration::ZERO;
+    };
+    let factor = 1_u32.checked_shl(doublings).unwrap_or(u32::MAX);
+    limits
+        .backoff_base
+        .saturating_mul(factor)
+        .min(limits.backoff_max)
+        .mul_f64(0.5 + fastrand::f64() / 2.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reconnect_backoff_doubles_from_its_base_up_to_its_cap() {
+        let limits = limits::Limits {
+            backoff_base: Duration::from_secs(1),
+            backoff_max: Duration::from_secs(60),
+            ..limits::Limits::default()
+        };
+        for (failures, full) in [(0, 0), (1, 1), (2, 2), (5, 16), (7, 60), (40, 60)] {
+            let full = Duration::from_secs(full);
+            for _ in 0..100 {
+                let delay = backoff(failures, &limits);
+                assert!(full / 2 <= delay && delay <= full, "{failures}: {delay:?}");
+            }
+        }
+    }
 
     #[test]
     fn heartbeats_start_within_one_interval_then_follow_it() {
