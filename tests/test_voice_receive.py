@@ -17,6 +17,7 @@ FRIEND_ID = 1_100_000_000_000_000_001
 SSRC = 4321
 SPOKEN = voice.OpusEncoder().encode(bytes(3840 * 50))
 MANY = voice.OpusEncoder().encode(bytes(3840 * 600))
+BURST = 50
 REPORT = struct.pack(">BBHI", 0x80, 201, 1, SSRC)
 DEAFENED = (
     f"a moderator deafened the bot in guild {GUILD_ID}, so Discord sends it no audio"
@@ -134,9 +135,13 @@ def test_iteration_lets_other_tasks_run_after_each_full_batch() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with started(fake) as bot:
             vc = await connected(bot, fake)
-            rx = vc.receive(voice.Packets())
-            await fake.voice.send_audio(SSRC, MANY)
-            await until_queued(bot, fake, rx)
+            rx = vc.receive(voice.Packets(), buffer=60.0)
+            for start in range(0, len(MANY), BURST):
+                burst = MANY[start : start + BURST]
+                await fake.voice.send_audio(
+                    SSRC, burst, sequence=start, timestamp=start * 960
+                )
+                await until_queued(bot, fake, rx)
             sequences: list[int] = []
             seen: list[int] = []
 
