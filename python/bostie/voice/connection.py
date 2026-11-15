@@ -2,7 +2,14 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterable,
+    Mapping,
+)
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -37,6 +44,7 @@ from bostie.models import Channel, User
 from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.voice import layers
+from bostie.voice._link import CoreLink, Handle
 from bostie.voice.encoder import DEFAULT_BITRATE
 from bostie.voice.events import (
     DaveTransition,
@@ -236,10 +244,6 @@ class VoiceHost(Protocol):
     def dispatch(self, event: VoiceEvent) -> None: ...
 
 
-class _Woken(Protocol):
-    def _wake(self) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class Dave:
     """The call's end-to-end encryption; `protocol_version` 0 means none."""
@@ -247,11 +251,13 @@ class Dave:
     protocol_version: int
     epoch: int | None
     privacy_code: str | None
-    _connection: "VoiceConnection" = field(repr=False, compare=False)
+    _verification_code: Callable[[int], Awaitable[str]] = field(
+        repr=False, compare=False
+    )
 
     async def verification_code(self, user_id: int) -> str:
         """The code to compare with `user_id` out of band to verify their identity."""
-        return await self._connection._verification_code(user_id)
+        return await self._verification_code(user_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +269,7 @@ class ExternalVoice:
 
     state: VoiceStateUpdate
     server: VoiceServerUpdate
-    _manager: "VoiceManager" = field(repr=False, compare=False)
+    _bot: VoiceHost = field(repr=False, compare=False)
     _guild_id: int = field(repr=False, compare=False)
 
     @contextlib.asynccontextmanager
@@ -271,14 +277,13 @@ class ExternalVoice:
         self,
     ) -> AsyncGenerator[AsyncIterator[VoiceServerUpdate | VoiceStateUpdate]]:
         """Queue the guild's new voice servers and the bot's own voice states."""
-        bot = self._manager._bot
         user_id = self.state.voice_state.user_id
         queue: asyncio.Queue[VoiceServerUpdate | VoiceStateUpdate] = asyncio.Queue()
         async with (
-            bot.stream(
+            self._bot.stream(
                 VoiceServerUpdate, check=lambda event: event.guild_id == self._guild_id
             ) as servers,
-            bot.stream(
+            self._bot.stream(
                 VoiceStateUpdate,
                 check=lambda event: (
                     event.voice_state.guild_id == self._guild_id
@@ -299,8 +304,8 @@ class ExternalVoice:
 
     async def disconnect(self) -> None:
         """Leave the voice channel."""
-        self._manager._send_voice_state(
-            self._guild_id, None, self_mute=False, self_deaf=False
+        _send_voice_state(
+            self._bot, self._guild_id, None, self_mute=False, self_deaf=False
         )
 
 
@@ -314,11 +319,14 @@ class VoiceManager:
         core: Callable[[], VoiceCore | None],
     ) -> None:
         self.defaults = defaults
+        self.link = CoreLink(core)
         self._bot = bot
-        self._running_core = core
-        self._connections: dict[int, VoiceConnection] = {}
-        self._handles: dict[int, _Woken] = {}
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._connections: dict[int, _Connection] = {}
+
+    @property
+    def bot(self) -> VoiceHost:
+        """The bot these connections belong to."""
+        return self._bot
 
     @property
     def connections(self) -> tuple["VoiceConnection", ...]:
@@ -343,19 +351,14 @@ class VoiceManager:
         settings = self._settings(options, CONNECT_OPTIONS)
         if stall_after is not None:
             settings = replace(settings, stall_after=stall_after)
-        guild_id, channel = await self._voice_channel(channel_id)
+        guild_id, channel = await _voice_channel(self._bot, channel_id)
         vc = self._connections.get(guild_id)
         if vc is not None:
-            await vc._connect_again(channel, options, stall_after)
+            await vc.connect_again(channel, options, stall_after)
             return vc
-        vc = VoiceConnection(self, guild_id, channel, settings)
-        await vc._start(user.id)
-        if channel.type is ChannelType.GUILD_STAGE_VOICE and settings.stage != "listen":
-            try:
-                await vc._request_stage(settings.stage)
-            except BaseException:
-                await vc.disconnect()
-                raise
+        vc = _Connection(self, guild_id, channel, settings, self._forget)
+        self._connections[guild_id] = vc
+        await vc.start(user.id)
         return vc
 
     async def connect_external(
@@ -396,17 +399,20 @@ class VoiceManager:
             eager_start=True,
         )
         try:
-            self._send_voice_state(
+            _send_voice_state(
+                self._bot,
                 guild_id,
                 channel_id,
                 self_mute=settings.self_mute,
                 self_deaf=settings.self_deaf,
             )
             async with asyncio.timeout(settings.timeout):
-                return ExternalVoice(await state, await server, self, guild_id)
+                return ExternalVoice(await state, await server, self._bot, guild_id)
         except BaseException as error:
             with contextlib.suppress(BostieError):
-                self._send_voice_state(guild_id, None, self_mute=False, self_deaf=False)
+                _send_voice_state(
+                    self._bot, guild_id, None, self_mute=False, self_deaf=False
+                )
             if isinstance(error, TimeoutError):
                 raise VoiceConnectError(
                     DisconnectReason.TIMEOUT,
@@ -422,35 +428,28 @@ class VoiceManager:
 
     async def close(self) -> None:
         """Disconnect every connection, waiting up to 2 s for them to end."""
-        connections = self.connections
+        connections = tuple(self._connections.values())
         await asyncio.gather(
             *(vc.disconnect() for vc in connections), return_exceptions=True
         )
         for vc in connections:
-            if vc.state is not State.DISCONNECTED:
-                vc._set_state("disconnected", "closed", None, "the bot closed")
-        for task in self._tasks:
-            task.cancel()
+            vc.end("the bot closed")
 
     def handle(self, delivery: VoiceDelivery) -> None:
-        """Apply a voice delivery from the core to its connection, sink or receiver."""
+        """Pass a voice delivery from the core to its connection or handle."""
         match delivery:
             case ("voice_wake", handle):
-                target = self._handles.get(handle)
-                if target is not None:
-                    target._wake()
+                self.link.wake(handle)
             case ("voice_marker", handle, marker, played):
-                target = self._handles.get(handle)
-                if isinstance(target, Sink | Receiver):
-                    target._marked(marker, reached=played)
+                self.link.marked(handle, marker, reached=played)
             case _:
                 vc = self._connections.get(delivery[1])
                 if vc is not None:
-                    vc._apply(delivery)
+                    vc.apply(delivery)
 
     def _running_user(self, call: str) -> User:
         user = self._bot.user
-        if user is None or self._running_core() is None:
+        if user is None or not self.link.running:
             raise StateError(f"{call} needs a running bot")
         if not self._bot.intents & Intents.GUILD_VOICE_STATES:
             raise MissingIntent(
@@ -458,43 +457,15 @@ class VoiceManager:
             )
         return user
 
-    def _core(self) -> VoiceCore:
-        core = self._running_core()
-        if core is None:
-            raise StateError("voice needs a running bot")
-        return core
-
     def _settings(
         self, options: ExternalConnectOptions, allowed: frozenset[str]
     ) -> Defaults:
         check_keys(options, allowed, "options")
         return replace(self.defaults, **options)
 
-    async def _voice_channel(self, channel_id: int) -> tuple[int, Channel]:
-        channel = self._bot.cache.channel(
-            channel_id
-        ) or await self._bot.rest.channels.fetch(channel_id)
-        if channel.guild_id is None or channel.type not in VOICE_CHANNELS:
-            raise ValueError(f"channel {channel_id} is not a voice or stage channel")
-        return channel.guild_id, channel
-
-    def _send_voice_state(
-        self,
-        guild_id: int,
-        channel_id: int | None,
-        *,
-        self_mute: bool,
-        self_deaf: bool,
-    ) -> None:
-        self._bot.gateway.send(
-            VOICE_STATE_UPDATE,
-            {
-                "guild_id": str(guild_id),
-                "channel_id": None if channel_id is None else str(channel_id),
-                "self_mute": self_mute,
-                "self_deaf": self_deaf,
-            },
-        )
+    def _forget(self, vc: "VoiceConnection") -> None:
+        if self._connections.get(vc.guild_id) is vc:
+            del self._connections[vc.guild_id]
 
 
 class VoiceConnection:
@@ -509,6 +480,8 @@ class VoiceConnection:
     ) -> None:
         self.guild_id = guild_id
         self.manager = manager
+        self._bot = manager.bot
+        self._link = manager.link
         self._settings = settings
         self._channel_id = channel.id
         self._stage_channel = channel.type is ChannelType.GUILD_STAGE_VOICE
@@ -532,10 +505,11 @@ class VoiceConnection:
         self._speaking_view = MappingProxyType(self._speaking)
         self._speech_ssrcs: dict[int, int] = {}
         self._ssrcs: Mapping[int, int] = MappingProxyType({})
-        self._dave = Dave(0, None, None, self)
-        self._sinks: dict[Sink, None] = {}
-        self._receivers: set[Receiver[Any]] = set()
+        self._dave = Dave(0, None, None, self._verification_code)
+        self._sinks: dict[Sink, Handle] = {}
+        self._receivers: dict[Receiver[Any], Handle] = {}
         self._watchers: list[tuple[Callable[[], bool], asyncio.Future[bool]]] = []
+        self._tasks: set[asyncio.Task[None]] = set()
         self._warned = False
 
     @property
@@ -602,7 +576,9 @@ class VoiceConnection:
     @property
     def dave(self) -> Dave:
         if self._state is not State.DISCONNECTED:
-            self._dave = Dave(*self._core().voice_dave(self.guild_id), self)
+            self._dave = Dave(
+                *self._core().voice_dave(self.guild_id), self._verification_code
+            )
         return self._dave
 
     @property
@@ -679,7 +655,7 @@ class VoiceConnection:
         """
         check_keys(options, SINK_OPTIONS, "options")
         self._check_live()
-        if after is not None and after._connection is not self:
+        if after is not None and not after.closed and after not in self._sinks:
             raise ValueError("after must be a sink of this connection")
         buffer = options.get("buffer", self._settings.sink_buffer)
         stall = options.get("stall", self._settings.stall)
@@ -693,21 +669,23 @@ class VoiceConnection:
             buffer=buffer,
             volume=volume,
             stall=stall,
-            after=None if after is None or after.closed else after._handle,
+            after=None if after is None or after.closed else self._sinks[after].id,
             crossfade=crossfade,
         )
+        handle = self._link.open(native.id)
         sink = Sink(
-            self,
             native,
+            handle,
             format,
             buffer=buffer,
             stall=stall,
             volume=volume,
             crossfade=crossfade,
             filters=filters,
+            on_audio=self._audio_started,
+            on_close=self._forget_sink,
         )
-        self._sinks[sink] = None
-        self.manager._handles[native.id] = sink
+        self._sinks[sink] = handle
         return sink
 
     @overload
@@ -826,10 +804,13 @@ class VoiceConnection:
             overflow=overflow,
             stall=stall,
         )
+        handle = self._link.open(native.id)
         receiver: Receiver[Any] = Receiver(
             self,
             native,
+            handle,
             format,
+            on_close=self._forget_receiver,
             users=wanted,
             exclude=excluded,
             include_self=include_self,
@@ -840,8 +821,7 @@ class VoiceConnection:
             overflow=overflow,
             stall=stall,
         )
-        self._receivers.add(receiver)
-        self.manager._handles[native.id] = receiver
+        self._receivers[receiver] = handle
         if self._deaf:
             self._warn_deafened()
         return receiver
@@ -870,7 +850,7 @@ class VoiceConnection:
         """Move to another voice or stage channel and wait until media flows there."""
         check_keys(options, MOVE_OPTIONS, "options")
         self._check_live()
-        guild_id, channel = await self.manager._voice_channel(channel_id)
+        guild_id, channel = await _voice_channel(self._bot, channel_id)
         if guild_id != self.guild_id:
             raise ValueError(f"channel {channel_id} is in another guild")
         self._check_live()
@@ -926,66 +906,6 @@ class VoiceConnection:
             async with asyncio.timeout(CLOSE_TIMEOUT):
                 await self._until(lambda: self._state is State.DISCONNECTED)
 
-    async def _start(self, user_id: int) -> None:
-        settings = self._settings
-        encoder = settings.encoder
-        self.manager._connections[self.guild_id] = self
-        try:
-            self._core().voice_connect(
-                self.guild_id,
-                self._channel_id,
-                shard_id=self.manager._bot.gateway.shard_for(self.guild_id),
-                user_id=user_id,
-                self_mute=settings.self_mute,
-                self_deaf=settings.self_deaf,
-                timeout=settings.timeout,
-                server_change_delay=settings.server_change_delay,
-                encoder=replace(encoder, bitrate=self._bitrate(encoder)),
-                speaking=int(settings.speaking_flags),
-            )
-            self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
-            self._core().voice_speech_activity(
-                self.guild_id, enabled=settings.speech_activity
-            )
-            self._core().voice_stall_after(self.guild_id, settings.stall_after)
-        except BaseException:
-            del self.manager._connections[self.guild_id]
-            raise
-        try:
-            await self._until_ready()
-        except asyncio.CancelledError:
-            with contextlib.suppress(BostieError):
-                self._core().voice_disconnect(self.guild_id)
-            raise
-
-    async def _connect_again(
-        self, channel: Channel, options: ConnectOptions, stall_after: float | None
-    ) -> None:
-        mute, deaf = self._requested
-        if "stage" in options:
-            self._settings = replace(self._settings, stage=options["stage"])
-        await self._join(
-            channel,
-            self_mute=options.get("self_mute", mute),
-            self_deaf=options.get("self_deaf", deaf),
-            timeout=options.get("timeout", self._settings.timeout),
-            restage="stage" in options,
-        )
-        if "encoder" in options:
-            self.encoder = options["encoder"]
-        if "speaking_flags" in options:
-            self.speaking_flags = options["speaking_flags"]
-        if "speech_hangover" in options:
-            self.speech_hangover = options["speech_hangover"]
-        if "speech_activity" in options:
-            self.speech_activity = options["speech_activity"]
-        if "server_change_delay" in options:
-            self._core().voice_server_change_delay(
-                self.guild_id, options["server_change_delay"]
-            )
-        if stall_after is not None:
-            self.stall_after = stall_after
-
     async def _join(
         self,
         channel: Channel,
@@ -1021,10 +941,6 @@ class VoiceConnection:
         ):
             await self._request_stage(role)
 
-    async def _until_ready(self) -> None:
-        if not await self._until(lambda: self._state is State.READY):
-            raise self._failure()
-
     async def _until(self, done: Callable[[], bool]) -> bool:
         if done():
             return True
@@ -1047,7 +963,178 @@ class VoiceConnection:
             elif self._state is State.DISCONNECTED:
                 future.set_result(False)
 
-    def _apply(self, delivery: ConnectionDelivery) -> None:
+    async def _request_stage(self, role: StageRole) -> None:
+        voice = self._bot.rest.voice
+        match role:
+            case "listen" | "speak":
+                await voice.edit_current_state(
+                    self.guild_id,
+                    channel_id=self._channel_id,
+                    suppress=role == "listen",
+                )
+            case "request":
+                await voice.edit_current_state(
+                    self.guild_id,
+                    channel_id=self._channel_id,
+                    request_to_speak_timestamp=datetime.now(UTC),
+                )
+            case _:
+                raise ValueError(
+                    f"stage must be 'listen', 'request' or 'speak', got {role!r}"
+                )
+
+    async def _verification_code(self, user_id: int) -> str:
+        self._check_live()
+        return await asyncio.to_thread(
+            self._core().voice_verification_code, self.guild_id, user_id
+        )
+
+    def _update(self, channel_id: int, *, self_mute: bool, self_deaf: bool) -> None:
+        self._core().voice_update(
+            self.guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
+        )
+        self._requested = (self_mute, self_deaf)
+
+    def _apply_encoder(self, encoder: EncoderSettings) -> None:
+        self._core().voice_encoder(
+            self.guild_id, encoder=replace(encoder, bitrate=self._bitrate(encoder))
+        )
+
+    def _bitrate(self, encoder: EncoderSettings) -> int:
+        return encoder.bitrate or self._channel_bitrate or DEFAULT_BITRATE
+
+    def _audio_started(self) -> None:
+        if self._warned or not (self._mute or self._suppress):
+            return
+        self._warned = True
+        if self._mute:
+            log.warning(
+                "nobody hears the bot in guild %d: it is server muted", self.guild_id
+            )
+        else:
+            log.warning(
+                "nobody hears the bot in guild %d: it is suppressed on this stage; "
+                "use vc.stage('request')",
+                self.guild_id,
+            )
+
+    def _warn_deafened(self) -> None:
+        log.warning(
+            "a moderator deafened the bot in guild %d, so Discord sends it no audio",
+            self.guild_id,
+        )
+
+    def _forget_sink(self, sink: Sink) -> None:
+        self._sinks.pop(sink, None)
+
+    def _forget_receiver(self, receiver: Receiver[Any]) -> None:
+        self._receivers.pop(receiver, None)
+
+    def _emit(self, event: VoiceEvent) -> None:
+        self._bot.dispatch(event)
+
+    def _core(self) -> VoiceCore:
+        return self._link.core()
+
+    def _check_live(self) -> None:
+        if self._state is State.DISCONNECTED:
+            raise self._ended()
+
+    def _ended(self) -> VoiceNotConnected:
+        return VoiceNotConnected(
+            f"the voice connection in guild {self.guild_id} has ended"
+        )
+
+    def _failure(self) -> VoiceConnectError:
+        return VoiceConnectError(
+            self._reason or DisconnectReason.CLOSED, self._code, self._detail
+        )
+
+
+class _Connection(VoiceConnection):
+    """A voice connection as its manager drives it: started, joined, updated, ended."""
+
+    def __init__(
+        self,
+        manager: VoiceManager,
+        guild_id: int,
+        channel: Channel,
+        settings: Defaults,
+        forget: Callable[[VoiceConnection], None],
+    ) -> None:
+        super().__init__(manager, guild_id, channel, settings)
+        self._forget = forget
+
+    async def start(self, user_id: int) -> None:
+        """Join the channel and return once media flows and any stage role is asked."""
+        settings = self._settings
+        encoder = settings.encoder
+        try:
+            self._core().voice_connect(
+                self.guild_id,
+                self._channel_id,
+                shard_id=self._bot.gateway.shard_for(self.guild_id),
+                user_id=user_id,
+                self_mute=settings.self_mute,
+                self_deaf=settings.self_deaf,
+                timeout=settings.timeout,
+                server_change_delay=settings.server_change_delay,
+                encoder=replace(encoder, bitrate=self._bitrate(encoder)),
+                speaking=int(settings.speaking_flags),
+            )
+            self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
+            self._core().voice_speech_activity(
+                self.guild_id, enabled=settings.speech_activity
+            )
+            self._core().voice_stall_after(self.guild_id, settings.stall_after)
+        except BaseException:
+            self._forget(self)
+            raise
+        try:
+            if not await self._until(lambda: self._state is State.READY):
+                raise self._failure()
+        except asyncio.CancelledError:
+            with contextlib.suppress(BostieError):
+                self._core().voice_disconnect(self.guild_id)
+            raise
+        if self._stage_channel and settings.stage != "listen":
+            try:
+                await self._request_stage(settings.stage)
+            except BaseException:
+                await self.disconnect()
+                raise
+
+    async def connect_again(
+        self, channel: Channel, options: ConnectOptions, stall_after: float | None
+    ) -> None:
+        """Move to `channel` if needed and apply only the options given."""
+        mute, deaf = self._requested
+        if "stage" in options:
+            self._settings = replace(self._settings, stage=options["stage"])
+        await self._join(
+            channel,
+            self_mute=options.get("self_mute", mute),
+            self_deaf=options.get("self_deaf", deaf),
+            timeout=options.get("timeout", self._settings.timeout),
+            restage="stage" in options,
+        )
+        if "encoder" in options:
+            self.encoder = options["encoder"]
+        if "speaking_flags" in options:
+            self.speaking_flags = options["speaking_flags"]
+        if "speech_hangover" in options:
+            self.speech_hangover = options["speech_hangover"]
+        if "speech_activity" in options:
+            self.speech_activity = options["speech_activity"]
+        if "server_change_delay" in options:
+            self._core().voice_server_change_delay(
+                self.guild_id, options["server_change_delay"]
+            )
+        if stall_after is not None:
+            self.stall_after = stall_after
+
+    def apply(self, delivery: ConnectionDelivery) -> None:
+        """Update the connection from a delivery of the core and emit its event."""
         match delivery:
             case ("voice_state", _, status, reason, code, detail):
                 self._set_state(status, reason, code, detail)
@@ -1114,8 +1201,6 @@ class VoiceConnection:
     def _moved(self, old: int, new: int, *, by_us: bool) -> None:
         self._channel_id = new
         self._members = frozenset()
-        for receiver in list(self._receivers):
-            receiver._wake()
         self._emit(
             Moved(
                 guild_id=self.guild_id,
@@ -1125,7 +1210,7 @@ class VoiceConnection:
             )
         )
         self._changed()
-        spawn(self.manager._tasks, self._follow(new))
+        spawn(self._tasks, self._follow(new))
 
     def _clients(self, user_ids: list[int]) -> None:
         joined = [user for user in dict.fromkeys(user_ids) if user not in self._members]
@@ -1156,6 +1241,10 @@ class VoiceConnection:
             )
         )
 
+    def end(self, detail: str) -> None:
+        """End the connection here, as the core would, if it has not ended yet."""
+        self._set_state("disconnected", "closed", None, detail)
+
     def _set_state(
         self,
         status: str,
@@ -1170,12 +1259,13 @@ class VoiceConnection:
         self._code = code
         self._detail = detail
         if self._state is State.DISCONNECTED:
-            if self.manager._connections.get(self.guild_id) is self:
-                del self.manager._connections[self.guild_id]
-            for sink in list(self._sinks):
-                sink._release()
-            for receiver in list(self._receivers):
-                receiver._release()
+            self._forget(self)
+            for handle in [*self._sinks.values(), *self._receivers.values()]:
+                handle.close()
+            self._sinks.clear()
+            self._receivers.clear()
+            for task in self._tasks:
+                task.cancel()
             self._stop_speech()
         if self._state is not old:
             self._emit(
@@ -1192,7 +1282,7 @@ class VoiceConnection:
 
     async def _follow(self, channel_id: int) -> None:
         try:
-            _, channel = await self.manager._voice_channel(channel_id)
+            _, channel = await _voice_channel(self._bot, channel_id)
             if self._channel_id != channel_id or self._state is State.DISCONNECTED:
                 return
             self._stage_channel = channel.type is ChannelType.GUILD_STAGE_VOICE
@@ -1205,67 +1295,6 @@ class VoiceConnection:
                 channel_id,
                 exc_info=True,
             )
-
-    async def _request_stage(self, role: StageRole) -> None:
-        voice = self.manager._bot.rest.voice
-        match role:
-            case "listen" | "speak":
-                await voice.edit_current_state(
-                    self.guild_id,
-                    channel_id=self._channel_id,
-                    suppress=role == "listen",
-                )
-            case "request":
-                await voice.edit_current_state(
-                    self.guild_id,
-                    channel_id=self._channel_id,
-                    request_to_speak_timestamp=datetime.now(UTC),
-                )
-            case _:
-                raise ValueError(
-                    f"stage must be 'listen', 'request' or 'speak', got {role!r}"
-                )
-
-    async def _verification_code(self, user_id: int) -> str:
-        self._check_live()
-        return await asyncio.to_thread(
-            self._core().voice_verification_code, self.guild_id, user_id
-        )
-
-    def _update(self, channel_id: int, *, self_mute: bool, self_deaf: bool) -> None:
-        self._core().voice_update(
-            self.guild_id, channel_id, self_mute=self_mute, self_deaf=self_deaf
-        )
-        self._requested = (self_mute, self_deaf)
-
-    def _apply_encoder(self, encoder: EncoderSettings) -> None:
-        self._core().voice_encoder(
-            self.guild_id, encoder=replace(encoder, bitrate=self._bitrate(encoder))
-        )
-
-    def _bitrate(self, encoder: EncoderSettings) -> int:
-        return encoder.bitrate or self._channel_bitrate or DEFAULT_BITRATE
-
-    def _audio_started(self) -> None:
-        if self._warned or not (self._mute or self._suppress):
-            return
-        self._warned = True
-        if self._mute:
-            log.warning(
-                "nobody hears the bot in guild %d: it is server muted", self.guild_id
-            )
-        else:
-            log.warning(
-                "nobody hears the bot in guild %d: it is suppressed on this stage; "
-                "use vc.stage('request')",
-                self.guild_id,
-            )
-
-    def _warn_deafened(self) -> None:
-        log.warning(
-            "a moderator deafened the bot in guild %d, so Discord sends it no audio",
-            self.guild_id,
-        )
 
     def _stop_speech(self) -> None:
         now = time.monotonic()
@@ -1281,34 +1310,6 @@ class VoiceConnection:
                     duration=now - started,
                 )
             )
-
-    def _forget(self, sink: Sink) -> None:
-        self._sinks.pop(sink, None)
-        self.manager._handles.pop(sink._handle, None)
-
-    def _forget_receiver(self, receiver: Receiver[Any]) -> None:
-        self._receivers.discard(receiver)
-        self.manager._handles.pop(receiver._handle, None)
-
-    def _emit(self, event: VoiceEvent) -> None:
-        self.manager._bot.dispatch(event)
-
-    def _core(self) -> VoiceCore:
-        return self.manager._core()
-
-    def _check_live(self) -> None:
-        if self._state is State.DISCONNECTED:
-            raise self._ended()
-
-    def _ended(self) -> VoiceNotConnected:
-        return VoiceNotConnected(
-            f"the voice connection in guild {self.guild_id} has ended"
-        )
-
-    def _failure(self) -> VoiceConnectError:
-        return VoiceConnectError(
-            self._reason or DisconnectReason.CLOSED, self._code, self._detail
-        )
 
 
 class ContextVoice:
@@ -1344,7 +1345,7 @@ class ContextVoice:
         )
 
     async def _channel_id(self, guild_id: int) -> int | None:
-        bot = self._manager._bot
+        bot = self._manager.bot
         if bot.cache.guild(guild_id) is not None:
             cached = bot.cache.voice_state(guild_id, self._user_id)
             return None if cached is None else cached.channel_id
@@ -1355,6 +1356,32 @@ class ContextVoice:
                 raise
             return None
         return state.channel_id
+
+
+async def _voice_channel(bot: VoiceHost, channel_id: int) -> tuple[int, Channel]:
+    channel = bot.cache.channel(channel_id) or await bot.rest.channels.fetch(channel_id)
+    if channel.guild_id is None or channel.type not in VOICE_CHANNELS:
+        raise ValueError(f"channel {channel_id} is not a voice or stage channel")
+    return channel.guild_id, channel
+
+
+def _send_voice_state(
+    bot: VoiceHost,
+    guild_id: int,
+    channel_id: int | None,
+    *,
+    self_mute: bool,
+    self_deaf: bool,
+) -> None:
+    bot.gateway.send(
+        VOICE_STATE_UPDATE,
+        {
+            "guild_id": str(guild_id),
+            "channel_id": None if channel_id is None else str(channel_id),
+            "self_mute": self_mute,
+            "self_deaf": self_deaf,
+        },
+    )
 
 
 async def _pump[T](events: AsyncIterator[T], queue: asyncio.Queue[T]) -> None:

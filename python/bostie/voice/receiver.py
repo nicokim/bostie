@@ -2,11 +2,10 @@ import asyncio
 import contextlib
 import time
 from collections import deque
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, Self, assert_never, cast
+from typing import TYPE_CHECKING, Any, Protocol, Self, assert_never, cast
 
-from bostie._aio import Wake
 from bostie.enums import ClosedReason, State
 from bostie.errors import BostieError, Empty, ReceiverClosed
 from bostie.voice.events import SpeechStart, SpeechStop, UserLeave
@@ -15,6 +14,7 @@ from bostie.voice.frames import Frame, Packet
 
 if TYPE_CHECKING:
     from bostie._native import ClosedReasonName, ReceivedItem
+    from bostie.voice._link import Handle
     from bostie.voice.connection import VoiceConnection
 
 READ_LIMIT = 256
@@ -50,8 +50,10 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
         self,
         connection: "VoiceConnection",
         native: NativeReceiver,
+        handle: "Handle",
         format: ReceiveFormat,
         *,
+        on_close: "Callable[[Receiver[Any]], None]",
         users: frozenset[int] | None,
         exclude: frozenset[int],
         include_self: bool,
@@ -74,10 +76,10 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
         self.stall = stall
         self._connection = connection
         self._native = native
-        self._handle = native.id
+        self._handle = handle
+        self._woken = handle.woken
+        self._on_close = on_close
         self._items: deque[tuple[float, Item]] = deque()
-        self._woken = Wake()
-        self._marks: dict[int, asyncio.Future[bool]] = {}
         self._stats = ReceiverStats(0, 0, 0)
         self._closed_reason: ClosedReason | None = None
 
@@ -118,12 +120,11 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
 
     def mark(self) -> Awaitable[bool]:
         """True once prior audio is queued or dropped, else False by 1.2s + 2*jitter."""
-        future = asyncio.get_running_loop().create_future()
         if self.closed or self._connection.state is State.DISCONNECTED:
+            future = asyncio.get_running_loop().create_future()
             future.set_result(False)
-        else:
-            self._marks[self._native.mark()] = future
-        return future
+            return future
+        return self._handle.marker(self._native.mark())
 
     def close(self) -> None:
         """Stop receiving and discard what is queued."""
@@ -181,23 +182,8 @@ class Receiver[T: Frame | Packet | SpeechStart | SpeechStop | UserLeave]:
     def _end(self, reason: ClosedReason) -> None:
         self._closed_reason = reason
         self._items.clear()
-        self._release()
-
-    def _release(self) -> None:
-        self._wake()
-        for future in self._marks.values():
-            if not future.done():
-                future.set_result(False)
-        self._marks.clear()
-        self._connection._forget_receiver(self)
-
-    def _wake(self) -> None:
-        self._woken.set()
-
-    def _marked(self, id: int, *, reached: bool) -> None:
-        future = self._marks.pop(id, None)
-        if future is not None and not future.done():
-            future.set_result(reached)
+        self._handle.close()
+        self._on_close(self)
 
     def _read_stats(self) -> ReceiverStats:
         return ReceiverStats(*self._native.stats())

@@ -208,7 +208,7 @@ def test_ending_the_connection_closes_its_sinks_and_frees_their_waiters() -> Non
             await blocked
         assert await marker is False
         assert sink.closed
-        assert bot.voice._handles == {}
+        assert bot.voice.link._handles == {}
 
     run(scenario)
 
@@ -250,7 +250,7 @@ def test_close_succeeds_when_the_core_already_closed_the_sink() -> None:
         native.close()
         sink.close()
         assert sink.closed
-        assert bot.voice._handles == {}
+        assert bot.voice.link._handles == {}
 
     run(scenario)
 

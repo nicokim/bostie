@@ -91,7 +91,7 @@ def test_a_probe_failure_raises_source_error_and_closes_the_handle() -> None:
             "no decoder for mp4",
         )
         assert native.closed
-        assert bot.voice._handles == {}
+        assert bot.voice.link._handles == {}
 
     run(scenario)
 
@@ -225,7 +225,7 @@ def test_aclose_closes_the_handle_and_ends_a_waiting_reader() -> None:
         await source.aclose()
         assert await reading == []
         assert bot.core.sources[-1].closed
-        assert bot.voice._handles == {}
+        assert bot.voice.link._handles == {}
 
     run(scenario)
 

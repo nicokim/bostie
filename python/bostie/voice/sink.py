@@ -1,10 +1,9 @@
 import asyncio
 import contextlib
-from collections.abc import Buffer, Generator, Iterable
+from collections.abc import Buffer, Callable, Generator, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, Self
 
-from bostie._aio import Wake
 from bostie.errors import BostieError, BufferFull, SinkClosed
 from bostie.voice.formats import (
     NO_FILTERS,
@@ -17,7 +16,7 @@ from bostie.voice.formats import (
 )
 
 if TYPE_CHECKING:
-    from bostie.voice.connection import VoiceConnection
+    from bostie.voice._link import Handle
 
 MIN_PIECE = 0.02
 
@@ -74,8 +73,8 @@ class Sink:
 
     def __init__(
         self,
-        connection: "VoiceConnection",
         native: NativeSink,
+        handle: "Handle",
         format: Format,
         *,
         buffer: float,
@@ -83,21 +82,22 @@ class Sink:
         volume: float,
         crossfade: float = 0.0,
         filters: Filters = NO_FILTERS,
+        on_audio: Callable[[], None],
+        on_close: Callable[["Sink"], None],
     ) -> None:
         self.format = format
         self.buffer = buffer
         self.stall = stall
         self.crossfade = crossfade
-        self._connection = connection
         self._native = native
-        self._handle = native.id
+        self._handle = handle
+        self._room = handle.woken
+        self._on_audio = on_audio
+        self._on_close = on_close
         self._volume = volume
         self._filters = NO_FILTERS
         self._piece = _piece_bytes(format, buffer)
-        self._room = Wake()
-        self._markers: dict[int, asyncio.Future[bool]] = {}
         self._stats = SinkStats(0.0, 0.0, 0, 0, 0.0, 0)
-        self._closed = False
         self._playing = False
         if filters != NO_FILTERS:
             self.filters = filters
@@ -105,16 +105,16 @@ class Sink:
     @property
     def queued(self) -> float:
         """Seconds of audio waiting to be sent."""
-        return 0.0 if self._closed else self._native.queued()
+        return 0.0 if self._handle.closed else self._native.queued()
 
     @property
     def passthrough(self) -> bool:
         """Whether the last packet went out as written, without decoding."""
-        return False if self._closed else self._native.passthrough()
+        return False if self._handle.closed else self._native.passthrough()
 
     @property
     def closed(self) -> bool:
-        return self._closed
+        return self._handle.closed
 
     @property
     def volume(self) -> float:
@@ -122,7 +122,7 @@ class Sink:
 
     @volume.setter
     def volume(self, volume: float) -> None:
-        if not self._closed:
+        if not self._handle.closed:
             self._native.set_volume(volume)
         self._volume = volume
 
@@ -133,7 +133,7 @@ class Sink:
 
     @filters.setter
     def filters(self, filters: Filters) -> None:
-        if not self._closed:
+        if not self._handle.closed:
             bands = list(filters.equalizer.items())
             self._native.set_filters(bands, filters.bass, filters.speed, filters.pitch)
         self._filters = filters
@@ -164,7 +164,7 @@ class Sink:
 
     async def drain(self) -> bool:
         """Wait until everything written so far has left; False if any was dropped."""
-        if self._closed:
+        if self._handle.closed:
             return False
         return await self._marker(*self._native.flush())
 
@@ -174,7 +174,7 @@ class Sink:
         """Drop the queued audio, only the part before `until`, or after `since`."""
         if until is not None and since is not None:
             raise ValueError("clear takes until or since, not both")
-        if not self._closed:
+        if not self._handle.closed:
             self._native.clear(
                 None if until is None else until.id,
                 None if since is None else since.id,
@@ -182,16 +182,17 @@ class Sink:
 
     def close(self) -> None:
         """Discard the queued audio and close; `async with` drains first."""
-        if self._closed:
+        if self._handle.closed:
             return
         with contextlib.suppress(BostieError):
             self._stats = self._read_stats()
         self._native.close()
-        self._release()
+        self._handle.close()
+        self._on_close(self)
 
     def stats(self) -> SinkStats:
         """The latest counters, or the last ones read before the sink closed."""
-        if not self._closed:
+        if not self._handle.closed:
             self._stats = self._read_stats()
         return self._stats
 
@@ -212,7 +213,7 @@ class Sink:
                 self.close()
 
     def _check_open(self) -> None:
-        if self._closed:
+        if self._handle.closed:
             raise SinkClosed("the sink is closed")
 
     def _pieces(self, view: memoryview) -> Iterable[memoryview]:
@@ -224,28 +225,10 @@ class Sink:
     def _started(self) -> None:
         if not self._playing:
             self._playing = True
-            self._connection._audio_started()
+            self._on_audio()
 
     def _marker(self, id: int, position: int) -> Marker:
-        future = self._markers[id] = asyncio.get_running_loop().create_future()
-        return Marker(id, position / SAMPLE_RATE, future)
-
-    def _wake(self) -> None:
-        self._room.set()
-
-    def _marked(self, id: int, *, reached: bool) -> None:
-        future = self._markers.pop(id, None)
-        if future is not None and not future.done():
-            future.set_result(reached)
-
-    def _release(self) -> None:
-        self._closed = True
-        self._wake()
-        for future in self._markers.values():
-            if not future.done():
-                future.set_result(False)
-        self._markers.clear()
-        self._connection._forget(self)
+        return Marker(id, position / SAMPLE_RATE, self._handle.marker(id))
 
     def _read_stats(self) -> SinkStats:
         sent, consumed, underruns, held_ticks, dropped, passthrough = (

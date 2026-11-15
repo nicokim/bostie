@@ -98,7 +98,6 @@ banned-module-level-imports = [
 
 [tool.ruff.lint.per-file-ignores]
 "!python/bostie/voice/layers.py" = ["TID251", "TID253", "PLC0415"]
-"python/bostie/voice/*.py" = ["SLF001"]
 "python/bostie/voice/connection.py" = ["ASYNC109"]
 "python/bostie/{_bridge,bot,dispatch,tasks}.py" = ["BLE001"]  # they contain errors from user callbacks and the core
 "python/bostie/voice/layers.py" = ["BLE001"]  # a failing source or file ends its track or recording, not the player
@@ -140,7 +139,6 @@ ignore_missing_imports = true
 [tool.pyright]
 include = ["python/bostie"]
 typeCheckingMode = "strict"
-reportPrivateUsage = false
 reportUninitializedInstanceVariable = true
 reportUnnecessaryTypeIgnoreComment = true
 

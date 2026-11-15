@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, Self, override
 from urllib.parse import urlsplit
 
-from bostie._aio import Wake
 from bostie.errors import SourceError, StateError
 from bostie.voice.formats import PCM, SAMPLE_BYTES, SAMPLE_RATE, Format, Opus
 
 if TYPE_CHECKING:
+    from bostie.voice._link import Handle
     from bostie.voice.connection import VoiceCore, VoiceManager
 
 PLAYS_ONCE = "a Source plays once; create a new one"
@@ -116,9 +116,8 @@ class Source(ABC):
 class _DecodedSource(Source):
     def __init__(self) -> None:
         self._native: NativeSource | None = None
-        self._manager: VoiceManager | None = None
+        self._handle: Handle | None = None
         self._chunks: deque[bytes] = deque()
-        self._woken = Wake()
         self._closed = False
 
     @abstractmethod
@@ -127,16 +126,16 @@ class _DecodedSource(Source):
     @override
     async def open(self, manager: "VoiceManager") -> None:
         self._check_unused()
-        native = self._native
-        if native is None:
-            native = self._native = self._create(manager._core())
-            self._manager = manager
-            manager._handles[native.id] = self
+        native, handle = self._native, self._handle
+        if native is None or handle is None:
+            link = manager.link
+            native = self._native = self._create(link.core())
+            handle = self._handle = link.open(native.id)
         while (info := native.info()) is None:
             if (error := native.error()) is not None:
                 await self.aclose()
                 raise SourceError(repr(self), error)
-            await self._woken.wait()
+            await handle.woken.wait()
             self._check_unused()
         kind, self._duration, self._seekable = info
         self._tags = Tags(*native.tags())
@@ -144,7 +143,7 @@ class _DecodedSource(Source):
 
     @override
     async def __anext__(self) -> bytes:
-        native = self._opened()
+        native, handle = self._opened()
         while not self._chunks:
             if self._done:
                 raise StopAsyncIteration
@@ -158,12 +157,12 @@ class _DecodedSource(Source):
             if chunks:
                 self._chunks.extend(chunks)
             else:
-                await self._woken.wait()
+                await handle.woken.wait()
         return self._chunks.popleft()
 
     @override
     async def seek(self, position: float) -> None:
-        native = self._opened()
+        native, _ = self._opened()
         if self._closed:
             raise StateError("the source is closed")
         if not self._seekable:
@@ -178,17 +177,13 @@ class _DecodedSource(Source):
         self._chunks.clear()
         if self._native is not None:
             self._native.close()
-        if self._manager is not None and self._native is not None:
-            self._manager._handles.pop(self._native.id, None)
-        self._wake()
+        if self._handle is not None:
+            self._handle.close()
 
-    def _opened(self) -> NativeSource:
-        if self._native is None or self._format is None:
+    def _opened(self) -> tuple[NativeSource, "Handle"]:
+        if self._native is None or self._handle is None or self._format is None:
             raise StateError("open() the source first")
-        return self._native
-
-    def _wake(self) -> None:
-        self._woken.set()
+        return self._native, self._handle
 
 
 class File(_DecodedSource):
