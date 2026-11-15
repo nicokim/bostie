@@ -163,21 +163,3 @@ class RtcpPacket(VoiceEvent, kw_only=True):
             reports=reports,
             data=data,
         )
-
-
-LOCAL_NAMES = frozenset(
-    event.NAME
-    for event in (
-        StateChange,
-        Moved,
-        DaveTransition,
-        MediaStalled,
-        MediaResumed,
-        SpeakingUpdate,
-        UserJoin,
-        UserLeave,
-        SpeechStart,
-        SpeechStop,
-        RtcpPacket,
-    )
-)

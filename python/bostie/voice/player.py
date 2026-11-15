@@ -23,6 +23,7 @@ from bostie.voice.formats import (
     Opus,
     SinkOptions,
     SinkStall,
+    check_choice,
     check_crossfade,
 )
 
@@ -287,8 +288,7 @@ class Queue:
 
     @loop.setter
     def loop(self, mode: Loop) -> None:
-        if mode not in (None, "track", "queue"):
-            raise ValueError(f"loop must be 'track', 'queue' or None, got {mode!r}")
+        check_choice("loop", mode, ("track", "queue", None))
         if mode == self._loop:
             return
         self._loop = mode

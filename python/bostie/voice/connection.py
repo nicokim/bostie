@@ -64,6 +64,7 @@ from bostie.voice.formats import (
     PCM,
     RECEIVE_OPTIONS,
     SINK_OPTIONS,
+    STAGE_ROLES,
     Defaults,
     EncoderSettings,
     Filters,
@@ -76,6 +77,7 @@ from bostie.voice.formats import (
     ReceiveOptions,
     SinkOptions,
     StageRole,
+    check_choice,
     check_stall_after,
 )
 from bostie.voice.frames import Frame, Packet
@@ -783,6 +785,7 @@ class VoiceConnection:
 
     async def stage(self, role: StageRole) -> None:
         """Listen, ask to speak, or speak on this stage channel."""
+        check_choice("stage", role, STAGE_ROLES)
         self._check_live()
         if not self._stage_channel:
             raise ValueError(f"channel {self._channel_id} is not a stage channel")
@@ -881,10 +884,6 @@ class VoiceConnection:
                     self.guild_id,
                     channel_id=self._channel_id,
                     request_to_speak_timestamp=datetime.now(UTC),
-                )
-            case _:
-                raise ValueError(
-                    f"stage must be 'listen', 'request' or 'speak', got {role!r}"
                 )
 
     async def _verification_code(self, user_id: int) -> str:

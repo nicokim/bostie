@@ -1,5 +1,5 @@
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, TypedDict, get_args
@@ -38,6 +38,13 @@ type Sample = Literal["s16le", "f32le"]
 type StageRole = Literal["listen", "request", "speak"]
 
 SAMPLE_BYTES: dict[Sample, int] = {"s16le": 2, "f32le": 4}
+STAGE_ROLES: tuple[StageRole, ...] = get_args(StageRole.__value__)
+
+
+def check_choice(name: str, value: object, allowed: Sequence[object]) -> None:
+    if value not in allowed:
+        *most, last = map(repr, allowed)
+        raise ValueError(f"{name} must be {', '.join(most)} or {last}, got {value!r}")
 
 
 def check_crossfade(seconds: float) -> float:
@@ -74,10 +81,8 @@ class PCM:
                 f"in 20 ms blocks: {SAMPLE_RATE} / gcd(rate, {SAMPLE_RATE}) must be "
                 f"at most {MAX_RESAMPLER_BLOCK}"
             )
-        if self.channels not in (1, 2):
-            raise ValueError(f"channels must be 1 or 2, got {self.channels}")
-        if self.sample not in ("s16le", "f32le"):
-            raise ValueError(f"sample must be 's16le' or 'f32le', got {self.sample!r}")
+        check_choice("channels", self.channels, (1, 2))
+        check_choice("sample", self.sample, _native.SAMPLES)
 
 
 DEFAULT_PCM = PCM()
@@ -121,11 +126,7 @@ class EncoderSettings:
                 f"bitrate must be from {MIN_BITRATE} to {MAX_BITRATE} bits per second, "
                 f"got {self.bitrate}"
             )
-        if self.application not in ("audio", "voip", "lowdelay"):
-            raise ValueError(
-                "application must be 'audio', 'voip' or 'lowdelay', "
-                f"got {self.application!r}"
-            )
+        check_choice("application", self.application, _native.OPUS_APPLICATIONS)
         if not 0.0 <= self.packet_loss <= 1.0:
             raise ValueError(
                 f"packet loss must be a fraction from 0 to 1, got {self.packet_loss}"
@@ -134,16 +135,8 @@ class EncoderSettings:
             raise ValueError(
                 f"complexity must be from 0 to {MAX_COMPLEXITY}, got {self.complexity}"
             )
-        if self.bandwidth not in get_args(OpusBandwidth.__value__):
-            raise ValueError(
-                "bandwidth must be 'auto', 'narrow', 'medium', 'wide', 'superwide' "
-                f"or 'full', got {self.bandwidth!r}"
-            )
-        if self.signal_type not in get_args(OpusSignal.__value__):
-            raise ValueError(
-                "signal_type must be 'auto', 'voice' or 'music', "
-                f"got {self.signal_type!r}"
-            )
+        check_choice("bandwidth", self.bandwidth, _native.OPUS_BANDWIDTHS)
+        check_choice("signal_type", self.signal_type, _native.OPUS_SIGNALS)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -224,22 +217,15 @@ class Defaults:
                 "server_change_delay must be a number of seconds of at least 0, "
                 f"got {self.server_change_delay}"
             )
-        self._check_media()
-
-    def _check_media(self) -> None:
         if not self.speaking_flags:
             raise ValueError("speaking_flags must set at least one flag")
-        if self.stage not in ("listen", "request", "speak"):
-            raise ValueError(
-                f"stage must be 'listen', 'request' or 'speak', got {self.stage!r}"
-            )
+        check_choice("stage", self.stage, STAGE_ROLES)
         if not MIN_BUFFER <= self.sink_buffer <= MAX_BUFFER:
             raise ValueError(
                 f"sink_buffer must be from {MIN_BUFFER} to {MAX_BUFFER} seconds, "
                 f"got {self.sink_buffer}"
             )
-        if self.stall not in ("hold", "drop"):
-            raise ValueError(f"stall must be 'hold' or 'drop', got {self.stall!r}")
+        check_choice("stall", self.stall, _native.SINK_STALLS)
         if not MIN_SPEECH_HANGOVER <= self.speech_hangover <= MAX_SPEECH_HANGOVER:
             raise ValueError(
                 f"speech_hangover must be from {MIN_SPEECH_HANGOVER} to "
@@ -255,18 +241,11 @@ class Defaults:
             raise ValueError(
                 f"jitter must be from 0 to {MAX_JITTER} seconds, got {self.jitter}"
             )
-        if self.overflow not in ("drop_oldest", "drop_newest"):
-            raise ValueError(
-                "overflow must be 'drop_oldest' or 'drop_newest', "
-                f"got {self.overflow!r}"
-            )
+        check_choice("overflow", self.overflow, _native.OVERFLOWS)
         check_crossfade(self.crossfade)
         if self.history < 0:
             raise ValueError(f"history must be at least 0, got {self.history}")
-        if self.receive_stall not in ("wait", "end"):
-            raise ValueError(
-                f"receive_stall must be 'wait' or 'end', got {self.receive_stall!r}"
-            )
+        check_choice("receive_stall", self.receive_stall, _native.RECEIVE_STALLS)
 
 
 class SinkOptions(TypedDict, total=False):

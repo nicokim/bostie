@@ -8,7 +8,7 @@ import pytest
 import bostie
 from bostie import _native, voice
 from bostie.enums import ClosedReason, Direction, DisconnectReason, SpeakingFlags, State
-from bostie.voice.events import LOCAL_NAMES, VoiceEvent
+from bostie.voice.events import VoiceEvent
 
 VALID = nullcontext()
 
@@ -204,13 +204,12 @@ def test_option_literals_are_the_names_rust_accepts(
 
 
 def test_voice_events_need_no_intent_and_have_local_names() -> None:
-    events = VoiceEvent.__subclasses__()
+    names = [event.NAME for event in VoiceEvent.__subclasses__()]
 
-    assert {event.NAME for event in events} == LOCAL_NAMES
-    assert len(LOCAL_NAMES) == len(events)
-    assert all(name.startswith("voice.") and name.islower() for name in LOCAL_NAMES)
+    assert len(set(names)) == len(names)
+    assert all(name.startswith("voice.") and name.islower() for name in names)
     assert not VoiceEvent.INTENTS
-    assert not any(event.INTENTS for event in events)
+    assert not any(event.INTENTS for event in VoiceEvent.__subclasses__())
 
 
 def test_speaking_flags_keep_unknown_bits() -> None:
