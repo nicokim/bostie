@@ -916,22 +916,7 @@ class Bot(Router):
                 )
             case ("invalid_requests", count):
                 warn_invalid_requests(count)
-            case (
-                "voice_state"
-                | "voice_moved"
-                | "voice_dave"
-                | "voice_self"
-                | "voice_speaking"
-                | "voice_clients"
-                | "voice_client_left"
-                | "voice_stalled"
-                | "voice_wake"
-                | "voice_marker"
-                | "voice_speech"
-                | "voice_deaf"
-                | "voice_rtcp",
-                *_,
-            ):
+            case _:
                 self.voice.handle(delivery)
 
     async def _approve_identify(self, shard_id: int, request: int) -> None:
