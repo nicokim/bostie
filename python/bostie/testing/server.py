@@ -166,17 +166,20 @@ class FakeDiscord:
         self.voice = VoiceGateway(voice_heartbeat_interval, port)
         self.api_url = f"http://127.0.0.1:{port}{API}"
         self.gateway_url = f"ws://127.0.0.1:{port}/gateway"
-        self._resume_url = f"ws://127.0.0.1:{port}/gateway-resume"
         self.token = token
         application = payloads.fixture("rest/application_me")
         self.application_id = int(application["id"])
         self._install_types = sorted(map(int, application["integration_types_config"]))
         self.bot_user: Json = payloads.fixture("events/READY")["user"]
         guild = payloads.fixture("rest/guild")
-        channel = payloads.channel()
+        channels = [payloads.channel()]
+        if voice:
+            channels += [payloads.voice_channel(), payloads.stage_channel()]
         member = payloads.member()
         self.guilds: dict[str, Json] = {guild["id"]: guild}
-        self.channels: dict[str, Json] = {channel["id"]: channel}
+        self.channels: dict[str, Json] = {
+            channel["id"]: channel for channel in channels
+        }
         self.ready_guilds: list[int] = []
         self.users: dict[str, Json] = {
             user["id"]: user for user in (payloads.user(), member["user"])
@@ -211,9 +214,7 @@ class FakeDiscord:
         self.voice_states: dict[tuple[str, str], Json] = {}
         self._serves_voice = voice
         self._voice_state_updates: asyncio.Queue[Any] = asyncio.Queue()
-        if voice:
-            for voice_channel in (payloads.voice_channel(), payloads.stage_channel()):
-                self.channels[voice_channel["id"]] = voice_channel
+        self._voice_state_holds: list[asyncio.Event] = []
         self._runner = web.AppRunner(self._app(), access_log=None)
 
     def _app(self) -> web.Application:
@@ -306,7 +307,8 @@ class FakeDiscord:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        for held in [*self._identify_holds.values(), *self._hello_holds]:
+        holds = self._identify_holds.values()
+        for held in [*holds, *self._hello_holds, *self._voice_state_holds]:
             held.set()
         for connection in self.connections:
             await connection.ws.close(code=WSCloseCode.GOING_AWAY)
@@ -347,6 +349,12 @@ class FakeDiscord:
     async def next_voice_state_update(self) -> Any:
         """Wait for the next op 4 the bot sent and return its `d`."""
         return await self._voice_state_updates.get()
+
+    def hold_voice_state(self) -> asyncio.Event:
+        """Leave the next op 4 unanswered until the returned event is set."""
+        release = asyncio.Event()
+        self._voice_state_holds.append(release)
+        return release
 
     async def move_bot(self, channel_id: int) -> None:
         """Move the bot to `channel_id` as a moderator would.
@@ -538,7 +546,7 @@ class FakeDiscord:
             ready = payloads.fixture("events/READY") | {
                 "user": self.bot_user,
                 "session_id": session.id,
-                "resume_gateway_url": self._resume_url,
+                "resume_gateway_url": f"{self.gateway_url}-resume",
                 "shard": shard,
                 "guilds": [
                     {"id": str(guild_id), "unavailable": True}
@@ -572,6 +580,8 @@ class FakeDiscord:
 
     async def _update_voice_state(self, connection: Connection, update: Any) -> None:
         self._voice_state_updates.put_nowait(update)
+        if self._voice_state_holds:
+            await self._voice_state_holds.pop(0).wait()
         match update:
             case {
                 "guild_id": str() as guild_id,

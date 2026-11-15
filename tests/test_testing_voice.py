@@ -189,6 +189,23 @@ def test_joining_answers_with_the_bot_voice_state_and_a_fresh_voice_server(
     run(scenario, voice_order=order)
 
 
+def test_a_held_voice_state_update_is_answered_once_released() -> None:
+    async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
+        async with gateway(fake, session) as ws:
+            release = fake.hold_voice_state()
+            await ws.send_json(voice_state_update(VOICE_ID))
+            held = await fake.next_voice_state_update()
+            unanswered = dict(fake.voice_states)
+            release.set()
+            names = [name for name, _ in await dispatches(ws, 2)]
+
+        assert held == voice_state_update(VOICE_ID)["d"]
+        assert unanswered == {}
+        assert names == VOICE_EVENTS
+
+    run(scenario)
+
+
 def test_voice_handshake_runs_from_hello_to_session_description() -> None:
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         async with gateway(fake, session) as ws:
