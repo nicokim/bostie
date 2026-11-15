@@ -149,6 +149,15 @@ def test_include_merges_and_keeps_following_the_child() -> None:
     assert play.router is music
 
 
+def test_a_router_is_included_once_and_never_into_its_own_child() -> None:
+    parent, child = Router(), Router()
+    parent.include(child)
+
+    for host, router in ((Router(), child), (child, parent)):
+        with pytest.raises(ValueError, match="included once, and never into itself"):
+            host.include(router)
+
+
 def test_a_router_reaches_its_bot_once_it_is_included() -> None:
     bot = Bot()
     plugin, nested = Router(), Router()
