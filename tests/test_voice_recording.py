@@ -316,6 +316,16 @@ def test_utterances_with_a_level_follow_loudness_instead_of_markers() -> None:
     run(scenario)
 
 
+def test_utterances_with_a_level_end_when_the_packets_stop() -> None:
+    async def scenario() -> None:
+        rx = FakeReceiver(markers=False)
+        rx.feed(frame(1, 1, level=-20.0), frame(1, 2, level=-20.0))
+        grouped = utterances(cast("Any", rx), min_silence=0.1, level=-40.0)
+        assert await anext(grouped) == heard(1, 1, 2)
+
+    run(scenario)
+
+
 def test_an_utterance_ends_jitter_and_min_silence_after_its_stop() -> None:
     async def scenario() -> None:
         rx = FakeReceiver(jitter=10.0)
@@ -441,6 +451,18 @@ def test_a_wav_recorder_writes_pcm_and_pads_the_gaps_with_silence(
         assert vc.opened[0][1]["mix"] is False
         with pytest.raises(ValueError, match="s16le"):
             Recorder(cast("Any", vc), "{user_id}.wav", format=PCM(sample="f32le"))
+
+    run(scenario)
+
+
+def test_a_per_user_recorder_skips_audio_it_cannot_map_to_a_user(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        vc = RecordingConnection()
+        async with Recorder(cast("Any", vc), tmp_path / "{user_id}.ogg") as recorder:
+            vc.rx.feed(opus(1), pcm(None, 2, b"\x01\x02\x03"))
+        assert recorder.files == {42: tmp_path / "42.ogg"}
 
     run(scenario)
 
