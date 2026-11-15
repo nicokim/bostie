@@ -104,7 +104,7 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
                 resumable: false,
             });
             conn.set_step(Step::Websocket);
-            Progress::Identifying
+            Progress::Identifying { ready: None }
         }
         Attempt::Resume => Progress::Resuming,
     };
@@ -130,17 +130,16 @@ async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd 
     end
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+type Discovery = Pin<Box<dyn Future<Output = Result<SocketAddr, DiscoveryError>> + Send>>;
+
 enum Progress {
-    Identifying,
-    Discovering,
-    Describing,
+    Identifying { ready: Option<proto::Ready> },
+    Discovering { mode: Mode, discovery: Discovery },
+    Describing { mode: Mode },
     Joining,
     Resuming,
     Ready,
 }
-
-type Discovery = Pin<Box<dyn Future<Output = Result<SocketAddr, DiscoveryError>> + Send>>;
 
 #[derive(Debug)]
 struct Coalescer {
@@ -200,10 +199,7 @@ struct Session<'c> {
     socket: VoiceSocket,
     progress: Progress,
     heartbeat: Option<Heartbeat>,
-    ready: Option<proto::Ready>,
-    mode: Option<Mode>,
     early: Vec<Inbound>,
-    discovery: Option<Discovery>,
     speaking: Coalescer,
     keepalive: Option<Keepalive>,
     stable: bool,
@@ -219,10 +215,7 @@ impl<'c> Session<'c> {
             socket,
             progress,
             heartbeat: None,
-            ready: None,
-            mode: None,
             early: Vec::new(),
-            discovery: None,
             speaking,
             keepalive: None,
             stable: false,
@@ -235,7 +228,8 @@ impl<'c> Session<'c> {
         let Some(voice) = &self.conn.voice else {
             return Err(SessionEnd::Failed("the voice session is gone".to_owned()));
         };
-        let payload = if self.progress == Progress::Resuming {
+        let resuming = matches!(self.progress, Progress::Resuming);
+        let payload = if resuming {
             proto::resume(
                 self.conn.guild,
                 &voice.session_id,
@@ -250,7 +244,7 @@ impl<'c> Session<'c> {
                 &voice.token,
             )
         };
-        if self.progress != Progress::Resuming {
+        if !resuming {
             self.conn.set_step(Step::Handshake);
         }
         self.send_text(payload).await
@@ -275,7 +269,7 @@ impl<'c> Session<'c> {
                 received = self.socket.receive() => self.on_received(received).await,
                 () = until(beat) => self.on_beat().await,
                 () = until(keepalive) => self.on_keepalive().await,
-                result = discovered(&mut self.discovery) => self.on_discovered(result).await,
+                result = discovered(&mut self.progress) => self.on_discovered(result).await,
                 alive = answered(&mut self.conn.voice), if listening => {
                     self.on_answer(alive);
                     Ok(())
@@ -306,7 +300,7 @@ impl<'c> Session<'c> {
     async fn on_command(&mut self, command: Option<Command>) -> Result<(), SessionEnd> {
         let speaking = matches!(command, Some(Command::Speaking(_)));
         match self.conn.command(command) {
-            Some(SessionEnd::Reconnect) if self.progress != Progress::Ready => Ok(()),
+            Some(SessionEnd::Reconnect) if !matches!(self.progress, Progress::Ready) => Ok(()),
             Some(end) => Err(end),
             None if speaking => self.request_speaking().await,
             None => Ok(()),
@@ -340,7 +334,7 @@ impl<'c> Session<'c> {
     }
 
     fn on_invalid(&mut self, error: &ProtoError) -> Result<(), SessionEnd> {
-        if self.progress != Progress::Ready {
+        if !matches!(self.progress, Progress::Ready) {
             return Err(SessionEnd::Failed(format!("invalid frame: {error}")));
         }
         if self.invalid.allows(Instant::now().into_std()) {
@@ -356,24 +350,20 @@ impl<'c> Session<'c> {
                 self.handshaken()
             }
             Inbound::Ready(ready) => {
-                if self.progress == Progress::Identifying && self.ready.is_none() {
-                    self.ready = Some(ready);
+                if let Progress::Identifying { ready: slot @ None } = &mut self.progress {
+                    *slot = Some(ready);
                     return self.handshaken();
                 }
                 Ok(())
             }
-            Inbound::SessionDescription(description) => {
-                if self.progress == Progress::Describing {
-                    return self.describe(description).await;
-                }
-                Ok(())
-            }
-            Inbound::Resumed => {
-                if self.progress == Progress::Resuming {
-                    return self.resumed().await;
-                }
-                Ok(())
-            }
+            Inbound::SessionDescription(description) => match self.progress {
+                Progress::Describing { mode } => self.describe(mode, description).await,
+                _ => Ok(()),
+            },
+            Inbound::Resumed => match self.progress {
+                Progress::Resuming => self.resumed().await,
+                _ => Ok(()),
+            },
             Inbound::HeartbeatAck { t } => {
                 self.on_ack(t);
                 Ok(())
@@ -398,7 +388,9 @@ impl<'c> Session<'c> {
             | Inbound::Dave(_)) => {
                 if matches!(
                     self.progress,
-                    Progress::Identifying | Progress::Discovering | Progress::Describing
+                    Progress::Identifying { .. }
+                        | Progress::Discovering { .. }
+                        | Progress::Describing { .. }
                 ) {
                     let limit = self.conn.tuning.early_ops;
                     if self.early.len() >= limit {
@@ -422,10 +414,13 @@ impl<'c> Session<'c> {
     }
 
     fn handshaken(&mut self) -> Result<(), SessionEnd> {
-        if self.progress != Progress::Identifying || self.heartbeat.is_none() {
+        let Progress::Identifying { ready } = &mut self.progress else {
+            return Ok(());
+        };
+        if self.heartbeat.is_none() {
             return Ok(());
         }
-        let Some(ready) = self.ready.take() else {
+        let Some(ready) = ready.take() else {
             return Ok(());
         };
         let Some(mode) = Mode::choose(&ready.modes) else {
@@ -437,7 +432,6 @@ impl<'c> Session<'c> {
                 ),
             ));
         };
-        self.mode = Some(mode);
         self.conn.set_step(Step::Udp);
         let (socket, sender) = udp::bind(SocketAddr::new(ready.ip, ready.port))
             .map_err(|error| SessionEnd::Failed(format!("udp: {error}")))?;
@@ -463,13 +457,13 @@ impl<'c> Session<'c> {
             })
             .abort_handle()
         };
-        self.discovery = Some({
+        let discovery: Discovery = {
             let socket = Arc::clone(&socket);
             let mut answers = answers.clone();
             let ssrc = ready.ssrc;
             let interval = self.conn.tuning.discovery_interval;
             Box::pin(async move { udp::discover(&socket, &mut answers, ssrc, interval).await })
-        });
+        };
         if let Some(voice) = &mut self.conn.voice {
             voice.udp = Some(Udp {
                 socket,
@@ -479,7 +473,7 @@ impl<'c> Session<'c> {
                 receiver,
             });
         }
-        self.progress = Progress::Discovering;
+        self.progress = Progress::Discovering { mode, discovery };
         Ok(())
     }
 
@@ -487,27 +481,27 @@ impl<'c> Session<'c> {
         &mut self,
         result: Result<SocketAddr, DiscoveryError>,
     ) -> Result<(), SessionEnd> {
-        self.discovery = None;
-        let address = result.map_err(|error| SessionEnd::Failed(error.to_string()))?;
-        let Some(mode) = self.mode else {
+        let Progress::Discovering { mode, .. } = self.progress else {
             return Ok(());
         };
+        self.progress = Progress::Describing { mode };
+        let address = result.map_err(|error| SessionEnd::Failed(error.to_string()))?;
         self.send_text(proto::select_protocol(
             address.ip(),
             address.port(),
             mode.as_str(),
         ))
         .await?;
-        self.progress = Progress::Describing;
         self.conn.set_step(Step::Session);
         self.keepalive = Some(Keepalive::new(self.conn.tuning.keepalive_interval));
         Ok(())
     }
 
-    async fn describe(&mut self, description: SessionDescription) -> Result<(), SessionEnd> {
-        let Some(mode) = self.mode else {
-            return Ok(());
-        };
+    async fn describe(
+        &mut self,
+        mode: Mode,
+        description: SessionDescription,
+    ) -> Result<(), SessionEnd> {
         if &*description.mode != mode.as_str() {
             return Err(SessionEnd::Fatal(
                 DisconnectReason::ProtocolError,
@@ -572,7 +566,7 @@ impl<'c> Session<'c> {
     }
 
     fn joined(&mut self) {
-        if self.progress == Progress::Joining && self.conn.media.gate() != SendMode::Hold {
+        if matches!(self.progress, Progress::Joining) && self.conn.media.gate() != SendMode::Hold {
             self.progress = Progress::Ready;
             self.conn.became_ready();
         }
@@ -679,7 +673,7 @@ impl<'c> Session<'c> {
             return;
         };
         self.conn.info.ws_latency.set(latency);
-        if self.progress == Progress::Ready && !mem::replace(&mut self.stable, true) {
+        if matches!(self.progress, Progress::Ready) && !mem::replace(&mut self.stable, true) {
             self.conn.stable();
         }
     }
@@ -788,10 +782,10 @@ impl<'c> Session<'c> {
     }
 }
 
-async fn discovered(discovery: &mut Option<Discovery>) -> Result<SocketAddr, DiscoveryError> {
-    match discovery {
-        Some(discovery) => discovery.as_mut().await,
-        None => future::pending().await,
+async fn discovered(progress: &mut Progress) -> Result<SocketAddr, DiscoveryError> {
+    match progress {
+        Progress::Discovering { discovery, .. } => discovery.as_mut().await,
+        _ => future::pending().await,
     }
 }
 
