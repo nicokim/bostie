@@ -592,10 +592,7 @@ class Bot(Router):
         afk: bool | None = None,
         idle_since: datetime | Unset | None = UNSET,
     ) -> None:
-        """Change what the bot shows on every shard, and on sessions it starts later.
-
-        A setting left out stays as it is.
-        """
+        """Change what the bot shows on every shard, and on sessions it starts later."""
         self._presence |= presence_fields(
             status=status, activities=activities, afk=afk, idle_since=idle_since
         )

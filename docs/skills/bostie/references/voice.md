@@ -30,7 +30,7 @@ async def stop_playing(ctx: ComponentContext, guild_id: int) -> None:
 bot.run()
 ```
 
-- `ctx.voice.current` is the bot's connection in the guild, or `None`. `await ctx.voice.connect()` joins the voice or stage channel of the user who ran the command and raises `voice.NotInVoice` when they are in none. Outside a handler, `await bot.voice.connect(channel_id)` joins by id and `bot.voice.get(guild_id)` returns a connection. The bot has one connection per guild.
+- `ctx.voice.current` is the bot's connection in the guild, or `None`. `await ctx.voice.connect()` joins the voice or stage channel of the user who ran the command and raises `voice.NotInVoice` when they are in none. Outside a handler, `await bot.voice.connect(channel_id)` joins by id and `bot.voice.get(guild_id)` returns a connection. The bot has one connection per guild. Both `connect` calls take keyword settings such as `self_deaf=True`, `timeout=20` or `stage="speak"`; one left out keeps the bot's `voice.Defaults`.
 - `await vc.play(source)` returns a `voice.Track` at once and keeps playing after the handler returns. Tracks that play at the same time are mixed.
 - Sources: `voice.File(path)`, `voice.Url(url)` for a direct media URL or an HLS playlist (not a web page that embeds the media), `voice.Bytes(data)`, `voice.Stream(items, format)` for your own PCM or Opus, and `voice.FFmpeg(args)`, the only one that needs `ffmpeg` on `PATH`. A source plays once; `source.again()` returns a fresh copy.
 - On a track: `await track.wait()` waits for its end and returns a `voice.TrackEnd`; `track.pause()`, `track.resume()`, `track.stop()`, `await track.seek(seconds)`, and `track.volume`, which changes at once.
