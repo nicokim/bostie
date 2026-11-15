@@ -358,6 +358,71 @@ def test_a_slash_command_gets_its_typed_options_and_defaults() -> None:
     run(scenario)
 
 
+def info_answering(text: str) -> Callable[[Context], Coroutine[Any, Any, None]]:
+    async def info(ctx: Context) -> None:
+        await ctx.respond(text)
+
+    return info
+
+
+def info_bot(fake: FakeDiscord, **options: Any) -> Bot:
+    bot = Bot(api_url=fake.api_url, **options)
+    bot.command(description="About the bot")(info_answering("global"))
+    bot.command(description="About this server", guilds=[GUILD])(
+        info_answering("guild")
+    )
+    bot.command(description="About the outage", guilds=[OUTAGE_GUILD])(
+        info_answering("outage")
+    )
+    return bot
+
+
+def synced(fake: FakeDiscord) -> dict[str | None, list[str]]:
+    scopes = {None: fake.commands} | dict(fake.guild_commands.items())
+    return {
+        scope: [command["description"] for command in commands]
+        for scope, commands in scopes.items()
+    }
+
+
+def test_commands_of_one_name_sync_to_their_scopes_and_route_by_guild() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = info_bot(fake)
+        answers = []
+        async with running(bot, fake):
+            for guild_id in (None, GUILD, OUTAGE_GUILD):
+                data = payloads.command("info")
+                if guild_id is not None:
+                    data["guild_id"] = str(guild_id)
+                answer = await fake.interaction(2, data)
+                answers.append(answer.json["data"]["content"])
+
+        assert answers == ["global", "guild", "outage"]
+        assert synced(fake) == {
+            None: ["About the bot"],
+            str(GUILD): ["About this server"],
+            str(OUTAGE_GUILD): ["About the outage"],
+        }
+
+    run(scenario)
+
+
+def test_a_guild_command_takes_the_place_of_the_global_one_in_a_dev_guild() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = info_bot(fake, dev_guilds=[GUILD, 1])
+        async with running(bot, fake):
+            pass
+
+        assert synced(fake) == {
+            None: [],
+            str(GUILD): ["About this server"],
+            "1": ["About the bot"],
+            str(OUTAGE_GUILD): ["About the outage"],
+        }
+
+    run(scenario)
+
+
 def test_autocomplete_answers_with_at_most_25_choices() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         async with running(example_bot(fake), fake):

@@ -105,6 +105,13 @@ async def sync_commands(
         for scope in _targets(command, base):
             scopes.setdefault(scope, []).append(command)
     for scoped in scopes.values():
+        pinned = {(command.type, command.name) for command in scoped if command.guilds}
+        scoped[:] = [
+            command
+            for command in scoped
+            if command.guilds or (command.type, command.name) not in pinned
+        ]
+    for scoped in scopes.values():
         for type, count in Counter(command.type for command in scoped).items():
             label, limit = LIMITS[type]
             if count > limit:

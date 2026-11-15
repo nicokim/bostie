@@ -144,6 +144,31 @@ def test_modal_routes_are_kept_apart_from_component_routes() -> None:
         router.on_modal("report:{id:int}")(component)
 
 
+@pytest.mark.parametrize(
+    ("first", "second", "clash"),
+    [
+        ((), (), "globally"),
+        ((1,), (2, 1), r"in one of the guilds \[1, 2\]"),
+        ((2, 1), (1,), "in guild 1"),
+        ((1,), (), None),
+        ((1,), (2,), None),
+    ],
+)
+def test_commands_of_one_name_may_share_no_scope(
+    first: tuple[int, ...], second: tuple[int, ...], clash: str | None
+) -> None:
+    router = Router()
+    router.command(guilds=first)(command)
+
+    if clash is None:
+        router.command(guilds=second)(command)
+    else:
+        with pytest.raises(CommandDefinitionError, match=f"already registered {clash}"):
+            router.command(guilds=second)(command)
+
+    assert len(router.commands) == (1 if clash else 2)
+
+
 def test_include_merges_and_keeps_following_the_child() -> None:
     bot = Router()
     music = Router()
@@ -154,7 +179,7 @@ def test_include_merges_and_keeps_following_the_child() -> None:
     bot.include(music)
     later = music.command(name="later")(command)
 
-    assert bot.commands == {"command": play, "later": later}
+    assert bot.commands == {("command", ()): play, ("later", ()): later}
     assert bot.listeners == {"MESSAGE_CREATE": [Listener(on_message, MessageCreate)]}
     assert bot.match_component("music:a") == (route, {"track": "a"})
     assert play.router is music
@@ -204,7 +229,7 @@ def test_a_name_is_unique_per_command_type_across_routers() -> None:
 
     bot.include(plugin)
 
-    assert bot.context_menus[CommandType.MESSAGE, "inspect"] is pin
+    assert bot.context_menus[CommandType.MESSAGE, "inspect", ()] is pin
     with pytest.raises(CommandDefinitionError, match="user command named 'inspect'"):
         bot.include(clashing)
 
@@ -225,13 +250,13 @@ def test_a_clashing_include_changes_nothing_and_can_be_retried() -> None:
     with pytest.raises(ValueError, match="component template 'taken:"):
         bot.include(clashing_route)
 
-    assert bot.commands == {"ping": ping}
+    assert bot.commands == {("ping", ()): ping}
     assert bot.listeners == {}
     assert plugin.parent is None
     assert clashing_route.parent is None
-    del plugin.commands["ping"]
+    del plugin.commands["ping", ()]
     bot.include(plugin)
-    assert bot.commands == {"ping": ping, "echo": echo}
+    assert bot.commands == {("ping", ()): ping, ("echo", ()): echo}
     assert bot.listeners == {"MESSAGE_CREATE": [Listener(on_message, MessageCreate)]}
 
 
@@ -263,15 +288,15 @@ def test_a_module_router_is_included_reloaded_and_excluded_by_name(
     bot = Router()
 
     bot.include("greetings")
-    assert list(bot.commands) == ["hello"]
+    assert list(bot.commands) == [("hello", ())]
     source.write_text(GREETINGS.format(name="howdy"))
     bot.reload("greetings")
-    assert list(bot.commands) == ["howdy"]
+    assert list(bot.commands) == [("howdy", ())]
     assert len(bot.listeners["MESSAGE_CREATE"]) == 1
     source.write_text("raise RuntimeError('broken')")
     with pytest.raises(RuntimeError, match="broken"):
         bot.reload("greetings")
-    assert list(bot.commands) == ["howdy"]
+    assert list(bot.commands) == [("howdy", ())]
     bot.exclude("greetings")
 
     assert (bot.commands, bot.listeners) == ({}, {})

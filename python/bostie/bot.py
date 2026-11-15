@@ -127,7 +127,7 @@ from bostie.models import (
 )
 from bostie.models.base import check_keys
 from bostie.rest import REST
-from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router
+from bostie.router import RAW_EVENT_NAME, AnyEvent, Listener, Router, scoped
 from bostie.snowflake import snowflake_time
 from bostie.tasks import Task
 from bostie.voice.connection import VoiceManager
@@ -1197,7 +1197,9 @@ class Bot(Router):
         found = self._command(data)
         if found is not None:
             command, options = found
-        elif (menu := self.context_menus.get((data.type, data.name))) is not None:
+        elif (
+            menu := scoped(self.context_menus, (data.type, data.name), data.guild_id)
+        ) is not None:
             command = menu
         else:
             return None
@@ -1222,7 +1224,9 @@ class Bot(Router):
         if data.type is not CommandType.CHAT_INPUT:
             return None
         names, options = _split_subcommands(data.options)
-        node: Command | Group | None = self.commands.get(data.name)
+        node: Command | Group | None = scoped(
+            self.commands, (data.name,), data.guild_id
+        )
         for name in names:
             node = node.commands.get(name) if isinstance(node, Group) else None
         return (node, options) if isinstance(node, Command) else None

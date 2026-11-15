@@ -80,6 +80,7 @@ if __name__ == "__main__":
 - A slash command is an `async def` under `@bot.command`. Its first parameter is `ctx: Context`, and every parameter after it is an option. The function's name is the command's name: lowercase, 1 to 32 characters. The first line of the docstring is the description, at most 100 characters.
 - The type hint picks the option type: `str`, `int`, `float`, `bool`, `User`, `ResolvedMember`, `Role`, `PartialChannel`, `Attachment`, or `Literal[...]` or an `Enum` for fixed choices. A member option is `ResolvedMember`, not `Member`, and a channel option is `PartialChannel`, not `Channel`. Any other hint raises `CommandDefinitionError` when the decorator runs.
 - `Annotated[str, "What it is"]`, or the Args section of the docstring, gives an option its description, `Range[int, 1, 10]` bounds it, and a default or `| None` makes it optional. `Option(...)` inside `Annotated` sets the rest, such as `autocomplete` or `channel_types`.
+- `@bot.command(guilds=[guild_id])` registers a command in those guilds only, and a guild may have its own command under a name a global command also has.
 - `bot.group("name", "description")` returns a group whose `@group.command` adds subcommands. `@bot.user_command("Name")` and `@bot.message_command("Name")` add the right-click commands.
 
 ## Answering an interaction

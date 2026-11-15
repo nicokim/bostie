@@ -22,6 +22,14 @@ While you work on a bot, register everything in a test guild:
 
 `Bot(dev_guilds=[...])` registers every command that has no `guilds` of its own in those guilds instead of globally. The entry point command is always global, so the sync leaves it out and warns.
 
+### One name in several scopes
+
+```python
+--8<-- "docs/snippets/commands/guild_variants.py"
+```
+
+Commands may share a name when no guild has two of them: a global `/rules` and a `/rules` for one guild, or a `/rules` per guild. Each is registered in its own scope, and an interaction runs the command registered in its guild, else the global one. In that guild Discord lists both the global and the guild command. Under `dev_guilds`, a guild's own command takes the place of the global one in that guild. Two commands of one name whose guilds overlap, or two global ones, raise `CommandDefinitionError` when the second is registered. User and message commands follow the same rules.
+
 The sync only touches scopes that have commands. When you drop `dev_guilds`, the commands stay in the test guild next to the new global ones; `await bot.rest.commands.bulk_overwrite_guild(bot.application_id, guild_id, [])` clears them.
 
 ## Where commands can be used

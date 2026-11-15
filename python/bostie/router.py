@@ -3,7 +3,7 @@ import importlib
 import inspect
 import sys
 import typing
-from collections.abc import Callable, Coroutine, Iterable, Iterator
+from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from types import ModuleType, UnionType
 from typing import (
@@ -55,6 +55,8 @@ type AnyEvent = Event | VoiceEvent | BotEvent
 type ListenerCallback = Callable[[Any], Coroutine[Any, Any, None]]
 type EventHandler[E: AnyEvent] = Callable[[E], Coroutine[Any, Any, None]]
 type InvokeHook = Callable[[Any], Coroutine[Any, Any, None]]
+type CommandKey = tuple[str, tuple[int, ...]]
+type MenuKey = tuple[CommandType, str, tuple[int, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +71,7 @@ class Listener:
 class _Registry[K, V]:
     of: Callable[["Router"], dict[K, V]]
     taken: Callable[[K], Exception]
+    clashes: Callable[[K, Iterable[K]], bool] = lambda key, keys: key in keys
 
 
 class RouterDefaults(TypedDict, total=False):
@@ -97,10 +100,8 @@ class Router(ErrorHooks):
         check_keys(defaults, ROUTER_DEFAULTS, "defaults")
         self.defaults = defaults
         self.parent: Router | None = None
-        self.commands: dict[str, Command | Group] = {}
-        self.context_menus: dict[
-            tuple[CommandType, str], ContextMenuCommand | EntryPointCommand
-        ] = {}
+        self.commands: dict[CommandKey, Command | Group] = {}
+        self.context_menus: dict[MenuKey, ContextMenuCommand | EntryPointCommand] = {}
         self.listeners: dict[str, list[Listener]] = {}
         self.component_routes: dict[str, ComponentRoute[...]] = {}
         self.modal_routes: dict[str, ComponentRoute[...]] = {}
@@ -134,7 +135,7 @@ class Router(ErrorHooks):
 
         def register(callback: CommandCallback) -> Command:
             command = Command(callback, router=self, **settings)
-            self._add(COMMANDS, command.name, command)
+            self._add(COMMANDS, _scope_key(command.name, command.guilds), command)
             return command
 
         return register if callback is None else register(callback)
@@ -144,7 +145,7 @@ class Router(ErrorHooks):
     ) -> Group:
         """Register a slash command made of subcommands."""
         group = Group(name, description, router=self, **settings)
-        self._add(COMMANDS, group.name, group)
+        self._add(COMMANDS, _scope_key(group.name, group.guilds), group)
         return group
 
     def user_command(
@@ -169,7 +170,7 @@ class Router(ErrorHooks):
 
         def register(callback: CommandCallback) -> EntryPointCommand:
             command = EntryPointCommand(name, callback, router=self, **settings)
-            self._add(CONTEXT_MENUS, (command.type, name), command)
+            self._add(CONTEXT_MENUS, (command.type, name, ()), command)
             return command
 
         return register
@@ -393,7 +394,7 @@ class Router(ErrorHooks):
     ) -> Callable[[CommandCallback], ContextMenuCommand]:
         def register(callback: CommandCallback) -> ContextMenuCommand:
             command = ContextMenuCommand(type, name, callback, router=self, **settings)
-            self._add(CONTEXT_MENUS, (type, name), command)
+            self._add(CONTEXT_MENUS, (type, *_scope_key(name, command.guilds)), command)
             return command
 
         return register
@@ -414,7 +415,7 @@ class Router(ErrorHooks):
         return register
 
     def _check[K](self, registry: _Registry[K, Any], key: K) -> None:
-        if any(key in registry.of(router) for router in self._chain()):
+        if any(registry.clashes(key, registry.of(router)) for router in self._chain()):
             raise registry.taken(key)
 
     def _add[K](self, registry: _Registry[K, Any], key: K, value: object) -> None:
@@ -432,18 +433,21 @@ class Router(ErrorHooks):
         pass
 
 
-COMMANDS: _Registry[str, Command | Group] = _Registry(
+COMMANDS: _Registry[CommandKey, Command | Group] = _Registry(
     lambda router: router.commands,
-    lambda name: CommandDefinitionError(
-        f"a command named {name!r} is already registered"
+    lambda key: CommandDefinitionError(
+        f"a command named {key[0]!r} is already registered {_where(key[1])}"
     ),
+    lambda key, keys: any(_overlap(key, other) for other in keys),
 )
-CONTEXT_MENUS: _Registry[
-    tuple[CommandType, str], ContextMenuCommand | EntryPointCommand
-] = _Registry(
+CONTEXT_MENUS: _Registry[MenuKey, ContextMenuCommand | EntryPointCommand] = _Registry(
     lambda router: router.context_menus,
     lambda key: CommandDefinitionError(
-        f"a {key[0].name.lower()} command named {key[1]!r} is already registered"
+        f"a {key[0].name.lower()} command named {key[1]!r} is already registered "
+        f"{_where(key[2])}"
+    ),
+    lambda key, keys: any(
+        key[0] == other[0] and _overlap(key[1:], other[1:]) for other in keys
     ),
 )
 COMPONENT_ROUTES: _Registry[str, ComponentRoute[...]] = _Registry(
@@ -469,6 +473,41 @@ REGISTRIES: tuple[_Registry[Any, Any], ...] = (
     MODAL_ROUTES,
     TASKS,
 )
+
+
+def scoped[V](
+    registered: Mapping[tuple[Any, ...], V], key: tuple[Any, ...], guild_id: int | None
+) -> V | None:
+    """The command registered under `key` for `guild_id`, else the global one."""
+    found = None
+    for (*named, guilds), node in registered.items():
+        if tuple(named) != key:
+            continue
+        if guild_id in guilds:
+            return node
+        if not guilds:
+            found = node
+    return found
+
+
+def _scope_key(name: str, guilds: Iterable[int]) -> CommandKey:
+    return name, tuple(sorted(set(guilds)))
+
+
+def _overlap(key: CommandKey, other: CommandKey) -> bool:
+    return key[0] == other[0] and (
+        key[1] == other[1] or not set(key[1]).isdisjoint(other[1])
+    )
+
+
+def _where(guilds: tuple[int, ...]) -> str:
+    match guilds:
+        case ():
+            return "globally"
+        case (guild_id,):
+            return f"in guild {guild_id}"
+        case _:
+            return f"in one of the guilds {list(guilds)}"
 
 
 def _match(
