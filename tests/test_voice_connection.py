@@ -3,6 +3,7 @@ import inspect
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -327,15 +328,7 @@ def test_assigning_an_encoder_applies_it_with_the_channels_bitrate() -> None:
             (
                 "voice_encoder",
                 (GUILD_ID,),
-                {
-                    "bitrate": 96_000,
-                    "application": "voip",
-                    "fec": False,
-                    "packet_loss": 100,
-                    "complexity": 5,
-                    "bandwidth": "auto",
-                    "signal": "auto",
-                },
+                {"encoder": replace(encoder, bitrate=96_000)},
             )
         ]
 
@@ -361,15 +354,7 @@ def test_a_move_reapplies_the_new_channels_bitrate_only_when_following_it() -> N
         assert [call[1:] for call in bot.calls("voice_encoder")] == [
             (
                 (GUILD_ID,),
-                {
-                    "bitrate": 32_000,
-                    "application": "audio",
-                    "fec": True,
-                    "packet_loss": 10,
-                    "complexity": 10,
-                    "bandwidth": "auto",
-                    "signal": "auto",
-                },
+                {"encoder": voice.EncoderSettings(bitrate=32_000)},
             )
         ]
         assert (following.channel_id, fixed.channel_id) == (OTHER_VOICE, ELSEWHERE)

@@ -1,6 +1,8 @@
 from collections.abc import Buffer
 from typing import Final, Literal, final
 
+from bostie.voice.formats import EncoderSettings
+
 __all__ = [
     "CLOSED_REASONS",
     "DECODE_RATES",
@@ -103,9 +105,6 @@ type DisconnectReasonName = Literal[
     "protocol_error",
     "closed",
 ]
-type ApplicationName = Literal["audio", "voip", "lowdelay"]
-type BandwidthName = Literal["auto", "narrow", "medium", "wide", "superwide", "full"]
-type SignalName = Literal["auto", "voice", "music"]
 type SampleName = Literal["s16le", "f32le"]
 type StallName = Literal["hold", "drop"]
 type ReceiveKindName = Literal["pcm", "opus", "packets"]
@@ -257,32 +256,15 @@ class Core:
         self_deaf: bool,
         timeout: float,
         server_change_delay: float,
-        bitrate: int,
-        application: ApplicationName,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
+        encoder: EncoderSettings,
         speaking: int,
-        bandwidth: BandwidthName,
-        signal: SignalName,
     ) -> None: ...
     def voice_update(
         self, guild_id: int, channel_id: int, self_mute: bool, self_deaf: bool
     ) -> None: ...
     def voice_disconnect(self, guild_id: int) -> None: ...
     def voice_reconnect(self, guild_id: int) -> None: ...
-    def voice_encoder(
-        self,
-        guild_id: int,
-        *,
-        bitrate: int,
-        application: ApplicationName,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
-        bandwidth: BandwidthName,
-        signal: SignalName,
-    ) -> None: ...
+    def voice_encoder(self, guild_id: int, *, encoder: EncoderSettings) -> None: ...
     def voice_speaking(self, guild_id: int, flags: int) -> None: ...
     def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
     def voice_dave(self, guild_id: int) -> tuple[int, int | None, str | None]: ...
@@ -376,13 +358,7 @@ class OpusEncoder:
         rate: int,
         channels: int,
         sample: SampleName,
-        bitrate: int,
-        application: ApplicationName,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
-        bandwidth: BandwidthName,
-        signal: SignalName,
+        encoder: EncoderSettings,
     ) -> OpusEncoder: ...
     def encode(self, data: Buffer) -> list[bytes]: ...
     def flush(self) -> list[bytes]: ...

@@ -1,4 +1,5 @@
 from collections.abc import Buffer
+from dataclasses import replace
 
 from bostie import _native
 from bostie.voice.formats import DEFAULT_PCM, PCM, EncoderSettings
@@ -20,13 +21,7 @@ class OpusEncoder:
             rate=format.rate,
             channels=format.channels,
             sample=format.sample,
-            bitrate=encoder.bitrate or DEFAULT_BITRATE,
-            application=encoder.application,
-            fec=encoder.fec,
-            packet_loss=percent(encoder.packet_loss),
-            complexity=encoder.complexity,
-            bandwidth=encoder.bandwidth,
-            signal=encoder.signal_type,
+            encoder=replace(encoder, bitrate=encoder.bitrate or DEFAULT_BITRATE),
         )
 
     def encode(self, data: Buffer) -> list[bytes]:
@@ -36,7 +31,3 @@ class OpusEncoder:
     def flush(self) -> list[bytes]:
         """Pad the remainder with silence and return the last packets."""
         return self._native.flush()
-
-
-def percent(fraction: float) -> int:
-    return round(fraction * 100)

@@ -37,7 +37,7 @@ from bostie.models import Channel, User
 from bostie.models.base import check_keys
 from bostie.rest import REST
 from bostie.voice import layers
-from bostie.voice.encoder import DEFAULT_BITRATE, percent
+from bostie.voice.encoder import DEFAULT_BITRATE
 from bostie.voice.events import (
     DaveTransition,
     MediaResumed,
@@ -65,9 +65,6 @@ from bostie.voice.formats import (
     Format,
     Latency,
     Opus,
-    OpusApplication,
-    OpusBandwidth,
-    OpusSignal,
     Overflow,
     PacketReceiveOptions,
     Packets,
@@ -123,32 +120,15 @@ class VoiceCore(Protocol):
         self_deaf: bool,
         timeout: float,
         server_change_delay: float,
-        bitrate: int,
-        application: OpusApplication,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
+        encoder: EncoderSettings,
         speaking: int,
-        bandwidth: OpusBandwidth,
-        signal: OpusSignal,
     ) -> None: ...
     def voice_update(
         self, guild_id: int, channel_id: int, *, self_mute: bool, self_deaf: bool
     ) -> None: ...
     def voice_disconnect(self, guild_id: int) -> None: ...
     def voice_reconnect(self, guild_id: int) -> None: ...
-    def voice_encoder(
-        self,
-        guild_id: int,
-        *,
-        bitrate: int,
-        application: OpusApplication,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
-        bandwidth: OpusBandwidth,
-        signal: OpusSignal,
-    ) -> None: ...
+    def voice_encoder(self, guild_id: int, *, encoder: EncoderSettings) -> None: ...
     def voice_speaking(self, guild_id: int, flags: int) -> None: ...
     def voice_latency(self, guild_id: int) -> tuple[float | None, float | None]: ...
     def voice_dave(self, guild_id: int) -> tuple[int, int | None, str | None]: ...
@@ -960,14 +940,8 @@ class VoiceConnection:
                 self_deaf=settings.self_deaf,
                 timeout=settings.timeout,
                 server_change_delay=settings.server_change_delay,
-                bitrate=self._bitrate(encoder),
-                application=encoder.application,
-                fec=encoder.fec,
-                packet_loss=percent(encoder.packet_loss),
-                complexity=encoder.complexity,
+                encoder=replace(encoder, bitrate=self._bitrate(encoder)),
                 speaking=int(settings.speaking_flags),
-                bandwidth=encoder.bandwidth,
-                signal=encoder.signal_type,
             )
             self._core().voice_speech_hangover(self.guild_id, settings.speech_hangover)
             self._core().voice_speech_activity(
@@ -1266,14 +1240,7 @@ class VoiceConnection:
 
     def _apply_encoder(self, encoder: EncoderSettings) -> None:
         self._core().voice_encoder(
-            self.guild_id,
-            bitrate=self._bitrate(encoder),
-            application=encoder.application,
-            fec=encoder.fec,
-            packet_loss=percent(encoder.packet_loss),
-            complexity=encoder.complexity,
-            bandwidth=encoder.bandwidth,
-            signal=encoder.signal_type,
+            self.guild_id, encoder=replace(encoder, bitrate=self._bitrate(encoder))
         )
 
     def _bitrate(self, encoder: EncoderSettings) -> int:

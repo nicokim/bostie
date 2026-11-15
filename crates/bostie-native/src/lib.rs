@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{
-    Application, Bandwidth, ConnectRequest, Handle, Overflow, ReceiveOptions, ReceiveStall,
-    SampleFormat, SignalType, SourceSpec, StallPolicy,
+    ConnectRequest, Handle, Overflow, ReceiveOptions, ReceiveStall, SampleFormat, SourceSpec,
+    StallPolicy,
 };
 use bostie_core::{
     Auth, ChannelId, Core, CoreError, Delivery, Gateway, GuildId, HttpSettings, IdentifyLimit,
@@ -30,7 +30,8 @@ use crate::errors::{
 };
 use crate::names::{Choice, Named};
 use crate::voice::{
-    NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, rtcp_packet, speaking_parts,
+    Encoder, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, rtcp_packet,
+    speaking_parts,
 };
 
 #[global_allocator]
@@ -209,8 +210,7 @@ impl NativeCore {
 
     #[pyo3(signature = (
         guild_id, channel_id, *, shard_id, user_id, self_mute, self_deaf, timeout,
-        server_change_delay, bitrate, application, fec, packet_loss, complexity, speaking,
-        bandwidth, signal,
+        server_change_delay, encoder, speaking,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn voice_connect(
@@ -223,14 +223,8 @@ impl NativeCore {
         self_deaf: bool,
         timeout: f64,
         server_change_delay: f64,
-        bitrate: u32,
-        application: Choice<Application>,
-        fec: bool,
-        packet_loss: u8,
-        complexity: u8,
+        encoder: Encoder,
         speaking: u8,
-        bandwidth: Choice<Bandwidth>,
-        signal: Choice<SignalType>,
     ) -> Result<()> {
         let request = ConnectRequest {
             guild: GuildId::from(guild_id),
@@ -241,15 +235,7 @@ impl NativeCore {
             self_deaf,
             timeout: seconds("timeout", timeout)?,
             server_change_delay: seconds("server_change_delay", server_change_delay)?,
-            encoder: voice::encoder_settings(
-                bitrate,
-                application,
-                fec,
-                packet_loss,
-                complexity,
-                bandwidth,
-                signal,
-            ),
+            encoder: encoder.into(),
             speaking,
         };
         Ok(self.voice()?.connect(&request)?)
@@ -278,34 +264,11 @@ impl NativeCore {
         Ok(self.voice()?.reconnect(GuildId::from(guild_id))?)
     }
 
-    #[pyo3(signature = (
-        guild_id, *, bitrate, application, fec, packet_loss, complexity,
-        bandwidth, signal,
-    ))]
-    #[expect(clippy::too_many_arguments)]
-    fn voice_encoder(
-        &self,
-        guild_id: u64,
-        bitrate: u32,
-        application: Choice<Application>,
-        fec: bool,
-        packet_loss: u8,
-        complexity: u8,
-        bandwidth: Choice<Bandwidth>,
-        signal: Choice<SignalType>,
-    ) -> Result<()> {
-        let settings = voice::encoder_settings(
-            bitrate,
-            application,
-            fec,
-            packet_loss,
-            complexity,
-            bandwidth,
-            signal,
-        );
+    #[pyo3(signature = (guild_id, *, encoder))]
+    fn voice_encoder(&self, guild_id: u64, encoder: Encoder) -> Result<()> {
         Ok(self
             .voice()?
-            .set_encoder(GuildId::from(guild_id), settings)?)
+            .set_encoder(GuildId::from(guild_id), encoder.into())?)
     }
 
     fn voice_speaking(&self, guild_id: u64, flags: u8) -> Result<()> {

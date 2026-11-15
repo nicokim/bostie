@@ -53,14 +53,8 @@ def connect(core: _native.Core) -> None:
         self_deaf=False,
         timeout=60.0,
         server_change_delay=0.0,
-        bitrate=64_000,
-        application="audio",
-        fec=True,
-        packet_loss=10,
-        complexity=10,
+        encoder=voice.EncoderSettings(bitrate=64_000),
         speaking=1,
-        bandwidth="auto",
-        signal="auto",
     )
 
 

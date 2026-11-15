@@ -68,14 +68,16 @@ def test_connect_merges_each_argument_over_the_defaults() -> None:
                     "self_deaf": True,
                     "timeout": 3.0,
                     "server_change_delay": 0.0,
-                    "bitrate": 50_000,
-                    "application": "lowdelay",
-                    "fec": False,
-                    "packet_loss": 29,
-                    "complexity": 0,
+                    "encoder": voice.EncoderSettings(
+                        bitrate=50_000,
+                        application="lowdelay",
+                        fec=False,
+                        packet_loss=0.29,
+                        complexity=0,
+                        bandwidth="wide",
+                        signal_type="voice",
+                    ),
                     "speaking": 2,
-                    "bandwidth": "wide",
-                    "signal": "voice",
                 },
             )
         ]
@@ -129,7 +131,7 @@ def test_bitrate_follows_the_channel_and_falls_back_to_64_kbps() -> None:
     async def scenario(bot: FakeBot) -> None:
         await connected(bot, VOICE)
         await connected(bot, NO_BITRATE, guild_id=OTHER_GUILD_ID)
-        bitrates = [call[2]["bitrate"] for call in bot.calls("voice_connect")]
+        bitrates = [call[2]["encoder"].bitrate for call in bot.calls("voice_connect")]
         assert bitrates == [96_000, 64_000]
 
     run(scenario)
@@ -168,7 +170,7 @@ def test_a_cached_channel_needs_no_request() -> None:
         bot.cache.apply(GuildCreate.decode(0, msgspec.json.encode(guild)))
         await connected(bot)
         assert bot.api.requests == []
-        assert bot.calls("voice_connect")[0][2]["bitrate"] == 128_000
+        assert bot.calls("voice_connect")[0][2]["encoder"].bitrate == 128_000
 
     run(scenario)
 
@@ -270,13 +272,9 @@ def test_a_second_connect_moves_the_connection_and_waits_for_ready() -> None:
                     "voice_encoder",
                     (GUILD_ID,),
                     {
-                        "bitrate": 96_000,
-                        "application": "voip",
-                        "fec": True,
-                        "packet_loss": 10,
-                        "complexity": 10,
-                        "bandwidth": "auto",
-                        "signal": "auto",
+                        "encoder": voice.EncoderSettings(
+                            bitrate=96_000, application="voip"
+                        )
                     },
                 )
             ],

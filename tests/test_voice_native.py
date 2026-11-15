@@ -66,14 +66,8 @@ def connect(
         self_deaf=False,
         timeout=timeout,
         server_change_delay=server_change_delay,
-        bitrate=bitrate,
-        application=application,
-        fec=True,
-        packet_loss=10,
-        complexity=10,
+        encoder=voice.EncoderSettings(bitrate=bitrate, application=application),
         speaking=speaking,
-        bandwidth="auto",
-        signal="auto",
     )
 
 

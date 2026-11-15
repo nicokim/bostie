@@ -220,38 +220,19 @@ pub(crate) struct NativeOpusEncoder {
 #[pymethods]
 impl NativeOpusEncoder {
     #[new]
-    #[pyo3(signature = (
-        *, rate, channels, sample, bitrate, application, fec, packet_loss, complexity,
-        bandwidth, signal,
-    ))]
-    #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (*, rate, channels, sample, encoder))]
     fn new(
         rate: u32,
         channels: u8,
         sample: Choice<SampleFormat>,
-        bitrate: u32,
-        application: Choice<Application>,
-        fec: bool,
-        packet_loss: u8,
-        complexity: u8,
-        bandwidth: Choice<Bandwidth>,
-        signal: Choice<SignalType>,
+        encoder: Encoder,
     ) -> Result<Self> {
         let format = PcmFormat {
             rate,
             channels,
             sample: sample.0,
         };
-        let settings = encoder_settings(
-            bitrate,
-            application,
-            fec,
-            packet_loss,
-            complexity,
-            bandwidth,
-            signal,
-        );
-        let encoder = FrameEncoder::new(format, settings)?;
+        let encoder = FrameEncoder::new(format, encoder.into())?;
         Ok(Self {
             encoder: Mutex::new(encoder),
             detach_bytes: half_a_second(format),
@@ -326,23 +307,30 @@ pub(crate) enum ReceiveKind {
     Packets,
 }
 
-pub(crate) fn encoder_settings(
+#[derive(FromPyObject)]
+pub(crate) struct Encoder {
     bitrate: u32,
     application: Choice<Application>,
     fec: bool,
-    packet_loss: u8,
+    packet_loss: f64,
     complexity: u8,
     bandwidth: Choice<Bandwidth>,
+    #[pyo3(attribute("signal_type"))]
     signal: Choice<SignalType>,
-) -> EncoderSettings {
-    EncoderSettings {
-        bitrate,
-        application: application.0,
-        fec,
-        packet_loss,
-        complexity,
-        bandwidth: bandwidth.0,
-        signal: signal.0,
+}
+
+impl From<Encoder> for EncoderSettings {
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn from(encoder: Encoder) -> Self {
+        Self {
+            bitrate: encoder.bitrate,
+            application: encoder.application.0,
+            fec: encoder.fec,
+            packet_loss: (encoder.packet_loss * 100.0).round_ties_even() as u8,
+            complexity: encoder.complexity,
+            bandwidth: encoder.bandwidth.0,
+            signal: encoder.signal.0,
+        }
     }
 }
 
@@ -518,4 +506,27 @@ pub(crate) fn speaking_parts(speaking: Speaking) -> (bool, f64) {
 
 fn age(now: Instant, at: Instant) -> f64 {
     now.saturating_duration_since(at).as_secs_f64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packet_loss_crosses_as_a_percent_rounded_half_to_even() {
+        let percent = |packet_loss| {
+            EncoderSettings::from(Encoder {
+                bitrate: 64_000,
+                application: Choice(Application::Audio),
+                fec: true,
+                packet_loss,
+                complexity: 10,
+                bandwidth: Choice(Bandwidth::Auto),
+                signal: Choice(SignalType::Auto),
+            })
+            .packet_loss
+        };
+
+        assert_eq!([0.0, 0.125, 0.29, 1.0].map(percent), [0, 12, 29, 100]);
+    }
 }

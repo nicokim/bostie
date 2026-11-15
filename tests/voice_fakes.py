@@ -26,7 +26,7 @@ from bostie.rest import REST
 from bostie.testing import settle
 from bostie.voice.connection import VoiceConnection, VoiceDelivery, VoiceManager
 from bostie.voice.events import VoiceEvent
-from bostie.voice.formats import Defaults, OpusApplication, Sample, SinkStall
+from bostie.voice.formats import Defaults, EncoderSettings, Sample, SinkStall
 
 if TYPE_CHECKING:
     from bostie._bridge import Bridge
@@ -391,29 +391,8 @@ class FakeCore:
         self.deliver(("voice_state", guild_id, "resuming", None, None, ""))
         self.deliver(("voice_state", guild_id, "ready", None, None, ""))
 
-    def voice_encoder(
-        self,
-        guild_id: int,
-        *,
-        bitrate: int,
-        application: OpusApplication,
-        fec: bool,
-        packet_loss: int,
-        complexity: int,
-        bandwidth: str,
-        signal: str,
-    ) -> None:
-        self._record(
-            "voice_encoder",
-            guild_id,
-            bitrate=bitrate,
-            application=application,
-            fec=fec,
-            packet_loss=packet_loss,
-            complexity=complexity,
-            bandwidth=bandwidth,
-            signal=signal,
-        )
+    def voice_encoder(self, guild_id: int, *, encoder: EncoderSettings) -> None:
+        self._record("voice_encoder", guild_id, encoder=encoder)
 
     def voice_speaking(self, guild_id: int, flags: int) -> None:
         self._record("voice_speaking", guild_id, flags)
