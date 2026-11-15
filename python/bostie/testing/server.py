@@ -139,6 +139,9 @@ class FakeDiscord(VoiceGateway):
     `cdn_requests` records the downloads of `cdn_file` URLs.
     """
 
+    requests: list[Recorded]
+    cdn_requests: list[Recorded]
+
     def __init__(
         self,
         *,
@@ -177,8 +180,7 @@ class FakeDiscord(VoiceGateway):
         self.commands: list[Json] = []
         self.guild_commands: dict[str, list[Json]] = {}
         self.put_count = 0
-        self.requests: list[Recorded] = []
-        self.cdn_requests: list[Recorded] = []
+        self.requests, self.cdn_requests = [], []
         self._cdn_files: dict[str, bytes] = {}
         self.gateway_received: asyncio.Queue[Any] = asyncio.Queue()
         self.connections: list[Connection] = []

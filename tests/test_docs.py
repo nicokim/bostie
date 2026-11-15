@@ -249,7 +249,7 @@ def test_the_event_list_names_every_event_class() -> None:
 def test_the_rest_guide_lists_every_method_of_every_bot_group() -> None:
     groups = text(DOCS / "guide" / "rest.md").split("## The groups")[1]
     rows = GROUP_ROW.findall(groups)
-    rest = REST(cast("HTTPClient", None), AllowedMentions(), Cache())
+    rest = REST(cast("HTTPClient", None), AllowedMentions(), Cache(), set())
     expected = {
         name: {
             method
