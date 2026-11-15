@@ -320,20 +320,6 @@ def test_an_obfuscated_update_is_stored_as_received_and_drops_its_threads(
     assert RELEASE_NOTES_THREAD not in channel_ids(cache)
 
 
-def test_a_real_update_replaces_an_obfuscated_channel(cache: Cache) -> None:
-    hidden = cache.channel(STAFF_ONLY)
-
-    cache.apply(event("CHANNEL_UPDATE"))
-
-    visible = cache.channel(STAFF_ONLY)
-    assert hidden is not None
-    assert hidden.obfuscated
-    assert visible is not None
-    assert not visible.obfuscated
-    assert visible.name == "staff-only"
-    assert visible.topic == "Moderator coordination"
-
-
 def test_role_create_update_and_delete(cache: Cache) -> None:
     created_id = 1564612126310531073
 

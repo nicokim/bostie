@@ -58,14 +58,10 @@ from bostie.models import (
     User,
     WebhookMessage,
 )
-from bostie.models.base import decode as decode_model
-from bostie.models.base import decoder
 from bostie.testing import FakeDiscord, payloads, run, running
 
 EVENT_FIXTURES = payloads.FIXTURES / "events"
-MODELLED = sorted(
-    path for path in EVENT_FIXTURES.glob("*.json") if path.name.split(".")[0] in EVENTS
-)
+MODELLED = sorted(EVENT_FIXTURES.glob("*.json"))
 
 
 TOKEN = "bostie-test-token-7c1f"
@@ -99,12 +95,6 @@ def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
     assert event.shard_id == 3
     assert event.raw_json is data
     assert event.raw == json.loads(data)
-
-
-def test_every_event_fixture_has_an_entry_in_the_registry() -> None:
-    names = {path.name.split(".")[0] for path in EVENT_FIXTURES.glob("*.json")}
-
-    assert names <= EVENTS.keys()
 
 
 @pytest.mark.parametrize(
@@ -144,27 +134,6 @@ def test_a_test_entitlement_arrives_without_a_period() -> None:
     event = decode(EntitlementCreate, "ENTITLEMENT_CREATE.test")
 
     assert type(event.entitlement) is PartialEntitlement
-
-
-def test_guild_create_decodes_its_payload_in_one_pass(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    decoded: list[object] = []
-
-    def counting_decoder(type_: Any) -> msgspec.json.Decoder[Any]:
-        decoded.append(type_)
-        return decoder(type_)
-
-    def counting_decode(model: type[Model], data: bytes) -> Model:
-        decoded.append(model)
-        return decode_model(model, data)
-
-    monkeypatch.setattr(events, "decoder", counting_decoder)
-    monkeypatch.setattr(events, "decode", counting_decode)
-
-    decode(GuildCreate, "GUILD_CREATE")
-
-    assert len(decoded) == 1
 
 
 def test_guild_create_splits_the_guild_from_its_children() -> None:

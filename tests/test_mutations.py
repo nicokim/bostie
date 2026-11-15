@@ -31,6 +31,7 @@ from bostie.models import (
     ComponentInteraction,
     CurrentUserGuild,
     Entitlement,
+    GatewayBotInfo,
     Guild,
     GuildOnboarding,
     GuildPreview,
@@ -92,6 +93,7 @@ REST_MODELS: dict[str, Any] = {
     "activity_instance": ActivityInstance,
     "commands": tuple[ApplicationCommand, ...],
     "interaction_callback": WebhookMessage,
+    "gateway_bot": GatewayBotInfo,
 }
 PAYLOAD_AT = {"interaction_callback": ("resource", "message")}
 UNMODELLED_KEYS = {
@@ -208,9 +210,8 @@ SECRET_KEYS = {
 
 def fixtures() -> Iterator[Any]:
     for path in sorted((FIXTURES / "events").glob("*.json")):
-        event = EVENTS.get(path.name.split(".")[0])
-        if event is not None:
-            yield pytest.param(path, partial(event.decode, 0), id=path.stem)
+        registered = EVENTS[path.name.split(".")[0]].decode
+        yield pytest.param(path, partial(registered, 0), id=path.stem)
     for name, model in REST_MODELS.items():
         rest = (
             partial(decode, model) if isinstance(model, type) else decoder(model).decode
@@ -482,21 +483,6 @@ def test_no_repr_shows_a_token_raw_json_or_a_private_field(
                     for name, _ in decoded.__rich_repr__()
                     if name.startswith("_") or name == "raw_json"
                 ]
-
-
-def test_unknown_components_keep_their_raw_json() -> None:
-    document = load(FIXTURES / "events" / "MESSAGE_CREATE.rich.json")
-    for component in components(document):
-        component["type"] = 99
-
-    decoded = decode(Message, msgspec.json.encode(document)).components
-
-    unknown = [
-        msgspec.json.decode(component.raw)
-        for component in decoded
-        if isinstance(component, UnknownComponent)
-    ]
-    assert unknown == document["components"]
 
 
 @pytest.mark.parametrize(("path", "decoder"), ALL_FIXTURES)

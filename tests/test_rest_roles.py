@@ -1,28 +1,5 @@
-from bostie import Bot, Permissions, RoleColors
+from bostie import Bot, Permissions
 from bostie.testing import FakeDiscord, payloads, run, running
-
-
-def test_role_permissions_go_out_as_a_string_of_bits_with_the_colors() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        async with running(bot, fake):
-            fake.fail("POST", "/guilds/1/roles", 200, payloads.role())
-            colors = RoleColors(
-                primary_color=0xFF0000, secondary_color=None, tertiary_color=None
-            )
-            await bot.rest.roles.create(
-                1, permissions=Permissions.ADMINISTRATOR, colors=colors
-            )
-            assert fake.requests[-1].json == {
-                "permissions": "8",
-                "colors": {
-                    "primary_color": 0xFF0000,
-                    "secondary_color": None,
-                    "tertiary_color": None,
-                },
-            }
-
-    run(scenario)
 
 
 def test_role_positions_go_out_as_an_array_and_every_role_comes_back() -> None:

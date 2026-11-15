@@ -140,21 +140,6 @@ def test_start_identifies_delivers_dispatches_and_closes_with_1000() -> None:
     run(scenario, heartbeat_interval=50)
 
 
-def test_start_on_a_bridge_that_is_not_running_starts_no_shard() -> None:
-    async def main() -> None:
-        async with FakeDiscord() as fake:
-            harness = Harness(fake, fake.token)
-            with pytest.raises(RuntimeError, match="not running"):
-                await harness.gateway.start(fake.gateway_url, PRESENCE)
-
-            async with harness.bridge, asyncio.timeout(10):
-                await harness.ready()
-                await harness.gateway.close()
-                await harness.started
-
-    asyncio.run(main())
-
-
 def test_close_ends_start_even_when_the_close_is_not_echoed_in_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

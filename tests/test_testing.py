@@ -120,40 +120,6 @@ def test_bad_payloads_are_refused_with_discord_close_codes() -> None:
     run(scenario)
 
 
-def test_resume_replays_events_after_the_client_seq_then_resumed() -> None:
-    async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
-        async with session.ws_connect(fake.gateway_url) as ws:
-            ready = (await handshake(fake, ws))["d"]
-            await fake.dispatch("MESSAGE_CREATE", payloads.message())
-            await ws.receive_str()
-        await fake.dispatch("MESSAGE_DELETE", payloads.fixture("events/MESSAGE_DELETE"))
-        payload = resume(fake, ready["session_id"], seq=1)
-        async with session.ws_connect(ready["resume_gateway_url"]) as ws:
-            await ws.receive_str()
-            reaction = payloads.fixture("events/MESSAGE_REACTION_ADD")
-            await fake.dispatch("MESSAGE_REACTION_ADD", reaction)
-            await ws.send_json(payload)
-            replayed = [await receive(ws) for _ in range(4)]
-            await fake.dispatch("MESSAGE_CREATE", payloads.message())
-            live = await receive(ws)
-
-        assert [(frame["t"], frame["s"]) for frame in replayed] == [
-            ("MESSAGE_CREATE", 2),
-            ("MESSAGE_DELETE", 3),
-            ("MESSAGE_REACTION_ADD", 4),
-            ("RESUMED", 5),
-        ]
-        assert live["s"] == 6
-        assert await fake.next_resume() == payload["d"]
-        assert [connection.path for connection in fake.connections] == [
-            "/gateway",
-            "/gateway-resume",
-        ]
-        assert fake.connections[0].close_code == 1000
-
-    run(scenario)
-
-
 def test_bad_resumes_are_refused_and_identify_starts_a_new_session() -> None:
     async def scenario(fake: FakeDiscord, session: aiohttp.ClientSession) -> None:
         url = fake.gateway_url

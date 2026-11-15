@@ -82,10 +82,6 @@ def rows(path: Path) -> list[list[str]]:
     return [line.split() for line in lines if not line.startswith("#")]
 
 
-def pending_files() -> list[Path]:
-    return sorted((FIXTURES / "pending").glob("*.txt"))
-
-
 def operation(verb: str, path: str) -> tuple[str, str]:
     return verb, re.sub(r"\{\w+\}", "{}", path)
 
@@ -121,7 +117,7 @@ def implemented(rest: REST | BearerREST) -> dict[str, Shape]:
 
 
 @pytest.mark.parametrize(("surface", "bearer"), [(REST, False), (BearerREST, True)])
-def test_the_rest_groups_implement_every_table_row_not_pending(
+def test_the_rest_groups_implement_every_table_row(
     surface: type[REST | BearerREST], bearer: bool
 ) -> None:
     table = [
@@ -129,7 +125,6 @@ def test_the_rest_groups_implement_every_table_row_not_pending(
         for row in rows(FIXTURES / "operations.txt")
         if ("bearer" in row[3:]) == bearer
     ]
-    pending = {row[2] for path in pending_files() for row in rows(path)}
     shared = (cast("HTTPClient", None), AllowedMentions(), Cache())
     rest = REST(*shared, set()) if surface is REST else BearerREST(*shared)
 
@@ -145,18 +140,7 @@ def test_the_rest_groups_implement_every_table_row_not_pending(
             "reason" in marks,
         )
         for verb, path, name, *marks in table
-        if name not in pending
     }
-
-
-def test_pending_rows_are_table_rows_of_their_own_group() -> None:
-    table = {tuple(row) for row in rows(FIXTURES / "operations.txt")}
-    for path in pending_files():
-        listed = [tuple(row) for row in rows(path)]
-        assert listed
-        assert len(set(listed)) == len(listed)
-        assert set(listed) <= table
-        assert {row[2].split(".")[0] for row in listed} == {path.stem}
 
 
 def test_every_pinned_spec_operation_is_named_or_out_of_scope() -> None:

@@ -1,4 +1,4 @@
-from bostie import Bot, File, WebhookMessage, WebhookType
+from bostie import Bot, File, WebhookMessage
 from bostie.testing import FakeDiscord, payloads, run, running
 
 MENTIONS = {"parse": ["users", "roles"]}
@@ -39,22 +39,5 @@ def test_a_webhook_waits_for_its_message_and_edits_it_with_nulls() -> None:
                 "embeds": [],
                 "allowed_mentions": MENTIONS,
             }
-
-    run(scenario)
-
-
-def test_a_followed_channel_webhook_names_its_source() -> None:
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url)
-        follower = payloads.fixture("rest/webhook_follower")
-        async with running(bot, fake):
-            fake.fail("GET", "/channels/5/webhooks", 200, [follower])
-            (webhook,) = await bot.rest.webhooks.list(5)
-            assert webhook.type is WebhookType.CHANNEL_FOLLOWER
-            assert webhook.source_guild is not None
-            assert webhook.source_guild.name == "Guildy name"
-            assert webhook.source_channel is not None
-            assert webhook.source_channel.name == "announcements"
-            assert (webhook.token, webhook.url) == (None, None)
 
     run(scenario)

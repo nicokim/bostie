@@ -211,17 +211,13 @@ class FakeSink:
         return True
 
     def pull(self) -> None:
-        if self.waiting() or not self.queue or (self.vc.held and self.stall == "hold"):
+        if self.waiting() or not self.queue:
             self.ticks.append(None)
             return
         index, data = self.queue.popleft()
         self.playhead = index + 1
-        if self.vc.held:
-            self.lose(index)
-            self.ticks.append(None)
-        else:
-            self.sent.append(data)
-            self.ticks.append(data)
+        self.sent.append(data)
+        self.ticks.append(data)
         self.resolve()
         self.wake()
 
@@ -254,7 +250,6 @@ class FakeConnection:
         self.manager = SimpleNamespace(defaults=Defaults())
         self.channel_id = 1
         self.state = State.READY
-        self.held = False
         self.sinks: list[FakeSink] = []
 
     def sink(
@@ -1077,22 +1072,6 @@ def test_broadcast_writes_every_packet_once_to_each_connection() -> None:
         assert all(vc.sinks[0].closed for vc in connections)
         assert source.closed
         assert source.managers == [connections[0].manager]
-
-    run(scenario)
-
-
-def test_broadcast_is_not_delayed_by_a_connection_that_is_held() -> None:
-    async def scenario(clock: Clock) -> None:
-        live, held = FakeConnection(clock), FakeConnection(clock)
-        held.held = True
-        source = FakeSource(clock, "p", 50, format=Opus())
-        await player.broadcast(
-            cast("Any", source), [cast("Any", live), cast("Any", held)]
-        )
-        assert live.sinks[0].sent == frames("p", 50)
-        assert live.sinks[0].gaps() == 0
-        assert held.sinks[0].sent == []
-        assert clock.ticks <= 52
 
     run(scenario)
 

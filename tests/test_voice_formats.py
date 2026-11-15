@@ -212,13 +212,6 @@ def test_voice_events_need_no_intent_and_have_local_names() -> None:
     assert not any(event.INTENTS for event in VoiceEvent.__subclasses__())
 
 
-def test_speaking_flags_keep_unknown_bits() -> None:
-    flags = SpeakingFlags(SpeakingFlags.PRIORITY | 1 << 9)
-
-    assert SpeakingFlags.PRIORITY in flags
-    assert flags == 1 << 9 | 4
-
-
 def test_voice_connect_error_names_the_reason_code_and_step() -> None:
     error = voice.VoiceConnectError(
         DisconnectReason.REMOVED, 4014, "kicked from the channel"

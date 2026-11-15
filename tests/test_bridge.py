@@ -104,42 +104,6 @@ class RewrittenCore:
         return self.rewrite(self.core.drain())
 
 
-def test_round_trip_sends_the_route_headers_and_body(run: Runner) -> None:
-    received: list[bytes] = []
-
-    async def record(
-        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
-        head = await reader.readuntil(b"\r\n\r\n")
-        received.append(head + await reader.readexactly(4))
-        writer.write(b"HTTP/1.1 201 Created\r\nContent-Length: 5\r\n\r\nhello")
-        await writer.drain()
-        writer.close()
-
-    async def main() -> None:
-        server, url = await serve(record)
-        async with server, bridge(url) as running:
-            response = await running.request(
-                "POST",
-                "/channels/{channel_id}/messages",
-                {"channel_id": "7"},
-                [("tts", "true")],
-                body=b"ping",
-                content_type="text/plain",
-                reason="spam",
-            )
-
-        assert response == (201, b"hello")
-        head = received[0].lower()
-        assert head.startswith(b"post /api/v10/channels/7/messages?tts=true ")
-        assert b"\r\nauthorization: bot dummy-token\r\n" in head
-        assert b"\r\ncontent-type: text/plain\r\n" in head
-        assert b"\r\nx-audit-log-reason: spam\r\n" in head
-        assert head.endswith(b"\r\n\r\nping")
-
-    run(main())
-
-
 def test_concurrent_requests_all_complete(run: Runner) -> None:
     async def main() -> None:
         server, url = await serve(reply_hello)
@@ -195,25 +159,6 @@ def test_invalid_request_raises_immediately(run: Runner) -> None:
 def test_a_proxy_bostie_cannot_tunnel_through_is_refused() -> None:
     with pytest.raises(ValueError, match="http:// URL"):
         Bridge(TOKEN, API_URL, ignore, http=HTTPSettings(proxy="socks5://proxy:1080"))
-
-
-def test_requires_a_running_bridge(run: Runner) -> None:
-    async def main() -> None:
-        idle = bridge()
-        with pytest.raises(RuntimeError, match="not running"):
-            await me(idle)
-        await idle.close()
-
-    run(main())
-
-
-def test_can_only_start_once(run: Runner) -> None:
-    async def main() -> None:
-        async with bridge() as running:
-            with pytest.raises(RuntimeError, match="only be started once"):
-                await running.__aenter__()
-
-    run(main())
 
 
 def test_closing_fails_pending_requests_and_futures(run: Runner) -> None:

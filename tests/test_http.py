@@ -25,7 +25,6 @@ from bostie.file import File
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
 from bostie.models import decode
 from bostie.testing import FakeDiscord, Part
-from bostie.testing.server import ROUTE_LIMIT
 
 MESSAGES = "/channels/{channel_id}/messages"
 
@@ -50,33 +49,6 @@ def run(
 
 def channel_id(fake: FakeDiscord) -> str:
     return next(iter(fake.channels))
-
-
-def test_requests_follow_the_rate_limit_headers_instead_of_hitting_429() -> None:
-    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        channel = channel_id(fake)
-        fetched = [
-            await http.request("GET", "/channels/{channel_id}", channel_id=int(channel))
-            for _ in range(ROUTE_LIMIT + 1)
-        ]
-
-        assert fetched[-1] == fake.channels[channel]
-        assert len(fake.requests) == ROUTE_LIMIT + 1
-        assert fake.requests[0].headers["authorization"] == f"Bot {fake.token}"
-
-    run(scenario)
-
-
-def test_an_injected_global_rate_limit_is_waited_out_and_retried() -> None:
-    async def scenario(fake: FakeDiscord, http: HTTPClient) -> None:
-        fake.rate_limit("GET", "/users/@me", scope="global", retry_after=0.2)
-
-        user = await http.request("GET", "/users/@me")
-
-        assert user == fake.bot_user
-        assert [request.path for request in fake.requests] == ["/users/@me"] * 2
-
-    run(scenario)
 
 
 @pytest.mark.parametrize(

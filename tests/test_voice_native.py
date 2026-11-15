@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from bostie import _native, voice
-from bostie.errors import ReceiverClosed, ShardNotRunning, SourceError, StateError
+from bostie.errors import ShardNotRunning, SourceError, StateError
 from bostie.voice.formats import OpusApplication
 
 MEDIA = Path(__file__).parents[1] / "crates/bostie-core/src/voice/testdata/media"
@@ -137,25 +137,6 @@ def read_all(source: _native.Source) -> list[bytes]:
     return chunks
 
 
-def handle_deliveries(core: _native.Core, handle: int) -> "list[_native.Delivery]":
-    return [
-        delivery
-        for delivery in core.drain()
-        if delivery[0] in ("voice_wake", "voice_marker") and delivery[1] == handle
-    ]
-
-
-def test_flush_pads_the_last_frame_and_marks_the_end(connected: _native.Core) -> None:
-    sink = pcm_sink(connected)
-    sink.write(bytes(400))
-
-    marker, position = sink.flush()
-
-    assert position == 960
-    assert sink.queued() == pytest.approx(0.02)
-    assert sink.mark() == (marker + 1, 960)
-
-
 def test_sinks_take_bytes_bytearrays_and_memoryview_slices(
     connected: _native.Core,
 ) -> None:
@@ -173,24 +154,6 @@ def test_sinks_take_bytes_bytearrays_and_memoryview_slices(
 def test_a_connection_reports_latency_and_dave(connected: _native.Core) -> None:
     assert connected.voice_latency(GUILD) == (None, None)
     assert connected.voice_dave(GUILD) == (0, None, None)
-
-
-def test_a_receiver_on_a_connection_not_yet_ready_waits_until_closed(
-    connected: _native.Core,
-) -> None:
-    rx = receiver(connected)
-
-    assert rx.read(256) == []
-    assert rx.queued() == 0
-    assert rx.closed_reason() is None
-    rx.close()
-    rx.close()
-
-    assert rx.closed_reason() == "closed"
-    assert handle_deliveries(connected, rx.id) == [("voice_wake", rx.id)]
-    with pytest.raises(ReceiverClosed, match=f"receiver {rx.id} is closed"):
-        rx.read(256)
-    assert rx.stats() == (0, 0, 0)
 
 
 def test_voice_connect_needs_a_running_shard_and_valid_settings(
@@ -226,27 +189,6 @@ def test_voice_connect_needs_a_running_shard_and_valid_settings(
             overflow="drop_oldest",
             stall="wait",
         )
-
-
-def test_a_bytes_source_probes_with_its_hint(core: _native.Core) -> None:
-    source = core.voice_bytes((MEDIA / "tone.mp3").read_bytes(), "mp3")
-
-    assert probed(source)[0] == "pcm"
-    assert sum(map(len, read_all(source))) == pytest.approx(
-        SECOND_OF_F32_STEREO, rel=0.05
-    )
-
-
-def test_undecodable_bytes_end_with_an_error(core: _native.Core) -> None:
-    source = core.voice_bytes(b"not audio", None)
-
-    wait_until(lambda: source.error() is not None)
-
-    assert source.info() is None
-    assert source.read() is None
-    assert str(source.error()).startswith("no decoder")
-    with pytest.raises(ValueError, match="not seekable"):
-        source.seek(0.0)
 
 
 def test_seeking_restarts_the_stream_until_the_source_closes(

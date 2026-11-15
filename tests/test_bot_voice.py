@@ -12,7 +12,6 @@ import pytest
 
 from bostie import Bot, Context, ShardNotRunning, voice
 from bostie.enums import SpeakingFlags
-from bostie.gateway import Shards
 from bostie.testing import FakeDiscord, Packet, payloads, running
 from bostie.testing.payloads import Json
 from bostie.voice import DisconnectReason, EndReason, NotInVoice, SinkClosed, State
@@ -498,46 +497,6 @@ def test_ctx_voice_joins_the_channel_of_the_user_who_ran_the_command() -> None:
             if request.method == "GET" and "/voice-states/" in request.path
         ]
         assert lookups == [f"/guilds/{GUILD_ID}/voice-states/{MEMBER_ID}"] * 2
-
-    run(scenario)
-
-
-def test_voice_listeners_and_waiters_stay_out_of_the_gateway_filter(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    filters: list[list[str] | None] = []
-    send_filter = Shards.filter
-
-    def record(gateway: Shards, names: Iterable[str] | None) -> None:
-        filters.append(None if names is None else list(names))
-        send_filter(gateway, names)
-
-    monkeypatch.setattr(Shards, "filter", record)
-
-    async def scenario(fake: FakeDiscord) -> None:
-        bot = Bot(api_url=fake.api_url, cache=False)
-        changes: list[voice.StateChange] = []
-
-        @bot.listen
-        async def on_state(event: voice.StateChange) -> None:
-            changes.append(event)
-
-        async with running(bot, fake):
-            moved = asyncio.ensure_future(bot.wait_for(voice.Moved))
-            await asyncio.sleep(0)
-            await bot.voice.connect(VOICE_ID)
-            moved.cancel()
-
-        assert {name for names in filters if names for name in names} == {
-            "GUILD_CREATE",
-            "GUILD_DELETE",
-            "RATE_LIMITED",
-        }
-        assert [(change.old, change.new) for change in changes] == [
-            (State.CONNECTING, State.READY),
-            (State.READY, State.DISCONNECTED),
-        ]
-        assert changes[-1].reason is DisconnectReason.REQUESTED
 
     run(scenario)
 

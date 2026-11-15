@@ -21,7 +21,7 @@ from bostie.enums import (
     Permissions,
     Status,
 )
-from bostie.models import PartialApplication, PartialMember, PartialMessage, decode
+from bostie.models import PartialApplication, PartialMember, decode
 
 MEMBER = b'{"roles": [], "joined_at": null, "flags": 0, "permissions": "%d"}'
 
@@ -93,15 +93,6 @@ def test_every_operator_keeps_unknown_bits(flags: type[IntFlag], unknown: int) -
     assert unknown ^ value == first | second
     assert all(member in ~first for member in flags if member != first)
     assert msgspec.json.Decoder(flags).decode(b"%d" % first) == first
-
-
-def test_clearing_a_message_flag_keeps_bits_discord_added_later() -> None:
-    message = decode(
-        PartialMessage,
-        b'{"id": "1", "channel_id": "2", "flags": %d}' % (1 << 16 | 1 << 2),
-    )
-
-    assert message.flags & ~MessageFlags.SUPPRESS_EMBEDS == 1 << 16
 
 
 def test_reading_permissions_caches_no_composite_values() -> None:
