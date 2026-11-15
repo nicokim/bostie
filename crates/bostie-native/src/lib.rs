@@ -1,6 +1,7 @@
 #![expect(clippy::needless_pass_by_value)]
 
 mod log;
+mod names;
 mod voice;
 
 use std::collections::HashMap;
@@ -10,26 +11,26 @@ use std::time::Duration;
 
 use bostie_core::voice::Voice;
 use bostie_core::voice::types::{
-    Application, Bandwidth, ConnectRequest, DisconnectReason, Handle, Overflow, ReceiveOptions,
-    ReceiveStall, SampleFormat, SignalType, SourceSpec, StallPolicy,
+    Application, Bandwidth, ConnectRequest, Handle, Overflow, ReceiveOptions, ReceiveStall,
+    SampleFormat, SignalType, SourceSpec, StallPolicy,
 };
 use bostie_core::{
-    Auth, ChannelId, Core, CoreError, Delivery, FailureKind, Gateway, GuildId, HttpSettings,
-    IdentifyLimit, RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
+    Auth, ChannelId, Core, CoreError, Delivery, Gateway, GuildId, HttpSettings, IdentifyLimit,
+    RawBellHandle, RestRequest, SavedSession, ShardId, Ticket, UserId, describe,
 };
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyString};
+use pyo3::types::{PyBytes, PyList};
 
 use crate::errors::{
     AlreadyConnected, DaveError, GatewayQueueFull, ReceiverClosed, ShardNotRunning, SinkClosed,
     StartupError, StateError, VoiceNotConnected, VoiceQueueFull,
 };
+use crate::names::{Choice, Named};
 use crate::voice::{
-    Choice, NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, rtcp_packet,
-    speaking_parts,
+    NativeReceiver, NativeSink, NativeSource, ReceiveKind, SinkKind, rtcp_packet, speaking_parts,
 };
 
 #[global_allocator]
@@ -486,7 +487,7 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         } => (
             intern!(py, "failure"),
             u64::from(ticket),
-            failure_kind(py, kind),
+            kind.name(),
             detail,
         )
             .into_bound_py_any(py),
@@ -548,8 +549,8 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         } => (
             intern!(py, "voice_state"),
             u64::from(guild),
-            status.as_str(),
-            reason.map(DisconnectReason::as_str),
+            status.name(),
+            reason.map(Named::name),
             code,
             &*detail,
         )
@@ -628,7 +629,7 @@ fn to_python_delivery(py: Python<'_>, delivery: Delivery) -> PyResult<Bound<'_, 
         } => (
             intern!(py, "voice_stalled"),
             u64::from(guild),
-            direction.as_str(),
+            direction.name(),
             stalled,
             duration.as_secs_f64(),
         )
@@ -697,16 +698,6 @@ fn seconds(name: &str, value: f64) -> Result<Duration> {
         .map_err(|error| CoreError::InvalidRequest(format!("{name}: {error}")).into())
 }
 
-fn failure_kind(py: Python<'_>, kind: FailureKind) -> &Bound<'_, PyString> {
-    match kind {
-        FailureKind::Transport => intern!(py, FailureKind::Transport.as_str()),
-        FailureKind::InvalidToken => intern!(py, FailureKind::InvalidToken.as_str()),
-        FailureKind::NoToken => intern!(py, FailureKind::NoToken.as_str()),
-        FailureKind::RequestBudget => intern!(py, FailureKind::RequestBudget.as_str()),
-        FailureKind::Bug => intern!(py, FailureKind::Bug.as_str()),
-    }
-}
-
 #[expect(clippy::same_name_method)]
 mod errors {
     pyo3::import_exception!(bostie.errors, StateError);
@@ -762,15 +753,6 @@ impl From<Error> for PyErr {
     }
 }
 
-macro_rules! variant_names {
-    ($kind:ident { $($variant:ident),+ $(,)? }) => {{
-        let name = |value: $kind| match value {
-            $($kind::$variant)|+ => value.as_str(),
-        };
-        [$(name($kind::$variant)),+]
-    }};
-}
-
 #[pymodule]
 mod _native {
     use bostie_core::voice::Ended;
@@ -779,6 +761,9 @@ mod _native {
         SampleFormat, SignalType, StallPolicy, VoiceStatus,
     };
     use pyo3::prelude::*;
+
+    use super::names::names;
+    use super::voice::{ReceiveKind, SinkKind};
 
     #[pymodule_export]
     use super::NativeCore;
@@ -800,7 +785,6 @@ mod _native {
     fn verify_signature(public_key: &str, signature: &str, timestamp: &str, body: &[u8]) -> bool {
         bostie_core::verify_signature(public_key, signature, timestamp, body)
     }
-    use super::voice::{ReceiveKind, SinkKind, names};
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -813,42 +797,10 @@ mod _native {
         module.add("SINK_STALLS", names::<StallPolicy>())?;
         module.add("RECEIVE_STALLS", names::<ReceiveStall>())?;
         module.add("OVERFLOWS", names::<Overflow>())?;
-        module.add(
-            "VOICE_STATES",
-            variant_names!(VoiceStatus {
-                Connecting,
-                Ready,
-                Resuming,
-                Reconnecting,
-                Disconnected,
-            }),
-        )?;
-        module.add(
-            "DISCONNECT_REASONS",
-            variant_names!(DisconnectReason {
-                Requested,
-                Removed,
-                CallTerminated,
-                RateLimited,
-                Timeout,
-                SessionInvalid,
-                AuthenticationFailed,
-                DaveRequired,
-                DaveFailed,
-                ProtocolError,
-                Closed,
-            }),
-        )?;
-        module.add("DIRECTIONS", variant_names!(Direction { Send, Receive }))?;
-        module.add(
-            "CLOSED_REASONS",
-            variant_names!(Ended {
-                Closed,
-                Disconnected,
-                Moved,
-                Reconnecting,
-            }),
-        )?;
+        module.add("VOICE_STATES", names::<VoiceStatus>())?;
+        module.add("DISCONNECT_REASONS", names::<DisconnectReason>())?;
+        module.add("DIRECTIONS", names::<Direction>())?;
+        module.add("CLOSED_REASONS", names::<Ended>())?;
         Ok(())
     }
 

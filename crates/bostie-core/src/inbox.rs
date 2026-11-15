@@ -144,18 +144,6 @@ pub enum FailureKind {
     Bug,
 }
 
-impl FailureKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Transport => "transport",
-            Self::InvalidToken => "invalid_token",
-            Self::NoToken => "no_token",
-            Self::RequestBudget => "request_budget",
-            Self::Bug => "bug",
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct LogSink(Weak<Inbox>);
 

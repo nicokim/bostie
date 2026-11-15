@@ -3,12 +3,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use bostie_core::voice::types::{
-    Application, Bandwidth, EncoderSettings, Filters, Overflow, PcmFormat, ReceiveFormat,
-    ReceiveStall, SampleFormat, SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
+    Application, Bandwidth, EncoderSettings, Filters, PcmFormat, ReceiveFormat, SampleFormat,
+    SignalType, SinkFormat, SinkOptions, Speaking, StallPolicy,
 };
 use bostie_core::voice::{
-    Ended, FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, RtcpPacket, Sink, SinkStats,
-    Source, SourceRead,
+    FrameEncoder, Item, ReceiveRead, Receiver, ReceiverStats, RtcpPacket, Sink, SinkStats, Source,
+    SourceRead,
 };
 use bostie_core::{CoreError, UserId};
 use pyo3::IntoPyObjectExt;
@@ -17,7 +17,8 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::{Error, Result, seconds};
+use crate::names::{Choice, Named};
+use crate::{Result, seconds};
 
 const SINK_DETACH_BYTES: usize = 1 << 20;
 
@@ -119,7 +120,7 @@ impl NativeSource {
         let info = self.0.info()?;
         Ok(info.map(|info| {
             (
-                info.kind.as_str(),
+                info.kind.name(),
                 info.duration.map(|duration| duration.as_secs_f64()),
                 info.seekable,
             )
@@ -202,7 +203,7 @@ impl NativeReceiver {
     }
 
     fn closed_reason(&self) -> Option<&'static str> {
-        self.0.ended().map(Ended::as_str)
+        self.0.ended().map(Named::name)
     }
 
     fn close(&self) {
@@ -313,80 +314,9 @@ pub(crate) fn voice_message<'py>(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct Choice<T>(pub(crate) T);
-
-pub(crate) trait Choices: Copy + 'static {
-    const OPTION: &'static str;
-    const NAMES: &'static [(&'static str, Self)];
-}
-
-impl<T: Choices> FromPyObject<'_, '_> for Choice<T> {
-    type Error = PyErr;
-
-    fn extract(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        let name = <&str>::extract(obj)?;
-        T::NAMES
-            .iter()
-            .find(|(known, _)| *known == name)
-            .map(|&(_, value)| Self(value))
-            .ok_or_else(|| unknown(T::OPTION, name).into())
-    }
-}
-
-pub(crate) fn names<T: Choices>() -> Vec<&'static str> {
-    T::NAMES.iter().map(|&(name, _)| name).collect()
-}
-
-impl Choices for Application {
-    const OPTION: &'static str = "application";
-    const NAMES: &'static [(&'static str, Self)] = &[
-        ("audio", Self::Audio),
-        ("voip", Self::Voip),
-        ("lowdelay", Self::LowDelay),
-    ];
-}
-
-impl Choices for Bandwidth {
-    const OPTION: &'static str = "bandwidth";
-    const NAMES: &'static [(&'static str, Self)] = &[
-        ("auto", Self::Auto),
-        ("narrow", Self::Narrow),
-        ("medium", Self::Medium),
-        ("wide", Self::Wide),
-        ("superwide", Self::SuperWide),
-        ("full", Self::Full),
-    ];
-}
-
-impl Choices for SignalType {
-    const OPTION: &'static str = "signal_type";
-    const NAMES: &'static [(&'static str, Self)] = &[
-        ("auto", Self::Auto),
-        ("voice", Self::Voice),
-        ("music", Self::Music),
-    ];
-}
-
-impl Choices for SampleFormat {
-    const OPTION: &'static str = "sample";
-    const NAMES: &'static [(&'static str, Self)] =
-        &[("s16le", Self::S16Le), ("f32le", Self::F32Le)];
-}
-
-#[derive(Clone, Copy)]
 pub(crate) enum SinkKind {
     Pcm,
     Opus,
-}
-
-impl Choices for SinkKind {
-    const OPTION: &'static str = "kind";
-    const NAMES: &'static [(&'static str, Self)] = &[("pcm", Self::Pcm), ("opus", Self::Opus)];
-}
-
-impl Choices for StallPolicy {
-    const OPTION: &'static str = "stall";
-    const NAMES: &'static [(&'static str, Self)] = &[("hold", Self::Hold), ("drop", Self::Drop)];
 }
 
 #[derive(Clone, Copy)]
@@ -394,28 +324,6 @@ pub(crate) enum ReceiveKind {
     Pcm,
     Opus,
     Packets,
-}
-
-impl Choices for ReceiveKind {
-    const OPTION: &'static str = "kind";
-    const NAMES: &'static [(&'static str, Self)] = &[
-        ("pcm", Self::Pcm),
-        ("opus", Self::Opus),
-        ("packets", Self::Packets),
-    ];
-}
-
-impl Choices for Overflow {
-    const OPTION: &'static str = "overflow";
-    const NAMES: &'static [(&'static str, Self)] = &[
-        ("drop_oldest", Self::DropOldest),
-        ("drop_newest", Self::DropNewest),
-    ];
-}
-
-impl Choices for ReceiveStall {
-    const OPTION: &'static str = "stall";
-    const NAMES: &'static [(&'static str, Self)] = &[("wait", Self::Wait), ("end", Self::End)];
 }
 
 pub(crate) fn encoder_settings(
@@ -610,8 +518,4 @@ pub(crate) fn speaking_parts(speaking: Speaking) -> (bool, f64) {
 
 fn age(now: Instant, at: Instant) -> f64 {
     now.saturating_duration_since(at).as_secs_f64()
-}
-
-fn unknown(name: &str, value: &str) -> Error {
-    CoreError::InvalidRequest(format!("unknown {name} {value:?}")).into()
 }

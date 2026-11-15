@@ -57,17 +57,6 @@ pub enum Ended {
     Reconnecting,
 }
 
-impl Ended {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Closed => "closed",
-            Self::Disconnected => "disconnected",
-            Self::Moved => "moved",
-            Self::Reconnecting => "reconnecting",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReceiveRead {
     Pending,

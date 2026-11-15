@@ -27,15 +27,6 @@ pub enum SourceKind {
     Opus,
 }
 
-impl SourceKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pcm => "pcm",
-            Self::Opus => "opus",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tags {
     pub title: Option<String>,

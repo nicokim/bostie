@@ -54,7 +54,7 @@ pub use self::rtcp::{ReceptionReport, RtcpPacket};
 pub use self::sink::{Sink, SinkStats};
 use self::source::http::Http;
 pub use self::source::waveform::voice_message;
-pub use self::source::{Source, SourceRead};
+pub use self::source::{Source, SourceKind, SourceRead};
 use self::tap::GatewayTap;
 use self::types::{
     ConnectRequest, DisconnectReason, EncoderSettings, FRAME, ReceiveOptions, SPEECH_HANGOVERS,
@@ -518,7 +518,7 @@ fn finish(shared: &Shared, info: &Arc<Info>, media: &Media, ending: Ending) {
     {
         debug!(%error, guild = %info.guild, "the voice leave was not queued");
     }
-    debug!(guild = %info.guild, reason = ending.reason.as_str(), "voice connection ended");
+    debug!(guild = %info.guild, reason = ?ending.reason, "voice connection ended");
     shared.inbox.push(Delivery::VoiceState {
         guild: info.guild,
         status: VoiceStatus::Disconnected,

@@ -54,18 +54,6 @@ pub enum VoiceStatus {
     Disconnected,
 }
 
-impl VoiceStatus {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Connecting => "connecting",
-            Self::Ready => "ready",
-            Self::Resuming => "resuming",
-            Self::Reconnecting => "reconnecting",
-            Self::Disconnected => "disconnected",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisconnectReason {
     Requested,
@@ -81,37 +69,10 @@ pub enum DisconnectReason {
     Closed,
 }
 
-impl DisconnectReason {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Requested => "requested",
-            Self::Removed => "removed",
-            Self::CallTerminated => "call_terminated",
-            Self::RateLimited => "rate_limited",
-            Self::Timeout => "timeout",
-            Self::SessionInvalid => "session_invalid",
-            Self::AuthenticationFailed => "authentication_failed",
-            Self::DaveRequired => "dave_required",
-            Self::DaveFailed => "dave_failed",
-            Self::ProtocolError => "protocol_error",
-            Self::Closed => "closed",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Send,
     Receive,
-}
-
-impl Direction {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Send => "send",
-            Self::Receive => "receive",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -594,63 +555,6 @@ mod tests {
             Err(CoreError::InvalidRequest(message)) => message,
             other => panic!("expected InvalidRequest, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn names_cross_to_python_in_lowercase_snake_case() {
-        let statuses = [
-            VoiceStatus::Connecting,
-            VoiceStatus::Ready,
-            VoiceStatus::Resuming,
-            VoiceStatus::Reconnecting,
-            VoiceStatus::Disconnected,
-        ]
-        .map(VoiceStatus::as_str);
-        let reasons = [
-            DisconnectReason::Requested,
-            DisconnectReason::Removed,
-            DisconnectReason::CallTerminated,
-            DisconnectReason::RateLimited,
-            DisconnectReason::Timeout,
-            DisconnectReason::SessionInvalid,
-            DisconnectReason::AuthenticationFailed,
-            DisconnectReason::DaveRequired,
-            DisconnectReason::DaveFailed,
-            DisconnectReason::ProtocolError,
-            DisconnectReason::Closed,
-        ]
-        .map(DisconnectReason::as_str);
-
-        assert_eq!(
-            statuses,
-            [
-                "connecting",
-                "ready",
-                "resuming",
-                "reconnecting",
-                "disconnected"
-            ]
-        );
-        assert_eq!(
-            reasons,
-            [
-                "requested",
-                "removed",
-                "call_terminated",
-                "rate_limited",
-                "timeout",
-                "session_invalid",
-                "authentication_failed",
-                "dave_required",
-                "dave_failed",
-                "protocol_error",
-                "closed",
-            ]
-        );
-        assert_eq!(
-            [Direction::Send, Direction::Receive].map(Direction::as_str),
-            ["send", "receive"]
-        );
     }
 
     #[test]
