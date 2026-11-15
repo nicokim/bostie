@@ -16,12 +16,17 @@ from bostie.models.base import (
     MaybeSnowflake,
     Model,
     Snowflake,
-    TypeTag,
     decoder,
 )
 from bostie.models.expressions import Emoji
 
-CUSTOM_EMOJI = re.compile(r"(?:(a)?:)?(\w+):(\d+)", re.ASCII)
+_CUSTOM_EMOJI = re.compile(r"(?:(a)?:)?(\w+):(\d+)", re.ASCII)
+
+
+class _TypeTag(msgspec.Struct, gc=False):
+    """A payload's `type` field alone, read before choosing its model."""
+
+    type: int | None = None
 
 
 class PartialEmoji(Builder, MaybeSnowflake, kw_only=True):
@@ -35,7 +40,7 @@ class PartialEmoji(Builder, MaybeSnowflake, kw_only=True):
     def parse(cls, text: str) -> Self:
         """Custom emoji from `<:name:id>`, `<a:name:id>` or `name:id`, else unicode."""
         inner = text[1:-1] if text.startswith("<") and text.endswith(">") else text
-        custom = CUSTOM_EMOJI.fullmatch(inner)
+        custom = _CUSTOM_EMOJI.fullmatch(inner)
         if custom is None:
             return cls(name=text)
         animated, name, id = custom.groups()
@@ -43,14 +48,6 @@ class PartialEmoji(Builder, MaybeSnowflake, kw_only=True):
 
 
 type AnyEmoji = str | PartialEmoji | Emoji
-
-
-def partial_emoji(emoji: AnyEmoji) -> PartialEmoji:
-    if isinstance(emoji, str):
-        return PartialEmoji.parse(emoji)
-    if isinstance(emoji, Emoji):
-        return PartialEmoji(id=emoji.id, name=emoji.name, animated=emoji.animated)
-    return emoji
 
 
 class _Component(Builder, kw_only=True, tag_field="type"):
@@ -383,6 +380,6 @@ def _known_or_unknown[C](
 
 def _component_type(raw: msgspec.Raw) -> int | None:
     try:
-        return decoder(TypeTag).decode(raw).type
+        return decoder(_TypeTag).decode(raw).type
     except msgspec.ValidationError:
         return None

@@ -21,11 +21,11 @@ from bostie.models.channel import PartialChannel
 from bostie.models.components import SubmittedComponent, decode_submitted
 from bostie.models.guild import InteractionGuild, Member
 from bostie.models.message import (
-    NULL,
+    _NULL,
     Message,
     Resolved,
     WebhookMessage,
-    nested_message,
+    _nested_message,
 )
 from bostie.models.monetization import PartialEntitlement, decode_entitlement
 from bostie.models.user import User
@@ -74,7 +74,7 @@ class EntitySelectData(ComponentData, kw_only=True):
     resolved: Resolved = msgspec.field(default_factory=Resolved)
 
 
-COMPONENT_DATA: dict[ComponentType, type[ComponentData]] = {
+_COMPONENT_DATA: dict[ComponentType, type[ComponentData]] = {
     ComponentType.STRING_SELECT: StringSelectData,
     ComponentType.USER_SELECT: EntitySelectData,
     ComponentType.ROLE_SELECT: EntitySelectData,
@@ -212,7 +212,7 @@ class ComponentInteraction(_Interaction, kw_only=True):
     def data(self) -> ComponentData:
         """The component and what was picked in it, decoded on each access."""
         kind = decoder(_ComponentKind).decode(self._data).component_type
-        data: ComponentData = decoder(COMPONENT_DATA.get(kind, ComponentData)).decode(
+        data: ComponentData = decoder(_COMPONENT_DATA.get(kind, ComponentData)).decode(
             self._data
         )
         return data
@@ -220,7 +220,7 @@ class ComponentInteraction(_Interaction, kw_only=True):
     @property
     def message(self) -> Message | WebhookMessage:
         """The message the component is on, decoded on each access."""
-        return nested_message(self._message, self.guild_id)
+        return _nested_message(self._message, self.guild_id)
 
     @property
     def message_flags(self) -> MessageFlags:
@@ -244,19 +244,19 @@ class ModalSubmitInteraction(_Interaction, kw_only=True):
     """A modal submit."""
 
     data: ModalSubmitData
-    _message: msgspec.Raw = msgspec.field(default=NULL, name="message")
+    _message: msgspec.Raw = msgspec.field(default=_NULL, name="message")
 
     @property
     def message(self) -> Message | WebhookMessage | None:
         """The message whose component opened the modal, decoded on each access."""
-        if self._message == NULL:
+        if self._message == _NULL:
             return None
-        return nested_message(self._message, self.guild_id)
+        return _nested_message(self._message, self.guild_id)
 
     @property
     def message_flags(self) -> MessageFlags | None:
         """The flags of that message, decoded alone, or None without a message."""
-        if self._message == NULL:
+        if self._message == _NULL:
             return None
         return decoder(_MessageFlags).decode(self._message).flags
 
@@ -276,7 +276,7 @@ type Interaction = (
     | UnknownInteraction
 )
 
-INTERACTIONS: dict[InteractionType, type[Interaction]] = {
+_INTERACTIONS: dict[InteractionType, type[Interaction]] = {
     InteractionType.APPLICATION_COMMAND: CommandInteraction,
     InteractionType.MESSAGE_COMPONENT: ComponentInteraction,
     InteractionType.APPLICATION_COMMAND_AUTOCOMPLETE: AutocompleteInteraction,
@@ -295,4 +295,4 @@ class _ComponentKind(msgspec.Struct, gc=False):
 def decode_interaction(data: bytes) -> Interaction:
     """Decode an interaction into the model of its type, or `UnknownInteraction`."""
     kind = decoder(_InteractionKind).decode(data).type
-    return decode(INTERACTIONS.get(kind, UnknownInteraction), data)
+    return decode(_INTERACTIONS.get(kind, UnknownInteraction), data)

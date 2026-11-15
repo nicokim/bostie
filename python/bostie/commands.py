@@ -57,7 +57,7 @@ from bostie.models import (
     User,
     WebhookMessage,
 )
-from bostie.models.message import in_guild
+from bostie.models.message import _in_guild
 
 if TYPE_CHECKING:
     from typing import Annotated as Range
@@ -622,7 +622,7 @@ class ContextMenuCommand(_Registered):
                 else model.from_resolved(data.resolved, data.target_id)
             )
             if isinstance(found, PartialMessage):
-                found = in_guild(found, interaction.guild_id)
+                found = _in_guild(found, interaction.guild_id)
             if found is not None:
                 return {self._target: found}
         expected = " or ".join(model.__name__ for model in self._models)

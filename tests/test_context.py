@@ -416,9 +416,9 @@ def test_message_calls_return_the_message_discord_created() -> None:
 
             assert {type(answer), type(followup), type(edited)} == {WebhookMessage}
             assert (answer.content, followup.content) == ("hi", "more")
-            in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
-            assert answer.jump_url.startswith(in_guild)
-            assert followup.jump_url.startswith(in_guild)
+            _in_guild = f"https://discord.com/channels/{ctx.guild_id}/"
+            assert answer.jump_url.startswith(_in_guild)
+            assert followup.jump_url.startswith(_in_guild)
 
         await on.answer(Context, handler)
 

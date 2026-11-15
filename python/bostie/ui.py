@@ -3,9 +3,10 @@ from typing import Any, Literal, NewType, NotRequired, TypedDict, cast
 
 import msgspec
 
+from bostie._util import partial_emoji
 from bostie.custom_id import _MAX_CUSTOM_ID, ComponentRoute
 from bostie.enums import ButtonStyle, ChannelType, ComponentType, TextInputStyle
-from bostie.models.components import AnyEmoji, SelectDefaultType, partial_emoji
+from bostie.models.components import AnyEmoji, SelectDefaultType
 
 __all__ = [
     "ButtonDict",

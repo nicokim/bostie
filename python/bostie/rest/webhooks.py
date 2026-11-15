@@ -9,7 +9,7 @@ from bostie.models import (
     Webhook,
     WebhookMessage,
 )
-from bostie.models.message import message_body
+from bostie.models.message import _message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -139,7 +139,7 @@ class Webhooks(ResourceGroup):
             "thread_id": given.pop("thread_id", None),
             "with_components": given.pop("with_components", None),
         }
-        body, files = message_body(None, given, mentions=self._allowed_mentions)
+        body, files = _message_body(None, given, mentions=self._allowed_mentions)
         message = await self._call(
             WebhookMessage,
             "PATCH",
@@ -184,7 +184,7 @@ class Webhooks(ResourceGroup):
             "thread_id": given.pop("thread_id", None),
             "with_components": given.pop("with_components", None),
         }
-        body, files = message_body(content, given, mentions=self._allowed_mentions)
+        body, files = _message_body(content, given, mentions=self._allowed_mentions)
         message = await self._call(
             WebhookMessage,
             "POST",

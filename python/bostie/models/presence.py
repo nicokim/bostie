@@ -63,7 +63,7 @@ class ActivityAssets(Model, kw_only=True):
 class ActivitySecrets(Model, kw_only=True):
     """Rich Presence secrets, kept out of the repr."""
 
-    HIDDEN = frozenset({"join", "spectate", "match"})
+    _HIDDEN = frozenset({"join", "spectate", "match"})
 
     join: str | None = None
     spectate: str | None = None

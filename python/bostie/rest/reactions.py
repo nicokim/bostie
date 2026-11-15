@@ -1,9 +1,10 @@
 from collections.abc import AsyncIterator
 from typing import TypedDict, Unpack
 
+from bostie._util import partial_emoji
 from bostie.enums import ReactionType
 from bostie.models import User
-from bostie.models.components import AnyEmoji, partial_emoji
+from bostie.models.components import AnyEmoji
 from bostie.rest.base import ResourceGroup, each, wire
 
 

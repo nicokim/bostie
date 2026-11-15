@@ -14,7 +14,7 @@ from bostie.file import File
 from bostie.http import HTTPClient
 from bostie.models import AllowedMentions
 from bostie.models.base import Model, check_keys, decode, decoder
-from bostie.models.message import PartialMessage, in_guild
+from bostie.models.message import PartialMessage, _in_guild
 from bostie.snowflake import time_snowflake
 
 CURSORS = ("before", "after", "around")
@@ -47,7 +47,7 @@ class ResourceGroup:
         channel = (
             None if self._cache is None else self._cache.channel(message.channel_id)
         )
-        return in_guild(message, None if channel is None else channel.guild_id)
+        return _in_guild(message, None if channel is None else channel.guild_id)
 
     async def _call[T](
         self, decodes: Decodes[T], method: str, route: str, /, **request: Any

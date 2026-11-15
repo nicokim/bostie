@@ -376,7 +376,7 @@ class Cache:
         if self._all_members:
             members = event.members
         else:
-            me = None if self._current is None else event.member(self._current.id)
+            me = None if self._current is None else event._member(self._current.id)
             members = () if me is None else (me,)
         self._members[guild_id] = {
             member.user.id: _stored(member) for member in members

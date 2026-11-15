@@ -53,7 +53,7 @@ Rust needs no change: the core forwards any dispatch name Python asks for.
 
 1. Add a class to `python/bostie/events.py` that subclasses `Event` with `kw_only=True`, and set `NAME` to the dispatch name. `MessageDelete` and `TypingStart` are short ones to copy. msgspec doesn't inherit `kw_only`, so every subclass repeats it.
 2. Set `INTENTS` to the intents that make Discord send the event, any one of them enough. The bot warns when a listener registers for an event none of its intents delivers.
-3. Add the class to the `EVENTS` registry in the same file.
+3. Add the class to the `_EVENTS` registry in the same file.
 4. Save the `d` payload as `python/bostie/testing/fixtures/events/NAME.json`. Another shape of the same event gets a suffix, as in `GUILD_CREATE.unavailable.json`. `test_every_dispatch_decodes_to_its_event` picks fixtures up on its own, and `test_every_event_fixture_has_an_entry_in_the_registry` fails until step 3 is done.
 5. Add a test to `tests/test_events.py` that decodes the fixture and checks its fields.
 6. If the event changes cached state, give it a handler in `Cache.__init__` in `python/bostie/cache.py`. An update handler returns the cached object as `old`, a delete handler the removed one.
@@ -67,7 +67,7 @@ Models are typed as Discord's documentation describes each field. Discord also a
 - A permission field is typed `Permissions`, which lax mode fills from Discord's string or int, except on models that gateway events carry in bulk (roles, members, channels, overwrites, interactions): those keep the string in a private field and a property turns it into `Permissions`, because msgspec decodes a flag about 70 times slower than a string and one guild brings hundreds of them. `wire()` in `python/bostie/rest/base.py` sends `Permissions` as a string at any depth.
 - `decoder()` in `python/bostie/models/base.py` runs msgspec in lax mode. Snowflake strings become `int` and unix timestamps become `datetime` without a converter.
 
-If a payload still doesn't fit, for example because it lacks a required field, `decode_event` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
+If a payload still doesn't fit, for example because it lacks a required field, `decode_event` in `python/bostie/_events.py` logs a warning once per event name and returns `None`. Typed listeners skip that event; `RawEvent` listeners still get it. `test_typed_listeners_get_each_fixture_and_raw_ones_get_broken_ones_too` checks this for every required field of every event fixture.
 
 ## Adding a REST operation
 

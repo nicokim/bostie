@@ -1,6 +1,7 @@
 import msgspec
 
 from bostie import _native
+from bostie._events import decode_event
 from bostie.events import (
     ApplicationAuthorized,
     ApplicationDeauthorized,
@@ -16,7 +17,6 @@ from bostie.events import (
     LobbyMessageUpdate,
     QuestUserEnrollment,
     RawEvent,
-    decode_event,
 )
 from bostie.models.base import decoder
 

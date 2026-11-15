@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, ClassVar, Self, dataclass_transform, override
@@ -53,17 +52,13 @@ from bostie.models import (
     VoiceState,
     WebhookMessage,
 )
-from bostie.models.base import Snowflake, decode, decoder, redacted_repr, shown_fields
+from bostie.models.base import Snowflake, _redacted_repr, _shown_fields, decode, decoder
 from bostie.models.interaction import decode_interaction
 from bostie.models.message import decode_message
 from bostie.models.monetization import decode_entitlement
 from bostie.tasks import Task
 
-log = logging.getLogger("bostie.events")
-
-REQUEST_GUILD_MEMBERS = 8
-
-_undecodable: set[str] = set()
+_REQUEST_GUILD_MEMBERS = 8
 
 
 @dataclass_transform(
@@ -82,8 +77,8 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
     shard_id: int = msgspec.field(default=0, name="__bostie_shard__")
     raw_json: bytes = msgspec.field(default=b"", name="__bostie_raw__")
 
-    __repr__ = redacted_repr
-    __rich_repr__ = shown_fields
+    __repr__ = _redacted_repr
+    __rich_repr__ = _shown_fields
 
     @property
     def raw(self) -> Any:
@@ -91,7 +86,7 @@ class Event(msgspec.Struct, kw_only=True, frozen=True, gc=False):
         return msgspec.json.decode(self.raw_json)
 
     @classmethod
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         """Decode the `d` payload of a dispatch."""
         event = decoder(cls).decode(data)
         msgspec.structs.force_setattr(event, "shard_id", shard_id)
@@ -161,7 +156,7 @@ class GuildCreate(Event, kw_only=True):
         )
         return presences
 
-    def member(self, user_id: int) -> Member | None:
+    def _member(self, user_id: int) -> Member | None:
         """The member with this user id, decoding no other member."""
         needle = str(user_id).encode()
         for item in decoder(tuple[msgspec.Raw, ...]).decode(self._members):
@@ -173,7 +168,7 @@ class GuildCreate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         try:
             payload = decoder(_GuildCreatePayload).decode(data)
         except msgspec.ValidationError:
@@ -207,7 +202,7 @@ class GuildUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, guild=decode(Guild, data))
 
 
@@ -229,7 +224,7 @@ class _ChannelEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, channel=decode(Channel, data))
 
 
@@ -275,7 +270,7 @@ class ThreadCreate(_ChannelEvent, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         fields = decoder(_ThreadCreateFields).decode(data)
         return cls(
             shard_id=shard_id,
@@ -358,7 +353,7 @@ class _MessageEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, message=decode_message(data))
 
 
@@ -393,7 +388,7 @@ class MessageDelete(Event, Snowflake, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_MessageDeletePayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -423,7 +418,7 @@ class MessageDeleteBulk(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_MessageDeleteBulkPayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -521,7 +516,7 @@ class MemberJoin(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_GuildMemberPayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -577,7 +572,7 @@ class InteractionCreate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, interaction=decode_interaction(data)
         )
@@ -594,7 +589,7 @@ class VoiceStateUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, voice_state=decode(VoiceState, data)
         )
@@ -658,7 +653,7 @@ class _AutoModerationRuleEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, rule=decode(AutoModerationRule, data)
         )
@@ -708,7 +703,7 @@ class AuditLogEntryCreate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_AuditLogEntryPayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -762,7 +757,7 @@ class _SoundboardSoundEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, sound=decode(SoundboardSound, data)
         )
@@ -818,7 +813,7 @@ class _ScheduledEventEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -865,7 +860,7 @@ class _EntitlementEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, entitlement=decode_entitlement(data)
         )
@@ -915,7 +910,7 @@ class _LobbyMessageEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, message=decode(LobbyMessage, data))
 
 
@@ -945,7 +940,7 @@ class _GameDirectMessageEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, message=decode(GameDirectMessage, data)
         )
@@ -974,7 +969,7 @@ class _SubscriptionEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id, raw_json=data, subscription=decode(Subscription, data)
         )
@@ -1007,7 +1002,7 @@ class ThreadMemberUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_ThreadMemberPayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -1060,7 +1055,7 @@ class PresenceUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_PresencePayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -1080,7 +1075,7 @@ class UserUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(shard_id=shard_id, raw_json=data, user=decode(CurrentUser, data))
 
 
@@ -1091,7 +1086,7 @@ class CommandPermissionsUpdate(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1118,7 +1113,7 @@ class _IntegrationEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         payload = decoder(_IntegrationPayload).decode(data)
         return cls(
             shard_id=shard_id,
@@ -1181,7 +1176,7 @@ class _StageInstanceEvent(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         return cls(
             shard_id=shard_id,
             raw_json=data,
@@ -1235,10 +1230,10 @@ class GatewayRateLimited(Event, kw_only=True):
 
     @classmethod
     @override
-    def decode(cls, shard_id: int, data: bytes) -> Self:
+    def _decode(cls, shard_id: int, data: bytes) -> Self:
         limit = decoder(_RateLimit).decode(data)
         meta: RequestGuildMembersRateLimit | None = None
-        if limit.opcode == REQUEST_GUILD_MEMBERS:
+        if limit.opcode == _REQUEST_GUILD_MEMBERS:
             meta = decoder(_RequestGuildMembersMeta).decode(data).meta
         return cls(
             shard_id=shard_id,
@@ -1360,7 +1355,7 @@ class TaskError(BotEvent, kw_only=True):
     error: Exception
 
 
-EVENTS: dict[str, type[Event]] = {
+_EVENTS: dict[str, type[Event]] = {
     event.NAME: event
     for event in (
         Ready,
@@ -1444,25 +1439,6 @@ EVENTS: dict[str, type[Event]] = {
         GatewayRateLimited,
     )
 }
-
-
-def decode_event[E: Event](event: type[E], shard_id: int, data: bytes) -> E | None:
-    """Decode a dispatch, or return None and log a warning when its shape changed.
-
-    The warning is logged once per event name; `RawEvent` listeners still run.
-    """
-    try:
-        return event.decode(shard_id, data)
-    except msgspec.ValidationError as error:
-        level = logging.DEBUG if event.NAME in _undecodable else logging.WARNING
-        _undecodable.add(event.NAME)
-        log.log(
-            level,
-            "%s has an unexpected shape (%s); typed listeners skip it",
-            event.NAME,
-            error,
-        )
-        return None
 
 
 def _narrow[M: Model](model: type[M], value: M) -> M:

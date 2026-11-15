@@ -14,7 +14,7 @@ from bostie.models import (
     ThreadMember,
 )
 from bostie.models.base import Model
-from bostie.models.message import message_body
+from bostie.models.message import _message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
 ARCHIVED_PAGE = 100
@@ -221,7 +221,7 @@ class Threads(ResourceGroup):
     ) -> Channel:
         """Start a forum or media thread with its first message."""
         body = wire(options, ThreadStartInForum)
-        body["message"], files = message_body(
+        body["message"], files = _message_body(
             None,
             wire(options["message"], ForumThreadMessage),
             mentions=self._allowed_mentions,

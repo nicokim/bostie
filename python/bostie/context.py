@@ -59,7 +59,7 @@ from bostie.models import (
     decode_message,
 )
 from bostie.models.base import check_keys, decoder
-from bostie.models.message import in_guild, message_body
+from bostie.models.message import _in_guild, _message_body
 from bostie.rest.messages import delete_later
 from bostie.ui import ModalDict
 from bostie.voice.connection import ContextVoice
@@ -486,12 +486,12 @@ class _ReplyingContext[
     ) -> tuple[dict[str, Any], Sequence[File]]:
         check_keys(parts, allowed, "message parts")
         sent = {name: value for name, value in parts.items() if name != "ephemeral"}
-        return message_body(content, sent, mentions=self._allowed_mentions)
+        return _message_body(content, sent, mentions=self._allowed_mentions)
 
     def _answer[A: PartialMessage](
         self, decode: Callable[[bytes], A], body: bytes
     ) -> A:
-        return in_guild(decode_answer(decode, body, took_effect=True), self.guild_id)
+        return _in_guild(decode_answer(decode, body, took_effect=True), self.guild_id)
 
     @abstractmethod
     def _decode_original(self, body: bytes) -> M: ...

@@ -154,12 +154,6 @@ class Member(_UserMember, kw_only=True):
     mute: bool
 
 
-def with_user(member: PartialMember, user: User) -> ResolvedMember:
-    fields = msgspec.structs.asdict(member)
-    del fields["deaf"], fields["mute"]
-    return ResolvedMember(user=user, **fields)
-
-
 class WelcomeScreenChannel(Builder, kw_only=True):
     channel_id: int
     description: str

@@ -7,7 +7,7 @@ import pytest
 from bostie import ChannelType, Permissions, Status
 from bostie.cache import Cache
 from bostie.events import (
-    EVENTS,
+    _EVENTS,
     EmojisUpdate,
     Event,
     MemberRemove,
@@ -51,7 +51,7 @@ def event(fixture: str, **changes: Any) -> Event:
     name = fixture.split(".", maxsplit=1)[0]
     document = msgspec.json.decode((EVENT_FIXTURES / f"{fixture}.json").read_bytes())
     document.update(changes)
-    return EVENTS[name].decode(0, msgspec.json.encode(document))
+    return _EVENTS[name]._decode(0, msgspec.json.encode(document))
 
 
 def applied[E: Event](cache: Cache, cls: type[E], fixture: str, **changes: Any) -> E:

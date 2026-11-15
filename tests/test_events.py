@@ -8,10 +8,11 @@ from typing import Any
 import msgspec
 import pytest
 
-from bostie import Bot, events
+from bostie import Bot
+from bostie._events import decode_event
 from bostie.enums import ChannelType, MemberFlags, Status
 from bostie.events import (
-    EVENTS,
+    _EVENTS,
     AuditLogEntryCreate,
     AutoModerationRuleCreate,
     ChannelInfo,
@@ -39,7 +40,6 @@ from bostie.events import (
     UserUpdate,
     VoiceChannelStartTimeUpdate,
     VoiceStateUpdate,
-    decode_event,
 )
 from bostie.models import (
     AuditLogEntry,
@@ -66,7 +66,7 @@ TOKEN = "bostie-test-token-7c1f"
 
 
 def decode[E: Event](event: type[E], name: str, shard_id: int = 0) -> E:
-    return event.decode(shard_id, (EVENT_FIXTURES / f"{name}.json").read_bytes())
+    return event._decode(shard_id, (EVENT_FIXTURES / f"{name}.json").read_bytes())
 
 
 def without(document: dict[str, Any], key: str) -> dict[str, Any]:
@@ -76,9 +76,9 @@ def without(document: dict[str, Any], key: str) -> dict[str, Any]:
 @pytest.mark.parametrize("path", MODELLED, ids=lambda path: path.stem)
 def test_every_dispatch_decodes_to_its_event(path: Path) -> None:
     data = path.read_bytes()
-    event_type = EVENTS[path.name.split(".")[0]]
+    event_type = _EVENTS[path.name.split(".")[0]]
 
-    event = event_type.decode(3, data)
+    event = event_type._decode(3, data)
 
     assert event.shard_id == 3
     assert event.raw_json is data
@@ -190,7 +190,7 @@ def test_a_broken_guild_create_names_its_own_missing_field() -> None:
     del document["unavailable"]
 
     with pytest.raises(msgspec.ValidationError, match="`name`"):
-        GuildCreate.decode(0, msgspec.json.encode(without(document, "name")))
+        GuildCreate._decode(0, msgspec.json.encode(without(document, "name")))
 
 
 @pytest.mark.parametrize(
@@ -217,7 +217,7 @@ def test_an_entity_with_a_guild_id_is_split_from_it(
 def test_a_member_update_without_flags_has_no_flags_set() -> None:
     document = json.loads((EVENT_FIXTURES / "GUILD_MEMBER_UPDATE.json").read_bytes())
 
-    event = MemberUpdate.decode(0, msgspec.json.encode(without(document, "flags")))
+    event = MemberUpdate._decode(0, msgspec.json.encode(without(document, "flags")))
 
     assert event.flags == MemberFlags(0)
 
@@ -237,7 +237,7 @@ def test_a_webhook_messages_author_needs_only_the_webhooks_identity() -> None:
     document = json.loads((EVENT_FIXTURES / "MESSAGE_CREATE.webhook.json").read_bytes())
     identity = {key: document["author"][key] for key in ("id", "username", "avatar")}
 
-    webhook = MessageCreate.decode(
+    webhook = MessageCreate._decode(
         0, msgspec.json.encode(document | {"author": identity})
     ).message
     user = decode(MessageCreate, "MESSAGE_CREATE").message
@@ -263,7 +263,7 @@ def test_rate_limit_metadata_is_decoded_for_request_guild_members_only() -> None
     other = document | {"opcode": 3, "meta": {"since": 0}}
 
     members = decode(GatewayRateLimited, "RATE_LIMITED")
-    presence = GatewayRateLimited.decode(0, msgspec.json.encode(other))
+    presence = GatewayRateLimited._decode(0, msgspec.json.encode(other))
 
     assert members.meta is not None
     assert (members.meta.guild_id, members.meta.nonce) == (
@@ -289,7 +289,7 @@ def test_typing_and_voice_session_start_times_read_unix_seconds() -> None:
 def test_typed_listeners_get_each_fixture_and_raw_ones_a_broken_one_too(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(events, "_undecodable", set())
+    monkeypatch.setattr("bostie._events._undecodable", set())
     cases = [
         (path.name.split(".")[0], json.loads(path.read_bytes()), True)
         for path in MODELLED
@@ -302,7 +302,7 @@ def test_typed_listeners_get_each_fixture_and_raw_ones_a_broken_one_too(
         typed: set[tuple[str, bytes]] = set()
         raw: dict[int, tuple[str, bytes]] = {}
 
-        @bot.listen(*EVENTS.values())
+        @bot.listen(*_EVENTS.values())
         async def on_typed(event: Event) -> None:
             typed.add((event.NAME, event.raw_json))
 

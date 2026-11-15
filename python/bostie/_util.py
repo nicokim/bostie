@@ -9,6 +9,8 @@ import msgspec
 
 from bostie.enums import OptionType
 from bostie.errors import UnexpectedResponse
+from bostie.models.components import AnyEmoji, PartialEmoji
+from bostie.models.expressions import Emoji
 
 if TYPE_CHECKING:
     from bostie.models import InteractionDataOption
@@ -72,3 +74,11 @@ def decode_answer[T](
         return decode(data)
     except msgspec.DecodeError as error:
         raise UnexpectedResponse(data, str(error), took_effect=took_effect) from error
+
+
+def partial_emoji(emoji: AnyEmoji) -> PartialEmoji:
+    if isinstance(emoji, str):
+        return PartialEmoji.parse(emoji)
+    if isinstance(emoji, Emoji):
+        return PartialEmoji(id=emoji.id, name=emoji.name, animated=emoji.animated)
+    return emoji

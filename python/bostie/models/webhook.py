@@ -21,7 +21,7 @@ class WebhookSourceChannel(Model, Snowflake, kw_only=True):
 class Webhook(Model, Snowflake, kw_only=True):
     """A webhook; `token` and `url` only come with incoming webhooks."""
 
-    HIDDEN = frozenset({"url"})
+    _HIDDEN = frozenset({"url"})
 
     id: int
     type: WebhookType

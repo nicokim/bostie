@@ -27,7 +27,7 @@ from bostie.models import (
     decode_message,
 )
 from bostie.models.base import decoder
-from bostie.models.message import in_guild, message_body
+from bostie.models.message import _in_guild, _message_body
 from bostie.rest.base import ResourceGroup, each, wire
 
 
@@ -157,7 +157,7 @@ class Messages(ResourceGroup):
 
         `delete_after` deletes it that many seconds later, unless the bot stops first.
         """
-        body, files = message_body(
+        body, files = _message_body(
             content,
             wire(parts, MessageCreate),
             reply_to=reply_to,
@@ -186,7 +186,7 @@ class Messages(ResourceGroup):
 
         With `files` or `attachments`, only the listed `attachments` stay.
         """
-        body, files = message_body(
+        body, files = _message_body(
             None, wire(parts, EditParts), mentions=self._allowed_mentions
         )
         message = await self._call(
@@ -388,7 +388,7 @@ def _search_results(guild_id: int, data: bytes) -> MessageSearchResults | _Index
         documents_indexed=found.documents_indexed,
         total_results=found.total_results,
         messages=tuple(
-            in_guild(decode_message(bytes(raw)), guild_id)
+            _in_guild(decode_message(bytes(raw)), guild_id)
             for group in found.messages
             for raw in group
         ),

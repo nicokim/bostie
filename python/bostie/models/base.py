@@ -8,14 +8,14 @@ import msgspec
 from bostie.enums import Permissions
 from bostie.snowflake import snowflake_time
 
-HIDDEN_FIELDS = frozenset(
+_HIDDEN_FIELDS = frozenset(
     {"raw_json", "token", "access_token", "refresh_token", "id_token"}
 )
 
 
-def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
+def _shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
     hidden = (
-        HIDDEN_FIELDS | struct.HIDDEN if isinstance(struct, Model) else HIDDEN_FIELDS
+        _HIDDEN_FIELDS | struct._HIDDEN if isinstance(struct, Model) else _HIDDEN_FIELDS
     )
     return [
         (name, getattr(struct, name))
@@ -24,15 +24,9 @@ def shown_fields(struct: msgspec.Struct) -> list[tuple[str, Any]]:
     ]
 
 
-def redacted_repr(self: msgspec.Struct) -> str:
-    shown = ", ".join(f"{name}={value!r}" for name, value in shown_fields(self))
+def _redacted_repr(self: msgspec.Struct) -> str:
+    shown = ", ".join(f"{name}={value!r}" for name, value in _shown_fields(self))
     return f"{type(self).__name__}({shown})"
-
-
-class TypeTag(msgspec.Struct, gc=False):
-    """A payload's `type` field alone, read before choosing its model."""
-
-    type: int | None = None
 
 
 class _Identified(Protocol):
@@ -71,14 +65,14 @@ class MaybeSnowflake:
     field_specifiers=(msgspec.field,), kw_only_default=True, frozen_default=True
 )
 class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
-    """Base of the models bostie decodes; `HIDDEN` names fields their repr omits."""
+    """Base of the models bostie decodes."""
 
-    HIDDEN: ClassVar[frozenset[str]] = frozenset()
+    _HIDDEN: ClassVar[frozenset[str]] = frozenset()
 
     raw_json: bytes | None = msgspec.field(default=None, name="__bostie_raw__")
 
-    __repr__ = redacted_repr
-    __rich_repr__ = shown_fields
+    __repr__ = _redacted_repr
+    __rich_repr__ = _shown_fields
 
     @property
     def raw(self) -> Any:
@@ -92,8 +86,8 @@ class Model(msgspec.Struct, kw_only=True, frozen=True, gc=False):
 class Builder(msgspec.Struct, kw_only=True, frozen=True, gc=False, omit_defaults=True):
     """Base of the models that are decoded from Discord and can be sent back to it."""
 
-    __repr__ = redacted_repr
-    __rich_repr__ = shown_fields
+    __repr__ = _redacted_repr
+    __rich_repr__ = _shown_fields
 
 
 @overload

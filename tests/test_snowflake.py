@@ -4,7 +4,8 @@ import msgspec
 import pytest
 
 from bostie import Emoji, Member, Message, snowflake_time, time_snowflake
-from bostie.events import MessageDelete, decode_event
+from bostie._events import decode_event
+from bostie.events import MessageDelete
 from bostie.models import decode
 from bostie.testing import payloads
 

@@ -25,6 +25,7 @@ from bostie import fmt
 from bostie._aio import spawn
 from bostie._bridge import Bridge, GatewayDelivery, warn_invalid_requests
 from bostie._dispatch import Claim, Interactions
+from bostie._events import decode_event
 from bostie._gateway import (
     REQUEST_CHANNEL_INFO,
     REQUEST_GUILD_MEMBERS,
@@ -60,7 +61,7 @@ from bostie.errors import (
     TransportError,
 )
 from bostie.events import (
-    EVENTS,
+    _EVENTS,
     BotEvent,
     ChannelInfo,
     Event,
@@ -84,7 +85,6 @@ from bostie.events import (
     Stopping,
     TaskError,
     UserUpdate,
-    decode_event,
 )
 from bostie.gateway import _LARGE_THRESHOLD, GatewayClient, RequestedMembers
 from bostie.http import DEFAULT_HTTP, HTTPClient, HTTPSettings
@@ -994,7 +994,7 @@ class Bot(Router):
         readied = self._follow_session(dispatch)
         self._answer_request(dispatch)
         if self._caching and name in self.cache.names:
-            cls = EVENTS[name]
+            cls = _EVENTS[name]
             cached = dispatch.event(cls)
             if cached is not None:
                 dispatch.decoded[cls] = self.cache._apply(cached)

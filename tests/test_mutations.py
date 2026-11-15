@@ -10,12 +10,12 @@ import msgspec
 import pytest
 
 from bostie import events
+from bostie._events import decode_event
 from bostie.enums import DiscordIntEnum, Permissions
 from bostie.events import (
-    EVENTS,
+    _EVENTS,
     GuildCreate,
     MessageCreate,
-    decode_event,
 )
 from bostie.models import (
     SKU,
@@ -210,7 +210,7 @@ SECRET_KEYS = {
 
 def fixtures() -> Iterator[Any]:
     for path in sorted((FIXTURES / "events").glob("*.json")):
-        registered = EVENTS[path.name.split(".")[0]].decode
+        registered = _EVENTS[path.name.split(".")[0]]._decode
         yield pytest.param(path, partial(registered, 0), id=path.stem)
     for name, model in REST_MODELS.items():
         rest = (
@@ -220,7 +220,7 @@ def fixtures() -> Iterator[Any]:
     for path in sorted(WEBHOOK_FIXTURES.glob("*.json")):
         if (event := _WEBHOOK_EVENTS.get(path.stem)) is not None:
             yield pytest.param(
-                path, partial(event.decode, 0), id=f"webhook_{path.stem}"
+                path, partial(event._decode, 0), id=f"webhook_{path.stem}"
             )
 
 
@@ -505,7 +505,7 @@ def test_a_field_may_be_missing_wherever_the_model_allows_it(
 def test_a_dispatch_with_a_changed_field_type_is_skipped_with_one_warning(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(events, "_undecodable", set())
+    monkeypatch.setattr("bostie._events._undecodable", set())
     document = load(FIXTURES / "events" / "MESSAGE_CREATE.json")
     valid = msgspec.json.encode(document)
     document["mentions"] = "everyone"

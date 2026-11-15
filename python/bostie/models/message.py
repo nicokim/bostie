@@ -28,7 +28,6 @@ from bostie.models.base import (
     Builder,
     Model,
     Snowflake,
-    TypeTag,
     check_keys,
     decode,
     decoder,
@@ -38,17 +37,18 @@ from bostie.models.components import (
     Component,
     PartialEmoji,
     UnknownComponent,
+    _TypeTag,
     decode_components,
 )
-from bostie.models.guild import PartialMember, ResolvedMember, Role, with_user
+from bostie.models.guild import PartialMember, ResolvedMember, Role
 from bostie.models.user import PartialUser, User
 
 type MentionType = Literal["roles", "users", "everyone"]
 
-NULL = msgspec.Raw(b"null")
+_NULL = msgspec.Raw(b"null")
 
-NOT_IN_V2 = ("content", "embeds", "sticker_ids", "poll", "shared_client_theme")
-VOICE_MESSAGE_EXTRAS = (
+_NOT_IN_V2 = ("content", "embeds", "sticker_ids", "poll", "shared_client_theme")
+_VOICE_MESSAGE_EXTRAS = (
     "content",
     "embeds",
     "components",
@@ -57,7 +57,7 @@ VOICE_MESSAGE_EXTRAS = (
     "shared_client_theme",
 )
 
-V2_COMPONENT_TYPES = frozenset(
+_V2_COMPONENT_TYPES = frozenset(
     {
         ComponentType.SECTION,
         ComponentType.TEXT_DISPLAY,
@@ -122,12 +122,12 @@ class Resolved(Model, kw_only=True):
         user = self.users.get(id)
         if member is None or user is None:
             return None
-        return with_user(member, user)
+        return _with_user(member, user)
 
     def message(self, id: int) -> "Message | WebhookMessage | None":
         """The whole message with this id, as a message command's target carries it."""
         raw = self._messages.get(id)
-        return None if raw is None else decoder(message_model(raw)).decode(raw)
+        return None if raw is None else decoder(_message_model(raw)).decode(raw)
 
 
 class EmbedField(Builder, kw_only=True):
@@ -369,19 +369,19 @@ class ModalInteractionMetadata(InteractionMetadata, kw_only=True):
     @property
     def triggering_interaction_metadata(self) -> InteractionMetadata:
         """The command or component that opened the modal, decoded on each access."""
-        return decode_interaction_metadata(self._triggering_interaction_metadata)
+        return _decode_interaction_metadata(self._triggering_interaction_metadata)
 
 
-INTERACTION_METADATA: dict[int, type[InteractionMetadata]] = {
+_INTERACTION_METADATA: dict[int, type[InteractionMetadata]] = {
     InteractionType.APPLICATION_COMMAND: CommandInteractionMetadata,
     InteractionType.MESSAGE_COMPONENT: ComponentInteractionMetadata,
     InteractionType.MODAL_SUBMIT: ModalInteractionMetadata,
 }
 
 
-def decode_interaction_metadata(data: bytes) -> InteractionMetadata:
-    kind = decoder(TypeTag).decode(data).type
-    model = INTERACTION_METADATA.get(kind or 0, InteractionMetadata)
+def _decode_interaction_metadata(data: bytes) -> InteractionMetadata:
+    kind = decoder(_TypeTag).decode(data).type
+    model = _INTERACTION_METADATA.get(kind or 0, InteractionMetadata)
     metadata: InteractionMetadata = decoder(model).decode(data)
     return metadata
 
@@ -432,7 +432,7 @@ class PartialMessage(Model, Snowflake, kw_only=True):
     flags: MessageFlags = MessageFlags(0)
     message_reference: MessageReference | None = None
     _referenced_message: msgspec.Raw = msgspec.field(
-        default=NULL, name="referenced_message"
+        default=_NULL, name="referenced_message"
     )
     thread: Channel | None = None
     _components: tuple[msgspec.Raw, ...] = msgspec.field(default=(), name="components")
@@ -446,9 +446,9 @@ class PartialMessage(Model, Snowflake, kw_only=True):
     @property
     def referenced_message(self) -> "Message | WebhookMessage | None":
         """The message this one replies to, decoded on each access."""
-        if self._referenced_message == NULL:
+        if self._referenced_message == _NULL:
             return None
-        return nested_message(self._referenced_message, self.guild_id)
+        return _nested_message(self._referenced_message, self.guild_id)
 
     @property
     def jump_url(self) -> str:
@@ -480,7 +480,7 @@ class _Message(PartialMessage, kw_only=True):
     application_id: int | None = None
     message_snapshots: tuple[MessageSnapshot, ...] = ()
     _interaction_metadata: msgspec.Raw = msgspec.field(
-        default=NULL, name="interaction_metadata"
+        default=_NULL, name="interaction_metadata"
     )
     role_subscription_data: RoleSubscriptionData | None = None
     resolved: Resolved | None = None
@@ -489,9 +489,9 @@ class _Message(PartialMessage, kw_only=True):
     @property
     def interaction_metadata(self) -> InteractionMetadata | None:
         """The interaction this message answers, decoded on each access."""
-        if self._interaction_metadata == NULL:
+        if self._interaction_metadata == _NULL:
             return None
-        return decode_interaction_metadata(self._interaction_metadata)
+        return _decode_interaction_metadata(self._interaction_metadata)
 
     @classmethod
     @override
@@ -508,7 +508,7 @@ class Message(_Message, kw_only=True):
     @property
     def author_member(self) -> ResolvedMember | None:
         """The author as a guild member, when the message carries its member."""
-        return None if self.member is None else with_user(self.member, self.author)
+        return None if self.member is None else _with_user(self.member, self.author)
 
 
 class WebhookMessage(_Message, kw_only=True):
@@ -521,7 +521,13 @@ class _MessageKind(msgspec.Struct, gc=False):
     webhook_id: int | None = None
 
 
-def message_model(data: bytes) -> type[Message] | type[WebhookMessage]:
+def _with_user(member: PartialMember, user: User) -> ResolvedMember:
+    fields = msgspec.structs.asdict(member)
+    del fields["deaf"], fields["mute"]
+    return ResolvedMember(user=user, **fields)
+
+
+def _message_model(data: bytes) -> type[Message] | type[WebhookMessage]:
     if b'"webhook_id"' not in bytes(data):
         return Message
     kind = decoder(_MessageKind).decode(data)
@@ -530,15 +536,15 @@ def message_model(data: bytes) -> type[Message] | type[WebhookMessage]:
 
 def decode_message(data: bytes) -> Message | WebhookMessage:
     """Decode a message into `Message`, or `WebhookMessage` when a webhook sent it."""
-    return decode(message_model(data), data)
+    return decode(_message_model(data), data)
 
 
-def nested_message(data: bytes, guild_id: int | None) -> Message | WebhookMessage:
-    message: Message | WebhookMessage = decoder(message_model(data)).decode(data)
-    return in_guild(message, guild_id)
+def _nested_message(data: bytes, guild_id: int | None) -> Message | WebhookMessage:
+    message: Message | WebhookMessage = decoder(_message_model(data)).decode(data)
+    return _in_guild(message, guild_id)
 
 
-def in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:
+def _in_guild[M: PartialMessage](message: M, guild_id: int | None) -> M:
     if message.guild_id is None:
         msgspec.structs.force_setattr(message, "guild_id", guild_id)
     return message
@@ -589,8 +595,7 @@ class EditParts(TypedDict, total=False):
     attachments: Sequence[Attachment | int] | None
 
 
-MESSAGE_PARTS = MessageParts.__optional_keys__
-EDIT_PARTS = EditParts.__optional_keys__
+_MESSAGE_PARTS = MessageParts.__optional_keys__
 
 
 def build_message(
@@ -603,11 +608,11 @@ def build_message(
 
     V2 components set IS_COMPONENTS_V2 and clear content and embeds.
     """
-    check_keys(parts, MESSAGE_PARTS, "message parts")
-    return message_body(content, parts, reply_to=reply_to)
+    check_keys(parts, _MESSAGE_PARTS, "message parts")
+    return _message_body(content, parts, reply_to=reply_to)
 
 
-def message_body(
+def _message_body(
     content: str | None,
     parts: Mapping[str, Any],
     *,
@@ -644,10 +649,10 @@ def _flag_components(body: dict[str, Any]) -> bool:
             component.raw if isinstance(component, UnknownComponent) else component
             for component in components
         ]
-        if any(_type_of(component) in V2_COMPONENT_TYPES for component in components):
+        if any(_type_of(component) in _V2_COMPONENT_TYPES for component in components):
             body["flags"] = MessageFlags.IS_COMPONENTS_V2 | (body.get("flags") or 0)
     components_v2 = bool((body.get("flags") or 0) & MessageFlags.IS_COMPONENTS_V2)
-    if components_v2 and any(body.get(part) for part in NOT_IN_V2):
+    if components_v2 and any(body.get(part) for part in _NOT_IN_V2):
         raise ValueError(
             "messages with Components V2 cannot have content, embeds, stickers, "
             "a poll or a shared client theme; use ui.text() and ui.container() instead"
@@ -721,7 +726,7 @@ def _attachment(index: int, file: File) -> dict[str, Any]:
 
 
 def _check_voice_message(body: Mapping[str, Any], files: Sequence[File]) -> None:
-    extras = [part for part in VOICE_MESSAGE_EXTRAS if body.get(part)]
+    extras = [part for part in _VOICE_MESSAGE_EXTRAS if body.get(part)]
     if len(files) != 1 or extras or files[0].duration_secs is None:
         raise ValueError(
             "a voice message is one audio file with duration_secs and a waveform, "

@@ -6,6 +6,7 @@ import msgspec
 import pytest
 
 from bostie import ui
+from bostie._events import decode_event
 from bostie.enums import (
     ApplicationIntegrationType,
     AttachmentFlags,
@@ -18,7 +19,7 @@ from bostie.enums import (
     MessageFlags,
     OptionType,
 )
-from bostie.events import Ready, decode_event
+from bostie.events import Ready
 from bostie.file import File
 from bostie.models import (
     ActionRow,
@@ -72,7 +73,7 @@ from bostie.models import (
     decode_interaction,
 )
 from bostie.models.base import decoder
-from bostie.models.message import decode_interaction_metadata, message_body
+from bostie.models.message import _decode_interaction_metadata, _message_body
 from bostie.testing import payloads
 
 FIXTURES = payloads.FIXTURES
@@ -120,8 +121,8 @@ def test_interaction_metadata_decodes_by_type_and_keeps_unknown_types() -> None:
     run = {**shared, "type": 2, "target_message_id": "42"}
 
     modal = decode(Message, msgspec.json.encode(document)).interaction_metadata
-    command = decode_interaction_metadata(msgspec.json.encode(run))
-    future = decode_interaction_metadata(msgspec.json.encode(run | {"type": 9}))
+    command = _decode_interaction_metadata(msgspec.json.encode(run))
+    future = _decode_interaction_metadata(msgspec.json.encode(run | {"type": 9}))
 
     assert isinstance(modal, ModalInteractionMetadata)
     assert modal.user.id == 820774541721731073
@@ -539,7 +540,7 @@ def test_a_file_with_a_waveform_makes_a_voice_message_alone() -> None:
     }
     for parts in ({"content": "hi"}, {"files": [voice, File("a.txt", b"")]}):
         with pytest.raises(ValueError, match="voice message"):
-            message_body(None, {"files": [voice], **parts})
+            _message_body(None, {"files": [voice], **parts})
 
 
 def test_empty_allowed_mentions_silence_every_mention() -> None:
@@ -575,7 +576,7 @@ def test_a_message_changes_only_the_mentions_it_sets_over_the_default(
 ) -> None:
     default = AllowedMentions(parse=("users", "roles"))
 
-    body, _ = message_body("hi", given, mentions=default)
+    body, _ = _message_body("hi", given, mentions=default)
 
     assert body["allowed_mentions"] == sent
 
@@ -600,7 +601,7 @@ def test_an_edit_body_keeps_listed_attachments_and_sends_none_as_null() -> None:
     )
     new = File("new.png", b"", spoiler=True, title="New chart")
 
-    body, _ = message_body(None, {"files": [new], "attachments": [hidden, 42]})
+    body, _ = _message_body(None, {"files": [new], "attachments": [hidden, 42]})
 
     assert body == {
         "attachments": [
@@ -610,9 +611,9 @@ def test_an_edit_body_keeps_listed_attachments_and_sends_none_as_null() -> None:
         ]
     }
     cleared = {"content": None, "embeds": None, "attachments": None}
-    assert message_body(None, cleared)[0] == cleared
-    assert message_body(None, {"attachments": []})[0] == {"attachments": []}
-    assert "attachments" not in message_body("text only", {})[0]
+    assert _message_body(None, cleared)[0] == cleared
+    assert _message_body(None, {"attachments": []})[0] == {"attachments": []}
+    assert "attachments" not in _message_body("text only", {})[0]
 
 
 def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:
@@ -640,4 +641,4 @@ def test_v2_components_set_their_flag_and_clear_or_refuse_content() -> None:
     with pytest.raises(ValueError, match="Components V2"):
         build_message(embeds=[Embed(title="x")], flags=v2)
     with pytest.raises(ValueError, match="Components V2"):
-        message_body(None, {"components": [ui.text("hi")], "sticker_ids": [1]})
+        _message_body(None, {"components": [ui.text("hi")], "sticker_ids": [1]})
