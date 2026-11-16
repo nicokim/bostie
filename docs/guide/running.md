@@ -19,7 +19,7 @@ The token comes from the `BOSTIE_TOKEN` environment variable, or from `bot.run(t
 1. It sends the `Starting` event and awaits each of its listeners in turn. REST works here, the gateway does not; a listener that raises stops the start.
 2. It [syncs the commands](registration.md), unless `auto_sync=False`.
 3. It connects the gateway shards. When every shard is ready and its guilds have arrived, it sends `Started` once, starts the [background tasks](tasks.md) and lets `wait_until_ready()` return.
-4. It handles events until `close()`, or until Discord closes the gateway for good, which raises, for example `InvalidToken` or `PrivilegedIntentsRequired`.
+4. It handles events until `close()`. A lost connection resumes on its own, waiting longer after each failed attempt. When Discord closes the gateway for good, `start()` raises `InvalidToken` for close code 4004, `ShardingRequired` for 4011, `PrivilegedIntentsRequired` for 4014, and `GatewayClosed`, the base of the last two, for 4010, 4012 and 4013.
 
 ```python
 --8<-- "docs/snippets/running/lifecycle_events.py"
@@ -43,6 +43,8 @@ When your program already runs an event loop, start the bot as a task:
 ```
 
 `await bot.wait_until_ready()` returns once `Started` was sent, at once if it was, and raises `StateError` if the bot stops first; awaiting the `start()` task then raises why. `bot.is_ready` says the same without waiting. The [web app example](../examples.md#web-app) runs a bot inside a web server's lifespan and posts messages from a web route.
+
+Since a lost connection resumes on its own, starting the bot again only helps when it fails while starting. `TransportError` and `ServerError` mean Discord could not answer, and a later try can work. `InvalidToken` and `GatewayClosed` need a fix first, such as a new token or an intent enabled in the Developer Portal.
 
 A bot that only answers interactions over HTTP needs no gateway: see [HTTP interactions](http-interactions.md). `await bot.open()` starts it that way and returns: it opens the HTTP client, fetches the application and the bot's user, sends `Starting`, syncs the commands, starts the background tasks and returns the application. `ASGIApp` calls it, and `close()` ends it. A script that only calls the REST API uses a [`RESTClient`](rest.md#without-a-bot).
 

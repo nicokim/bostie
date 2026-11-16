@@ -1,5 +1,5 @@
 ---
-source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+source: e5576256eb18c7692967843a18e500f0b9d34fe8
 description: "bostie 봇을 실행합니다. 토큰, 시작과 종료 수명 주기, asyncio 프로그램이나 웹 앱 안에서의 실행, 로깅, 한 프로세스의 여러 봇을 다룹니다."
 ---
 
@@ -20,7 +20,7 @@ description: "bostie 봇을 실행합니다. 토큰, 시작과 종료 수명 주
 1. `Starting` 이벤트를 보내고 각 리스너를 차례로 await합니다. 이 단계에서 REST는 동작하지만 게이트웨이는 동작하지 않습니다. 리스너가 예외를 일으키면 시작이 중단됩니다.
 2. `auto_sync=False`가 아니면 [명령어를 동기화](registration.md)합니다.
 3. 게이트웨이 샤드를 연결합니다. 모든 샤드가 준비되고 각 샤드의 서버가 도착하면 `Started`를 한 번 보내고, [백그라운드 태스크](tasks.md)를 시작하며, `wait_until_ready()`가 반환되게 합니다.
-4. `close()`가 호출되거나 Discord가 게이트웨이를 영구히 닫을 때까지 이벤트를 처리합니다. 후자의 경우 `InvalidToken`이나 `PrivilegedIntentsRequired` 같은 예외가 발생합니다.
+4. `close()`가 호출될 때까지 이벤트를 처리합니다. 끊긴 연결은 스스로 재개되며, 시도가 실패할 때마다 더 오래 기다립니다. Discord가 게이트웨이를 영구히 닫으면 `start()`는 종료 코드 4004에 `InvalidToken`, 4011에 `ShardingRequired`, 4014에 `PrivilegedIntentsRequired`, 4010·4012·4013에 뒤의 두 예외의 기반 클래스인 `GatewayClosed`를 발생시킵니다.
 
 ```python
 --8<-- "docs/snippets/running/lifecycle_events.py"
@@ -44,6 +44,8 @@ description: "bostie 봇을 실행합니다. 토큰, 시작과 종료 수명 주
 ```
 
 `await bot.wait_until_ready()`는 `Started`가 전송되면 반환하고, 이미 전송된 뒤라면 바로 반환하며, 그 전에 봇이 멈추면 `StateError`를 일으킵니다. 이 경우 `start()` 태스크를 await하면 멈춘 이유가 예외로 발생합니다. `bot.is_ready`는 기다리지 않고 같은 정보를 알려 줍니다. [웹 앱 예제](../examples.md#web-app)는 웹 서버의 lifespan 안에서 봇을 실행하고 웹 라우트에서 메시지를 보냅니다.
+
+끊긴 연결은 스스로 재개되므로, 봇을 다시 시작하는 것은 시작하는 중에 실패했을 때만 도움이 됩니다. `TransportError`와 `ServerError`는 Discord가 응답하지 못했다는 뜻이며, 나중에 재시도하면 될 수 있습니다. `InvalidToken`과 `GatewayClosed`는 새 토큰이나 Developer Portal에서 인텐트 켜기처럼 먼저 고쳐야 합니다.
 
 HTTP로 인터랙션에만 응답하는 봇은 게이트웨이가 필요 없습니다. [HTTP 인터랙션](http-interactions.md)을 참고하세요. `await bot.open()`은 봇을 그런 방식으로 시작하고 반환합니다. HTTP 클라이언트를 열고, 애플리케이션과 봇의 사용자를 가져오고, `Starting`을 보내고, 명령어를 동기화하고, 백그라운드 태스크를 시작한 뒤 애플리케이션을 반환합니다. `ASGIApp`이 이 메서드를 호출하며, `close()`가 이를 끝냅니다. REST API만 호출하는 스크립트는 [`RESTClient`](rest.md#without-a-bot)를 사용합니다.
 

@@ -135,7 +135,7 @@ async def transcribe(ctx: Context) -> None:
 
 - `vc.receive(voice.PCM(rate=16_000, channels=1), markers=True)` opens a `voice.Receiver`: each user's audio, decoded to the format a speech recognizer wants, with `voice.SpeechStart`, `voice.SpeechStop` and `voice.UserLeave` markers between the `voice.Frame`s. A frame has the `user_id`, the `data`, its `offset` on a 48 kHz clock and its `level` in dBFS.
 - `voice.utterances(rx, min_silence=0.8, max_length=30.0)` groups that receiver into `voice.Utterance`s, one user's speech from start to end, with `user_id`, `data`, `duration` and the seconds `lost`. Hand each one to the speech recognizer instead of timing silences by hand. It needs a PCM receiver opened with `markers=True` and without `mix=True`.
-- `users=[...]` and `exclude=[...]` choose whom to hear, and `mix=True` gives one stream of everyone. `rx.clear()` drops what is queued and continues live; `rx.close()` stops.
+- `users=[...]` and `exclude=[...]` choose whom to hear, and `mix=True` gives one stream of everyone. Only a mixed receiver's frames have `user_id` set to `None`. `rx.clear()` drops what is queued and continues live; `rx.close()` stops.
 - `voice.Recorder(vc, "recordings/{guild_id}/call.wav", mix=True, max_duration=300)` records the call to a WAV file, and `await recorder.wait()` returns the files when it stops. Tell the people in the call that the bot records them.
 - The events of a call come through `@bot.listen` and live in `bostie.voice`: `voice.UserJoin`, `voice.UserLeave`, `voice.SpeechStart`, `voice.SpeechStop`, `voice.StateChange`.
 

@@ -74,6 +74,7 @@ if __name__ == "__main__":
 
 - `bot.run()` reads the token from the `BOSTIE_TOKEN` environment variable. Never write a token into code. Keep `bot.run()` under `if __name__ == "__main__":` so tests can import the bot.
 - On every start, `bot.run()` registers the commands with Discord if they changed. While developing, `bostie.Bot(dev_guilds=[guild_id])` registers them in one test guild.
+- Inside a program that already runs an event loop, run `bot.start()` as a task, `await bot.wait_until_ready()`, and `await bot.close()` to stop; the bot can start again after `close()`. A lost connection resumes on its own, so start again only when starting fails with `bostie.TransportError` or `bostie.ServerError`. `bostie.InvalidToken` and `bostie.GatewayClosed` need a fix, not a retry.
 
 ## Commands
 

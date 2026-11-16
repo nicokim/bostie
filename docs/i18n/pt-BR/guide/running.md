@@ -1,5 +1,5 @@
 ---
-source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+source: e5576256eb18c7692967843a18e500f0b9d34fe8
 description: "Rode um bot do bostie: o token, o ciclo de vida de inicialização e desligamento, dentro de um programa asyncio ou app web, logging e vários bots em um processo."
 ---
 
@@ -20,7 +20,7 @@ O token vem da variável de ambiente `BOSTIE_TOKEN`, ou de `bot.run(token)`. Um 
 1. Ele envia o evento `Starting` e faz await de cada um dos listeners dele, um de cada vez. O REST funciona aqui, o gateway não; um listener que levanta uma exceção interrompe a inicialização.
 2. Ele [sincroniza os comandos](registration.md), a menos que `auto_sync=False`.
 3. Ele conecta os shards do gateway. Quando todos os shards estão prontos e os servidores deles chegaram, ele envia `Started` uma vez, inicia as [tarefas em segundo plano](tasks.md) e deixa `wait_until_ready()` retornar.
-4. Ele trata eventos até `close()`, ou até o Discord fechar o gateway de vez, o que levanta uma exceção, por exemplo `InvalidToken` ou `PrivilegedIntentsRequired`.
+4. Ele trata eventos até `close()`. Uma conexão perdida é retomada sozinha, esperando mais após cada tentativa que falha. Quando o Discord fecha o gateway de vez, `start()` levanta `InvalidToken` com o código de fechamento 4004, `ShardingRequired` com 4011, `PrivilegedIntentsRequired` com 4014, e `GatewayClosed`, a base dos dois últimos, com 4010, 4012 e 4013.
 
 ```python
 --8<-- "docs/snippets/running/lifecycle_events.py"
@@ -44,6 +44,8 @@ Quando o seu programa já roda um event loop, inicie o bot como uma tarefa:
 ```
 
 `await bot.wait_until_ready()` retorna assim que `Started` foi enviado, na hora se já tiver sido, e levanta `StateError` se o bot parar antes; fazer await da tarefa de `start()` então levanta o motivo. `bot.is_ready` diz o mesmo sem esperar. O [exemplo de app web](../examples.md#web-app) roda um bot dentro do lifespan de um servidor web e publica mensagens a partir de uma rota web.
+
+Como uma conexão perdida é retomada sozinha, iniciar o bot de novo só ajuda quando ele falha ao iniciar. `TransportError` e `ServerError` significam que o Discord não conseguiu responder, e outra tentativa mais tarde pode dar certo. `InvalidToken` e `GatewayClosed` precisam de uma correção antes, como um token novo ou uma intent ativada no Developer Portal.
 
 Um bot que só responde a interações por HTTP não precisa de gateway: veja [Interações por HTTP](http-interactions.md). `await bot.open()` o inicia desse jeito e retorna: ele abre o cliente HTTP, busca o aplicativo e o usuário do bot, envia `Starting`, sincroniza os comandos, inicia as tarefas em segundo plano e retorna o aplicativo. `ASGIApp` o chama, e `close()` o encerra. Um script que só chama a API REST usa um [`RESTClient`](rest.md#without-a-bot).
 
