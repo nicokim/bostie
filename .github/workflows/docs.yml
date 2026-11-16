@@ -51,7 +51,7 @@ jobs:
   indexnow:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions: {}
     env:
       SITE: ${{ needs.deploy.outputs.page_url }}
@@ -63,5 +63,12 @@ jobs:
             curl -sSf "$sitemap" | grep -o '<loc>[^<]*' | cut -c6-
           done > urls.txt
           python3 -c 'import json, os, sys; site, key = os.environ["SITE"], os.environ["KEY"]; print(json.dumps({"host": site.removeprefix("https://").rstrip("/"), "key": key, "keyLocation": f"{site}{key}.txt", "urlList": sys.stdin.read().split()}))' < urls.txt > body.json
-          curl -sSf -X POST https://api.indexnow.org/indexnow -H "Content-Type: application/json; charset=utf-8" --data @body.json
-          echo "IndexNow took $(wc -l < urls.txt) URLs"
+          for attempt in 1 2 3 4 5; do
+            status=$(curl -sS -o response.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow -H "Content-Type: application/json; charset=utf-8" --data @body.json)
+            case $status in
+              200|202) echo "IndexNow took $(wc -l < urls.txt) URLs"; exit 0 ;;
+            esac
+            echo "attempt $attempt: IndexNow answered $status $(cat response.txt)"
+            sleep 60
+          done
+          exit 1
