@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/nicokim/bostie/compare/v0.1.1...v0.2.0) (2026-11-16)
+
+
+### Features
+
+* **http:** make the gateway's identify spacing configurable through HTTPSettings ([#32](https://github.com/nicokim/bostie/issues/32)) ([420f629](https://github.com/nicokim/bostie/commit/420f62972c822cc82914670299293a914e7e2661))
+
 ## [0.1.1](https://github.com/nicokim/bostie/compare/v0.1.0...v0.1.1) (2026-11-16)
 
 
