@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/nicokim/bostie/compare/v0.3.0...v0.3.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **testing:** let fake.move_user run before the bot connects ([#38](https://github.com/nicokim/bostie/issues/38)) ([6244edf](https://github.com/nicokim/bostie/commit/6244edf84993591aec5c1dc616ba221a2d2a2703))
+
 ## [0.3.0](https://github.com/nicokim/bostie/compare/v0.2.0...v0.3.0) (2026-11-16)
 
 
