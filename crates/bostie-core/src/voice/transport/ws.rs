@@ -568,7 +568,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_write_to_a_peer_that_stops_reading_gives_up_after_the_patience() {
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_recv_buffer_size(4096).unwrap();
@@ -582,6 +582,7 @@ mod tests {
             drop(socket);
         });
         let mut client = dial(&format!("ws://{address}")).await;
+        tokio::time::pause();
         let patience = Duration::from_millis(50);
         let payload = Bytes::from(vec![b'x'; 64 * 1024]);
 
