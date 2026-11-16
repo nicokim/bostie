@@ -449,10 +449,8 @@ def test_connect_external_refuses_a_guild_bostie_already_runs() -> None:
 def test_context_voice_connects_to_the_users_channel_with_its_options() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         add_voice_channel(fake, OTHER_ID)
-        fake.voice_states[str(GUILD_ID), str(USER_ID)] = payloads.voice_state(
-            user_id=str(USER_ID), channel_id=str(OTHER_ID)
-        )
         async with started(fake) as bot:
+            await fake.move_user(GUILD_ID, USER_ID, OTHER_ID)
             ctx = voice.ContextVoice(bot.voice, GUILD_ID, USER_ID)
             before = ctx.current
             vc = await ctx.connect(self_deaf=True)
@@ -481,6 +479,35 @@ def test_context_voice_reads_a_cached_guilds_voice_states(cached: bool) -> None:
                 with pytest.raises(voice.NotInVoice):
                     await ctx.connect()
         assert lookups(fake) == []
+
+    run(scenario, voice=True)
+
+
+@pytest.mark.parametrize("cached", [True, False])
+def test_context_voice_follows_the_user_the_fake_moves(cached: bool) -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        add_voice_channel(fake, OTHER_ID)
+        async with started(fake) as bot:
+            if cached:
+                guild = payloads.guild(voice_states=[])
+                await asyncio.gather(
+                    bot.wait_for(GuildCreate), fake.dispatch("GUILD_CREATE", guild)
+                )
+            ctx = voice.ContextVoice(bot.voice, GUILD_ID, USER_ID)
+            for channel_id in (VOICE_ID, None):
+                await asyncio.gather(
+                    bot.wait_for(VoiceStateUpdate),
+                    fake.move_user(GUILD_ID, USER_ID, channel_id),
+                )
+            with pytest.raises(voice.NotInVoice):
+                await ctx.connect()
+            await asyncio.gather(
+                bot.wait_for(VoiceStateUpdate),
+                fake.move_user(GUILD_ID, USER_ID, OTHER_ID),
+            )
+            assert (await ctx.connect()).channel_id == OTHER_ID
+        states = [path for path in lookups(fake) if "/voice-states/" in path]
+        assert len(states) == (0 if cached else 2)
 
     run(scenario, voice=True)
 

@@ -89,10 +89,62 @@ async def shuffle(ctx: Context) -> None:
 - `voice.Queue(vc)` plays tracks one after another. `queue.add(source)` returns the `voice.Track`; `queue.skip()`, `queue.back()`, `queue.shuffle()` and `queue.clear()` change what plays; `queue.loop = "queue"` repeats.
 - A queue whose connection ended is `closed` and takes no more tracks. Make a new one, as `queue_of` does above.
 
-## Listening and recording
+## Listening and speech to text
 
+```python
+import logging
+
+import bostie
+from bostie import Context, voice
+
+log = logging.getLogger("my-bot")
+bot = bostie.Bot()
+
+
+@bot.command
+async def meter(ctx: Context, seconds: int = 10) -> None:
+    """Log how loud each speaker is for a few seconds."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    await ctx.respond("Listening.")
+    loudest: dict[int, float] = {}
+    async with vc.receive(voice.PCM(rate=16_000, channels=1)) as frames:
+        async for frame in frames:
+            if frame.user_id is not None and frame.level is not None:
+                level = max(loudest.get(frame.user_id, frame.level), frame.level)
+                loudest[frame.user_id] = level
+            if frame.offset >= seconds * 48_000:
+                break
+    for user_id, level in loudest.items():
+        log.info("user %d peaked at %.1f dBFS", user_id, level)
+
+
+@bot.command
+async def transcribe(ctx: Context) -> None:
+    """Collect what each person says, one utterance at a time."""
+    vc = ctx.voice.current or await ctx.voice.connect()
+    await ctx.respond("Transcribing until the bot leaves.")
+    rx = vc.receive(voice.PCM(rate=16_000, channels=1), markers=True)
+    async for said in voice.utterances(rx, min_silence=0.6, max_length=20.0):
+        log.info(
+            "user %d spoke %.1f s (%d bytes of 16 kHz mono)",
+            said.user_id,
+            said.duration,
+            len(said.data),
+        )
+```
+
+- `vc.receive(voice.PCM(rate=16_000, channels=1), markers=True)` opens a `voice.Receiver`: each user's audio, decoded to the format a speech recognizer wants, with `voice.SpeechStart`, `voice.SpeechStop` and `voice.UserLeave` markers between the `voice.Frame`s. A frame has the `user_id`, the `data`, its `offset` on a 48 kHz clock and its `level` in dBFS.
+- `voice.utterances(rx, min_silence=0.8, max_length=30.0)` groups that receiver into `voice.Utterance`s, one user's speech from start to end, with `user_id`, `data`, `duration` and the seconds `lost`. Hand each one to the speech recognizer instead of timing silences by hand. It needs a PCM receiver opened with `markers=True` and without `mix=True`.
+- `users=[...]` and `exclude=[...]` choose whom to hear, and `mix=True` gives one stream of everyone. `rx.clear()` drops what is queued and continues live; `rx.close()` stops.
 - `voice.Recorder(vc, "recordings/{guild_id}/call.wav", mix=True, max_duration=300)` records the call to a WAV file, and `await recorder.wait()` returns the files when it stops. Tell the people in the call that the bot records them.
 - The events of a call come through `@bot.listen` and live in `bostie.voice`: `voice.UserJoin`, `voice.UserLeave`, `voice.SpeechStart`, `voice.SpeechStop`, `voice.StateChange`.
+
+## Generated audio and text to speech
+
+- `vc.sink(voice.PCM(rate=24_000, channels=1))` returns a `voice.Sink` for audio the bot makes itself, such as a text-to-speech engine's output; bostie resamples it to 48 kHz. `async with vc.sink(...) as sink:` waits at the end of the block until it all played, then closes it.
+- `await sink.write(data)` queues audio and waits while the sink is full, which keeps the producer in step with real time; `sink.write_nowait(data)` queues it at once or raises `voice.BufferFull`.
+- `sink.clear()` drops what is queued, so the bot stops mid-sentence when someone interrupts it; a receiver opened with `markers=True` says when someone starts speaking.
+- `sink.mark()` returns a `voice.Marker` after the audio written so far; `await marker` is `True` once that audio played.
 
 ## Errors
 

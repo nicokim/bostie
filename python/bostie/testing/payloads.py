@@ -70,13 +70,23 @@ def interaction(type: int, data: Json, **fields: Any) -> Json:
     return base | fresh | {"data": data} | fields
 
 
-def command(name: str, *options: Json, resolved: Json | None = None) -> Json:
-    """The `data` of a slash command or autocomplete interaction."""
+def command(
+    name: str,
+    *options: Json,
+    resolved: Json | None = None,
+    guild_id: int | None = None,
+) -> Json:
+    """The `data` of a slash command or autocomplete interaction.
+
+    `guild_id` is the guild the command is registered in, for a guild command.
+    """
     data: Json = {"id": snowflake(), "name": name, "type": 1}
     if options:
         data["options"] = list(options)
     if resolved is not None:
         data["resolved"] = resolved
+    if guild_id is not None:
+        data["guild_id"] = str(guild_id)
     return data
 
 

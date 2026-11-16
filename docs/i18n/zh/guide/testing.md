@@ -1,5 +1,5 @@
 ---
-source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
+source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
 description: "无需 Discord 即可测试机器人：在本地模拟的网关、REST API 和语音服务器上运行它，发送交互和事件，并检查它发送了什么。"
 ---
 
@@ -19,7 +19,7 @@ description: "无需 Discord 即可测试机器人：在本地模拟的网关、
 
 | 调用 | 作用 |
 |---|---|
-| `await fake.interaction(type, data)` | 发送一个 `INTERACTION_CREATE`，并以 `Recorded` 请求的形式返回机器人的第一次回应 |
+| `await fake.interaction(type, data)` | 发送一个 `INTERACTION_CREATE`，并以 `Recorded` 请求的形式返回机器人的第一次回应；如果在 Discord 允许的 3 秒内没有回应，则抛出 `TimeoutError` |
 | `await fake.dispatch(name, d, shard=0)` | 发送任意网关事件，并返回其序列号 |
 | `fake.expect_callback(payload)` | 用于你自行分发的交互：返回一个等待其第一次回应的 future |
 | `await fake.send_op(op, d)` | 发送一个非 dispatch 的操作码，例如 7（重连）或 9（会话无效） |
@@ -27,13 +27,13 @@ description: "无需 Discord 即可测试机器人：在本地模拟的网关、
 | `fake.hold_acks()` | 停止回应心跳，就像连接已死一样 |
 | `await fake.next_identify()`、`await fake.next_resume()` | 等待机器人的下一次 IDENTIFY 或 RESUME |
 
-交互类型使用 Discord 的编号：2 表示命令，3 表示组件，4 表示自动补全，5 表示模态框提交。
+交互类型使用 Discord 的编号：2 表示命令，3 表示组件，4 表示自动补全，5 表示模态框提交。只在交互所在服务器注册的命令，其 `data` 中会带上该服务器的 ID，与 Discord 发送的一致；如果同名命令也在全局注册，`payloads.command(name, guild_id=...)` 会选择服务器的命令。
 
 在会开始新会话的关闭（例如 4007）之后，机器人要等 `HTTPSettings.identify_spacing` 秒才会再次 identify，默认值为 Discord 要求的 5 秒。在测试中，`Bot(http_settings=HTTPSettings(identify_spacing=0))` 可以跳过这段等待。
 
 `bostie.testing.payloads` 根据 Discord 文档中的示例构建载荷，并使用全新的 ID：
 
-- `command(name, *options)`、`option(name, type, value, focused=False)`、`subcommand(...)`、`group(...)` 和 `resolved()` 用于命令和自动补全；
+- `command(name, *options, guild_id=None)`、`option(name, type, value, focused=False)`、`subcommand(...)`、`group(...)` 和 `resolved()` 用于命令和自动补全；
 - `context_menu(type, name, target_id, resolved)` 用于用户命令和消息命令；
 - `button(custom_id)`、`select(custom_id, *values)` 和 `modal(custom_id)` 用于组件和模态框；
 - `message(...)`、`guild(...)`、`member(...)`、`user(...)`、`role(...)`、`channel(...)`、`voice_channel(...)`、`stage_channel(...)` 和 `voice_state(...)` 用于事件，每个都接受用来覆盖字段的关键字参数；
@@ -64,6 +64,7 @@ description: "无需 Discord 即可测试机器人：在本地模拟的网关、
 `FakeDiscord(voice=True)` 会添加一个语音频道和一个舞台频道，回应语音状态更新，并以 `fake.voice` 运行一个语音网关和 UDP 服务器，因此 `ctx.voice.connect()` 和 `vc.play(...)` 都可以对它运行。它不支持 DAVE；这部分由 bostie 的 Rust 测试覆盖。测试可以：
 
 - 通过 `await fake.next_voice_state_update()`、`await fake.voice.next_identify()` 和 `await fake.voice.wait_for_packets(count)` 等待机器人发送的内容，最后一个会以 `Packet` 对象的形式返回解密后的 RTP 包；每个语音连接都是 `fake.voice.sessions` 中的一个 `VoiceSession`，位于一个 `VoiceSocket` 上，`fake.voice.op(op, d)` 会向最新的连接发送任意语音操作码；
+- 通过 `await fake.move_user(guild_id, user_id, channel_id)` 让用户加入语音频道、移到其他频道，或传入 `None` 让其离开：它会发送 Discord 会发送的 `VOICE_STATE_UPDATE`，因此 `ctx.voice.connect()` 能找到该用户所在的频道；
 - 通过 `fake.voice.clients_connect(user_ids)`、`fake.voice.client_disconnect(user_id)`、`fake.voice.speaking(user_id, ssrc, flags)`、`fake.voice.send_audio(...)`（向机器人发送 Opus 包）、`fake.voice.send_rtcp(packet)`（向它发送一个 RTCP 包）以及 `fake.voice.send_datagram(data)`（不加密地发送字节，就像出故障的服务器那样）扮演其他用户；
 - 用 `fake.move_bot(channel_id)` 和 `fake.kick_bot()`，像版主那样移动机器人或断开其连接；
 - 用 `fake.hold_voice_state()` 让下一次语音状态更新得不到回应，就像频道已满时 Discord 的做法一样，直到返回的 `asyncio.Event` 被设置；

@@ -1,5 +1,5 @@
 ---
-source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
+source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
 description: "Тестирование бота Discord без Discord: локальный фейковый шлюз, REST API и голосовой сервер, отправка взаимодействий и событий, проверка того, что отправил бот."
 ---
 
@@ -19,7 +19,7 @@ description: "Тестирование бота Discord без Discord: лока
 
 | Вызов | Что делает |
 |---|---|
-| `await fake.interaction(type, data)` | отправляет `INTERACTION_CREATE` и возвращает первый ответ бота как запрос `Recorded` |
+| `await fake.interaction(type, data)` | отправляет `INTERACTION_CREATE` и возвращает первый ответ бота как запрос `Recorded` или выбрасывает `TimeoutError`, если ответ не пришёл за 3 секунды, которые даёт Discord |
 | `await fake.dispatch(name, d, shard=0)` | отправляет любое событие шлюза и возвращает его порядковый номер |
 | `fake.expect_callback(payload)` | для взаимодействия, которое вы отправляете сами: future для его первого ответа |
 | `await fake.send_op(op, d)` | отправляет опкод, не являющийся диспетчеризацией, например 7 (reconnect) или 9 (invalid session) |
@@ -27,13 +27,13 @@ description: "Тестирование бота Discord без Discord: лока
 | `fake.hold_acks()` | перестаёт отвечать на heartbeat, как мёртвое соединение |
 | `await fake.next_identify()`, `await fake.next_resume()` | ждёт следующего IDENTIFY или RESUME от бота |
 
-Типы взаимодействий — это числа Discord: 2 для команды, 3 для компонента, 4 для автодополнения, 5 для отправки модального окна.
+Типы взаимодействий — это числа Discord: 2 для команды, 3 для компонента, 4 для автодополнения, 5 для отправки модального окна. Команда, зарегистрированная только на сервере взаимодействия, получает ID этого сервера в своём `data`, как его присылает Discord; если имя зарегистрировано и глобально, `payloads.command(name, guild_id=...)` выбирает команду сервера.
 
 После закрытия, которое начинает новую сессию, например с кодом 4007, бот повторно выполняет identify только через `HTTPSettings.identify_spacing` секунд — по умолчанию 5, как требует Discord. `Bot(http_settings=HTTPSettings(identify_spacing=0))` убирает это ожидание в тесте.
 
 `bostie.testing.payloads` строит полезные нагрузки Discord по примерам из его документации, со свежими ID:
 
-- `command(name, *options)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` и `resolved()` — для команд и автодополнения;
+- `command(name, *options, guild_id=None)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` и `resolved()` — для команд и автодополнения;
 - `context_menu(type, name, target_id, resolved)` — для команд пользователя и сообщения;
 - `button(custom_id)`, `select(custom_id, *values)` и `modal(custom_id)` — для компонентов и модальных окон;
 - `message(...)`, `guild(...)`, `member(...)`, `user(...)`, `role(...)`, `channel(...)`, `voice_channel(...)`, `stage_channel(...)` и `voice_state(...)` — для событий, каждая с именованными аргументами, переопределяющими поля;
@@ -64,6 +64,7 @@ description: "Тестирование бота Discord без Discord: лока
 `FakeDiscord(voice=True)` добавляет голосовой канал и трибуну, отвечает на обновления голосового состояния и запускает голосовой шлюз и UDP-сервер как `fake.voice`, так что `ctx.voice.connect()` и `vc.play(...)` работают с ним. DAVE он не поддерживает; это покрывают тесты bostie на Rust. Тест может:
 
 - ждать того, что отправил бот, через `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` и `await fake.voice.wait_for_packets(count)`, который возвращает расшифрованные RTP-пакеты как объекты `Packet`; каждое голосовое подключение — это `VoiceSession` в `fake.voice.sessions` на `VoiceSocket`, а `fake.voice.op(op, d)` отправляет последнему любой голосовой опкод;
+- помещать пользователя в голосовой канал, перемещать его или убирать оттуда с `None` через `await fake.move_user(guild_id, user_id, channel_id)`: он отправляет `VOICE_STATE_UPDATE`, который отправил бы Discord, поэтому `ctx.voice.connect()` находит канал пользователя;
 - действовать от имени других пользователей через `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, который отправляет боту пакеты Opus, `fake.voice.send_rtcp(packet)`, который отправляет ему пакет RTCP, и `fake.voice.send_datagram(data)`, который отправляет байты без шифрования, как это сделал бы неисправный сервер;
 - перемещать или отключать бота, как это сделал бы модератор, через `fake.move_bot(channel_id)` и `fake.kick_bot()`;
 - оставить следующее обновление голосового состояния без ответа, как Discord делает, когда канал заполнен, через `fake.hold_voice_state()`, пока не будет установлен возвращённый `asyncio.Event`;

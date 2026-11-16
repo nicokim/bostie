@@ -1,5 +1,5 @@
 ---
-source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
+source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
 description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API REST y servidor de voz falsos y locales, envía interacciones y eventos y revisa lo enviado."
 ---
 
@@ -19,7 +19,7 @@ description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API 
 
 | Llamada | Qué hace |
 |---|---|
-| `await fake.interaction(type, data)` | envía un `INTERACTION_CREATE` y devuelve la primera respuesta del bot como una solicitud `Recorded` |
+| `await fake.interaction(type, data)` | envía un `INTERACTION_CREATE` y devuelve la primera respuesta del bot como una solicitud `Recorded`, o lanza `TimeoutError` si no llega ninguna en los 3 segundos que da Discord |
 | `await fake.dispatch(name, d, shard=0)` | envía cualquier evento del gateway y devuelve su número de secuencia |
 | `fake.expect_callback(payload)` | para una interacción que despachas tú mismo: un future para su primera respuesta |
 | `await fake.send_op(op, d)` | envía un opcode que no es dispatch, como 7 (reconectar) o 9 (sesión inválida) |
@@ -27,13 +27,13 @@ description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API 
 | `fake.hold_acks()` | deja de responder a los heartbeats, como haría una conexión muerta |
 | `await fake.next_identify()`, `await fake.next_resume()` | espera el siguiente IDENTIFY o RESUME del bot |
 
-Los tipos de interacción son los números de Discord: 2 para un comando, 3 para un componente, 4 para el autocompletado, 5 para el envío de un modal.
+Los tipos de interacción son los números de Discord: 2 para un comando, 3 para un componente, 4 para el autocompletado, 5 para el envío de un modal. Un comando registrado solo en el servidor de la interacción recibe el ID de ese servidor en su `data`, como lo envía Discord; si el nombre también está registrado de forma global, `payloads.command(name, guild_id=...)` elige el comando del servidor.
 
 Tras un cierre que inicia una sesión nueva, como el 4007, el bot vuelve a identificarse solo después de `HTTPSettings.identify_spacing` segundos, 5 por defecto, como exige Discord. `Bot(http_settings=HTTPSettings(identify_spacing=0))` se salta esa espera en una prueba.
 
 `bostie.testing.payloads` construye los payloads de Discord a partir de los ejemplos de su documentación, con ids nuevos:
 
-- `command(name, *options)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` y `resolved()` para los comandos y el autocompletado;
+- `command(name, *options, guild_id=None)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` y `resolved()` para los comandos y el autocompletado;
 - `context_menu(type, name, target_id, resolved)` para los comandos de usuario y de mensaje;
 - `button(custom_id)`, `select(custom_id, *values)` y `modal(custom_id)` para los componentes y los modales;
 - `message(...)`, `guild(...)`, `member(...)`, `user(...)`, `role(...)`, `channel(...)`, `voice_channel(...)`, `stage_channel(...)` y `voice_state(...)` para los eventos, cada uno con argumentos por palabra clave que reemplazan campos;
@@ -64,6 +64,7 @@ Para esperar algo que el bot hace en un listener, haz que [despache un evento pr
 `FakeDiscord(voice=True)` agrega un canal de voz y un canal escenario, responde a las actualizaciones de estado de voz y ejecuta un gateway de voz y un servidor UDP como `fake.voice`, así que `ctx.voice.connect()` y `vc.play(...)` funcionan contra él. No habla DAVE; eso lo cubren las pruebas de Rust de bostie. La prueba puede:
 
 - esperar lo que envió el bot con `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` y `await fake.voice.wait_for_packets(count)`, que devuelve los paquetes RTP descifrados como objetos `Packet`; cada conexión de voz es una `VoiceSession` en `fake.voice.sessions`, sobre un `VoiceSocket`, y `fake.voice.op(op, d)` le envía a la más reciente cualquier opcode de voz;
+- poner a un usuario en un canal de voz, moverlo o sacarlo con `None`, con `await fake.move_user(guild_id, user_id, channel_id)`: envía el `VOICE_STATE_UPDATE` que enviaría Discord, así `ctx.voice.connect()` encuentra el canal del usuario;
 - actuar como otros usuarios con `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, que le envía paquetes Opus al bot, `fake.voice.send_rtcp(packet)`, que le envía un paquete RTCP, y `fake.voice.send_datagram(data)`, que envía bytes sin sellar, como haría un servidor roto;
 - mover o desconectar al bot como lo haría un moderador, con `fake.move_bot(channel_id)` y `fake.kick_bot()`;
 - dejar sin respuesta la siguiente actualización de estado de voz, como hace Discord cuando el canal está lleno, con `fake.hold_voice_state()`, hasta que se active el `asyncio.Event` que devuelve;
