@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "无需 Discord 即可测试机器人：在本地模拟的网关、REST API 和语音服务器上运行它，发送交互和事件，并检查它发送了什么。"
 ---
 
@@ -64,7 +64,7 @@ description: "无需 Discord 即可测试机器人：在本地模拟的网关、
 `FakeDiscord(voice=True)` 会添加一个语音频道和一个舞台频道，回应语音状态更新，并以 `fake.voice` 运行一个语音网关和 UDP 服务器，因此 `ctx.voice.connect()` 和 `vc.play(...)` 都可以对它运行。它不支持 DAVE；这部分由 bostie 的 Rust 测试覆盖。测试可以：
 
 - 通过 `await fake.next_voice_state_update()`、`await fake.voice.next_identify()` 和 `await fake.voice.wait_for_packets(count)` 等待机器人发送的内容，最后一个会以 `Packet` 对象的形式返回解密后的 RTP 包；每个语音连接都是 `fake.voice.sessions` 中的一个 `VoiceSession`，位于一个 `VoiceSocket` 上，`fake.voice.op(op, d)` 会向最新的连接发送任意语音操作码；
-- 通过 `await fake.move_user(guild_id, user_id, channel_id)` 让用户加入语音频道、移到其他频道，或传入 `None` 让其离开：它会发送 Discord 会发送的 `VOICE_STATE_UPDATE`，因此 `ctx.voice.connect()` 能找到该用户所在的频道；
+- 通过 `await fake.move_user(guild_id, user_id, channel_id)` 让用户加入语音频道、移到其他频道，或传入 `None` 让其离开：机器人连接后，它会发送 Discord 会发送的 `VOICE_STATE_UPDATE`；连接前只保存状态，因此无论哪种情况 `ctx.voice.connect()` 都能找到该用户所在的频道；
 - 通过 `fake.voice.clients_connect(user_ids)`、`fake.voice.client_disconnect(user_id)`、`fake.voice.speaking(user_id, ssrc, flags)`、`fake.voice.send_audio(...)`（向机器人发送 Opus 包）、`fake.voice.send_rtcp(packet)`（向它发送一个 RTCP 包）以及 `fake.voice.send_datagram(data)`（不加密地发送字节，就像出故障的服务器那样）扮演其他用户；
 - 用 `fake.move_bot(channel_id)` 和 `fake.kick_bot()`，像版主那样移动机器人或断开其连接；
 - 用 `fake.hold_voice_state()` 让下一次语音状态更新得不到回应，就像频道已满时 Discord 的做法一样，直到返回的 `asyncio.Event` 被设置；

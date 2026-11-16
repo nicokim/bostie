@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "Teste um bot do Discord sem o Discord: rode-o com gateway, API REST e servidor de voz falsos e locais, envie interações e eventos e confira o que ele enviou."
 ---
 
@@ -64,7 +64,7 @@ Para esperar algo que o bot faz em um listener, faça-o [enviar um evento própr
 `FakeDiscord(voice=True)` adiciona um canal de voz e um canal de palco, responde às atualizações de estado de voz e roda um gateway de voz e um servidor UDP como `fake.voice`, para que `ctx.voice.connect()` e `vc.play(...)` funcionem contra ele. Ele não fala DAVE; os testes em Rust do bostie cobrem isso. O teste pode:
 
 - esperar o que o bot enviou com `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` e `await fake.voice.wait_for_packets(count)`, que retorna os pacotes RTP descriptografados como objetos `Packet`; cada conexão de voz é uma `VoiceSession` em `fake.voice.sessions`, sobre um `VoiceSocket`, e `fake.voice.op(op, d)` envia à mais recente qualquer opcode de voz;
-- colocar um usuário em um canal de voz, movê-lo ou tirá-lo com `None`, com `await fake.move_user(guild_id, user_id, channel_id)`: ele envia o `VOICE_STATE_UPDATE` que o Discord enviaria, então `ctx.voice.connect()` encontra o canal do usuário;
+- colocar um usuário em um canal de voz, movê-lo ou tirá-lo com `None`, com `await fake.move_user(guild_id, user_id, channel_id)`: ele envia o `VOICE_STATE_UPDATE` que o Discord enviaria assim que o bot estiver conectado, e antes disso só guarda o estado, então `ctx.voice.connect()` encontra o canal do usuário nos dois casos;
 - agir como outros usuários com `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, que envia pacotes Opus ao bot, `fake.voice.send_rtcp(packet)`, que envia a ele um pacote RTCP, e `fake.voice.send_datagram(data)`, que envia bytes sem criptografia, como um servidor quebrado faria;
 - mover ou desconectar o bot como um moderador faria, com `fake.move_bot(channel_id)` e `fake.kick_bot()`;
 - deixar sem resposta a próxima atualização de estado de voz, como o Discord faz quando o canal está cheio, com `fake.hold_voice_state()`, até o `asyncio.Event` retornado ser definido;

@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이트웨이, REST API, 음성 서버에서 봇을 실행하고 인터랙션과 이벤트를 보내 결과를 확인합니다."
 ---
 
@@ -64,7 +64,7 @@ description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이�
 `FakeDiscord(voice=True)`는 음성 채널과 스테이지 채널을 추가하고, 음성 상태 업데이트에 응답하며, 음성 게이트웨이와 UDP 서버를 `fake.voice`로 실행합니다. 그래서 `ctx.voice.connect()`와 `vc.play(...)`를 이 페이크에 대고 실행할 수 있습니다. DAVE는 지원하지 않으며, 이 부분은 bostie의 Rust 테스트가 다룹니다. 테스트에서는 다음을 할 수 있습니다.
 
 - `await fake.next_voice_state_update()`, `await fake.voice.next_identify()`, 복호화된 RTP 패킷을 `Packet` 객체로 반환하는 `await fake.voice.wait_for_packets(count)`로 봇이 보낸 것을 기다립니다. 각 음성 연결은 `fake.voice.sessions`에 있는 `VoiceSession`으로, `VoiceSocket` 위에서 동작하며, `fake.voice.op(op, d)`는 가장 최근 연결에 임의의 음성 opcode를 보냅니다.
-- `await fake.move_user(guild_id, user_id, channel_id)`로 사용자를 음성 채널에 넣거나, 옮기거나, `None`으로 내보냅니다. Discord가 보내는 것과 같은 `VOICE_STATE_UPDATE`를 보내므로 `ctx.voice.connect()`가 사용자의 채널을 찾습니다.
+- `await fake.move_user(guild_id, user_id, channel_id)`로 사용자를 음성 채널에 넣거나, 옮기거나, `None`으로 내보냅니다. 봇이 연결된 뒤에는 Discord가 보내는 것과 같은 `VOICE_STATE_UPDATE`를 보내고, 그 전에는 음성 상태만 저장하므로 어느 경우든 `ctx.voice.connect()`가 사용자의 채널을 찾습니다.
 - 다른 사용자처럼 행동합니다. `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, 봇에 Opus 패킷을 보내는 `fake.voice.send_audio(...)`, RTCP 패킷을 보내는 `fake.voice.send_rtcp(packet)`, 고장 난 서버처럼 바이트를 암호화하지 않고 보내는 `fake.voice.send_datagram(data)`를 사용합니다.
 - `fake.move_bot(channel_id)`와 `fake.kick_bot()`으로 모더레이터처럼 봇을 옮기거나 연결을 끊습니다.
 - `fake.hold_voice_state()`로, 채널이 가득 찼을 때 Discord가 하듯 다음 음성 상태 업데이트에 반환된 `asyncio.Event`가 설정될 때까지 응답하지 않습니다.

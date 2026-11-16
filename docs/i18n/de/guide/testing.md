@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "Teste einen Discord-Bot ohne Discord: lokales Fake-Gateway, Fake-REST-API und Fake-Sprachserver, sende Interaktionen und Events und prüfe, was er sendet."
 ---
 
@@ -64,7 +64,7 @@ Um auf etwas zu warten, das der Bot in einem Listener tut, lass ihn [ein eigenes
 `FakeDiscord(voice=True)` fügt einen Sprachkanal und einen Stage-Kanal hinzu, beantwortet Updates des Sprachzustands und betreibt ein Sprach-Gateway und einen UDP-Server als `fake.voice`, sodass `ctx.voice.connect()` und `vc.play(...)` dagegen funktionieren. Es spricht kein DAVE; das decken die Rust-Tests von bostie ab. Der Test kann:
 
 - mit `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` und `await fake.voice.wait_for_packets(count)` auf das warten, was der Bot gesendet hat; Letzteres gibt die entschlüsselten RTP-Pakete als `Packet`-Objekte zurück. Jede Sprachverbindung ist eine `VoiceSession` in `fake.voice.sessions`, auf einem `VoiceSocket`, und `fake.voice.op(op, d)` sendet der neuesten einen beliebigen Sprach-Opcode;
-- einen Benutzer in einen Sprachkanal setzen, ihn verschieben oder mit `None` herausnehmen, mit `await fake.move_user(guild_id, user_id, channel_id)`: Es sendet das `VOICE_STATE_UPDATE`, das Discord senden würde, sodass `ctx.voice.connect()` den Kanal des Benutzers findet;
+- einen Benutzer in einen Sprachkanal setzen, ihn verschieben oder mit `None` herausnehmen, mit `await fake.move_user(guild_id, user_id, channel_id)`: Es sendet das `VOICE_STATE_UPDATE`, das Discord senden würde, sobald der Bot verbunden ist, und speichert davor nur den Sprachzustand, sodass `ctx.voice.connect()` den Kanal des Benutzers in beiden Fällen findet;
 - als andere Benutzer handeln, mit `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, das Opus-Pakete an den Bot sendet, `fake.voice.send_rtcp(packet)`, das ihm ein RTCP-Paket sendet, und `fake.voice.send_datagram(data)`, das Bytes unversiegelt sendet, wie es ein defekter Server täte;
 - den Bot verschieben oder trennen, wie es ein Moderator täte, mit `fake.move_bot(channel_id)` und `fake.kick_bot()`;
 - mit `fake.hold_voice_state()` das nächste Update des Sprachzustands unbeantwortet lassen, wie Discord es bei einem vollen Kanal tut, bis das zurückgegebene `asyncio.Event` gesetzt wird;

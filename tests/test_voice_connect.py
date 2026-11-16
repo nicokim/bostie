@@ -512,6 +512,16 @@ def test_context_voice_follows_the_user_the_fake_moves(cached: bool) -> None:
     run(scenario, voice=True)
 
 
+def test_context_voice_finds_a_user_the_fake_moved_before_the_bot_started() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        await fake.move_user(GUILD_ID, USER_ID, VOICE_ID)
+        async with started(fake) as bot:
+            ctx = voice.ContextVoice(bot.voice, GUILD_ID, USER_ID)
+            assert (await ctx.connect()).channel_id == VOICE_ID
+
+    run(scenario, voice=True)
+
+
 @pytest.mark.parametrize(
     ("case", "error"),
     [("dm", voice.NotInVoice), ("no channel", voice.NotInVoice), ("gone", NotFound)],
