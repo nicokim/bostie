@@ -1,5 +1,6 @@
 ---
-source: c860479ed0f96862f6c2fc7b6c803ec90dd1c51a
+source: 85c03032a8751ccdfc029a389843e5754c6f4b3f
+description: "Referencia de la API de cada grupo de bot.rest: mensajes, canales, servidores, miembros, roles, webhooks, comandos y más, con sus opciones y tipos de retorno."
 ---
 
 # Grupos REST

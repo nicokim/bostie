@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Receba voz do Discord por falante em PCM, Opus ou pacotes RTP, detecte fala, separe enunciados, retransmita chamadas e grave cada usuário em Ogg ou WAV."
 ---
 
 # Recebendo e gravando

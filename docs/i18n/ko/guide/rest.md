@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "Discord REST API의 모든 봇 엔드포인트를 호출합니다. 페이지 넘기기, 메시지 일괄 삭제, 감사 로그, 레이트 리밋, 재시도를 다룹니다."
 ---
 
 # REST API

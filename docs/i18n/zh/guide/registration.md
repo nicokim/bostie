@@ -1,5 +1,6 @@
 ---
-source: 9aa2f3cd3cfe588188668066e047191f9b207226
+source: b7efeeb83216fd56b3819a874abdb0bfb6a2a072
+description: "bostie 如何与 Discord 同步应用命令：全局和服务器作用域、开发时的测试服务器、命令提及、翻译以及同步错误。"
 ---
 
 # 注册命令

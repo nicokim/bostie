@@ -1,5 +1,6 @@
 ---
-source: 14575d90a6a022a3c0cbfce22c048b404bcf4957
+source: e7704fd7192c52cc55342cad633590bd6f185904
+description: "Häufige bostie-Probleme und ihre Logzeilen: „Die Anwendung hat nicht geantwortet“, fehlende Events, Gateway- und REST-Warnungen, Sprachkanäle, Bugreports."
 ---
 
 # Fehlerbehebung

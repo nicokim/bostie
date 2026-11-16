@@ -1,5 +1,6 @@
 ---
-source: fecb554b875bf1b19567e85926b3784beca4dba5
+source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+description: "Einen bostie-Bot betreiben: Token, Start und Herunterfahren, Betrieb in einem asyncio-Programm oder einer Web-App, Logging und mehrere Bots in einem Prozess."
 ---
 
 # Einen Bot betreiben

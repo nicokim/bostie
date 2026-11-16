@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "텍스트 상자, 선택 메뉴, 파일 업로드, 라디오 그룹, 체크박스가 있는 Discord 모달을 열고, 값을 읽고, 핸들러 안에서 제출을 기다립니다."
 ---
 
 # 모달

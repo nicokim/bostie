@@ -1,5 +1,6 @@
 ---
-source: 8bfaf791038898b7b25fb584ff4496c345a14fcb
+source: 33cc84c2aaa4440f3880a38f7ef33c9dff405dec
+description: "bostie 如何把 Discord 的 JSON 解码为带类型的模型：部分对象、未知字段和枚举值、原始载荷、Snowflake 时间戳、枚举与标志。"
 ---
 
 # 模型与枚举

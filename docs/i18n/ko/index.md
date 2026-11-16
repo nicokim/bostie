@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: a3a1b83398a63bd2c49a018f148793d0781c22a0
+source: dc795d93f8d81e572155a4937bfd0da9add197bf
+description: "Discord 게이트웨이, HTTP, DAVE 음성을 Rust로 처리하는 bostie로 슬래시 명령어와 음성 봇을 타입이 지정된 비동기 Python으로 씁니다."
 ---
 
 <div class="bostie-hero" markdown>

@@ -1,3 +1,7 @@
+---
+description: "What bostie's cache keeps from the gateway, how to look up guilds, members and channels, fall back to REST, and compute permissions and role hierarchy."
+---
+
 # Cache and permissions
 
 ![Bostie dropping a bone into a box](../assets/mascot/bostie-cache.webp){ align=right width="180" loading=lazy }

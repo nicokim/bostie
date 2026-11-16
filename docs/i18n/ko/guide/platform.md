@@ -1,5 +1,6 @@
 ---
-source: 03a349670a189a38d3b3491aba4b54e6af1ec4e9
+source: 0c49168c9e0add898da9cb6bf25e6b0a9fb68ecd
+description: "사용자가 설치하는 Discord 앱을 만들고, 활동을 실행하며, 엔타이틀먼트와 구독으로 SKU를 판매하고, REST로 Social SDK 로비를 관리합니다."
 ---
 
 # 활동, 수익화, Social SDK

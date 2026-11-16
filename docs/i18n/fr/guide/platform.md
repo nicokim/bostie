@@ -1,5 +1,6 @@
 ---
-source: 03a349670a189a38d3b3491aba4b54e6af1ec4e9
+source: 0c49168c9e0add898da9cb6bf25e6b0a9fb68ecd
+description: "Créez des applications Discord installables par l'utilisateur, lancez des Activités, vendez SKU, entitlements et abonnements, gérez les lobbies du Social SDK."
 ---
 
 # Activités, monétisation et Social SDK

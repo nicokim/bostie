@@ -1,3 +1,7 @@
+---
+description: "Restrict commands with permission, role, owner, cooldown and concurrency checks, run hooks before and after handlers, and handle errors with error hooks."
+---
+
 # Checks, hooks and errors
 
 ![Bostie with crossed arms, fuming](../assets/mascot/bostie-angry.webp){ align=right width="180" loading=lazy }

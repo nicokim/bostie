@@ -1,5 +1,6 @@
 ---
-source: 77b89f1a95f4c607e649200ead2018c5cd1d4238
+source: 04acac50344dd962e17ae5cc5ee55d5415a9daf7
+description: "消息、组件和交互模型的 API 参考：Message、WebhookMessage、嵌入内容、附件、Components V2 以及所有交互类型。"
 ---
 
 # 消息与交互

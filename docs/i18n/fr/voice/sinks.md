@@ -1,5 +1,6 @@
 ---
-source: 7da84385c00fe71bc6575b90de4a0a059883399e
+source: e89423f86355edd642290a66c8608f48553e0ff6
+description: "Envoyez de l'audio PCM ou Opus brut en salon vocal Discord via un sink : formats, contre-pression, marqueurs, fondus enchaînés, tampon et compteurs d'underruns."
 ---
 
 # Sinks et audio brut

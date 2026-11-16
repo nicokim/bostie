@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: a3a1b83398a63bd2c49a018f148793d0781c22a0
+source: dc795d93f8d81e572155a4937bfd0da9add197bf
+description: "En bostie, el gateway de Discord, el cliente HTTP y el motor de voz DAVE corren en Rust, y tú escribes bots async tipados en Python con comandos slash y voz."
 ---
 
 <div class="bostie-hero" markdown>

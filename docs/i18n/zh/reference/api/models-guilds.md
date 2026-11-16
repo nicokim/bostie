@@ -1,5 +1,6 @@
 ---
-source: e34cc46068e5dbed893da30651ffe79172be1050
+source: e2358e898c35ce2b4e86e1bc432f1c4b34f055a9
+description: "服务器模型的 API 参考：Guild、Role、Member、频道与子区、审核日志与自动管理、服务器活动、邀请、表情符号和贴纸。"
 ---
 
 # 服务器与频道

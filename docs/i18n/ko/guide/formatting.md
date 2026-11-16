@@ -1,5 +1,6 @@
 ---
-source: f4afb2ae41854fb4e97a63590ca4fa1760172438
+source: 12cb33d1448fc6df340b3c11d616bf17c9f5b58c
+description: "bostie.fmt로 멘션, 타임스탬프, 마크다운 이스케이프를 처리하고, bostie.color로 색상을 고르며, 아바타와 이모지 CDN URL을 만듭니다."
 ---
 
 # 서식, 색상, CDN URL

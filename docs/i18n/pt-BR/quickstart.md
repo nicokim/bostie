@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 4004163cb60675c429361e3c0739c96ffdfbc70f
+source: 879f90299466f4c668efe8cb4ef1edb576a11bc2
+description: "Crie um aplicativo do Discord, adicione-o a um servidor e rode seu primeiro bot Python com um comando de barra e uma opção tipada, passo a passo com o bostie."
 ---
 
 # Início rápido

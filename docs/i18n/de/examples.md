@@ -1,5 +1,6 @@
 ---
-source: afe273b0bb674620ed6eaaab978ec64bbcb23c8e
+source: f54db29cb26a01ab63ca1c726a1815c968b1cf3a
+description: "Komplette bostie-Beispiele: Slash-Befehle, Components V2, Modals, Events, Musik-Warteschlange, Sprachaufnahme, HTTP-Interaktionen, Webhooks, verknüpfte Rollen."
 ---
 
 # Beispiele

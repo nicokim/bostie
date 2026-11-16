@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "调用 Discord REST API 中所有面向机器人的端点：分页、批量清除消息、审核日志、错误、速率限制、重试、文件下载和原始请求。"
 ---
 
 # REST API

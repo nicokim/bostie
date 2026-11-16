@@ -1,5 +1,6 @@
 ---
-source: 68e78077054bc9371fe434e9a92b5c88f7968c11
+source: 323d099389fca116547e2365690b821a01172a94
+description: "命令构建模块的 API 参考：Option、Choice、Convert、Range，Command、Group 和上下文菜单类，组件路由以及 SyncResult。"
 ---
 
 # 命令

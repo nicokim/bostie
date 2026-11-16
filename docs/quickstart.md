@@ -1,5 +1,6 @@
 ---
 render_macros: true
+description: "Create a Discord application, add it to a server and run your first Python bot with a slash command and a typed option, step by step with bostie."
 ---
 
 # Quickstart

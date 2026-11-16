@@ -1,5 +1,6 @@
 ---
-source: 7f5c86665191d303ab8ac2e965d43d553cee7953
+source: 620651abbb35486bdf47aba0669128b8bb1d0ad6
+description: "Define comandos slash de Discord con anotaciones de tipo de Python: tipos de opción, choices, rangos, autocompletado, conversores, subcomandos y límites."
 ---
 
 # Comandos slash

@@ -1,3 +1,7 @@
+---
+description: "Shard a Discord bot in one process or across several, coordinate identifies between processes, follow shard events, and resume sessions after a restart."
+---
+
 # Sharding and resuming
 
 ![Three Bosties running in a row](../assets/mascot/bostie-running.webp){ align=right width="220" loading=lazy }

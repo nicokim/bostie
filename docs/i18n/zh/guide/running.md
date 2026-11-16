@@ -1,5 +1,6 @@
 ---
-source: fecb554b875bf1b19567e85926b3784beca4dba5
+source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+description: "运行 bostie 机器人：令牌、启动与关闭的生命周期、在 asyncio 程序或 Web 应用中运行、日志，以及在一个进程中运行多个机器人。"
 ---
 
 # 运行机器人

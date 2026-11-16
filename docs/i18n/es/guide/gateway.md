@@ -1,5 +1,6 @@
 ---
-source: 3337dc9b9c1508c500eac3639bbfb9fc948f4a27
+source: 78a0e5466c6f1542e685629c22fbbdc82ec6dcde
+description: "Configura intents del gateway, incluso privilegiados, la presencia y actividades del bot, pide miembros, envía comandos sin procesar y maneja la contrapresión."
 ---
 
 # Intents, presencia y el gateway

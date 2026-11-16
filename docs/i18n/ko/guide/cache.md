@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "bostie 캐시가 게이트웨이에서 보관하는 것, 서버, 멤버, 채널 조회, REST로 대체하기, 권한과 역할 계층 계산을 설명합니다."
 ---
 
 # 캐시와 권한

@@ -1,5 +1,6 @@
 ---
-source: a5646223563b83584ded4c6da42da70ad55b98c7
+source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+description: "Discord なしで Bot をテストします。ローカルのフェイクのゲートウェイ、REST API、ボイスサーバーで動かし、インタラクションやイベントを送り、送信内容を確認します。"
 ---
 
 # Bot のテスト

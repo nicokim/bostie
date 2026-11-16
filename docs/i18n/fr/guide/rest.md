@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "Toute l'API REST Discord pour les bots : pagination, purge de messages, journal des actions, erreurs, limites de débit, téléchargements et requêtes brutes."
 ---
 
 # API REST

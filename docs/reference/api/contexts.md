@@ -1,3 +1,7 @@
+---
+description: "API reference for interaction contexts: Context, ComponentContext, ModalContext and AutocompleteContext, and the message parts their methods accept."
+---
+
 # Interaction contexts
 
 [Answering interactions](../../guide/responses.md) explains how they are used.

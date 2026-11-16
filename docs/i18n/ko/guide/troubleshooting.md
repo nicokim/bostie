@@ -1,5 +1,6 @@
 ---
-source: 14575d90a6a022a3c0cbfce22c048b404bcf4957
+source: e7704fd7192c52cc55342cad633590bd6f185904
+description: "로그 줄로 bostie 문제를 해결합니다. \"The application did not respond\", 오지 않는 이벤트, 게이트웨이, REST, 음성 문제."
 ---
 
 # 문제 해결

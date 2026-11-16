@@ -1,5 +1,6 @@
 ---
-source: 4a284a3b3f200d0ec7930b638539bf2f3dce58f5
+source: 8ae643339a37c0c92710f45b0f55c89b0681c0b2
+description: "Referencia de la API de contextos de interacción: Context, ComponentContext, ModalContext y AutocompleteContext, y qué partes de mensaje aceptan sus métodos."
 ---
 
 # Contextos de interacción

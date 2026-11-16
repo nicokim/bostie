@@ -1,5 +1,6 @@
 ---
-source: 7cf12918970912a9363cc1aac58fb080c085fef9
+source: b58df394d71cd32e4c45cccfdd0da40ddcb957c3
+description: "Ejecuta tareas en segundo plano cada pocos segundos o a horas fijas con @bot.every, e inícialas, detenlas, reinícialas o reprográmalas con el bot en marcha."
 ---
 
 # Tareas en segundo plano

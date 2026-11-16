@@ -1,5 +1,6 @@
 ---
-source: 68e78077054bc9371fe434e9a92b5c88f7968c11
+source: 323d099389fca116547e2365690b821a01172a94
+description: "명령어를 이루는 Option, Choice, Convert, Range, Command, Group, 컨텍스트 메뉴 클래스의 API 레퍼런스입니다."
 ---
 
 # 명령어

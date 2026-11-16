@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "bostie の Bot クラスの全オプションと既定値。インテント、プレゼンス、シャーディング、コマンドの同期、自動遅延応答、キャッシュ、HTTP 設定、ボイス、終了処理。"
 ---
 
 # Bot のオプション

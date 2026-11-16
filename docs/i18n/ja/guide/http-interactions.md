@@ -1,5 +1,6 @@
 ---
-source: 04dd5c7d848eed6b7fe26c0af24d76fdfca1a0d2
+source: d24ff7127c79eec4345b1d42ca0265273465a567
+description: "ゲートウェイの代わりに ASGI アプリで Discord のインタラクションとウェブフックイベントを HTTP で受け取り、署名を検証し、独自の Web サーバーでも動かします。"
 ---
 
 # HTTP インタラクションとウェブフックイベント

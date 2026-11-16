@@ -1,5 +1,6 @@
 ---
-source: 36c115143dc1adb3de84e102a85b46de4e1177e4
+source: ef13ec200ec6992e8566601675e775710975b661
+description: "RESTClient, BearerClient, WebhookClient, ASGIApp, HTTPClient 등 클라이언트와 HTTP의 API 레퍼런스입니다."
 ---
 
 # 클라이언트와 HTTP

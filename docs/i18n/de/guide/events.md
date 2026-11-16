@@ -1,5 +1,6 @@
 ---
-source: a5b6afe7ce2baa740ef1fd06599d2895465c3d1c
+source: 0402229d2b242ba10aed929b9dedd0087f57b406
+description: "Höre mit typisierten Listenern auf Discords Gateway-Events, warte auf Events oder streame sie, nutze Roh- und eigene Events und sieh, welche Intents nötig sind."
 ---
 
 # Events

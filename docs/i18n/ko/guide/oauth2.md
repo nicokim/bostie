@@ -1,5 +1,6 @@
 ---
-source: 6f520ae7da3868093d6ae15e172deaedb506e1fc
+source: a95f1211f80aa1fe37d568699ddca680b3c3ed9d
+description: "bostie로 Discord OAuth2를 씁니다. PKCE 인증 URL, 코드 교환과 갱신, 사용자 토큰으로 API 호출, 연결된 역할 메타데이터를 다룹니다."
 ---
 
 # OAuth2와 연결된 역할

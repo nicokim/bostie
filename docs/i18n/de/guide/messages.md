@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "Baue Discord-Nachrichten aus denselben Bausteinen: Embeds, Dateien, Umfragen, Antworten, Weiterleitungen, Components V2, Tipp-Anzeige und Sprachnachrichten."
 ---
 
 # Nachrichteninhalt

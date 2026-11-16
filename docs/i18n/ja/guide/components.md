@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "bostie.ui でボタン、セレクトメニュー、Components V2 のレイアウトを作り、Bot の再起動後も動き続けるハンドラーにカスタム ID をルーティングします。"
 ---
 
 # コンポーネント

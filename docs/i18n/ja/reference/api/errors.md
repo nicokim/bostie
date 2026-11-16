@@ -1,5 +1,6 @@
 ---
-source: e4cd0270416aea852c65b9ec8ce09bbd48e6c923
+source: 1640377b17c267ca134b666ff6d1b7e1dbcfeef3
+description: "bostie.errors の API リファレンス。HTTP やレート制限から、ゲートウェイ、コマンド、インタラクション、ボイスまで、bostie が送出する全例外を掲載します。"
 ---
 
 # エラー

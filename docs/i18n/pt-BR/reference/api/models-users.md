@@ -1,5 +1,6 @@
 ---
-source: a62ede2e6a2aefae7edd71356c123776c0fec22d
+source: 00e20a71fb965dd4213c77d5d84986b08dff9a2a
+description: "Referência da API dos modelos de usuário: User e CurrentUser, presenças e suas atividades, tokens de acesso e conexões do OAuth2, e o modelo Webhook."
 ---
 
 # Usuários e presenças

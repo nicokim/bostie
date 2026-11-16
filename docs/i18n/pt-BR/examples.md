@@ -1,5 +1,6 @@
 ---
-source: afe273b0bb674620ed6eaaab978ec64bbcb23c8e
+source: f54db29cb26a01ab63ca1c726a1815c968b1cf3a
+description: "Exemplos de bots do bostie: comandos de barra, Components V2, modais, eventos, fila de música, gravação de voz, interações HTTP, webhooks e cargos vinculados."
 ---
 
 # Exemplos

@@ -1,5 +1,6 @@
 ---
-source: cbf9d472ef0e0c0f610b3352754ad6482b93f093
+source: b1ea93c8ecd81e5df88e6e3728f48038a3213951
+description: "Antworte auf Discord-Interaktionen: (automatisch) aufschieben, bearbeiten, Folge- und ephemere Nachrichten, Fristen von 3 s und 15 min, erlaubte Erwähnungen."
 ---
 
 # Auf Interaktionen antworten

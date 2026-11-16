@@ -1,3 +1,7 @@
+---
+description: "Install bostie with pip: prebuilt wheels for Linux, macOS and Windows on Python 3.12 and newer, free-threaded builds, the testing extra and source builds."
+---
+
 # Install
 
 ![Bostie opening a box with a star inside](assets/mascot/bostie-install.webp){ align=right width="180" loading=lazy }

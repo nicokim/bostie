@@ -1,5 +1,6 @@
 ---
-source: 77b89f1a95f4c607e649200ead2018c5cd1d4238
+source: 04acac50344dd962e17ae5cc5ee55d5415a9daf7
+description: "メッセージ関連モデルの API リファレンス。Message、WebhookMessage、埋め込み、添付ファイル、Components V2、全インタラクション型を掲載。"
 ---
 
 # メッセージとインタラクション

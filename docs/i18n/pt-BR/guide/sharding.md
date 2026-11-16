@@ -1,5 +1,6 @@
 ---
-source: c45c92d8551bab86affc3711ec78970f48e886d8
+source: 77fd407beead25f005f3979ee300e3dbfac29482
+description: "Divida um bot do Discord em shards em um ou vários processos, coordene o identify entre processos, acompanhe eventos de shard e retome sessões após reiniciar."
 ---
 
 # Sharding e retomada

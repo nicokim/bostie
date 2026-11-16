@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: a3a1b83398a63bd2c49a018f148793d0781c22a0
+source: dc795d93f8d81e572155a4937bfd0da9add197bf
+description: "bostie 在 Rust 中运行 Discord 网关、HTTP 客户端和 DAVE 语音引擎，你用带类型的异步 Python 编写支持斜杠命令和语音的机器人。"
 ---
 
 <div class="bostie-hero" markdown>

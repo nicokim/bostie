@@ -1,3 +1,7 @@
+---
+description: "Call every bot endpoint of Discord's REST API: paging, purging messages, the audit log, errors, rate limits, retries, file downloads and raw requests."
+---
+
 # REST API
 
 ![Bostie jumping for a ball](../assets/mascot/bostie-jumping.webp){ align=right width="180" loading=lazy }

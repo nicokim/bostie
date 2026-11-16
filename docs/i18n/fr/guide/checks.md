@@ -1,5 +1,6 @@
 ---
-source: 029b6094446c707896abd078da818c4746bbebec
+source: 63c601a21b6ce6311976189053f39ff84cf42f5d
+description: "Restreignez les commandes par permissions, rôles, propriétaire, cooldown ou concurrence, lancez des hooks avant et après les gestionnaires et gérez les erreurs."
 ---
 
 # Vérifications, hooks et erreurs

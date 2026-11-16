@@ -1,5 +1,6 @@
 ---
-source: c860479ed0f96862f6c2fc7b6c803ec90dd1c51a
+source: 85c03032a8751ccdfc029a389843e5754c6f4b3f
+description: "bot.rest 所有分组的 API 参考：消息、频道、服务器、成员、身份组、Webhook、命令等方法，以及它们的选项和返回类型。"
 ---
 
 # REST 分组

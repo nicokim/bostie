@@ -1,3 +1,7 @@
+---
+description: "API reference for command building blocks: Option, Choice, Convert, Range, the Command, Group and context menu classes, component routes and SyncResult."
+---
+
 # Commands
 
 The decorators on [`Bot`][bostie.Bot] and [`Router`][bostie.Router] build these objects; [Slash commands](../../guide/commands.md) explains them.

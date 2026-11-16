@@ -1,5 +1,6 @@
 ---
-source: 36c115143dc1adb3de84e102a85b46de4e1177e4
+source: ef13ec200ec6992e8566601675e775710975b661
+description: "Referencia de la API de RESTClient, BearerClient, WebhookClient y SyncWebhookClient, ASGIApp, la verificación de firmas, HTTPClient, HTTPSettings y File."
 ---
 
 # Clientes y HTTP

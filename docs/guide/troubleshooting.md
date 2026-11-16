@@ -1,3 +1,7 @@
+---
+description: "Fix common bostie problems by their log line: \"The application did not respond\", missing events, gateway and REST warnings, voice issues and bug reports."
+---
+
 # Troubleshooting
 
 ![Bostie thinking until the question mark turns into a light bulb](../assets/mascot/bostie-thinking.webp){ align=right width="180" loading=lazy }

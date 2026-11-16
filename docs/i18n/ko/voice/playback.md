@@ -1,5 +1,6 @@
 ---
-source: fa47131472a60ef5dbaa1eef411b4ec762c85146
+source: d85e30b6bb45eff282f70f86375dc49e252a5387
+description: "Discord 음성에서 파일, URL, HLS 스트림을 재생합니다. 트랙, 볼륨, 이퀄라이저, 속도 필터, 크로스페이드 큐, Opus 인코더 설정을 다룹니다."
 ---
 
 # 오디오 재생

@@ -1,5 +1,6 @@
 ---
-source: 3337dc9b9c1508c500eac3639bbfb9fc948f4a27
+source: 78a0e5466c6f1542e685629c22fbbdc82ec6dcde
+description: "Intents de la gateway, privilégiés compris, présence et activités du bot, demande des membres d'un serveur, commandes gateway brutes et contre-pression."
 ---
 
 # Intents, présence et gateway

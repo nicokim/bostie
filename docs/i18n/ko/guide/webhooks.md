@@ -1,5 +1,6 @@
 ---
-source: e4d65a29086e1f3e4e82a64b8aa6c42d29627ef0
+source: efdcb485cd6bec9ca515ad0f0311945137caa315
+description: "봇 없이 비동기 또는 일반 Python 코드에서 Discord 웹후크 URL로 메시지를 보내고 수정하고 삭제하며, 봇으로 웹후크를 만들고 관리합니다."
 ---
 
 # 웹후크

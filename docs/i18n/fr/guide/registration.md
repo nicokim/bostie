@@ -1,5 +1,6 @@
 ---
-source: 9aa2f3cd3cfe588188668066e047191f9b207226
+source: b7efeeb83216fd56b3819a874abdb0bfb6a2a072
+description: "Comment bostie synchronise les commandes d'application : portée globale ou serveur, serveur de test, mentions, traductions et erreurs de synchronisation."
 ---
 
 # Enregistrer les commandes

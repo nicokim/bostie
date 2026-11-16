@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "Was bostie aus dem Gateway cacht, wie du Server, Mitglieder und Kanäle nachschlägst, auf REST zurückfällst und Berechtigungen samt Rollenhierarchie berechnest."
 ---
 
 # Cache und Berechtigungen

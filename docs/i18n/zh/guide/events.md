@@ -1,5 +1,6 @@
 ---
-source: a5b6afe7ce2baa740ef1fd06599d2895465c3d1c
+source: 0402229d2b242ba10aed929b9dedd0087f57b406
+description: "用带类型的监听器监听 Discord 网关事件，等待事件或以流的方式接收，使用原始事件和自定义事件，并了解各自所需的 Intent。"
 ---
 
 # 事件

@@ -1,5 +1,6 @@
 ---
-source: 04dd5c7d848eed6b7fe26c0af24d76fdfca1a0d2
+source: d24ff7127c79eec4345b1d42ca0265273465a567
+description: "게이트웨이 대신 ASGI 앱으로 Discord 인터랙션과 웹후크 이벤트를 HTTP로 받고, 요청 서명을 검증하거나 직접 운영하는 웹 서버를 씁니다."
 ---
 
 # HTTP 인터랙션과 웹후크 이벤트

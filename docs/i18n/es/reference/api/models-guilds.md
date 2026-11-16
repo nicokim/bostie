@@ -1,5 +1,6 @@
 ---
-source: e34cc46068e5dbed893da30651ffe79172be1050
+source: e2358e898c35ce2b4e86e1bc432f1c4b34f055a9
+description: "Referencia de la API de servidores: Guild, Role, Member, canales e hilos, registro de auditoría, AutoMod, eventos programados, invitaciones, emojis y stickers."
 ---
 
 # Servidores y canales

@@ -1,5 +1,6 @@
 ---
-source: cbf9d472ef0e0c0f610b3352754ad6482b93f093
+source: b1ea93c8ecd81e5df88e6e3728f48038a3213951
+description: "Répondez aux interactions : différer, modifier, messages de suivi et éphémères, réponse différée automatique, limites de 3 s et 15 min, mentions autorisées."
 ---
 
 # Répondre aux interactions

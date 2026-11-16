@@ -1,5 +1,6 @@
 ---
-source: c860479ed0f96862f6c2fc7b6c803ec90dd1c51a
+source: 85c03032a8751ccdfc029a389843e5754c6f4b3f
+description: "모든 bot.rest 그룹의 API 레퍼런스입니다. 메시지, 채널, 서버, 멤버, 역할, 웹후크, 명령어 등의 메서드와 옵션, 반환 타입을 다룹니다."
 ---
 
 # REST 그룹

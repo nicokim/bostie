@@ -1,5 +1,6 @@
 ---
-source: f49f915994d33a7383708875aaeb52d2b113c2b7
+source: 74e134769abeab53fb9b321be4b35f2e68a57db8
+description: "bostie가 전달하는 모든 게이트웨이, 웹후크, 봇 이벤트를 주제별로 모아 디스패치 이름, 필요한 인텐트, 필드를 정리합니다."
 ---
 
 # 이벤트 목록

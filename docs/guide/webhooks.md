@@ -1,3 +1,7 @@
+---
+description: "Post, edit and delete messages through a Discord webhook URL from async or plain Python code without a bot, and create and manage webhooks with one."
+---
+
 # Webhooks
 
 A webhook posts messages into one channel under a name and avatar of its own. Its URL holds an id and a token, and the token is all it takes to post, so a deploy script or a monitoring job can send messages without a bot.

@@ -1,5 +1,6 @@
 ---
-source: c45c92d8551bab86affc3711ec78970f48e886d8
+source: 77fd407beead25f005f3979ee300e3dbfac29482
+description: "Discord 봇을 한 프로세스나 여러 프로세스에서 샤딩하고, 프로세스 간 identify를 조율하며, 샤드 이벤트를 받고, 재시작 뒤 세션을 재개합니다."
 ---
 
 # 샤딩과 재개

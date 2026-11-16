@@ -1,5 +1,6 @@
 ---
-source: e4d65a29086e1f3e4e82a64b8aa6c42d29627ef0
+source: efdcb485cd6bec9ca515ad0f0311945137caa315
+description: "Bot なしで、非同期または通常の Python コードから Discord のウェブフック URL でメッセージを投稿、編集、削除し、Bot でウェブフックを作成、管理します。"
 ---
 
 # ウェブフック

@@ -48,6 +48,7 @@ SETTING_ROW = re.compile(r"^\| (`\w+`(?:, `\w+`)*) \| ([^|]+) \|", re.MULTILINE)
 CODE = re.compile(r"`(\w+)`")
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 QUOTED = re.compile(r"\"[^\"]*\"|'[^']*'")
+DESCRIPTION = re.compile(r'^description: (".*")$', re.MULTILINE)
 DOTTED = re.compile(r"(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 PLUGIN_NAME = re.compile(r"(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
 AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
@@ -241,6 +242,32 @@ def test_every_registered_language_translates_every_page() -> None:
     gaps = {code: I18N["missing"](code) for code in I18N["LANGUAGES"]}
 
     assert {code: pages for code, pages in gaps.items() if pages} == {}
+
+
+def description(page: Path) -> str | None:
+    found = DESCRIPTION.findall(I18N["split"](text(page))[0])
+    return cast("str", json.loads(found[0])) if len(found) == 1 else None
+
+
+def test_every_page_has_a_description_of_its_own_in_every_language() -> None:
+    pages = I18N["pages"](I18N["project"]()["nav"])
+    folders = {"en": DOCS} | {code: DOCS / "i18n" / code for code in I18N["LANGUAGES"]}
+    found = {
+        code: [description(folder / page) for page in pages]
+        for code, folder in folders.items()
+    }
+
+    assert {
+        f"{code}/{page}"
+        for code, texts in found.items()
+        for page, written in zip(pages, texts, strict=True)
+        if not written
+    } == set()
+    assert {
+        code: len(texts) - len(set(texts))
+        for code, texts in found.items()
+        if len(set(texts)) < len(texts)
+    } == {}
 
 
 def test_the_event_list_names_every_event_class() -> None:

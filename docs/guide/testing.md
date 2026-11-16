@@ -1,3 +1,7 @@
+---
+description: "Test a Discord bot without Discord: run it against a local fake gateway, REST API and voice server, send interactions and events, and check what it sent."
+---
+
 # Testing your bot
 
 ![Bostie searching with a magnifying glass until a check mark appears](../assets/mascot/bostie-detective.webp){ align=right width="180" loading=lazy }

@@ -1,3 +1,7 @@
+---
+description: "Play files, URLs and HLS streams in Discord voice: tracks, volume, equalizer and speed filters, gapless queues with crossfade, and Opus encoder settings."
+---
+
 # Playing audio
 
 ![Bostie nodding along to music](../assets/mascot/bostie-playback.webp){ align=right width="180" loading=lazy }

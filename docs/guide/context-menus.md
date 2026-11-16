@@ -1,3 +1,7 @@
+---
+description: "Add user and message context menu commands and the entry point command that launches an Activity, with typed targets and the settings each one takes."
+---
+
 # User, message and entry point commands
 
 Besides slash commands, Discord has commands that run from the context menu of a user or a message, and the entry point command that opens an app's Activity.

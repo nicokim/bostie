@@ -1,5 +1,6 @@
 ---
-source: 54b3a6f7e7f026cf8621c75603332297ea4c5a00
+source: b30ad56d0f8b63739574acff05fa92b323c4d3d9
+description: "把 Discord 机器人拆分为路由器和模块，为一组命令设置共享默认值，并在运行时引入、排除或热重载模块。"
 ---
 
 # 路由器与模块

@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "Кнопки, меню выбора и разметка Components V2 через bostie.ui, а также маршруты custom id к обработчикам, которые продолжают работать после перезапуска бота."
 ---
 
 # Компоненты

@@ -1,5 +1,6 @@
 ---
 render_macros: true
+description: "Install the bostie skill so AI coding assistants write correct bostie bots: with npx, as a plugin or by hand, and the line that makes them load it."
 ---
 
 # AI coding assistants

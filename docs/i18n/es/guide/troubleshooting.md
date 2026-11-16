@@ -1,5 +1,6 @@
 ---
-source: 14575d90a6a022a3c0cbfce22c048b404bcf4957
+source: e7704fd7192c52cc55342cad633590bd6f185904
+description: "Soluciona problemas comunes de bostie según el log: «la aplicación no respondió», eventos que faltan, advertencias de gateway y REST, voz y reportar un error."
 ---
 
 # Solución de problemas

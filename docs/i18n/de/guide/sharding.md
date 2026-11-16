@@ -1,5 +1,6 @@
 ---
-source: c45c92d8551bab86affc3711ec78970f48e886d8
+source: 77fd407beead25f005f3979ee300e3dbfac29482
+description: "Sharde einen Discord-Bot in einem oder mehreren Prozessen, koordiniere ihre Identifies, verfolge Shard-Events und setze Sitzungen nach einem Neustart fort."
 ---
 
 # Sharding und Fortsetzen

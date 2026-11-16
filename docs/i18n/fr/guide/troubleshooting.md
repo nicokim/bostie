@@ -1,5 +1,6 @@
 ---
-source: 14575d90a6a022a3c0cbfce22c048b404bcf4957
+source: e7704fd7192c52cc55342cad633590bd6f185904
+description: "Problèmes courants de bostie classés par ligne de journal : « L'application n'a pas répondu », événements absents, gateway, REST, voix et rapports de bug."
 ---
 
 # Dépannage

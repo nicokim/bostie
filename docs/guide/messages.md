@@ -1,3 +1,7 @@
+---
+description: "Build Discord messages with embeds, file uploads, polls, replies, forwards, Components V2, a typing indicator and voice messages, from one set of parts."
+---
+
 # Message content
 
 A message is built from the same parts wherever you send it: `ctx.respond`, `ctx.followup`, `ctx.edit` and `ctx.update`, `bot.rest.messages.create` and `edit`, and a webhook's `execute`. Each part is a keyword argument, and a part you leave out is not sent.
