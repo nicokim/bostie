@@ -342,7 +342,13 @@ class Bot(Router):
     async def start(self, token: str | None = None) -> None:
         """Connect, sync commands and handle events until `close()` or a fatal error.
 
-        The token defaults to the BOSTIE_TOKEN environment variable.
+        The token defaults to the BOSTIE_TOKEN environment variable. A lost
+        connection resumes on its own. While starting, `TransportError` and
+        `ServerError` mean Discord could not answer; trying again later can work.
+        `InvalidToken` and `GatewayClosed` need a fix first: the gateway raises
+        `InvalidToken` for close code 4004, `ShardingRequired` for 4011,
+        `PrivilegedIntentsRequired` for 4014 and `GatewayClosed` for 4010, 4012
+        and 4013.
         """
         bridge, token = self._open(token)
         async with bridge:

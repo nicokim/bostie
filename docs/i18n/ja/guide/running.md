@@ -1,5 +1,5 @@
 ---
-source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+source: e5576256eb18c7692967843a18e500f0b9d34fe8
 description: "bostie の Bot の実行方法。トークン、起動と終了、asyncio や Web アプリ内での実行、ロギング、1 プロセスで複数の Bot を動かす方法を解説します。"
 ---
 
@@ -20,7 +20,7 @@ description: "bostie の Bot の実行方法。トークン、起動と終了、
 1. `Starting` イベントを送り、そのリスナーを 1 つずつ順に await します。ここでは REST は使えますが、ゲートウェイは使えません。例外を送出したリスナーがあると、起動は中止されます。
 2. `auto_sync=False` でない限り、[コマンドを同期](registration.md)します。
 3. ゲートウェイのシャードに接続します。すべてのシャードの準備が整い、そのサーバーが届くと、`Started` を一度だけ送り、[バックグラウンドタスク](tasks.md)を開始して、`wait_until_ready()` が戻るようにします。
-4. `close()` まで、または Discord がゲートウェイを完全に閉じるまでイベントを処理します。後者の場合は `InvalidToken` や `PrivilegedIntentsRequired` などの例外を送出します。
+4. `close()` までイベントを処理します。接続が切れても自動で再開し、失敗するたびに待ち時間を延ばします。Discord がゲートウェイを完全に閉じた場合、`start()` はクローズコード 4004 で `InvalidToken`、4011 で `ShardingRequired`、4014 で `PrivilegedIntentsRequired`、4010・4012・4013 で後の 2 つの基底クラスである `GatewayClosed` を送出します。
 
 ```python
 --8<-- "docs/snippets/running/lifecycle_events.py"
@@ -44,6 +44,8 @@ description: "bostie の Bot の実行方法。トークン、起動と終了、
 ```
 
 `await bot.wait_until_ready()` は `Started` が送られた時点で戻り、すでに送られていればすぐに戻ります。先に Bot が停止した場合は `StateError` を送出し、そのうえで `start()` のタスクを await すると停止の原因となった例外が送出されます。`bot.is_ready` は、待たずに同じことを教えてくれます。[Web アプリのサンプル](../examples.md#web-app)では、Web サーバーの lifespan の中で Bot を動かし、Web のルートからメッセージを投稿しています。
+
+接続が切れても自動で再開するので、Bot を起動し直す意味があるのは起動中に失敗したときだけです。`TransportError` と `ServerError` は Discord が応答できなかったことを示し、時間をおいて再試行すればうまくいくことがあります。`InvalidToken` と `GatewayClosed` は、新しいトークンや Developer Portal でのインテントの有効化など、先に修正が必要です。
 
 HTTP 経由でインタラクションに応答するだけの Bot には、ゲートウェイは必要ありません。[HTTP インタラクション](http-interactions.md)を参照してください。`await bot.open()` はその方式で Bot を起動してすぐに戻ります。HTTP クライアントを開き、アプリケーションと Bot のユーザーを取得し、`Starting` を送り、コマンドを同期し、バックグラウンドタスクを開始して、アプリケーションを返します。`ASGIApp` がこれを呼び出し、`close()` で終了します。REST API を呼び出すだけのスクリプトでは [`RESTClient`](rest.md#without-a-bot) を使います。
 

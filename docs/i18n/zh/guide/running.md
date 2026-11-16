@@ -1,5 +1,5 @@
 ---
-source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+source: e5576256eb18c7692967843a18e500f0b9d34fe8
 description: "运行 bostie 机器人：令牌、启动与关闭的生命周期、在 asyncio 程序或 Web 应用中运行、日志，以及在一个进程中运行多个机器人。"
 ---
 
@@ -20,7 +20,7 @@ description: "运行 bostie 机器人：令牌、启动与关闭的生命周期�
 1. 它发出 `Starting` 事件，并依次 await 每个监听器。此时 REST 可用，网关不可用；抛出异常的监听器会中止启动。
 2. 它会[同步命令](registration.md)，除非设置了 `auto_sync=False`。
 3. 它连接各个网关分片。当每个分片都已就绪、并且分片上的服务器都已到达时，它会发出一次 `Started`，启动[后台任务](tasks.md)，并让 `wait_until_ready()` 返回。
-4. 它持续处理事件，直到调用 `close()`，或者直到 Discord 永久关闭网关，此时会抛出异常，例如 `InvalidToken` 或 `PrivilegedIntentsRequired`。
+4. 它持续处理事件，直到调用 `close()`。连接断开后会自动恢复，每次尝试失败后等待更久。如果 Discord 永久关闭网关，`start()` 会在关闭码 4004 时抛出 `InvalidToken`，4011 时抛出 `ShardingRequired`，4014 时抛出 `PrivilegedIntentsRequired`，4010、4012 和 4013 时抛出 `GatewayClosed`（后两者的基类）。
 
 ```python
 --8<-- "docs/snippets/running/lifecycle_events.py"
@@ -44,6 +44,8 @@ description: "运行 bostie 机器人：令牌、启动与关闭的生命周期�
 ```
 
 `await bot.wait_until_ready()` 会在发出 `Started` 后返回（若已发出则立即返回），如果机器人先停止了，则引发 `StateError`；此时 await `start()` 任务会抛出具体原因。`bot.is_ready` 无需等待即可得知同样的信息。[Web 应用示例](../examples.md#web-app)在 Web 服务器的 lifespan 中运行机器人，并从 Web 路由发送消息。
+
+由于断开的连接会自动恢复，只有在启动阶段失败时重新启动机器人才有意义。`TransportError` 和 `ServerError` 表示 Discord 无法响应，稍后重试可能成功。`InvalidToken` 和 `GatewayClosed` 需要先修复问题，例如换一个新令牌，或在 Developer Portal 中开启 Intent。
 
 只通过 HTTP 回应交互的机器人不需要网关：参见 [HTTP 交互](http-interactions.md)。`await bot.open()` 以这种方式启动机器人并返回：它打开 HTTP 客户端，获取应用信息和机器人的用户，发出 `Starting`，同步命令，启动后台任务，并返回应用。`ASGIApp` 会调用它，`close()` 则结束它。只调用 REST API 的脚本使用 [`RESTClient`](rest.md#without-a-bot)。
 

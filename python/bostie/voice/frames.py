@@ -2,7 +2,10 @@ import msgspec
 
 
 class Frame(msgspec.Struct, frozen=True, gc=False):
-    """A piece of one user's audio, or of the mix, on the receiver's 48 kHz clock."""
+    """A piece of one user's audio, or of the mix, on the receiver's 48 kHz clock.
+
+    `user_id`, `ssrc` and `timestamp` are None only in a mixed receiver's frames.
+    """
 
     user_id: int | None
     ssrc: int | None
