@@ -1,5 +1,5 @@
 ---
-source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+source: 013ae18bd66c3357e9ff74c65156f6ac85917bf1
 description: "Llama a la API REST de Discord: paginación, purgar mensajes, registro de auditoría, errores, rate limits, reintentos, descargas y solicitudes sin procesar."
 ---
 
@@ -59,6 +59,7 @@ El cliente de Rust lleva la cuenta del bucket de rate limit de cada ruta y del l
 | `connect_timeout` | 10.0 | segundos para abrir una conexión |
 | `read_timeout` | 60.0 | segundos de espera por una respuesta |
 | `rate_limiter` | `True` | `False` envía de inmediato y solo espera los 429 que vuelven, para usarlo detrás de un proxy de rate limits |
+| `identify_spacing` | 5.0 | segundos entre dos identificaciones en el gateway, y antes de volver a identificarse tras el código de cierre 4007; Discord exige 5, así que redúcelo solo contra `bostie.testing` |
 | `proxy` | `None` | la URL de un proxy HTTP o HTTPS para todas las solicitudes, incluido el audio de `voice.Url` y las descargas de la CDN, con credenciales incluidas como en `http://user:password@host:3128` |
 
 Un 429 se reintenta después del retraso que indica Discord, si está dentro de `max_rate_limit_wait`. Un 500, 502, 503, 504 o 524, o una conexión que se cortó, se reintenta `retries` veces para todos los métodos salvo `POST`, que podría haberse aplicado; una conexión que nunca se abrió se reintenta para todos los métodos.

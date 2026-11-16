@@ -1,5 +1,5 @@
 ---
-source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+source: 013ae18bd66c3357e9ff74c65156f6ac85917bf1
 description: "Discord REST API의 모든 봇 엔드포인트를 호출합니다. 페이지 넘기기, 메시지 일괄 삭제, 감사 로그, 레이트 리밋, 재시도를 다룹니다."
 ---
 
@@ -59,6 +59,7 @@ Rust 클라이언트는 라우트마다의 레이트 리밋 버킷과 Discord의
 | `connect_timeout` | 10.0 | 연결을 여는 데 쓰는 시간(초) |
 | `read_timeout` | 60.0 | 응답을 기다리는 시간(초) |
 | `rate_limiter` | `True` | `False`면 즉시 보내고 돌아온 429만 기다립니다. 레이트 리밋 프록시 뒤에서 쓰기 위한 옵션입니다 |
+| `identify_spacing` | 5.0 | 두 번의 게이트웨이 identify 사이, 그리고 종료 코드 4007 뒤 다시 identify하기 전에 기다리는 시간(초). Discord가 5초를 요구하므로 `bostie.testing`을 상대로 할 때만 낮추세요 |
 | `proxy` | `None` | `voice.Url` 오디오와 CDN 다운로드를 포함한 모든 요청에 쓸 HTTP 또는 HTTPS 프록시 URL. 인증 정보는 `http://user:password@host:3128`처럼 넣습니다 |
 
 429는 Discord가 알려 준 지연 시간이 `max_rate_limit_wait` 이내이면 그 시간 뒤에 재시도합니다. 500, 502, 503, 504, 524 응답이나 끊어진 연결은 이미 적용되었을 수 있는 `POST`를 제외한 모든 메서드에서 `retries`번 재시도합니다. 아예 열리지 않은 연결은 모든 메서드에서 재시도합니다.

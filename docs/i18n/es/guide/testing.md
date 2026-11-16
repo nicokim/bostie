@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API REST y servidor de voz falsos y locales, envía interacciones y eventos y revisa lo enviado."
 ---
 
@@ -28,6 +28,8 @@ description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API 
 | `await fake.next_identify()`, `await fake.next_resume()` | espera el siguiente IDENTIFY o RESUME del bot |
 
 Los tipos de interacción son los números de Discord: 2 para un comando, 3 para un componente, 4 para el autocompletado, 5 para el envío de un modal.
+
+Tras un cierre que inicia una sesión nueva, como el 4007, el bot vuelve a identificarse solo después de `HTTPSettings.identify_spacing` segundos, 5 por defecto, como exige Discord. `Bot(http_settings=HTTPSettings(identify_spacing=0))` se salta esa espera en una prueba.
 
 `bostie.testing.payloads` construye los payloads de Discord a partir de los ejemplos de su documentación, con ids nuevos:
 

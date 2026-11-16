@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "无需 Discord 即可测试机器人：在本地模拟的网关、REST API 和语音服务器上运行它，发送交互和事件，并检查它发送了什么。"
 ---
 
@@ -28,6 +28,8 @@ description: "无需 Discord 即可测试机器人：在本地模拟的网关、
 | `await fake.next_identify()`、`await fake.next_resume()` | 等待机器人的下一次 IDENTIFY 或 RESUME |
 
 交互类型使用 Discord 的编号：2 表示命令，3 表示组件，4 表示自动补全，5 表示模态框提交。
+
+在会开始新会话的关闭（例如 4007）之后，机器人要等 `HTTPSettings.identify_spacing` 秒才会再次 identify，默认值为 Discord 要求的 5 秒。在测试中，`Bot(http_settings=HTTPSettings(identify_spacing=0))` 可以跳过这段等待。
 
 `bostie.testing.payloads` 根据 Discord 文档中的示例构建载荷，并使用全新的 ID：
 
