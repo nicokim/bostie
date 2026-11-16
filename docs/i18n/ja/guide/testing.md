@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "Discord なしで Bot をテストします。ローカルのフェイクのゲートウェイ、REST API、ボイスサーバーで動かし、インタラクションやイベントを送り、送信内容を確認します。"
 ---
 
@@ -28,6 +28,8 @@ description: "Discord なしで Bot をテストします。ローカルのフ�
 | `await fake.next_identify()`、`await fake.next_resume()` | Bot の次の IDENTIFY または RESUME を待ちます |
 
 インタラクションの種類は Discord の番号で、コマンドは 2、コンポーネントは 3、オートコンプリートは 4、モーダルの送信は 5 です。
+
+4007 のように新しいセッションが始まるクローズの後、Bot は `HTTPSettings.identify_spacing` 秒待ってから再び Identify を行います。既定値は Discord が求めるとおり 5 秒です。テストでは `Bot(http_settings=HTTPSettings(identify_spacing=0))` でこの待ち時間を省けます。
 
 `bostie.testing.payloads` は、Discord のドキュメントにあるサンプルから、新しい ID 付きで Discord のペイロードを組み立てます。
 

@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "Тестирование бота Discord без Discord: локальный фейковый шлюз, REST API и голосовой сервер, отправка взаимодействий и событий, проверка того, что отправил бот."
 ---
 
@@ -28,6 +28,8 @@ description: "Тестирование бота Discord без Discord: лока
 | `await fake.next_identify()`, `await fake.next_resume()` | ждёт следующего IDENTIFY или RESUME от бота |
 
 Типы взаимодействий — это числа Discord: 2 для команды, 3 для компонента, 4 для автодополнения, 5 для отправки модального окна.
+
+После закрытия, которое начинает новую сессию, например с кодом 4007, бот повторно выполняет identify только через `HTTPSettings.identify_spacing` секунд — по умолчанию 5, как требует Discord. `Bot(http_settings=HTTPSettings(identify_spacing=0))` убирает это ожидание в тесте.
 
 `bostie.testing.payloads` строит полезные нагрузки Discord по примерам из его документации, со свежими ID:
 

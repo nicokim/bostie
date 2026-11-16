@@ -28,6 +28,8 @@ description: "Test a Discord bot without Discord: run it against a local fake ga
 
 Interaction types are Discord's numbers: 2 for a command, 3 for a component, 4 for autocomplete, 5 for a modal submit.
 
+After a close that starts a new session, such as 4007, the bot identifies again only after `HTTPSettings.identify_spacing` seconds, 5 by default as Discord requires. `Bot(http_settings=HTTPSettings(identify_spacing=0))` skips that wait in a test.
+
 `bostie.testing.payloads` builds Discord's payloads from the examples in its documentation, with fresh ids:
 
 - `command(name, *options)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` and `resolved()` for commands and autocomplete;

@@ -1,5 +1,5 @@
 ---
-source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+source: 013ae18bd66c3357e9ff74c65156f6ac85917bf1
 description: "Discord REST API の Bot 用エンドポイントを網羅。ページング、メッセージ一括削除、監査ログ、エラー、レート制限、再試行、ダウンロード、生のリクエスト。"
 ---
 
@@ -59,6 +59,7 @@ Rust クライアントは、すべてのルートのレート制限のバケッ
 | `connect_timeout` | 10.0 | 接続を確立するまでの秒数 |
 | `read_timeout` | 60.0 | 応答を待つ秒数 |
 | `rate_limiter` | `True` | `False` にすると即座に送信し、返ってきた 429 の分だけ待ちます。レート制限プロキシの背後で使うためのものです |
+| `identify_spacing` | 5.0 | ゲートウェイでの 2 回の Identify の間、およびクローズコード 4007 の後に再び Identify するまでの秒数。Discord は 5 秒を求めているので、値を下げるのは `bostie.testing` を相手にするときだけにします |
 | `proxy` | `None` | すべてのリクエスト（`voice.Url` の音声と CDN からのダウンロードを含む）に使う HTTP または HTTPS プロキシの URL。認証情報は `http://user:password@host:3128` のように含めます |
 
 429 は、Discord が示した待ち時間が `max_rate_limit_wait` 以内であれば、その時間の後に再試行されます。500、502、503、504、524 や、途中で切れた接続は、`POST` 以外のすべてのメソッドで `retries` 回再試行されます。`POST` はすでに反映されている可能性があるためです。一度も確立できなかった接続は、すべてのメソッドで再試行されます。

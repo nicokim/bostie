@@ -76,6 +76,7 @@ class Bridge:
             connect_timeout=http.connect_timeout,
             read_timeout=http.read_timeout,
             rate_limiter=http.rate_limiter,
+            identify_spacing=http.identify_spacing,
             proxy=http.proxy,
             bearer=bearer,
         )

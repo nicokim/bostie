@@ -84,6 +84,7 @@ impl Gateway {
         rest: Weak<Rest>,
         tap: Arc<GatewayTap>,
         proxy: Option<Proxy>,
+        identify_spacing: Duration,
     ) -> Result<Self, CoreError> {
         Self::with_tuning(
             runtime,
@@ -92,7 +93,10 @@ impl Gateway {
             rest,
             tap,
             proxy,
-            GatewayTuning::default(),
+            GatewayTuning {
+                identify_spacing,
+                ..GatewayTuning::default()
+            },
         )
     }
 

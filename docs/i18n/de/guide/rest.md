@@ -1,5 +1,5 @@
 ---
-source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+source: 013ae18bd66c3357e9ff74c65156f6ac85917bf1
 description: "Rufe jeden Bot-Endpunkt der Discord-REST-API auf: Paginierung, Nachrichten aufräumen, Audit-Log, Fehler, Rate-Limits, Wiederholungen, Downloads, rohe Anfragen."
 ---
 
@@ -59,6 +59,7 @@ Der Rust-Client verfolgt den Rate-Limit-Bucket jeder Route und Discords globales
 | `connect_timeout` | 10.0 | Sekunden zum Öffnen einer Verbindung |
 | `read_timeout` | 60.0 | Sekunden, die auf eine Antwort gewartet wird |
 | `rate_limiter` | `True` | `False` sendet sofort und wartet nur die zurückkommenden 429er ab, für den Einsatz hinter einem Rate-Limit-Proxy |
+| `identify_spacing` | 5.0 | Sekunden zwischen zwei Gateway-Identifies und vor einem erneuten Identify nach Close-Code 4007; Discord verlangt 5, senke den Wert also nur gegen `bostie.testing` |
 | `proxy` | `None` | eine HTTP- oder HTTPS-Proxy-URL für jede Anfrage, Audio aus `voice.Url` und CDN-Downloads eingeschlossen, Zugangsdaten eingeschlossen wie in `http://user:password@host:3128` |
 
 Ein 429 wird nach der Verzögerung wiederholt, die Discord angibt, sofern sie innerhalb von `max_rate_limit_wait` liegt. Ein 500, 502, 503, 504 oder 524 oder eine abgebrochene Verbindung wird `retries`-mal wiederholt, bei jeder Methode außer `POST`, das bereits wirksam geworden sein könnte; eine Verbindung, die nie zustande kam, wird bei jeder Methode wiederholt.

@@ -209,6 +209,7 @@ class Core:
         connect_timeout: float,
         read_timeout: float,
         rate_limiter: bool,
+        identify_spacing: float,
         proxy: str | None,
         bearer: bool = False,
     ) -> tuple[Core, int]: ...

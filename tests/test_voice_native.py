@@ -32,6 +32,7 @@ def core() -> Iterator[_native.Core]:
         connect_timeout=10.0,
         read_timeout=60.0,
         rate_limiter=True,
+        identify_spacing=5.0,
         proxy=None,
     )
     with socket.socket(fileno=bell):

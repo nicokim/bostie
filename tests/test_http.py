@@ -296,6 +296,7 @@ def test_http_settings_bound_the_rate_limit_wait() -> None:
         lambda: HTTPSettings(retries=-1),
         lambda: HTTPSettings(max_rate_limit_wait=-1.0),
         lambda: HTTPSettings(read_timeout=float("inf")),
+        lambda: HTTPSettings(identify_spacing=-1.0),
         lambda: HTTPSettings(connect_timeout=0.0),
     ],
     ids=[
@@ -303,6 +304,7 @@ def test_http_settings_bound_the_rate_limit_wait() -> None:
         "retries",
         "rate limit wait",
         "read timeout",
+        "identify spacing",
         "connect timeout",
     ],
 )

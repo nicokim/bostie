@@ -1,5 +1,5 @@
 ---
-source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+source: 013ae18bd66c3357e9ff74c65156f6ac85917bf1
 description: "调用 Discord REST API 中所有面向机器人的端点：分页、批量清除消息、审核日志、错误、速率限制、重试、文件下载和原始请求。"
 ---
 
@@ -59,6 +59,7 @@ Rust 客户端会跟踪每个路由的速率限制桶以及 Discord 的全局限
 | `connect_timeout` | 10.0 | 建立连接的秒数 |
 | `read_timeout` | 60.0 | 等待回应的秒数 |
 | `rate_limiter` | `True` | 设为 `False` 时立即发送，只等待返回的 429，适用于在速率限制代理之后使用 |
+| `identify_spacing` | 5.0 | 两次网关 identify 之间的秒数，以及在关闭码 4007 之后再次 identify 之前的秒数；Discord 要求 5 秒，因此只在使用 `bostie.testing` 时调低 |
 | `proxy` | `None` | 所有请求使用的 HTTP 或 HTTPS 代理 URL，包括 `voice.Url` 音频和 CDN 下载，凭据写在 URL 中，如 `http://user:password@host:3128` |
 
 429 会在 Discord 给出的延迟之后重试，前提是该延迟在 `max_rate_limit_wait` 之内。500、502、503、504 或 524，或者连接中断，会对除 `POST` 外的所有方法重试 `retries` 次，因为 `POST` 可能已经生效；从未建立的连接则对所有方法都会重试。

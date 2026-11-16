@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이트웨이, REST API, 음성 서버에서 봇을 실행하고 인터랙션과 이벤트를 보내 결과를 확인합니다."
 ---
 
@@ -28,6 +28,8 @@ description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이�
 | `await fake.next_identify()`, `await fake.next_resume()` | 봇의 다음 IDENTIFY나 RESUME을 기다립니다 |
 
 인터랙션 타입은 Discord의 번호를 씁니다. 2는 명령어, 3은 컴포넌트, 4는 자동 완성, 5는 모달 제출입니다.
+
+4007처럼 새 세션을 시작하게 되는 종료 뒤에는 봇이 `HTTPSettings.identify_spacing`초를 기다린 뒤에야 다시 identify합니다. 기본값은 Discord가 요구하는 대로 5초입니다. 테스트에서는 `Bot(http_settings=HTTPSettings(identify_spacing=0))`로 이 대기를 건너뜁니다.
 
 `bostie.testing.payloads`는 Discord 문서의 예제를 바탕으로, 새 ID를 붙여 Discord의 페이로드를 만듭니다.
 

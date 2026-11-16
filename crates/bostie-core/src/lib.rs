@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU16;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use reqwest::Url;
@@ -69,6 +70,7 @@ impl Core {
         api_url: &str,
         global_limit: NonZeroU16,
         http: HttpSettings,
+        identify_spacing: Duration,
         proxy: Option<&str>,
     ) -> Result<(Self, BellReceiver), CoreError> {
         let proxy = proxy.map(Proxy::parse).transpose()?;
@@ -93,6 +95,7 @@ impl Core {
                 Arc::downgrade(&rest),
                 Arc::clone(&tap),
                 proxy.clone(),
+                identify_spacing,
             )?);
             let voice = Voice::new(
                 runtime.clone(),
@@ -235,7 +238,6 @@ const REFUSING: std::net::SocketAddr = std::net::SocketAddr::V4(std::net::Socket
 mod tests {
     use std::io::{Read, Write};
     use std::sync::mpsc;
-    use std::time::Duration;
 
     use bytes::Bytes;
 
@@ -254,6 +256,7 @@ mod tests {
             api_url,
             GLOBAL_LIMIT,
             HttpSettings::default(),
+            Duration::from_secs(5),
             None,
         )
     }

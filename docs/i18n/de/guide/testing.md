@@ -1,5 +1,5 @@
 ---
-source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
 description: "Teste einen Discord-Bot ohne Discord: lokales Fake-Gateway, Fake-REST-API und Fake-Sprachserver, sende Interaktionen und Events und prüfe, was er sendet."
 ---
 
@@ -28,6 +28,8 @@ description: "Teste einen Discord-Bot ohne Discord: lokales Fake-Gateway, Fake-R
 | `await fake.next_identify()`, `await fake.next_resume()` | wartet auf das nächste IDENTIFY oder RESUME des Bots |
 
 Interaktionstypen sind Discords Nummern: 2 für einen Befehl, 3 für eine Komponente, 4 für die Autovervollständigung, 5 für ein abgesendetes Modal.
+
+Nach einem Close, der eine neue Sitzung startet, etwa mit 4007, führt der Bot erst nach `HTTPSettings.identify_spacing` Sekunden wieder ein Identify aus, standardmäßig 5, wie Discord es verlangt. `Bot(http_settings=HTTPSettings(identify_spacing=0))` überspringt diese Wartezeit in einem Test.
 
 `bostie.testing.payloads` baut Discords Payloads aus den Beispielen seiner Dokumentation, mit frischen IDs:
 
