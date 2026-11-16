@@ -68,6 +68,9 @@ class Size(IntEnum):
     LARGE = 2
 
 
+type Flavor = Literal["a", "b"]
+
+
 async def suggest(ctx: object, value: object) -> list[str]:
     return []
 
@@ -118,6 +121,12 @@ def option(type: int, **fields: object) -> dict[str, object]:
         (
             Literal[1, 2],
             option(4, choices=[{"name": "1", "value": 1}, {"name": "2", "value": 2}]),
+        ),
+        (
+            Flavor,
+            option(
+                3, choices=[{"name": "a", "value": "a"}, {"name": "b", "value": "b"}]
+            ),
         ),
         (
             Literal[0.5, 1.5],
