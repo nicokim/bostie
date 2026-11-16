@@ -20,6 +20,7 @@ OUTDATED = (
     "Read the English page."
 )
 SOURCE = re.compile(r"^source: *(\S+)", re.MULTILINE)
+MASCOT_SRC = re.compile(r'src="(?:\.\./)*assets/mascot/')
 MACRO_STRING = re.compile(r'\bt\("([^"]+)"\)')
 
 
@@ -174,6 +175,15 @@ def language_config(code: str | None) -> dict[str, Any]:
     return config
 
 
+def share_mascots(built: Path, scope: str) -> None:
+    shutil.rmtree(built / "assets" / "mascot")
+    for page in built.rglob("*.html"):
+        text = page.read_text("utf-8")
+        shared = MASCOT_SRC.sub(f'src="{scope}assets/mascot/', text)
+        if shared != text:
+            page.write_text(shared, "utf-8")
+
+
 def robots() -> str:
     site_url = project()["site_url"]
     sitemaps = [f"{site_url}sitemap.xml"] + [
@@ -215,11 +225,13 @@ def main(args: list[str]) -> None:
         case ["build"]:
             shutil.rmtree(ROOT / "site", ignore_errors=True)
             build(None)
+            scope = urlsplit(project()["site_url"]).path
             for code in LANGUAGES:
                 if gaps := missing(code):
                     sys.exit(f"{code} has no translation of {', '.join(gaps)}")
                 stage(code)
                 build(code)
+                share_mascots(ROOT / "site" / code.lower(), scope)
             (ROOT / "site" / "robots.txt").write_text(robots(), "utf-8")
         case ["stale", *codes]:
             for code in codes or LANGUAGES:

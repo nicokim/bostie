@@ -238,6 +238,27 @@ def test_the_tests_of_the_testing_guide_pass() -> None:
             test()
 
 
+def test_a_translated_build_points_at_the_english_mascots(tmp_path: Path) -> None:
+    built = tmp_path / "es"
+    (built / "assets" / "mascot").mkdir(parents=True)
+    (built / "assets" / "mascot" / "bostie-wave.gif").write_bytes(b"GIF")
+    page = built / "guide" / "commands" / "index.html"
+    page.parent.mkdir(parents=True)
+    page.write_text(
+        '<img src="../../assets/mascot/bostie-wave.gif">'
+        '<img src="../../assets/brand/bostie-logo.svg">',
+        "utf-8",
+    )
+
+    I18N["share_mascots"](built, "/")
+
+    assert not (built / "assets" / "mascot").exists()
+    assert page.read_text("utf-8") == (
+        '<img src="/assets/mascot/bostie-wave.gif">'
+        '<img src="../../assets/brand/bostie-logo.svg">'
+    )
+
+
 def test_every_registered_language_translates_every_page() -> None:
     gaps = {code: I18N["missing"](code) for code in I18N["LANGUAGES"]}
 
