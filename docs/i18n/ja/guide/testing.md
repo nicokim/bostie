@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "Discord なしで Bot をテストします。ローカルのフェイクのゲートウェイ、REST API、ボイスサーバーで動かし、インタラクションやイベントを送り、送信内容を確認します。"
 ---
 
@@ -64,7 +64,7 @@ Bot がリスナーの中で行うことを待つには、sleep するのでは�
 `FakeDiscord(voice=True)` は、ボイスチャンネルとステージチャンネルを追加し、ボイス状態の更新に応答し、ボイスゲートウェイと UDP サーバーを `fake.voice` として動かします。そのため、`ctx.voice.connect()` や `vc.play(...)` をフェイクに対して実行できます。DAVE には対応していません。DAVE は bostie の Rust のテストでカバーしています。テストでは次のことができます。
 
 - Bot が送ったものを `await fake.next_voice_state_update()`、`await fake.voice.next_identify()`、`await fake.voice.wait_for_packets(count)` で待ちます。`wait_for_packets` は復号した RTP パケットを `Packet` オブジェクトとして返します。各ボイス接続は `fake.voice.sessions` 内の `VoiceSession` で、`VoiceSocket` の上にあります。`fake.voice.op(op, d)` は最新の接続に任意のボイスオペコードを送ります。
-- `await fake.move_user(guild_id, user_id, channel_id)` でユーザーをボイスチャンネルに入れ、移動させ、`None` なら外します。Discord と同じ `VOICE_STATE_UPDATE` を送るので、`ctx.voice.connect()` がそのユーザーのチャンネルを見つけます。
+- `await fake.move_user(guild_id, user_id, channel_id)` でユーザーをボイスチャンネルに入れ、移動させ、`None` なら外します。ボットの接続後は Discord と同じ `VOICE_STATE_UPDATE` を送り、接続前はボイス状態を保存するだけなので、どちらの場合も `ctx.voice.connect()` がそのユーザーのチャンネルを見つけます。
 - ほかのユーザーとして振る舞います。`fake.voice.clients_connect(user_ids)`、`fake.voice.client_disconnect(user_id)`、`fake.voice.speaking(user_id, ssrc, flags)`、Bot に Opus パケットを送る `fake.voice.send_audio(...)`、Bot に RTCP パケットを送る `fake.voice.send_rtcp(packet)`、壊れたサーバーのように暗号化せずにバイト列を送る `fake.voice.send_datagram(data)` を使います。
 - モデレーターのように Bot を移動または切断します。`fake.move_bot(channel_id)` と `fake.kick_bot()` を使います。
 - チャンネルが満員のときの Discord のように、次のボイス状態の更新に応答しないままにします。`fake.hold_voice_state()` を使い、返された `asyncio.Event` がセットされるまで保留します。

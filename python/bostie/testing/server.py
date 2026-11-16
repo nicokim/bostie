@@ -386,8 +386,9 @@ class FakeDiscord:
     ) -> None:
         """Put a user in a voice channel, move them, or take them out with `None`.
 
-        Sends the VOICE_STATE_UPDATE Discord would, and keeps the state that
-        `GET /guilds/{guild_id}/voice-states/{user_id}` returns.
+        Keeps the state that `GET /guilds/{guild_id}/voice-states/{user_id}`
+        returns, and sends the VOICE_STATE_UPDATE Discord would once the bot is
+        connected. Called before the bot starts, it only keeps the state.
         """
         key = (str(guild_id), str(user_id))
         member = self.members.get(key) or payloads.member(user=payloads.user(id=key[1]))
@@ -403,7 +404,8 @@ class FakeDiscord:
             self.voice_states.pop(key, None)
         else:
             self.voice_states[key] = state
-        await self.dispatch("VOICE_STATE_UPDATE", state)
+        if 0 in self._sessions:
+            await self.dispatch("VOICE_STATE_UPDATE", state)
 
     async def next_identify(self) -> Json:
         """Wait for the next IDENTIFY and return its `d`."""

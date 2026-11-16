@@ -1,5 +1,5 @@
 ---
-source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
+source: ceb5f752e899b0a321da19a1c2f2e69456a2455a
 description: "Тестирование бота Discord без Discord: локальный фейковый шлюз, REST API и голосовой сервер, отправка взаимодействий и событий, проверка того, что отправил бот."
 ---
 
@@ -64,7 +64,7 @@ description: "Тестирование бота Discord без Discord: лока
 `FakeDiscord(voice=True)` добавляет голосовой канал и трибуну, отвечает на обновления голосового состояния и запускает голосовой шлюз и UDP-сервер как `fake.voice`, так что `ctx.voice.connect()` и `vc.play(...)` работают с ним. DAVE он не поддерживает; это покрывают тесты bostie на Rust. Тест может:
 
 - ждать того, что отправил бот, через `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` и `await fake.voice.wait_for_packets(count)`, который возвращает расшифрованные RTP-пакеты как объекты `Packet`; каждое голосовое подключение — это `VoiceSession` в `fake.voice.sessions` на `VoiceSocket`, а `fake.voice.op(op, d)` отправляет последнему любой голосовой опкод;
-- помещать пользователя в голосовой канал, перемещать его или убирать оттуда с `None` через `await fake.move_user(guild_id, user_id, channel_id)`: он отправляет `VOICE_STATE_UPDATE`, который отправил бы Discord, поэтому `ctx.voice.connect()` находит канал пользователя;
+- помещать пользователя в голосовой канал, перемещать его или убирать оттуда с `None` через `await fake.move_user(guild_id, user_id, channel_id)`: он отправляет `VOICE_STATE_UPDATE`, который отправил бы Discord, как только бот подключён, а до этого только сохраняет голосовое состояние, поэтому `ctx.voice.connect()` находит канал пользователя в обоих случаях;
 - действовать от имени других пользователей через `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, который отправляет боту пакеты Opus, `fake.voice.send_rtcp(packet)`, который отправляет ему пакет RTCP, и `fake.voice.send_datagram(data)`, который отправляет байты без шифрования, как это сделал бы неисправный сервер;
 - перемещать или отключать бота, как это сделал бы модератор, через `fake.move_bot(channel_id)` и `fake.kick_bot()`;
 - оставить следующее обновление голосового состояния без ответа, как Discord делает, когда канал заполнен, через `fake.hold_voice_state()`, пока не будет установлен возвращённый `asyncio.Event`;
