@@ -21,6 +21,7 @@ from typing import (
     Any,
     ClassVar,
     Literal,
+    TypeAliasType,
     TypedDict,
     Union,
     cast,
@@ -880,6 +881,8 @@ def _unwrap(hint: object) -> tuple[tuple[object, ...], bool, list[object]]:
             hint, *extras = get_args(hint)
             metadata[:0] = extras
             members = (hint,)
+        elif isinstance(hint, TypeAliasType):
+            members = (hint.__value__,)
         elif get_origin(hint) in (Union, UnionType):
             arguments = get_args(hint)
             optional = optional or NoneType in arguments
