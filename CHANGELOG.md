@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/nicokim/bostie/compare/v0.2.0...v0.3.0) (2026-11-16)
+
+
+### Features
+
+* **testing:** add fake.move_user, fill guild command ids and time out unanswered interactions ([#35](https://github.com/nicokim/bostie/issues/35)) ([1fff2ae](https://github.com/nicokim/bostie/commit/1fff2ae0037638972e1dc8c40a4b93808a52b558))
+
 ## [0.2.0](https://github.com/nicokim/bostie/compare/v0.1.1...v0.2.0) (2026-11-16)
 
 
