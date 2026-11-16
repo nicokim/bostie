@@ -371,10 +371,9 @@ def test_commands_of_one_name_sync_to_their_scopes_and_route_by_guild() -> None:
         answers = []
         async with running(bot, fake):
             for guild_id in (None, GUILD, OUTAGE_GUILD):
-                data = payloads.command("info")
-                if guild_id is not None:
-                    data["guild_id"] = str(guild_id)
-                answer = await fake.interaction(2, data)
+                answer = await fake.interaction(
+                    2, payloads.command("info", guild_id=guild_id)
+                )
                 answers.append(answer.json["data"]["content"])
 
         assert answers == ["global", "guild", "outage"]
@@ -383,6 +382,33 @@ def test_commands_of_one_name_sync_to_their_scopes_and_route_by_guild() -> None:
             str(GUILD): ["About this server"],
             str(OUTAGE_GUILD): ["About the outage"],
         }
+
+    run(scenario)
+
+
+def test_a_command_only_in_the_guild_gets_the_guild_id_discord_would_send() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url)
+        bot.command(description="About this server", guilds=[GUILD])(
+            info_answering("guild")
+        )
+        async with running(bot, fake):
+            answer = await fake.interaction(2, payloads.command("info"))
+
+        assert answer.json["data"]["content"] == "guild"
+
+    run(scenario)
+
+
+def test_an_interaction_the_bot_leaves_unanswered_fails_at_discords_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("bostie.testing.server._CALLBACK_DEADLINE", 0.05)
+
+    async def scenario(fake: FakeDiscord) -> None:
+        async with running(Bot(api_url=fake.api_url), fake):
+            with pytest.raises(TimeoutError, match=r"no callback within 0\.05 s"):
+                await fake.interaction(2, payloads.command("unknown"))
 
     run(scenario)
 

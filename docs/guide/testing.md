@@ -18,7 +18,7 @@ description: "Test a Discord bot without Discord: run it against a local fake ga
 
 | Call | Does |
 |---|---|
-| `await fake.interaction(type, data)` | sends an `INTERACTION_CREATE` and returns the bot's first answer as a `Recorded` request |
+| `await fake.interaction(type, data)` | sends an `INTERACTION_CREATE` and returns the bot's first answer as a `Recorded` request, or raises `TimeoutError` when none comes within the 3 seconds Discord allows |
 | `await fake.dispatch(name, d, shard=0)` | sends any gateway event and returns its sequence number |
 | `fake.expect_callback(payload)` | for an interaction you dispatch yourself: a future for its first answer |
 | `await fake.send_op(op, d)` | sends a non-dispatch opcode, such as 7 (reconnect) or 9 (invalid session) |
@@ -26,13 +26,13 @@ description: "Test a Discord bot without Discord: run it against a local fake ga
 | `fake.hold_acks()` | stops answering heartbeats, as a dead connection would |
 | `await fake.next_identify()`, `await fake.next_resume()` | waits for the bot's next IDENTIFY or RESUME |
 
-Interaction types are Discord's numbers: 2 for a command, 3 for a component, 4 for autocomplete, 5 for a modal submit.
+Interaction types are Discord's numbers: 2 for a command, 3 for a component, 4 for autocomplete, 5 for a modal submit. A command registered only in the interaction's guild gets that guild's id in its `data`, as Discord sends it; when the name is also registered globally, `payloads.command(name, guild_id=...)` picks the guild's command.
 
 After a close that starts a new session, such as 4007, the bot identifies again only after `HTTPSettings.identify_spacing` seconds, 5 by default as Discord requires. `Bot(http_settings=HTTPSettings(identify_spacing=0))` skips that wait in a test.
 
 `bostie.testing.payloads` builds Discord's payloads from the examples in its documentation, with fresh ids:
 
-- `command(name, *options)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` and `resolved()` for commands and autocomplete;
+- `command(name, *options, guild_id=None)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)` and `resolved()` for commands and autocomplete;
 - `context_menu(type, name, target_id, resolved)` for user and message commands;
 - `button(custom_id)`, `select(custom_id, *values)` and `modal(custom_id)` for components and modals;
 - `message(...)`, `guild(...)`, `member(...)`, `user(...)`, `role(...)`, `channel(...)`, `voice_channel(...)`, `stage_channel(...)` and `voice_state(...)` for events, each with keyword arguments that override fields;
@@ -63,6 +63,7 @@ To wait for something the bot does in a listener, have it [dispatch an event of 
 `FakeDiscord(voice=True)` adds a voice channel and a stage channel, answers voice state updates, and runs a voice gateway and UDP server as `fake.voice`, so `ctx.voice.connect()` and `vc.play(...)` work against it. It does not speak DAVE; bostie's Rust tests cover that. The test can:
 
 - wait for what the bot sent with `await fake.next_voice_state_update()`, `await fake.voice.next_identify()` and `await fake.voice.wait_for_packets(count)`, which returns the decrypted RTP packets as `Packet` objects; each voice connection is a `VoiceSession` in `fake.voice.sessions`, on a `VoiceSocket`, and `fake.voice.op(op, d)` sends the latest one any voice opcode;
+- put a user in a voice channel, move them, or take them out with `None`, with `await fake.move_user(guild_id, user_id, channel_id)`: it sends the `VOICE_STATE_UPDATE` Discord would, so `ctx.voice.connect()` finds the user's channel;
 - act as other users with `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, `fake.voice.send_audio(...)`, which sends Opus packets to the bot, `fake.voice.send_rtcp(packet)`, which sends it an RTCP packet, and `fake.voice.send_datagram(data)`, which sends bytes unsealed, as a broken server would;
 - move or disconnect the bot as a moderator would, with `fake.move_bot(channel_id)` and `fake.kick_bot()`;
 - leave the next voice state update unanswered, as Discord does when the channel is full, with `fake.hold_voice_state()`, until the returned `asyncio.Event` is set;

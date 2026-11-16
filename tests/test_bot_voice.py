@@ -475,9 +475,7 @@ def test_ctx_voice_joins_the_channel_of_the_user_who_ran_the_command() -> None:
 
         async with running(bot, fake):
             alone = await fake.interaction(2, payloads.command("join"))
-            fake.voice_states[(str(GUILD_ID), MEMBER_ID)] = payloads.voice_state(
-                user_id=MEMBER_ID, channel_id=str(VOICE_ID)
-            )
+            await fake.move_user(GUILD_ID, int(MEMBER_ID), VOICE_ID)
             joined = await fake.interaction(2, payloads.command("join"))
 
         assert alone.json["data"]["content"] == "not in voice"

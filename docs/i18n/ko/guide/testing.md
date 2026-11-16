@@ -1,5 +1,5 @@
 ---
-source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
+source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
 description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이트웨이, REST API, 음성 서버에서 봇을 실행하고 인터랙션과 이벤트를 보내 결과를 확인합니다."
 ---
 
@@ -19,7 +19,7 @@ description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이�
 
 | 호출 | 동작 |
 |---|---|
-| `await fake.interaction(type, data)` | `INTERACTION_CREATE`를 보내고, 봇의 첫 응답을 `Recorded` 요청으로 반환합니다 |
+| `await fake.interaction(type, data)` | `INTERACTION_CREATE`를 보내고, 봇의 첫 응답을 `Recorded` 요청으로 반환합니다. Discord가 허용하는 3초 안에 응답이 없으면 `TimeoutError`를 발생시킵니다 |
 | `await fake.dispatch(name, d, shard=0)` | 임의의 게이트웨이 이벤트를 보내고 그 시퀀스 번호를 반환합니다 |
 | `fake.expect_callback(payload)` | 직접 디스패치하는 인터랙션에 대해, 첫 응답을 받을 future를 반환합니다 |
 | `await fake.send_op(op, d)` | 7(reconnect)이나 9(invalid session) 같은 디스패치가 아닌 opcode를 보냅니다 |
@@ -27,13 +27,13 @@ description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이�
 | `fake.hold_acks()` | 끊긴 연결처럼 하트비트에 응답하지 않습니다 |
 | `await fake.next_identify()`, `await fake.next_resume()` | 봇의 다음 IDENTIFY나 RESUME을 기다립니다 |
 
-인터랙션 타입은 Discord의 번호를 씁니다. 2는 명령어, 3은 컴포넌트, 4는 자동 완성, 5는 모달 제출입니다.
+인터랙션 타입은 Discord의 번호를 씁니다. 2는 명령어, 3은 컴포넌트, 4는 자동 완성, 5는 모달 제출입니다. 인터랙션의 서버에만 등록된 명령어는 Discord가 보내는 것처럼 `data`에 그 서버의 ID를 받습니다. 같은 이름이 전역으로도 등록되어 있으면 `payloads.command(name, guild_id=...)`로 서버의 명령어를 고릅니다.
 
 4007처럼 새 세션을 시작하게 되는 종료 뒤에는 봇이 `HTTPSettings.identify_spacing`초를 기다린 뒤에야 다시 identify합니다. 기본값은 Discord가 요구하는 대로 5초입니다. 테스트에서는 `Bot(http_settings=HTTPSettings(identify_spacing=0))`로 이 대기를 건너뜁니다.
 
 `bostie.testing.payloads`는 Discord 문서의 예제를 바탕으로, 새 ID를 붙여 Discord의 페이로드를 만듭니다.
 
-- 명령어와 자동 완성에는 `command(name, *options)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)`, `resolved()`
+- 명령어와 자동 완성에는 `command(name, *options, guild_id=None)`, `option(name, type, value, focused=False)`, `subcommand(...)`, `group(...)`, `resolved()`
 - 사용자 명령어와 메시지 명령어에는 `context_menu(type, name, target_id, resolved)`
 - 컴포넌트와 모달에는 `button(custom_id)`, `select(custom_id, *values)`, `modal(custom_id)`
 - 이벤트에는 `message(...)`, `guild(...)`, `member(...)`, `user(...)`, `role(...)`, `channel(...)`, `voice_channel(...)`, `stage_channel(...)`, `voice_state(...)`. 각각 키워드 인자로 필드를 덮어쓸 수 있습니다
@@ -64,6 +64,7 @@ description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이�
 `FakeDiscord(voice=True)`는 음성 채널과 스테이지 채널을 추가하고, 음성 상태 업데이트에 응답하며, 음성 게이트웨이와 UDP 서버를 `fake.voice`로 실행합니다. 그래서 `ctx.voice.connect()`와 `vc.play(...)`를 이 페이크에 대고 실행할 수 있습니다. DAVE는 지원하지 않으며, 이 부분은 bostie의 Rust 테스트가 다룹니다. 테스트에서는 다음을 할 수 있습니다.
 
 - `await fake.next_voice_state_update()`, `await fake.voice.next_identify()`, 복호화된 RTP 패킷을 `Packet` 객체로 반환하는 `await fake.voice.wait_for_packets(count)`로 봇이 보낸 것을 기다립니다. 각 음성 연결은 `fake.voice.sessions`에 있는 `VoiceSession`으로, `VoiceSocket` 위에서 동작하며, `fake.voice.op(op, d)`는 가장 최근 연결에 임의의 음성 opcode를 보냅니다.
+- `await fake.move_user(guild_id, user_id, channel_id)`로 사용자를 음성 채널에 넣거나, 옮기거나, `None`으로 내보냅니다. Discord가 보내는 것과 같은 `VOICE_STATE_UPDATE`를 보내므로 `ctx.voice.connect()`가 사용자의 채널을 찾습니다.
 - 다른 사용자처럼 행동합니다. `fake.voice.clients_connect(user_ids)`, `fake.voice.client_disconnect(user_id)`, `fake.voice.speaking(user_id, ssrc, flags)`, 봇에 Opus 패킷을 보내는 `fake.voice.send_audio(...)`, RTCP 패킷을 보내는 `fake.voice.send_rtcp(packet)`, 고장 난 서버처럼 바이트를 암호화하지 않고 보내는 `fake.voice.send_datagram(data)`를 사용합니다.
 - `fake.move_bot(channel_id)`와 `fake.kick_bot()`으로 모더레이터처럼 봇을 옮기거나 연결을 끊습니다.
 - `fake.hold_voice_state()`로, 채널이 가득 찼을 때 Discord가 하듯 다음 음성 상태 업데이트에 반환된 `asyncio.Event`가 설정될 때까지 응답하지 않습니다.

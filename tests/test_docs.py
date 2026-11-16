@@ -170,6 +170,8 @@ def test_every_bostie_name_the_skill_mentions_exists() -> None:
                 "track": [voice.Track],
                 "queue": [voice.Queue],
                 "recorder": [voice.Recorder],
+                "rx": [voice.Receiver],
+                "sink": [voice.Sink],
             }
             names = {
                 name

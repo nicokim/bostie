@@ -38,6 +38,8 @@ _EPHEMERAL = 1 << 6
 _LOADING = 1 << 7
 _LOCALIZATIONS = ("name_localizations", "description_localizations")
 _TRACE = '["gateway-fake",{"micros":0,"calls":[]}]'
+_CALLBACK_DEADLINE = 3.0
+_COMMAND_INTERACTIONS = (2, 4)
 _FAKE_TOKEN = "fake-token"
 
 type _Respond = Callable[[dict[str, str]], web.Response]
@@ -379,6 +381,30 @@ class FakeDiscord:
             self_deaf=state["self_deaf"],
         )
 
+    async def move_user(
+        self, guild_id: int, user_id: int, channel_id: int | None
+    ) -> None:
+        """Put a user in a voice channel, move them, or take them out with `None`.
+
+        Sends the VOICE_STATE_UPDATE Discord would, and keeps the state that
+        `GET /guilds/{guild_id}/voice-states/{user_id}` returns.
+        """
+        key = (str(guild_id), str(user_id))
+        member = self.members.get(key) or payloads.member(user=payloads.user(id=key[1]))
+        state = payloads.voice_state(
+            guild_id=key[0],
+            channel_id=None if channel_id is None else str(channel_id),
+            user_id=key[1],
+            member=member,
+            session_id=uuid.uuid4().hex,
+            self_deaf=False,
+        )
+        if channel_id is None:
+            self.voice_states.pop(key, None)
+        else:
+            self.voice_states[key] = state
+        await self.dispatch("VOICE_STATE_UPDATE", state)
+
     async def next_identify(self) -> Json:
         """Wait for the next IDENTIFY and return its `d`."""
         return await self._identifies.get()
@@ -399,11 +425,39 @@ class FakeDiscord:
         return await self._resumes.get()
 
     async def interaction(self, type: int, data: Json, **fields: Any) -> Recorded:
-        """Dispatch `payloads.interaction(...)` and return its first callback."""
+        """Dispatch `payloads.interaction(...)` and return its first callback.
+
+        A command registered only in the interaction's guild gets that guild's id
+        in its `data`, as Discord sends it. Raises `TimeoutError` when the bot
+        sends no callback within the 3 seconds Discord allows.
+        """
         payload = payloads.interaction(type, data, **fields)
+        if self._registered_only_in_guild(payload):
+            payload["data"] = payload["data"] | {"guild_id": str(payload["guild_id"])}
         callback = self.expect_callback(payload)
         await self.dispatch("INTERACTION_CREATE", payload)
-        return await callback
+        try:
+            async with asyncio.timeout(_CALLBACK_DEADLINE):
+                return await callback
+        except TimeoutError:
+            raise TimeoutError(
+                f"the bot sent no callback within {_CALLBACK_DEADLINE:g} s, "
+                "the time Discord allows"
+            ) from None
+
+    def _registered_only_in_guild(self, interaction: Json) -> bool:
+        data = interaction["data"]
+        guild_id = interaction.get("guild_id")
+        if (
+            interaction["type"] not in _COMMAND_INTERACTIONS
+            or guild_id is None
+            or "guild_id" in data
+        ):
+            return False
+        key = (data.get("type", 1), data["name"])
+        scopes = (self.guild_commands.get(str(guild_id), []), self.commands)
+        found = [any((c["type"], c["name"]) == key for c in scope) for scope in scopes]
+        return found == [True, False]
 
     def expect_callback(self, interaction: Json) -> asyncio.Future[Recorded]:
         """Accept callbacks for `interaction`; the future gets the first one."""

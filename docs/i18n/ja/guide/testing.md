@@ -1,5 +1,5 @@
 ---
-source: 0d5db0165c75f4671bf7c09cfef1394b9bfa9188
+source: 6500d09c6d1a69da5d762e8762dc45c9b689f5b3
 description: "Discord なしで Bot をテストします。ローカルのフェイクのゲートウェイ、REST API、ボイスサーバーで動かし、インタラクションやイベントを送り、送信内容を確認します。"
 ---
 
@@ -19,7 +19,7 @@ description: "Discord なしで Bot をテストします。ローカルのフ�
 
 | 呼び出し | 動作 |
 |---|---|
-| `await fake.interaction(type, data)` | `INTERACTION_CREATE` を送り、Bot の最初の応答を `Recorded` リクエストとして返します |
+| `await fake.interaction(type, data)` | `INTERACTION_CREATE` を送り、Bot の最初の応答を `Recorded` リクエストとして返します。Discord が認める 3 秒以内に応答がなければ `TimeoutError` を送出します |
 | `await fake.dispatch(name, d, shard=0)` | 任意のゲートウェイイベントを送り、そのシーケンス番号を返します |
 | `fake.expect_callback(payload)` | 自分でディスパッチしたインタラクションについて、その最初の応答を待つ future を返します |
 | `await fake.send_op(op, d)` | 7（reconnect）や 9（invalid session）のような、ディスパッチ以外のオペコードを送ります |
@@ -27,13 +27,13 @@ description: "Discord なしで Bot をテストします。ローカルのフ�
 | `fake.hold_acks()` | 接続が死んだときのように、ハートビートへの応答を止めます |
 | `await fake.next_identify()`、`await fake.next_resume()` | Bot の次の IDENTIFY または RESUME を待ちます |
 
-インタラクションの種類は Discord の番号で、コマンドは 2、コンポーネントは 3、オートコンプリートは 4、モーダルの送信は 5 です。
+インタラクションの種類は Discord の番号で、コマンドは 2、コンポーネントは 3、オートコンプリートは 4、モーダルの送信は 5 です。インタラクションのサーバーだけに登録されたコマンドには、Discord が送るのと同じように、そのサーバーの ID が `data` に入ります。同じ名前がグローバルにも登録されているときは、`payloads.command(name, guild_id=...)` でサーバーのコマンドを選びます。
 
 4007 のように新しいセッションが始まるクローズの後、Bot は `HTTPSettings.identify_spacing` 秒待ってから再び Identify を行います。既定値は Discord が求めるとおり 5 秒です。テストでは `Bot(http_settings=HTTPSettings(identify_spacing=0))` でこの待ち時間を省けます。
 
 `bostie.testing.payloads` は、Discord のドキュメントにあるサンプルから、新しい ID 付きで Discord のペイロードを組み立てます。
 
-- コマンドとオートコンプリートには `command(name, *options)`、`option(name, type, value, focused=False)`、`subcommand(...)`、`group(...)`、`resolved()`。
+- コマンドとオートコンプリートには `command(name, *options, guild_id=None)`、`option(name, type, value, focused=False)`、`subcommand(...)`、`group(...)`、`resolved()`。
 - ユーザーコマンドとメッセージコマンドには `context_menu(type, name, target_id, resolved)`。
 - コンポーネントとモーダルには `button(custom_id)`、`select(custom_id, *values)`、`modal(custom_id)`。
 - イベントには `message(...)`、`guild(...)`、`member(...)`、`user(...)`、`role(...)`、`channel(...)`、`voice_channel(...)`、`stage_channel(...)`、`voice_state(...)`。どれもキーワード引数でフィールドを上書きできます。
@@ -64,6 +64,7 @@ Bot がリスナーの中で行うことを待つには、sleep するのでは�
 `FakeDiscord(voice=True)` は、ボイスチャンネルとステージチャンネルを追加し、ボイス状態の更新に応答し、ボイスゲートウェイと UDP サーバーを `fake.voice` として動かします。そのため、`ctx.voice.connect()` や `vc.play(...)` をフェイクに対して実行できます。DAVE には対応していません。DAVE は bostie の Rust のテストでカバーしています。テストでは次のことができます。
 
 - Bot が送ったものを `await fake.next_voice_state_update()`、`await fake.voice.next_identify()`、`await fake.voice.wait_for_packets(count)` で待ちます。`wait_for_packets` は復号した RTP パケットを `Packet` オブジェクトとして返します。各ボイス接続は `fake.voice.sessions` 内の `VoiceSession` で、`VoiceSocket` の上にあります。`fake.voice.op(op, d)` は最新の接続に任意のボイスオペコードを送ります。
+- `await fake.move_user(guild_id, user_id, channel_id)` でユーザーをボイスチャンネルに入れ、移動させ、`None` なら外します。Discord と同じ `VOICE_STATE_UPDATE` を送るので、`ctx.voice.connect()` がそのユーザーのチャンネルを見つけます。
 - ほかのユーザーとして振る舞います。`fake.voice.clients_connect(user_ids)`、`fake.voice.client_disconnect(user_id)`、`fake.voice.speaking(user_id, ssrc, flags)`、Bot に Opus パケットを送る `fake.voice.send_audio(...)`、Bot に RTCP パケットを送る `fake.voice.send_rtcp(packet)`、壊れたサーバーのように暗号化せずにバイト列を送る `fake.voice.send_datagram(data)` を使います。
 - モデレーターのように Bot を移動または切断します。`fake.move_bot(channel_id)` と `fake.kick_bot()` を使います。
 - チャンネルが満員のときの Discord のように、次のボイス状態の更新に応答しないままにします。`fake.hold_voice_state()` を使い、返された `asyncio.Event` がセットされるまで保留します。
