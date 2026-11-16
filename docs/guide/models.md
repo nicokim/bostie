@@ -1,3 +1,7 @@
+---
+description: "How bostie decodes Discord's JSON into typed models: partial objects, unknown fields and enum values, raw payloads, snowflake timestamps, enums and flags."
+---
+
 # Models and enums
 
 Everything bostie decodes from Discord is a model: `Message`, `Guild`, `Member`, `Interaction` and about two hundred more, all importable from `bostie`. Models are frozen `msgspec` structs, decoded straight from the JSON bytes.

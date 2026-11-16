@@ -136,13 +136,21 @@ def language_config(code: str | None) -> dict[str, Any]:
     config = project()
     site_url = config["site_url"]
     up = "" if code is None else "../"
-    alternate = [{"name": "English", "lang": "en", "link": up or "./"}] + [
-        {"name": name, "lang": other, "link": f"{up}{other.lower()}/"}
+    alternate = [
+        {"name": "English", "lang": "en", "link": up or "./", "prefix": ""}
+    ] + [
+        {
+            "name": name,
+            "lang": other,
+            "link": f"{up}{other.lower()}/",
+            "prefix": f"{other.lower()}/",
+        }
         for other, name in LANGUAGES.items()
     ]
     config["extra"] |= {
         "alternate": alternate if LANGUAGES else [],
         "scope": urlsplit(site_url).path,
+        "root": site_url,
     }
     if code is None:
         return config
@@ -157,12 +165,23 @@ def language_config(code: str | None) -> dict[str, Any]:
         "nav": translated(config["nav"], words),
     }
     config["theme"]["language"] = code
+    config["plugins"]["llmstxt"] = {"enabled": False}
     for entry in config["theme"]["palette"]:
         entry["toggle"]["name"] = words.get(
             entry["toggle"]["name"], entry["toggle"]["name"]
         )
     config["extra"]["strings"] = words
     return config
+
+
+def robots() -> str:
+    site_url = project()["site_url"]
+    sitemaps = [f"{site_url}sitemap.xml"] + [
+        f"{site_url}{code.lower()}/sitemap.xml" for code in LANGUAGES
+    ]
+    return "User-agent: *\nAllow: /\n\n" + "".join(
+        f"Sitemap: {url}\n" for url in sitemaps
+    )
 
 
 def toml(value: object) -> str:
@@ -201,6 +220,7 @@ def main(args: list[str]) -> None:
                     sys.exit(f"{code} has no translation of {', '.join(gaps)}")
                 stage(code)
                 build(code)
+            (ROOT / "site" / "robots.txt").write_text(robots(), "utf-8")
         case ["stale", *codes]:
             for code in codes or LANGUAGES:
                 for page, old, new in stale(code):

@@ -1,3 +1,7 @@
+---
+description: "Complete bostie example bots: slash commands, Components V2, modals, events, a music queue, voice recording, HTTP interactions, webhooks and linked roles."
+---
+
 # Examples
 
 These are the files of the repository's `examples/` folder. The test suite type-checks them and loads each one, which builds its bot and checks every command definition. Each runs with `BOSTIE_TOKEN` set: `python examples/commands.py`.

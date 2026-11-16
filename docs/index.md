@@ -1,5 +1,6 @@
 ---
 render_macros: true
+description: "bostie runs the Discord gateway, HTTP client and DAVE voice engine in Rust while you write typed async Python bots with slash commands and voice."
 ---
 
 <div class="bostie-hero" markdown>

@@ -1,3 +1,7 @@
+---
+description: "Format Discord text with bostie.fmt mentions, timestamps and markdown escaping, pick colors with bostie.color, and build avatar, icon and emoji CDN URLs."
+---
+
 # Formatting, colors and CDN URLs
 
 Three small modules build the text and URLs that Discord renders: `bostie.fmt` for markdown, mentions and timestamps, `bostie.color` for colors, and `bostie.cdn` for image URLs.

@@ -1,5 +1,6 @@
 ---
-source: 6f520ae7da3868093d6ae15e172deaedb506e1fc
+source: a95f1211f80aa1fe37d568699ddca680b3c3ed9d
+description: "bostie で使う Discord OAuth2。PKCE 付き認可 URL、コード交換と更新、ユーザートークンでの API 呼び出し、リンクされたロールのメタデータを扱います。"
 ---
 
 # OAuth2 とリンクされたロール

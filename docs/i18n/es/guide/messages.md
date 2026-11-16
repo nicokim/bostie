@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "Arma mensajes de Discord con embeds, archivos, encuestas, respuestas, reenvíos, Components V2, indicador de escritura y mensajes de voz, con las mismas piezas."
 ---
 
 # Contenido de los mensajes

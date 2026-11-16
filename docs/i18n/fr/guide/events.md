@@ -1,5 +1,6 @@
 ---
-source: a5b6afe7ce2baa740ef1fd06599d2895465c3d1c
+source: 0402229d2b242ba10aed929b9dedd0087f57b406
+description: "Écoutez la gateway Discord avec des écouteurs typés : attendre ou suivre des événements en flux, événements bruts ou personnalisés, intents requis par chacun."
 ---
 
 # Événements

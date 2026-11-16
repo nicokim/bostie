@@ -1,3 +1,7 @@
+---
+description: "Receive Discord voice per speaker as PCM, Opus or RTP packets, detect speech, split utterances, relay calls and record each user to Ogg or WAV files."
+---
+
 # Receiving and recording
 
 ![Bostie holding a microphone as sound waves arrive](../assets/mascot/bostie-receiving.webp){ align=right width="180" loading=lazy }

@@ -1,5 +1,6 @@
 ---
-source: 5246991ba1478ea5d33d14802d1a46c835ecb91e
+source: 4108c4a61370aa8ef893c1d65371c3d654e43c09
+description: "bostie로 Discord 음성 채널과 스테이지 채널에 참가합니다. 연결 설정, DAVE 종단 간 암호화, 음성 이벤트, 외부 음성 엔진을 다룹니다."
 ---
 
 # 음성 연결

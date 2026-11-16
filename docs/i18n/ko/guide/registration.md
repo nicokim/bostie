@@ -1,5 +1,6 @@
 ---
-source: 9aa2f3cd3cfe588188668066e047191f9b207226
+source: b7efeeb83216fd56b3819a874abdb0bfb6a2a072
+description: "bostie가 앱 명령어를 Discord와 동기화하는 방식입니다. 전역과 서버 범위, 개발용 테스트 서버, 명령어 멘션, 번역, 동기화 에러를 다룹니다."
 ---
 
 # 명령어 등록

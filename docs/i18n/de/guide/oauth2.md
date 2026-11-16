@@ -1,5 +1,6 @@
 ---
-source: 6f520ae7da3868093d6ae15e172deaedb506e1fc
+source: a95f1211f80aa1fe37d568699ddca680b3c3ed9d
+description: "Discord-OAuth2 mit bostie: Autorisierungs-URLs mit PKCE, Code-Austausch und Token-Refresh, API-Aufrufe mit Benutzertoken und Metadaten verknüpfter Rollen."
 ---
 
 # OAuth2 und verknüpfte Rollen

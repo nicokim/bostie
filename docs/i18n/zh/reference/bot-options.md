@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "bostie 的 Bot 类的所有选项及其默认值：Intent、在线状态、分片、命令同步、自动延迟回应、缓存、HTTP 设置、语音和关闭。"
 ---
 
 # Bot 选项

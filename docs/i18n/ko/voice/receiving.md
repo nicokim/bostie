@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Discord 음성을 화자별 PCM, Opus, RTP 패킷으로 수신하고, 말하기를 감지해 발화를 나누며, 통화를 중계하고 Ogg나 WAV로 녹음합니다."
 ---
 
 # 수신과 녹음

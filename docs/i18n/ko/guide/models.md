@@ -1,5 +1,6 @@
 ---
-source: 8bfaf791038898b7b25fb584ff4496c345a14fcb
+source: 33cc84c2aaa4440f3880a38f7ef33c9dff405dec
+description: "bostie가 Discord JSON을 타입이 지정된 모델로 디코딩하는 방식입니다. 부분 객체, 알 수 없는 값, 원시 페이로드, 열거형과 플래그를 다룹니다."
 ---
 
 # 모델과 열거형

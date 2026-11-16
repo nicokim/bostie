@@ -1,5 +1,6 @@
 ---
-source: a5646223563b83584ded4c6da42da70ad55b98c7
+source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+description: "Discord 없이 봇을 테스트합니다. 로컬 페이크 게이트웨이, REST API, 음성 서버에서 봇을 실행하고 인터랙션과 이벤트를 보내 결과를 확인합니다."
 ---
 
 # 봇 테스트하기

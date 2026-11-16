@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "Abre modales de Discord con campos de texto, menús de selección, archivos, grupos de opciones y casillas, lee los valores y espera el envío en un handler."
 ---
 
 # Modales

@@ -1,5 +1,6 @@
 ---
-source: a5b6afe7ce2baa740ef1fd06599d2895465c3d1c
+source: 0402229d2b242ba10aed929b9dedd0087f57b406
+description: "Escucha eventos del gateway de Discord con listeners tipados, espéralos o léelos en un stream, usa eventos sin procesar o propios y mira qué intents requieren."
 ---
 
 # Eventos

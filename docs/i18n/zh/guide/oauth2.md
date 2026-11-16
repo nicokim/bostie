@@ -1,5 +1,6 @@
 ---
-source: 6f520ae7da3868093d6ae15e172deaedb506e1fc
+source: a95f1211f80aa1fe37d568699ddca680b3c3ed9d
+description: "在 bostie 中使用 Discord OAuth2：带 PKCE 的授权 URL、授权码交换与刷新、用用户的令牌调用 API，以及关联身份组元数据。"
 ---
 
 # OAuth2 与关联身份组

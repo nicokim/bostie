@@ -1,5 +1,6 @@
 ---
-source: e34cc46068e5dbed893da30651ffe79172be1050
+source: e2358e898c35ce2b4e86e1bc432f1c4b34f055a9
+description: "API-Referenz der Servermodelle: Guild, Role, Member, Kanäle und Threads, Audit-Log und AutoMod, geplante Events, Einladungen, Emojis und Sticker."
 ---
 
 # Server und Kanäle

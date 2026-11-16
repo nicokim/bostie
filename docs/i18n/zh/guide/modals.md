@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "打开包含文本输入、选择菜单、文件上传、单选组和复选框的 Discord 模态框表单，读取填写的值，并在处理函数中等待提交。"
 ---
 
 # 模态框

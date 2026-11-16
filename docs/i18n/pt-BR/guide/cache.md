@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "O que o cache do bostie guarda do gateway, como buscar servidores, membros e canais, recorrer à API REST e calcular permissões e a hierarquia de cargos."
 ---
 
 # Cache e permissões

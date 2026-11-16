@@ -1,3 +1,7 @@
+---
+description: "Every gateway, webhook and bot event bostie delivers, grouped by topic, with its dispatch name, the intents Discord needs to send it, and its fields."
+---
+
 # Event list
 
 Every event class lives in `bostie.events`. Listen to one with `@bot.listen`, as the [events guide](../guide/events.md) explains. The intents column names the intents Discord needs to send the event, any one of them enough; an empty cell means Discord sends it without an intent, or only as the answer to a request. Every gateway event also has `shard_id`, `raw_json` and `raw`. The [API reference](api/events.md) has every field with its type.

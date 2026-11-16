@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Discord のボイスを話者ごとに PCM、Opus、RTP パケットで受信し、発話を検出して区切り、通話を中継し、ユーザーごとに Ogg や WAV ファイルへ録音します。"
 ---
 
 # 受信と録音

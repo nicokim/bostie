@@ -1,5 +1,6 @@
 ---
-source: e4d65a29086e1f3e4e82a64b8aa6c42d29627ef0
+source: efdcb485cd6bec9ca515ad0f0311945137caa315
+description: "Sende, bearbeite und lösche Nachrichten per Discord-Webhook-URL aus asynchronem oder synchronem Python ohne Bot; mit Bot erstellst und verwaltest du Webhooks."
 ---
 
 # Webhooks

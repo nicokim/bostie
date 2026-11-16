@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "bostie 的缓存从网关保存哪些内容，如何查找服务器、成员和频道并回退到 REST，以及如何计算权限和身份组层级。"
 ---
 
 # 缓存与权限

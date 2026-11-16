@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "Composez vos messages Discord avec les mêmes éléments : embeds, fichiers, sondages, réponses, transferts, Components V2, indicateur d'écriture, messages vocaux."
 ---
 
 # Contenu des messages

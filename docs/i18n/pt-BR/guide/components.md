@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "Crie botões, menus de seleção e layouts de Components V2 com bostie.ui e direcione custom ids para handlers que continuam funcionando depois que o bot reinicia."
 ---
 
 # Componentes

@@ -1,5 +1,6 @@
 ---
-source: e4d65a29086e1f3e4e82a64b8aa6c42d29627ef0
+source: efdcb485cd6bec9ca515ad0f0311945137caa315
+description: "无需机器人，用异步或普通 Python 代码通过 Discord Webhook URL 发送、编辑和删除消息，也可以用机器人创建和管理 Webhook。"
 ---
 
 # Webhook

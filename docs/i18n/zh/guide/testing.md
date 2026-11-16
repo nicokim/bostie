@@ -1,5 +1,6 @@
 ---
-source: a5646223563b83584ded4c6da42da70ad55b98c7
+source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+description: "无需 Discord 即可测试机器人：在本地模拟的网关、REST API 和语音服务器上运行它，发送交互和事件，并检查它发送了什么。"
 ---
 
 # 测试你的机器人

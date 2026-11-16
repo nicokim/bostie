@@ -1,5 +1,6 @@
 ---
-source: fa47131472a60ef5dbaa1eef411b4ec762c85146
+source: d85e30b6bb45eff282f70f86375dc49e252a5387
+description: "在 Discord 语音中播放文件、URL 和 HLS 流：音轨、音量、均衡器与变速滤镜、支持交叉淡入淡出的无缝队列以及 Opus 编码器设置。"
 ---
 
 # 播放音频

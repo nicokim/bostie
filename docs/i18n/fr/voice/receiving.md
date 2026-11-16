@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Recevez la voix Discord par locuteur en PCM, Opus ou RTP, détectez et découpez les prises de parole, relayez des appels, enregistrez chacun en Ogg ou WAV."
 ---
 
 # Réception et enregistrement

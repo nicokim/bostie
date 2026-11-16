@@ -1,3 +1,7 @@
+---
+description: "Write raw PCM or Opus audio into a Discord voice call through a sink: formats, backpressure, markers, crossfades, buffer settings and underrun counters."
+---
+
 # Sinks and raw audio
 
 A sink is a bounded buffer that Python writes audio into and the Rust mixer reads from, 20 ms at a time. Every track and queue plays through one. Open your own for audio you generate or receive from elsewhere: a synthesizer, a text-to-speech engine, a stream from another program.

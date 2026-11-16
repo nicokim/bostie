@@ -1,5 +1,6 @@
 ---
-source: 22e588eb286f2378e7b04e0a4e738f8828a23ecf
+source: 2ee95f317499fe403f0b728d5caa99b8854b93d5
+description: "Instala bostie con pip: wheels para Linux, macOS y Windows en Python 3.12 o superior, builds free-threaded, el extra testing y builds desde el código fuente."
 ---
 
 # Instalación

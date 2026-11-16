@@ -1,5 +1,6 @@
 ---
-source: a5b6afe7ce2baa740ef1fd06599d2895465c3d1c
+source: 0402229d2b242ba10aed929b9dedd0087f57b406
+description: "타입이 지정된 리스너로 Discord 게이트웨이 이벤트를 듣고 기다리거나 스트림으로 받습니다. 원시 이벤트, 직접 만든 이벤트, 필요한 인텐트를 다룹니다."
 ---
 
 # 이벤트

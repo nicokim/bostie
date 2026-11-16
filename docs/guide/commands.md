@@ -1,3 +1,7 @@
+---
+description: "Define Discord slash commands from Python type hints: option types, choices, ranges, autocomplete, converters, subcommand groups and Discord's limits."
+---
+
 # Slash commands
 
 ![Bostie writing a slash command in a speech bubble](../assets/mascot/bostie-commands.webp){ align=right width="180" loading=lazy }

@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "임베드, 파일 업로드, 투표, 답장, 전달, Components V2, 입력 중 표시, 음성 메시지까지 같은 구성 요소로 Discord 메시지를 만듭니다."
 ---
 
 # 메시지 내용

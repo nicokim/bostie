@@ -1,5 +1,6 @@
 ---
-source: 5246991ba1478ea5d33d14802d1a46c835ecb91e
+source: 4108c4a61370aa8ef893c1d65371c3d654e43c09
+description: "用 bostie 加入 Discord 语音频道和舞台频道：连接设置、DAVE 端到端加密、语音事件、媒体停滞以及外部语音引擎。"
 ---
 
 # 语音连接

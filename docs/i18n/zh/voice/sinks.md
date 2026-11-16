@@ -1,5 +1,6 @@
 ---
-source: 7da84385c00fe71bc6575b90de4a0a059883399e
+source: e89423f86355edd642290a66c8608f48553e0ff6
+description: "通过 sink 把原始 PCM 或 Opus 音频写入 Discord 语音通话：格式、背压、标记、交叉淡入淡出、缓冲区设置和欠载计数器。"
 ---
 
 # Sink 与原始音频

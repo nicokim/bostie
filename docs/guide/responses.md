@@ -1,3 +1,7 @@
+---
+description: "Answer Discord interactions: respond, defer, edit, follow up, ephemeral messages, auto defer, the 3-second and 15-minute limits, and allowed mentions."
+---
+
 # Answering interactions
 
 Every slash command, context menu command, button, select and modal submit is an interaction, and Discord waits for the app to answer it. A command handler gets a `Context`, a component handler a `ComponentContext` and a modal handler a `ModalContext`; they share the answering methods below.

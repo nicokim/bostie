@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "Ouvrez des fenêtres modales Discord : champs de texte, menus de sélection, fichiers, boutons radio, cases à cocher, lecture des valeurs et attente de l'envoi."
 ---
 
 # Fenêtres modales

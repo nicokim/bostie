@@ -1,5 +1,6 @@
 ---
-source: 68e78077054bc9371fe434e9a92b5c88f7968c11
+source: 323d099389fca116547e2365690b821a01172a94
+description: "Referencia de la API para construir comandos: Option, Choice, Convert, Range, las clases Command, Group y de menú contextual, rutas de componentes y SyncResult."
 ---
 
 # Comandos

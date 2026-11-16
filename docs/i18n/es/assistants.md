@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 67296fb45686a92662fe14f10a697ef03c8c8044
+source: 7deeb3e9bdb7924d1e7844604eabcd4a1de7522a
+description: "Instala la skill de bostie y los asistentes de programación con IA escribirán bots correctos: con npx, como plugin o a mano, y la línea que hace que la carguen."
 ---
 
 # Asistentes de programación con IA

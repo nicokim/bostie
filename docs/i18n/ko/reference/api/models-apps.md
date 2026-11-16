@@ -1,5 +1,6 @@
 ---
-source: 59e2ab425e0ae03019178de465aec42a28055f65
+source: 26a0dce95f113f84851fa666e508ee7a72ca5607
+description: "애플리케이션 모델의 API 레퍼런스입니다. Application, Team, SKU, 엔타이틀먼트와 구독, Social SDK 로비와 ID 정보를 다룹니다."
 ---
 
 # 애플리케이션과 수익화

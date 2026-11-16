@@ -1,5 +1,6 @@
 ---
-source: 7f5c86665191d303ab8ac2e965d43d553cee7953
+source: 620651abbb35486bdf47aba0669128b8bb1d0ad6
+description: "Python 타입 힌트로 Discord 슬래시 명령어를 정의합니다. 옵션 타입, 선택지, 범위, 자동 완성, 컨버터, 하위 명령어 그룹, 제한을 다룹니다."
 ---
 
 # 슬래시 명령어

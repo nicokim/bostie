@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Recibe voz de Discord por persona en PCM, Opus o paquetes RTP, detecta habla, divide intervenciones, retransmite llamadas y graba a cada usuario en Ogg o WAV."
 ---
 
 # Recibir y grabar

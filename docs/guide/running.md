@@ -1,3 +1,7 @@
+---
+description: "Run a bostie bot: the token, startup and shutdown lifecycle, running it inside an asyncio program or web app, logging, and several bots in one process."
+---
+
 # Running a bot
 
 ![Bostie celebrating with confetti](../assets/mascot/bostie-celebrating.webp){ align=right width="180" loading=lazy }

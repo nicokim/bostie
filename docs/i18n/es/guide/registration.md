@@ -1,5 +1,6 @@
 ---
-source: 9aa2f3cd3cfe588188668066e047191f9b207226
+source: b7efeeb83216fd56b3819a874abdb0bfb6a2a072
+description: "Cómo sincroniza bostie los comandos con Discord: ámbito global o de servidor, un servidor de pruebas, menciones, traducciones y errores de sincronización."
 ---
 
 # Registrar comandos

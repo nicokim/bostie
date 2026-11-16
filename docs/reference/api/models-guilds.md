@@ -1,3 +1,7 @@
+---
+description: "API reference for guild models: Guild, Role, Member, channels and threads, audit log and auto moderation, scheduled events, invites, emojis and stickers."
+---
+
 # Guilds and channels
 
 The [models guide](../../guide/models.md) explains how models are typed and decoded. Every class here is importable from `bostie`.

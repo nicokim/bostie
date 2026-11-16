@@ -1,5 +1,6 @@
 ---
-source: 59e2ab425e0ae03019178de465aec42a28055f65
+source: 26a0dce95f113f84851fa666e508ee7a72ca5607
+description: "アプリのモデルの API リファレンス。Application、Team、ActivityInstance、SKU などの収益化、Social SDK のロビーと ID 情報。"
 ---
 
 # アプリケーションと収益化

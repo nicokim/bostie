@@ -1,5 +1,6 @@
 ---
-source: cbf9d472ef0e0c0f610b3352754ad6482b93f093
+source: b1ea93c8ecd81e5df88e6e3728f48038a3213951
+description: "Responda a interações do Discord: responder, adiar, editar, acompanhar, mensagens efêmeras, adiamento automático, limites de 3 s e 15 min e menções permitidas."
 ---
 
 # Respondendo a interações

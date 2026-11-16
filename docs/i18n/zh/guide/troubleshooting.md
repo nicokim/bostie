@@ -1,5 +1,6 @@
 ---
-source: 14575d90a6a022a3c0cbfce22c048b404bcf4957
+source: e7704fd7192c52cc55342cad633590bd6f185904
+description: "根据日志行解决 bostie 的常见问题：“The application did not respond”、收不到事件、网关和 REST 警告、语音问题和报告 bug。"
 ---
 
 # 故障排查

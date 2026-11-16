@@ -1,5 +1,6 @@
 ---
-source: fecb554b875bf1b19567e85926b3784beca4dba5
+source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+description: "Rode um bot do bostie: o token, o ciclo de vida de inicialização e desligamento, dentro de um programa asyncio ou app web, logging e vários bots em um processo."
 ---
 
 # Rodando um bot

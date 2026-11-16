@@ -1,5 +1,6 @@
 ---
-source: 5246991ba1478ea5d33d14802d1a46c835ecb91e
+source: 4108c4a61370aa8ef893c1d65371c3d654e43c09
+description: "Tritt mit bostie Sprach- und Stage-Kanälen bei: Verbindungseinstellungen, DAVE-Ende-zu-Ende-Verschlüsselung, Events, stockende Medien, externe Sprach-Engines."
 ---
 
 # Sprachverbindungen

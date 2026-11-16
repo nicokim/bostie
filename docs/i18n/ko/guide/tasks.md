@@ -1,5 +1,6 @@
 ---
-source: 7cf12918970912a9363cc1aac58fb080c085fef9
+source: b58df394d71cd32e4c45cccfdd0da40ddcb957c3
+description: "@bot.every로 몇 초마다 또는 하루 중 정한 시각에 백그라운드 태스크를 실행하고, 봇이 실행되는 동안 시작, 중지, 재시작하거나 일정을 바꿉니다."
 ---
 
 # 백그라운드 태스크

@@ -1,5 +1,6 @@
 ---
-source: 4a284a3b3f200d0ec7930b638539bf2f3dce58f5
+source: 8ae643339a37c0c92710f45b0f55c89b0681c0b2
+description: "Справочник API по контекстам взаимодействий: Context, ComponentContext, ModalContext и AutocompleteContext и части сообщения, которые принимают их методы."
 ---
 
 # Контексты взаимодействий

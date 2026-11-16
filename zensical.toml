@@ -9,6 +9,7 @@ snippets/
 skills/
 /plugin.json
 /i18n/
+/overrides/
 """
 extra_css = ["assets/stylesheets/bostie.css"]
 extra_javascript = ["assets/javascripts/languages.js"]
@@ -89,6 +90,7 @@ nav = [
 ]
 
 [project.theme]
+custom_dir = "docs/overrides"
 language = "en"
 logo = "assets/brand/bostie-logo.svg"
 favicon = "assets/brand/bostie-logo.svg"
@@ -156,9 +158,23 @@ filters = ["!^_"]
 heading_level = 2
 show_root_heading = true
 
+[project.plugins.llmstxt]
+markdown_description = "bostie is a Discord library for Python 3.12+ with a Rust core: slash commands, components, events, REST, HTTP interactions, OAuth2, and voice with DAVE end-to-end encryption. Install it with `pip install bostie`; `bostie.testing` runs bots against a fake Discord."
+full_output = "llms-full.txt"
+
+[project.plugins.llmstxt.sections]
+"Get started" = ["index.md", "install.md", "quickstart.md", "assistants.md"]
+Guides = ["guide/*.md"]
+Voice = ["voice/*.md"]
+Reference = ["reference/*.md", "reference/api/*.md"]
+Examples = ["examples.md"]
+
 [project.plugins.macros]
 render_by_default = false
 include_dir = "docs/snippets/assistants"
+
+[project.extra]
+card_alt = "bostie, a Discord library for Python with a Rust core, built around reliable voice: Bostie the Boston Terrier waves next to pip install bostie"
 
 # one line per translation in docs/i18n/<code>/: <theme language code> = "<its name in that language>"
 [project.extra.languages]

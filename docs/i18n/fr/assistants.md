@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 67296fb45686a92662fe14f10a697ef03c8c8044
+source: 7deeb3e9bdb7924d1e7844604eabcd4a1de7522a
+description: "Installez la skill bostie pour que les assistants de code IA écrivent des bots bostie corrects : via npx, en plugin ou à la main, et la ligne pour la charger."
 ---
 
 # Assistants de code IA

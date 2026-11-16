@@ -1,3 +1,7 @@
+---
+description: "Join Discord voice and stage channels with bostie: connection settings, DAVE end-to-end encryption, voice events, stalled media and external voice engines."
+---
+
 # Voice connections
 
 ![Bostie listening with headphones](../assets/mascot/bostie-listen.webp){ align=right width="180" loading=lazy }

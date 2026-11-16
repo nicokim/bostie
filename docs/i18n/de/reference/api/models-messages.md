@@ -1,5 +1,6 @@
 ---
-source: 77b89f1a95f4c607e649200ead2018c5cd1d4238
+source: 04acac50344dd962e17ae5cc5ee55d5415a9daf7
+description: "API-Referenz der Modelle für Nachrichten, Komponenten und Interaktionen: Message, WebhookMessage, Embeds, Anhänge, Components V2 und jeder Interaktionstyp."
 ---
 
 # Nachrichten und Interaktionen

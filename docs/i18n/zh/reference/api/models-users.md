@@ -1,5 +1,6 @@
 ---
-source: a62ede2e6a2aefae7edd71356c123776c0fec22d
+source: 00e20a71fb965dd4213c77d5d84986b08dff9a2a
+description: "用户模型的 API 参考：User 和 CurrentUser、在线状态及其活动、OAuth2 访问令牌和连接，以及 Webhook 模型。"
 ---
 
 # 用户与在线状态

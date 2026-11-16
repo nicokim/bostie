@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: a3a1b83398a63bd2c49a018f148793d0781c22a0
+source: dc795d93f8d81e572155a4937bfd0da9add197bf
+description: "bostie запускает шлюз Discord, HTTP-клиент и голосовой движок DAVE на Rust, а вы пишете ботов со слэш-командами и голосом на типизированном асинхронном Python."
 ---
 
 <div class="bostie-hero" markdown>

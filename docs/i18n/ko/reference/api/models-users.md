@@ -1,5 +1,6 @@
 ---
-source: a62ede2e6a2aefae7edd71356c123776c0fec22d
+source: 00e20a71fb965dd4213c77d5d84986b08dff9a2a
+description: "사용자 모델의 API 레퍼런스입니다. User와 CurrentUser, 프레즌스와 활동, OAuth2 액세스 토큰과 연결, Webhook 모델을 다룹니다."
 ---
 
 # 사용자와 프레즌스

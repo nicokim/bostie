@@ -1,5 +1,6 @@
 ---
-source: a9ef813b389718cd5d31ae958953b39416d1a494
+source: db591175a7dec7d094226c92a4855de730089f1d
+description: "Adicione comandos de menu de contexto de usuário e de mensagem e o comando de ponto de entrada que abre uma Atividade, com alvos tipados e suas configurações."
 ---
 
 # Comandos de usuário, de mensagem e de ponto de entrada

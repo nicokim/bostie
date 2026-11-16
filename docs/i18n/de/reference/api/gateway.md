@@ -1,5 +1,6 @@
 ---
-source: efcdf929eab53b7ecded890238697695f95cf4a8
+source: 4cba79fae5a2943cf4bd952119f39655c80c3256
+description: "API-Referenz für GatewayClient und Shard, RequestedMembers, den Cache mit seinen Methoden für Abfragen und Berechtigungen und Lookup, das auf REST zurückfällt."
 ---
 
 # Gateway und Cache

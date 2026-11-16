@@ -1,3 +1,7 @@
+---
+description: "API reference for every bot.rest group: methods for messages, channels, guilds, members, roles, webhooks, commands and more, with options and return types."
+---
+
 # REST groups
 
 Each attribute of `bot.rest` is a group of operations, listed here with the options each takes. The [REST guide](../../guide/rest.md) explains the conventions.

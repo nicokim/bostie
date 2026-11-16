@@ -1,3 +1,7 @@
+---
+description: "Open Discord modal forms with text inputs, selects, file uploads, radio groups and checkboxes, read the values and wait for a submit in a handler."
+---
+
 # Modals
 
 ![Bostie filling in a form and sending it](../assets/mascot/bostie-modals.webp){ align=right width="180" loading=lazy }

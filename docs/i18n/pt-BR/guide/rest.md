@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "Chame a API REST do Discord para bots: paginação, limpeza de mensagens, registro de auditoria, erros, rate limits, retentativas, downloads e requisições brutas."
 ---
 
 # API REST

@@ -1,5 +1,6 @@
 ---
-source: 3337dc9b9c1508c500eac3639bbfb9fc948f4a27
+source: 78a0e5466c6f1542e685629c22fbbdc82ec6dcde
+description: "Setze Gateway-Intents samt privilegierter, Präsenz und Aktivitäten des Bots, fordere Servermitglieder an, sende rohe Gateway-Befehle, behandle Backpressure."
 ---
 
 # Intents, Präsenz und das Gateway

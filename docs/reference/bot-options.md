@@ -1,3 +1,7 @@
+---
+description: "Every option of bostie's Bot class with its default: intents, presence, sharding, command sync, auto defer, cache, HTTP settings, voice and shutdown."
+---
+
 # Bot options
 
 Every option of `Bot(...)`, all keyword-only. The guides explain each in context.

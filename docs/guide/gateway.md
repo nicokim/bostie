@@ -1,3 +1,7 @@
+---
+description: "Set gateway intents, privileged ones included, the bot's presence and activities, request guild members, send raw gateway commands and handle backpressure."
+---
+
 # Intents, presence and the gateway
 
 The gateway is the WebSocket over which Discord sends events and the bot sends its presence and requests. bostie's Rust core keeps it connected: heartbeats, resumes, reconnects, compression and the send rate limit. This page covers what the bot asks of it.

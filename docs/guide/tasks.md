@@ -1,3 +1,7 @@
+---
+description: "Run background tasks every few seconds or at set times of day with @bot.every, and start, stop, restart or reschedule them while the bot runs."
+---
+
 # Background tasks
 
 ![Bostie asleep while an alarm clock rings](../assets/mascot/bostie-sleeping.webp){ align=right width="180" loading=lazy }

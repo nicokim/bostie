@@ -1,5 +1,6 @@
 ---
-source: 2324aaf10288264422facffae7825508af75bc8f
+source: 11bc80522c125b25146fd69451fd43c59869298f
+description: "bostie.events 的 API 参考：所有网关、Webhook 和生命周期事件类及其字段，以及用于自定义事件的 RawEvent 和 BotEvent。"
 ---
 
 # bostie.events

@@ -1,5 +1,6 @@
 ---
-source: f4afb2ae41854fb4e97a63590ca4fa1760172438
+source: 12cb33d1448fc6df340b3c11d616bf17c9f5b58c
+description: "Formate texto com menções, timestamps e escape de markdown do bostie.fmt, escolha cores com bostie.color e monte URLs da CDN para avatares, ícones e emojis."
 ---
 
 # Formatação, cores e URLs da CDN

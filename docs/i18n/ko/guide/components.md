@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "bostie.ui로 버튼, 선택 메뉴, Components V2 레이아웃을 만들고, 봇을 재시작해도 동작하는 핸들러로 커스텀 ID를 라우팅합니다."
 ---
 
 # 컴포넌트

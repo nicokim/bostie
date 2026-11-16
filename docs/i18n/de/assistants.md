@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 67296fb45686a92662fe14f10a697ef03c8c8044
+source: 7deeb3e9bdb7924d1e7844604eabcd4a1de7522a
+description: "Installiere den bostie-Skill, damit KI-Coding-Assistenten korrekte bostie-Bots schreiben: per npx, als Plugin oder von Hand, und die Zeile, die ihn laden lässt."
 ---
 
 # KI-Coding-Assistenten

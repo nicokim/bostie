@@ -1,5 +1,6 @@
 ---
-source: fa47131472a60ef5dbaa1eef411b4ec762c85146
+source: d85e30b6bb45eff282f70f86375dc49e252a5387
+description: "Spiele Dateien, URLs und HLS-Streams in Discord-Sprachkanälen ab: Tracks, Lautstärke, Equalizer, Tempo, lückenlose Warteschlangen, Überblendung, Opus-Encoder."
 ---
 
 # Audio abspielen

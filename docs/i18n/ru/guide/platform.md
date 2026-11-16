@@ -1,5 +1,6 @@
 ---
-source: 03a349670a189a38d3b3491aba4b54e6af1ec4e9
+source: 0c49168c9e0add898da9cb6bf25e6b0a9fb68ecd
+description: "Приложения Discord для установки пользователями, запуск Активностей, продажа SKU через entitlements и подписки и управление лобби Social SDK через REST."
 ---
 
 # Активности, монетизация и Social SDK

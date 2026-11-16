@@ -1,5 +1,6 @@
 ---
-source: f4afb2ae41854fb4e97a63590ca4fa1760172438
+source: 12cb33d1448fc6df340b3c11d616bf17c9f5b58c
+description: "Formatez le texte Discord avec bostie.fmt (mentions, horodatages, échappement Markdown), les couleurs avec bostie.color et les URL CDN d'avatars et d'émojis."
 ---
 
 # Mise en forme, couleurs et URL du CDN

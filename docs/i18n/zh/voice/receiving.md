@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "按说话者以 PCM、Opus 或 RTP 包接收 Discord 语音，检测说话、切分语段、中继通话，并把每个用户录制为 Ogg 或 WAV 文件。"
 ---
 
 # 接收与录音
