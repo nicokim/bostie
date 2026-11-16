@@ -1,5 +1,6 @@
 ---
-source: 3337dc9b9c1508c500eac3639bbfb9fc948f4a27
+source: 78a0e5466c6f1542e685629c22fbbdc82ec6dcde
+description: "设置网关 Intent（包括特权 Intent）、机器人的在线状态和活动，请求服务器成员，发送原始网关命令并处理背压。"
 ---
 
 # Intent、在线状态与网关

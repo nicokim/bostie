@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "Llama a la API REST de Discord: paginación, purgar mensajes, registro de auditoría, errores, rate limits, reintentos, descargas y solicitudes sin procesar."
 ---
 
 # API REST

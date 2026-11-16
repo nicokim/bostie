@@ -1,5 +1,6 @@
 ---
-source: 029b6094446c707896abd078da818c4746bbebec
+source: 63c601a21b6ce6311976189053f39ff84cf42f5d
+description: "Restrinja comandos com verificações de permissão, cargo, dono, cooldown e concorrência, rode hooks antes e depois dos handlers e trate erros com hooks de erro."
 ---
 
 # Verificações, hooks e erros

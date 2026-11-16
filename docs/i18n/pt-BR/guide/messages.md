@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "Monte mensagens do Discord com incorporações, arquivos, enquetes, respostas, encaminhamentos, Components V2, indicador de digitação e mensagens de voz."
 ---
 
 # Conteúdo de mensagens

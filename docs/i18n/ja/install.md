@@ -1,5 +1,6 @@
 ---
-source: 22e588eb286f2378e7b04e0a4e738f8828a23ecf
+source: 2ee95f317499fe403f0b728d5caa99b8854b93d5
+description: "pip で bostie を導入。Linux、macOS、Windows の wheel、Python 3.12 以降、フリースレッド版、testing extra、ソースビルド。"
 ---
 
 # インストール

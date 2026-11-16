@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "テキスト入力、セレクト、ファイルのアップロード、ラジオグループ、チェックボックスを持つ Discord のモーダルを開き、値を読み取り、ハンドラー内で送信を待ちます。"
 ---
 
 # モーダル

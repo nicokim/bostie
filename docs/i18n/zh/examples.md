@@ -1,5 +1,6 @@
 ---
-source: afe273b0bb674620ed6eaaab978ec64bbcb23c8e
+source: f54db29cb26a01ab63ca1c726a1815c968b1cf3a
+description: "完整的 bostie 示例机器人：斜杠命令、Components V2、模态框、事件、音乐队列、语音录制、HTTP 交互、Webhook 和关联身份组。"
 ---
 
 # 示例

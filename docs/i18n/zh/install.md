@@ -1,5 +1,6 @@
 ---
-source: 22e588eb286f2378e7b04e0a4e738f8828a23ecf
+source: 2ee95f317499fe403f0b728d5caa99b8854b93d5
+description: "用 pip 安装 bostie：支持 Python 3.12+ 的 Linux、macOS、Windows 预编译 wheel、自由线程构建、testing 附加依赖与源码构建。"
 ---
 
 # 安装

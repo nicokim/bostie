@@ -1,5 +1,6 @@
 ---
-source: fa47131472a60ef5dbaa1eef411b4ec762c85146
+source: d85e30b6bb45eff282f70f86375dc49e252a5387
+description: "Reproduza arquivos, URLs e streams HLS na voz do Discord: faixas, volume, filtros de equalizador e velocidade, filas contínuas com crossfade e codificador Opus."
 ---
 
 # Reproduzindo áudio

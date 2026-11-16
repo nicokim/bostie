@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 4004163cb60675c429361e3c0739c96ffdfbc70f
+source: 879f90299466f4c668efe8cb4ef1edb576a11bc2
+description: "Discord 애플리케이션을 만들어 서버에 추가하고, 슬래시 명령어와 타입이 지정된 옵션을 가진 첫 Python 봇을 bostie로 단계별로 실행합니다."
 ---
 
 # 빠른 시작

@@ -1,3 +1,7 @@
+---
+description: "Build buttons, select menus and Components V2 layouts with bostie.ui, and route custom ids to handlers that keep working after the bot restarts."
+---
+
 # Components
 
 ![Bostie pressing a big button](../assets/mascot/bostie-components.webp){ align=right width="180" loading=lazy }

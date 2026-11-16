@@ -1,5 +1,6 @@
 ---
-source: f49f915994d33a7383708875aaeb52d2b113c2b7
+source: 74e134769abeab53fb9b321be4b35f2e68a57db8
+description: "bostie 分发的所有网关、Webhook 和机器人事件，按主题分组，并列出分发名称、Discord 发送它所需的 Intent 以及字段。"
 ---
 
 # 事件列表

@@ -1,5 +1,6 @@
 ---
-source: 04dd5c7d848eed6b7fe26c0af24d76fdfca1a0d2
+source: d24ff7127c79eec4345b1d42ca0265273465a567
+description: "用 ASGI 应用代替网关，通过 HTTP 处理 Discord 交互和 Webhook 事件，验证请求签名，或使用你自己的 Web 服务器。"
 ---
 
 # HTTP 交互与 Webhook 事件

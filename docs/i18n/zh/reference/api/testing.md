@@ -1,5 +1,6 @@
 ---
-source: 9a40533f703d0624d4dcc74946a6fbb421ca7433
+source: dfde89ca150c31d6c3eb7240f5f083cd1bc775ea
+description: "bostie.testing 的 API 参考：FakeDiscord、run 和 running、记录的请求、模拟语音服务器，以及命令和事件的载荷构建器。"
 ---
 
 # bostie.testing

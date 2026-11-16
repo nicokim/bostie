@@ -1,5 +1,6 @@
 ---
-source: afe273b0bb674620ed6eaaab978ec64bbcb23c8e
+source: f54db29cb26a01ab63ca1c726a1815c968b1cf3a
+description: "bostie のサンプル Bot 集。スラッシュコマンド、Components V2、モーダル、イベント、音楽キュー、録音、HTTP、ウェブフック、リンクされたロール。"
 ---
 
 # サンプル

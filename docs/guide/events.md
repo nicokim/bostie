@@ -1,3 +1,7 @@
+---
+description: "Listen to Discord gateway events with typed listeners, wait for or stream events, use raw events and events of your own, and see which intents each needs."
+---
+
 # Events
 
 ![Bostie greeting a ringing bell](../assets/mascot/bostie-events.webp){ align=right width="180" loading=lazy }

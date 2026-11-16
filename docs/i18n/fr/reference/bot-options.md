@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "Chaque option de la classe Bot et sa valeur par défaut : intents, présence, sharding, synchronisation des commandes, réponse différée, cache, HTTP, voix, arrêt."
 ---
 
 # Options du bot

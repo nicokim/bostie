@@ -1,5 +1,6 @@
 ---
-source: 2324aaf10288264422facffae7825508af75bc8f
+source: 11bc80522c125b25146fd69451fd43c59869298f
+description: "Referência da API de bostie.events: cada classe de evento de gateway, webhook e ciclo de vida com seus campos, e RawEvent e BotEvent para eventos próprios."
 ---
 
 # bostie.events

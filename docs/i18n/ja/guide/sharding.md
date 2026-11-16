@@ -1,5 +1,6 @@
 ---
-source: c45c92d8551bab86affc3711ec78970f48e886d8
+source: 77fd407beead25f005f3979ee300e3dbfac29482
+description: "Discord Bot を 1 つまたは複数のプロセスでシャーディングし、プロセス間で Identify を調整し、シャードのイベントを追い、再起動後にセッションを再開します。"
 ---
 
 # シャーディングと再開

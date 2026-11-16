@@ -1,5 +1,6 @@
 ---
-source: fa47131472a60ef5dbaa1eef411b4ec762c85146
+source: d85e30b6bb45eff282f70f86375dc49e252a5387
+description: "Discord のボイスでファイル、URL、HLS を再生。トラック、音量、イコライザーと速度のフィルター、途切れずクロスフェードするキュー、Opus エンコーダー設定を解説。"
 ---
 
 # 音声の再生

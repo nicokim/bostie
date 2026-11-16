@@ -1,5 +1,6 @@
 ---
-source: 7da84385c00fe71bc6575b90de4a0a059883399e
+source: e89423f86355edd642290a66c8608f48553e0ff6
+description: "Schreibe rohes PCM- oder Opus-Audio über einen Sink in einen Discord-Sprachanruf: Formate, Gegendruck, Marker, Überblendungen, Puffer und Underrun-Zähler."
 ---
 
 # Sinks und rohes Audio

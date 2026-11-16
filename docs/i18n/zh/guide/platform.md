@@ -1,5 +1,6 @@
 ---
-source: 03a349670a189a38d3b3491aba4b54e6af1ec4e9
+source: 0c49168c9e0add898da9cb6bf25e6b0a9fb68ecd
+description: "构建可由用户安装的 Discord 应用，启动 Activity，通过权益和订阅销售 SKU，并通过 REST 管理 Social SDK 大厅。"
 ---
 
 # Activity、变现和 Social SDK

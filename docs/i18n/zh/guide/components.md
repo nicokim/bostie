@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "用 bostie.ui 构建按钮、选择菜单和 Components V2 布局，并把自定义 ID 路由到机器人重启后依然有效的处理函数。"
 ---
 
 # 组件

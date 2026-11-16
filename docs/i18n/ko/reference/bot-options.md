@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "bostie Bot 클래스의 모든 옵션과 기본값입니다. 인텐트, 프레즌스, 샤딩, 명령어 동기화, 자동 지연, 캐시, HTTP 설정, 음성, 종료를 다룹니다."
 ---
 
 # Bot 옵션

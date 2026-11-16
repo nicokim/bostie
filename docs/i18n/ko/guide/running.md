@@ -1,5 +1,6 @@
 ---
-source: fecb554b875bf1b19567e85926b3784beca4dba5
+source: b9e5abe55a3d0d8dca78cd7fdbd13cbe0ba3c5fe
+description: "bostie 봇을 실행합니다. 토큰, 시작과 종료 수명 주기, asyncio 프로그램이나 웹 앱 안에서의 실행, 로깅, 한 프로세스의 여러 봇을 다룹니다."
 ---
 
 # 봇 실행하기

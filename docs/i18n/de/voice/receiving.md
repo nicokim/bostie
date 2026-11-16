@@ -1,5 +1,6 @@
 ---
-source: c8644d4a54676ea108a34c06bd38c4e355260bc3
+source: 0d8bbdce2b1aa0ef1ee6009ade35eb117f7d7909
+description: "Empfange Discord-Audio pro Sprecher als PCM, Opus oder RTP, erkenne Sprache, trenne Äußerungen, leite Anrufe weiter, nimm jeden Benutzer als Ogg oder WAV auf."
 ---
 
 # Empfangen und aufnehmen

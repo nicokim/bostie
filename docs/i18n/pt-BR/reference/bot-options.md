@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "Cada opção da classe Bot do bostie e seu padrão: intents, presença, sharding, sincronização de comandos, adiamento automático, cache, HTTP, voz e desligamento."
 ---
 
 # Opções do Bot

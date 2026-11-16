@@ -1,5 +1,6 @@
 ---
-source: 8bfaf791038898b7b25fb584ff4496c345a14fcb
+source: 33cc84c2aaa4440f3880a38f7ef33c9dff405dec
+description: "Cómo bostie convierte el JSON de Discord en modelos tipados: objetos parciales, campos y valores desconocidos, payloads sin procesar, snowflakes, enums y flags."
 ---
 
 # Modelos y enums

@@ -1,5 +1,6 @@
 ---
-source: 54b3a6f7e7f026cf8621c75603332297ea4c5a00
+source: b30ad56d0f8b63739574acff05fa92b323c4d3d9
+description: "Divida um bot do Discord em routers e módulos, dê padrões comuns a grupos de comandos e inclua, exclua ou recarregue módulos enquanto o bot está rodando."
 ---
 
 # Routers e módulos

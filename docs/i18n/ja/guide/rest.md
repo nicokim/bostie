@@ -1,5 +1,6 @@
 ---
-source: 9b56e99b0e7750b300986ad6197431b73305caa0
+source: 18ff3457c37f07dad7f0bcfc3aee4b5f5383fac0
+description: "Discord REST API の Bot 用エンドポイントを網羅。ページング、メッセージ一括削除、監査ログ、エラー、レート制限、再試行、ダウンロード、生のリクエスト。"
 ---
 
 # REST API

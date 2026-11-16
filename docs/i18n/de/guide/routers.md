@@ -1,5 +1,6 @@
 ---
-source: 54b3a6f7e7f026cf8621c75603332297ea4c5a00
+source: b30ad56d0f8b63739574acff05fa92b323c4d3d9
+description: "Teile einen Discord-Bot in Router und Module auf, gib Befehlsgruppen gemeinsame Standardwerte und binde Module zur Laufzeit ein, entferne oder lade sie neu."
 ---
 
 # Router und Module

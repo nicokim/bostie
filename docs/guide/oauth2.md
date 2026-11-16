@@ -1,3 +1,7 @@
+---
+description: "Discord OAuth2 with bostie: authorization URLs with PKCE, code exchange and refresh, calling the API with a user's token, and linked roles metadata."
+---
+
 # OAuth2 and linked roles
 
 ![Bostie holding up a shining key](../assets/mascot/bostie-oauth2.webp){ align=right width="180" loading=lazy }

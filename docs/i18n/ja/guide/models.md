@@ -1,5 +1,6 @@
 ---
-source: 8bfaf791038898b7b25fb584ff4496c345a14fcb
+source: 33cc84c2aaa4440f3880a38f7ef33c9dff405dec
+description: "bostie が Discord の JSON を型付きモデルにする仕組み。部分オブジェクト、未知のフィールドと値、生のペイロード、Snowflake、列挙型とフラグを解説します。"
 ---
 
 # モデルと列挙型

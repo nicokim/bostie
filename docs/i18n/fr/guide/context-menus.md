@@ -1,5 +1,6 @@
 ---
-source: a9ef813b389718cd5d31ae958953b39416d1a494
+source: db591175a7dec7d094226c92a4855de730089f1d
+description: "Ajoutez des commandes utilisateur et de message au menu contextuel et la commande de point d'entrée qui lance une Activité, avec cibles typées et réglages."
 ---
 
 # Commandes utilisateur, de message et de point d'entrée

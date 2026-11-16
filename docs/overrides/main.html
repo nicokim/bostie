@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block site_meta %}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  {% set description = page.meta.description if page and page.meta and page.meta.description else config.site_description %}
+  <meta name="description" content="{{ description | e }}">
+  {% if page and page.canonical_url %}
+    <link rel="canonical" href="{{ page.canonical_url }}">
+  {% endif %}
+  {% if config.plugins.llmstxt and config.plugins.llmstxt.config.enabled %}
+    <link rel="describedby" href="{{ 'llms.txt' | url }}">
+    {% if page and page.markdown_url %}
+      <link rel="alternate" type="text/markdown" href="{{ page.markdown_url | url }}">
+    {% endif %}
+  {% endif %}
+  {% if page and page.previous_page %}
+    <link rel="prev" href="{{ page.previous_page.url | url }}">
+  {% endif %}
+  {% if page and page.next_page %}
+    <link rel="next" href="{{ page.next_page.url | url }}">
+  {% endif %}
+  {% if page and page.canonical_url and config.extra.alternate %}
+    {% for alt in config.extra.alternate %}
+      <link rel="alternate" href="{{ config.extra.root }}{{ alt.prefix }}{{ page.url }}" hreflang="{{ alt.lang }}">
+    {% endfor %}
+    <link rel="alternate" href="{{ config.extra.root }}{{ page.url }}" hreflang="x-default">
+  {% endif %}
+  <link rel="icon" href="{{ config.theme.favicon | url }}">
+  <meta name="generator" content="{{ generator }}">
+{% endblock %}
+
+{% block htmltitle %}
+  {% if page and page.canonical_url == config.site_url %}
+    <title>{{ config.site_name }}: {{ config.site_description }}</title>
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+  {% set description = page.meta.description if page and page.meta and page.meta.description else config.site_description %}
+  {% set home = page and page.canonical_url == config.site_url %}
+  {% if home %}
+    {% set title = config.site_name ~ ": " ~ config.site_description %}
+  {% elif page and page.meta and page.meta.title %}
+    {% set title = page.meta.title %}
+  {% elif page and page.title %}
+    {% set title = page.title | striptags %}
+  {% else %}
+    {% set title = config.site_name %}
+  {% endif %}
+  {% set image = config.extra.root ~ "assets/brand/social-card.png" %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ title | e }}">
+  <meta property="og:description" content="{{ description | e }}">
+  {% if page and page.canonical_url %}
+    <meta property="og:url" content="{{ page.canonical_url }}">
+  {% endif %}
+  <meta property="og:image" content="{{ image }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ config.extra.card_alt | e }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ title | e }}">
+  <meta name="twitter:description" content="{{ description | e }}">
+  <meta name="twitter:image" content="{{ image }}">
+  {% if home %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": {{ config.site_name | tojson }},
+        "description": {{ description | tojson }},
+        "url": {{ page.canonical_url | tojson }},
+        "image": {{ image | tojson }},
+        "codeRepository": {{ config.repo_url | tojson }},
+        "programmingLanguage": ["Python", "Rust"],
+        "runtimePlatform": "Python 3.12+",
+        "license": ["https://spdx.org/licenses/MIT.html", "https://spdx.org/licenses/Apache-2.0.html"],
+        "keywords": ["Discord", "Discord bot", "Python", "Rust", "voice", "DAVE"]
+      }
+    </script>
+  {% endif %}
+{% endblock %}

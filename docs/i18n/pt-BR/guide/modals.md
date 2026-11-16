@@ -1,5 +1,6 @@
 ---
-source: 606da1a817f7cceca11df3edf6dda3b5da72000b
+source: 542ddb2b37fd206f8480755434912ca6bbefa224
+description: "Abra modais do Discord com campos de texto, menus de seleção, arquivos, grupos de escolhas e caixas de seleção, leia os valores e espere o envio em um handler."
 ---
 
 # Modais

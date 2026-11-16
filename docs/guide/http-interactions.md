@@ -1,3 +1,7 @@
+---
+description: "Serve Discord interactions and webhook events over HTTP with an ASGI app instead of the gateway, verify request signatures, or use your own web server."
+---
+
 # HTTP interactions and webhook events
 
 Discord can send interactions to a URL of your app instead of the gateway, and it sends some events, the webhook events, only to a URL. `ASGIApp` serves both from the same bot, its commands, routes and listeners unchanged.

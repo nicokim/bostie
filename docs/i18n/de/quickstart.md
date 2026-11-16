@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 4004163cb60675c429361e3c0739c96ffdfbc70f
+source: 879f90299466f4c668efe8cb4ef1edb576a11bc2
+description: "Schritt für Schritt mit bostie: Discord-Anwendung erstellen, einem Server hinzufügen und den ersten Python-Bot mit Slash-Befehl und typisierter Option starten."
 ---
 
 # Schnellstart

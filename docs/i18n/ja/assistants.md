@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 67296fb45686a92662fe14f10a697ef03c8c8044
+source: 7deeb3e9bdb7924d1e7844604eabcd4a1de7522a
+description: "bostie スキルを入れて AI コーディングアシスタントに正しい Bot を書かせます。npx、プラグイン、手動での導入と、読み込ませる一行を紹介します。"
 ---
 
 # AI コーディングアシスタント

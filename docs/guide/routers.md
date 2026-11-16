@@ -1,3 +1,7 @@
+---
+description: "Split a Discord bot into routers and modules, give groups of commands shared defaults, and include, exclude or hot reload modules while the bot runs."
+---
+
 # Routers and modules
 
 A `Router` holds commands, listeners, routes, tasks, checks, hooks and error hooks, like the bot, without being one. Routers split a bot into modules, give a group of commands shared settings, and can be swapped while the bot runs. The bot is itself a router, so everything on this page works on it too.

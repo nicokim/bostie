@@ -1,5 +1,6 @@
 ---
-source: efcdf929eab53b7ecded890238697695f95cf4a8
+source: 4cba79fae5a2943cf4bd952119f39655c80c3256
+description: "GatewayClient、Shard、RequestedMembers，带查找和权限方法的 Cache，以及会回退到 REST 的 Lookup 的 API 参考。"
 ---
 
 # 网关与缓存

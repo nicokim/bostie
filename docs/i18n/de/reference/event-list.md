@@ -1,5 +1,6 @@
 ---
-source: f49f915994d33a7383708875aaeb52d2b113c2b7
+source: 74e134769abeab53fb9b321be4b35f2e68a57db8
+description: "Jedes Gateway-, Webhook- und Bot-Event von bostie, nach Thema gruppiert, mit Dispatch-Namen, den Intents, die Discord zum Senden braucht, und seinen Feldern."
 ---
 
 # Event-Liste

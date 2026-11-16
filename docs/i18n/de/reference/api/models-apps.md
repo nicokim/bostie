@@ -1,5 +1,6 @@
 ---
-source: 59e2ab425e0ae03019178de465aec42a28055f65
+source: 26a0dce95f113f84851fa666e508ee7a72ca5607
+description: "API-Referenz der Anwendungsmodelle: Application, Team, ActivityInstance, SKUs, Entitlements und Abonnements sowie Lobbys und Identitäten des Social SDK."
 ---
 
 # Anwendungen und Monetarisierung

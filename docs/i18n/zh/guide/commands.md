@@ -1,5 +1,6 @@
 ---
-source: 7f5c86665191d303ab8ac2e965d43d553cee7953
+source: 620651abbb35486bdf47aba0669128b8bb1d0ad6
+description: "用 Python 类型提示定义 Discord 斜杠命令：选项类型、候选项、取值范围、自动补全、转换器、子命令组以及 Discord 的限制。"
 ---
 
 # 斜杠命令

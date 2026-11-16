@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 67296fb45686a92662fe14f10a697ef03c8c8044
+source: 7deeb3e9bdb7924d1e7844604eabcd4a1de7522a
+description: "AI 코딩 어시스턴트가 올바른 bostie 봇을 작성하도록 bostie 스킬을 npx, 플러그인, 수동으로 설치하고, 스킬을 불러오게 하는 한 줄을 추가합니다."
 ---
 
 # AI 코딩 어시스턴트

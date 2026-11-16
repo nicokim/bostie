@@ -1,5 +1,6 @@
 ---
-source: afe273b0bb674620ed6eaaab978ec64bbcb23c8e
+source: f54db29cb26a01ab63ca1c726a1815c968b1cf3a
+description: "완성된 bostie 예제 봇입니다. 슬래시 명령어, Components V2, 모달, 이벤트, 음악 큐, 음성 녹음, 웹후크, 연결된 역할을 다룹니다."
 ---
 
 # 예제

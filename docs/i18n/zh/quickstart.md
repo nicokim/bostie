@@ -1,6 +1,7 @@
 ---
 render_macros: true
-source: 4004163cb60675c429361e3c0739c96ffdfbc70f
+source: 879f90299466f4c668efe8cb4ef1edb576a11bc2
+description: "用 bostie 一步步创建 Discord 应用、把它添加到服务器，并运行你的第一个带斜杠命令和类型化选项的 Python 机器人。"
 ---
 
 # 快速入门

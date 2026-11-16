@@ -1,5 +1,6 @@
 ---
-source: a9ef813b389718cd5d31ae958953b39416d1a494
+source: db591175a7dec7d094226c92a4855de730089f1d
+description: "Agrega comandos de menú contextual de usuario y de mensaje y el comando de punto de entrada que inicia una actividad, con objetivos tipados y sus ajustes."
 ---
 
 # Comandos de usuario, de mensaje y de punto de entrada

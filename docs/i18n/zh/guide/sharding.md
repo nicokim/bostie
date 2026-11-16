@@ -1,5 +1,6 @@
 ---
-source: c45c92d8551bab86affc3711ec78970f48e886d8
+source: 77fd407beead25f005f3979ee300e3dbfac29482
+description: "在单个或多个进程中对 Discord 机器人分片，在进程间协调 identify，跟踪分片事件，并在重启后恢复会话。"
 ---
 
 # 分片与恢复

@@ -1,3 +1,7 @@
+---
+description: "Build user-installable Discord apps, launch Activities, sell SKUs with entitlements and subscriptions, and manage Social SDK lobbies over REST."
+---
+
 # Activities, monetization and the Social SDK
 
 Discord apps are more than bots in guilds. This page covers apps installed to users, Activities, selling SKUs, and the Social SDK's server side.

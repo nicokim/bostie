@@ -1,3 +1,7 @@
+---
+description: "API reference for RESTClient, BearerClient, WebhookClient and SyncWebhookClient, ASGIApp, signature verification, HTTPClient, HTTPSettings and File."
+---
+
 # Clients and HTTP
 
 ::: bostie.RESTClient

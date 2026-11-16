@@ -1,5 +1,6 @@
 ---
-source: 4a284a3b3f200d0ec7930b638539bf2f3dce58f5
+source: 8ae643339a37c0c92710f45b0f55c89b0681c0b2
+description: "交互上下文的 API 参考：Context、ComponentContext、ModalContext 和 AutocompleteContext，以及它们的方法接受的消息部件。"
 ---
 
 # 交互上下文

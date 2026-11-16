@@ -1,5 +1,6 @@
 ---
-source: a5646223563b83584ded4c6da42da70ad55b98c7
+source: 573e06a9566af6c8a906b642d99c9a92e03ef67b
+description: "Prueba un bot de Discord sin Discord: ejecútalo con gateway, API REST y servidor de voz falsos y locales, envía interacciones y eventos y revisa lo enviado."
 ---
 
 # Probar tu bot

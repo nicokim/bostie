@@ -1,5 +1,6 @@
 ---
-source: a62ede2e6a2aefae7edd71356c123776c0fec22d
+source: 00e20a71fb965dd4213c77d5d84986b08dff9a2a
+description: "Справочник API по моделям пользователей: User и CurrentUser, присутствие и активности, токены доступа и подключения OAuth2 и модель Webhook."
 ---
 
 # Пользователи и присутствие

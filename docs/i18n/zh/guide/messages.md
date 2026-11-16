@@ -1,5 +1,6 @@
 ---
-source: 9f6f43faa726c1342aeebb13122e1615b76fb827
+source: 16b527ff6747318f04713be223db608d76440776
+description: "用同一套部件构建 Discord 消息：嵌入内容、文件上传、投票、回复、转发、Components V2、正在输入提示和语音消息。"
 ---
 
 # 消息内容

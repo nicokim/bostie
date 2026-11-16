@@ -1,5 +1,6 @@
 ---
-source: 04dd5c7d848eed6b7fe26c0af24d76fdfca1a0d2
+source: d24ff7127c79eec4345b1d42ca0265273465a567
+description: "Recibe interacciones y eventos de webhook de Discord por HTTP con una aplicación ASGI en lugar del gateway, verifica las firmas o usa tu propio servidor web."
 ---
 
 # Interacciones por HTTP y eventos de webhook

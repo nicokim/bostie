@@ -1,5 +1,6 @@
 ---
-source: e4d65a29086e1f3e4e82a64b8aa6c42d29627ef0
+source: efdcb485cd6bec9ca515ad0f0311945137caa315
+description: "Envie, edite e exclua mensagens pela URL de um webhook do Discord em código Python async ou síncrono, sem um bot, e crie e gerencie webhooks com um bot."
 ---
 
 # Webhooks

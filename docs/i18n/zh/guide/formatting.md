@@ -1,5 +1,6 @@
 ---
-source: f4afb2ae41854fb4e97a63590ca4fa1760172438
+source: 12cb33d1448fc6df340b3c11d616bf17c9f5b58c
+description: "用 bostie.fmt 的提及、时间戳和 Markdown 转义格式化 Discord 文本，用 bostie.color 选颜色，并构建头像、图标和表情符号的 CDN URL。"
 ---
 
 # 格式化、颜色和 CDN URL

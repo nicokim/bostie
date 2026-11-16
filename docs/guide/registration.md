@@ -1,3 +1,7 @@
+---
+description: "How bostie syncs application commands with Discord: global and guild scopes, a test guild while developing, command mentions, translations and sync errors."
+---
+
 # Registering commands
 
 Discord shows a command only after the app has registered it. bostie does that for you: when the bot starts, it compares the commands you defined with those Discord holds and sends them only if something differs.

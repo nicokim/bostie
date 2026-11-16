@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "Qué guarda la caché de bostie del gateway, cómo buscar servidores, miembros y canales, recurrir a REST y calcular los permisos y la jerarquía de roles."
 ---
 
 # Caché y permisos

@@ -1,5 +1,6 @@
 ---
-source: 104f50c5749c73fc5952a47fa18309cb11805eb3
+source: b62f5277d6f68b2edc4dafd4ea9b8084ddfffea0
+description: "Alle Bot-Optionen von bostie mit Standardwerten: Intents, Präsenz, Sharding, Befehls-Sync, automatisches Aufschieben, Cache, HTTP, Sprachkanäle, Beenden."
 ---
 
 # Bot-Optionen

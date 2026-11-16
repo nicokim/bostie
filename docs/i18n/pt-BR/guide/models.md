@@ -1,5 +1,6 @@
 ---
-source: 8bfaf791038898b7b25fb584ff4496c345a14fcb
+source: 33cc84c2aaa4440f3880a38f7ef33c9dff405dec
+description: "Como o bostie decodifica o JSON do Discord em modelos tipados: objetos parciais, campos e valores desconhecidos, payloads brutos, snowflakes, enums e flags."
 ---
 
 # Modelos e enums

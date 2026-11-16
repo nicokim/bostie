@@ -1,5 +1,6 @@
 ---
-source: 7cf12918970912a9363cc1aac58fb080c085fef9
+source: b58df394d71cd32e4c45cccfdd0da40ddcb957c3
+description: "用 @bot.every 每隔几秒或在每天的固定时间运行后台任务，并在机器人运行时启动、停止、重启或重新安排它们。"
 ---
 
 # 后台任务

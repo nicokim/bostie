@@ -1,5 +1,6 @@
 ---
-source: 9a40533f703d0624d4dcc74946a6fbb421ca7433
+source: dfde89ca150c31d6c3eb7240f5f083cd1bc775ea
+description: "Referência da API de bostie.testing: FakeDiscord, run e running, as requisições gravadas, o servidor de voz falso e builders de payload para comandos e eventos."
 ---
 
 # bostie.testing

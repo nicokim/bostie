@@ -1,5 +1,6 @@
 ---
-source: 7cf12918970912a9363cc1aac58fb080c085fef9
+source: b58df394d71cd32e4c45cccfdd0da40ddcb957c3
+description: "@bot.every で数秒ごとや毎日決まった時刻にバックグラウンドタスクを実行し、Bot の実行中に開始、停止、再起動、スケジュール変更を行います。"
 ---
 
 # バックグラウンドタスク

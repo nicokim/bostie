@@ -1,5 +1,6 @@
 ---
-source: 7f5c86665191d303ab8ac2e965d43d553cee7953
+source: 620651abbb35486bdf47aba0669128b8bb1d0ad6
+description: "Defina comandos de barra com anotações de tipo do Python: tipos de opção, escolhas, intervalos, preenchimento automático, conversores, subcomandos e limites."
 ---
 
 # Comandos de barra

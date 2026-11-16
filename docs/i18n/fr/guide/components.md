@@ -1,5 +1,6 @@
 ---
-source: d0cf09522c13a747c853db29f2b054fe520abbea
+source: d624adfef5ab8dd6ffcb780c8ed7ca6459e83b3f
+description: "Créez boutons, menus de sélection et mises en page Components V2 avec bostie.ui et routez les custom ids vers des gestionnaires qui survivent aux redémarrages."
 ---
 
 # Composants

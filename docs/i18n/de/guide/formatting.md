@@ -1,5 +1,6 @@
 ---
-source: f4afb2ae41854fb4e97a63590ca4fa1760172438
+source: 12cb33d1448fc6df340b3c11d616bf17c9f5b58c
+description: "Formatiere Discord-Text mit bostie.fmt: Erwähnungen, Zeitstempel, Markdown-Escaping, Farben mit bostie.color und CDN-URLs für Avatare, Icons und Emojis."
 ---
 
 # Formatierung, Farben und CDN-URLs

@@ -1,5 +1,6 @@
 ---
-source: a9ef813b389718cd5d31ae958953b39416d1a494
+source: db591175a7dec7d094226c92a4855de730089f1d
+description: "Benutzer- und Nachrichtenbefehle im Kontextmenü und der Einstiegspunkt-Befehl, der eine Aktivität startet, mit typisierten Zielen und ihren Einstellungen."
 ---
 
 # Benutzer-, Nachrichten- und Einstiegspunkt-Befehle

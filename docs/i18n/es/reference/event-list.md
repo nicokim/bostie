@@ -1,5 +1,6 @@
 ---
-source: f49f915994d33a7383708875aaeb52d2b113c2b7
+source: 74e134769abeab53fb9b321be4b35f2e68a57db8
+description: "Cada evento del gateway, de webhook y del bot que entrega bostie, por tema, con su nombre de dispatch, los intents que Discord exige para enviarlo y sus campos."
 ---
 
 # Lista de eventos

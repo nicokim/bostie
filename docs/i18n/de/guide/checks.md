@@ -1,5 +1,6 @@
 ---
-source: 029b6094446c707896abd078da818c4746bbebec
+source: 63c601a21b6ce6311976189053f39ff84cf42f5d
+description: "Beschränke Befehle mit Checks für Berechtigungen, Rollen, Eigentümer, Cooldown und Nebenläufigkeit, nutze Hooks vor und nach Handlern und behandle Fehler."
 ---
 
 # Checks, Hooks und Fehler

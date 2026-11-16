@@ -1,5 +1,6 @@
 ---
-source: f23a479950d38c899e79ae34c9fa1854c7b6fd34
+source: 9715861debf2a59f49301a4b9f3800dc2c8262dd
+description: "Ce que le cache de bostie garde de la gateway, comment trouver serveurs, membres et salons, se replier sur REST, calculer permissions et hiérarchie des rôles."
 ---
 
 # Cache et permissions
