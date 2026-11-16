@@ -39,9 +39,29 @@ jobs:
     permissions:
       pages: write
       id-token: write
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  indexnow:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      SITE: ${{ needs.deploy.outputs.page_url }}
+      KEY: 9ddf805c253002aa73f4b345b0faa425
+    steps:
+      - run: |
+          test "$(curl -sSf "${SITE}${KEY}.txt")" = "$KEY"
+          for sitemap in $(curl -sSf "${SITE}robots.txt" | sed -n 's/^Sitemap: //p'); do
+            curl -sSf "$sitemap" | grep -o '<loc>[^<]*' | cut -c6-
+          done > urls.txt
+          python3 -c 'import json, os, sys; site, key = os.environ["SITE"], os.environ["KEY"]; print(json.dumps({"host": site.removeprefix("https://").rstrip("/"), "key": key, "keyLocation": f"{site}{key}.txt", "urlList": sys.stdin.read().split()}))' < urls.txt > body.json
+          curl -sSf -X POST https://api.indexnow.org/indexnow -H "Content-Type: application/json; charset=utf-8" --data @body.json
+          echo "IndexNow took $(wc -l < urls.txt) URLs"
