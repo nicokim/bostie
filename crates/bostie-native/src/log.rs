@@ -237,6 +237,7 @@ mod tests {
                 "http://127.0.0.1:1/api/v10",
                 NonZeroU16::MIN,
                 HttpSettings::default(),
+                std::time::Duration::from_secs(5),
                 None,
             )
             .unwrap()

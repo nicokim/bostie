@@ -52,6 +52,7 @@ impl NativeCore {
         connect_timeout,
         read_timeout,
         rate_limiter,
+        identify_spacing,
         proxy,
         bearer=false,
     ))]
@@ -65,6 +66,7 @@ impl NativeCore {
         connect_timeout: f64,
         read_timeout: f64,
         rate_limiter: bool,
+        identify_spacing: f64,
         proxy: Option<String>,
         bearer: bool,
     ) -> Result<(Self, RawBellHandle)> {
@@ -81,7 +83,15 @@ impl NativeCore {
             rate_limiter,
             ..HttpSettings::default()
         };
-        let (core, bell) = Core::new(auth, api_url, global_limit, http, proxy.as_deref())?;
+        let identify_spacing = seconds("identify_spacing", identify_spacing)?;
+        let (core, bell) = Core::new(
+            auth,
+            api_url,
+            global_limit,
+            http,
+            identify_spacing,
+            proxy.as_deref(),
+        )?;
         log::register(core.log_sink());
         Ok((Self(core), bell.into_raw()))
     }

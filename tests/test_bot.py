@@ -24,6 +24,7 @@ from bostie import (
     ErrorContext,
     Forbidden,
     HTTPException,
+    HTTPSettings,
     Intents,
     InteractionContextType,
     InvalidToken,
@@ -937,10 +938,29 @@ def test_dispatched_events_reach_listeners_and_waiters_but_not_the_filter() -> N
     asyncio.run(main())
 
 
+def test_identify_spacing_sets_the_wait_before_identifying_again() -> None:
+    async def scenario(fake: FakeDiscord) -> None:
+        bot = Bot(api_url=fake.api_url, http_settings=HTTPSettings(identify_spacing=0))
+        async with running(bot, fake):
+            await fake.next_identify()
+            closed = time.monotonic()
+            await fake.close_gateway(4007)
+            await fake.next_identify()
+            waited = time.monotonic() - closed
+
+        assert waited < 2.5
+
+    run(scenario)
+
+
 def test_startup_waits_for_the_ready_guilds_and_sends_started_once() -> None:
     async def scenario(fake: FakeDiscord) -> None:
         fake.ready_guilds = [GUILD, OUTAGE_GUILD]
-        bot = Bot(api_url=fake.api_url, guild_ready_timeout=0.05)
+        bot = Bot(
+            api_url=fake.api_url,
+            guild_ready_timeout=0.05,
+            http_settings=HTTPSettings(identify_spacing=0),
+        )
         seen: list[tuple[object, ...]] = []
 
         @bot.listen(GuildCreate, ShardReady, Started, ShardDisconnect)

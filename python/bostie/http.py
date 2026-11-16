@@ -54,7 +54,7 @@ _STATUS_ERRORS: dict[int, type[HTTPException]] = {
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HTTPSettings:
-    """How bostie paces, retries and times out its REST requests, and its proxy."""
+    """How bostie paces and times out REST requests and identifies, and its proxy."""
 
     global_rate_limit: int = 50
     max_rate_limit_wait: float = 30.0
@@ -62,6 +62,7 @@ class HTTPSettings:
     connect_timeout: float = 10.0
     read_timeout: float = 60.0
     rate_limiter: bool = True
+    identify_spacing: float = 5.0
     proxy: str | None = None
 
     def __post_init__(self) -> None:
@@ -76,6 +77,12 @@ class HTTPSettings:
             raise ValueError(
                 f"max_rate_limit_wait must be a number of seconds of at least 0, "
                 f"got {wait}"
+            )
+        spacing = self.identify_spacing
+        if not (math.isfinite(spacing) and spacing >= 0):
+            raise ValueError(
+                f"identify_spacing must be a number of seconds of at least 0, "
+                f"got {spacing}"
             )
         for name in ("connect_timeout", "read_timeout"):
             seconds: float = getattr(self, name)
