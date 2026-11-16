@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/nicokim/bostie/compare/v0.3.1...v0.3.2) (2026-11-16)
+
+
+### Miscellaneous Chores
+
+* release 0.3.2 ([#41](https://github.com/nicokim/bostie/issues/41)) ([0316a19](https://github.com/nicokim/bostie/commit/0316a1978b7611ac1f3d6c7bcafdc4ee8fe33f66))
+
 ## [0.3.1](https://github.com/nicokim/bostie/compare/v0.3.0...v0.3.1) (2026-11-16)
 
 
