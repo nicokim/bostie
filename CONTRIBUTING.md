@@ -12,6 +12,8 @@ uv run pytest              # rebuilds the extension first if a Rust file changed
 cargo test -p bostie-core
 ```
 
+`uv run pytest -n auto` runs the tests on every core.
+
 The first `uv sync` compiles the whole workspace and prints only `Building bostie` for a few minutes. It isn't stuck.
 
 The zstd gateway tests need `compression.zstd` from Python 3.14, so they skip on 3.12. Run them with `uv run --python 3.14 pytest`. That rebuilds `.venv` for 3.14, and the next plain `uv run` switches it back.
@@ -30,7 +32,7 @@ uv run ruff check
 uv run mypy
 uv run pyright
 uv run python -m mypy.stubtest bostie._native --allowlist stubtest-allowlist.txt
-uv run pytest
+uv run pytest -n auto
 uv run typos
 uv run deptry python
 uv run actionlint
