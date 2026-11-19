@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/nicokim/bostie/compare/v0.3.2...v0.3.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* **voice:** keep a move's new server when its channel update arrives late and rekey DAVE ([#43](https://github.com/nicokim/bostie/issues/43)) ([9b9b44d](https://github.com/nicokim/bostie/commit/9b9b44d980bea801c33e2fe62fb7477054c7dc85))
+
 ## [0.3.2](https://github.com/nicokim/bostie/compare/v0.3.1...v0.3.2) (2026-11-16)
 
 
