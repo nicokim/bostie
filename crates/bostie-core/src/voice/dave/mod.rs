@@ -181,6 +181,21 @@ impl Dave {
         }
     }
 
+    pub(crate) fn follow(
+        &mut self,
+        channel: ChannelId,
+        out: &mut Vec<Outbound>,
+    ) -> Result<(), DaveError> {
+        if channel == self.channel {
+            return Ok(());
+        }
+        self.channel = channel;
+        if self.protocol_version == 0 {
+            return Ok(());
+        }
+        self.rebuild(out)
+    }
+
     pub(crate) fn clients_connect(&mut self, users: &[UserId]) {
         let own = self.user;
         Arc::make_mut(&mut self.members).extend(users.iter().copied().filter(|&user| user != own));
