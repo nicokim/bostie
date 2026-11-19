@@ -82,13 +82,6 @@ impl Drop for Udp {
 }
 
 pub(super) async fn run(conn: &mut Connection, attempt: Attempt) -> SessionEnd {
-    conn.fresh = matches!(attempt, Attempt::Identify(_));
-    let end = attempt_session(conn, attempt).await;
-    conn.fresh = false;
-    end
-}
-
-async fn attempt_session(conn: &mut Connection, attempt: Attempt) -> SessionEnd {
     let progress = match attempt {
         Attempt::Identify(credentials) => {
             let url = match ws::endpoint_url(&credentials.endpoint) {
@@ -267,7 +260,7 @@ impl<'c> Session<'c> {
                 biased;
                 command = self.conn.commands.recv() => self.on_command(command).await,
                 _ = self.conn.stop.changed() => Err(SessionEnd::Stopped),
-                changed = self.conn.gateway.changed() => self.on_gateway(changed.is_ok()),
+                changed = self.conn.gateway.changed() => self.on_gateway(changed.is_ok()).await,
                 received = self.socket.receive() => self.on_received(received).await,
                 () = until(beat) => self.on_beat().await,
                 () = until(keepalive) => self.on_keepalive().await,
@@ -309,14 +302,20 @@ impl<'c> Session<'c> {
         }
     }
 
-    fn on_gateway(&mut self, alive: bool) -> Result<(), SessionEnd> {
+    async fn on_gateway(&mut self, alive: bool) -> Result<(), SessionEnd> {
         if !alive {
             return Err(SessionEnd::Stopped);
         }
-        match self.conn.poll_gateway() {
-            Some(event) => Err(SessionEnd::Gateway(event)),
-            None => Ok(()),
+        if let Some(event) = self.conn.poll_gateway() {
+            return Err(SessionEnd::Gateway(event));
         }
+        if !matches!(self.progress, SessionPhase::Joining | SessionPhase::Ready) {
+            return Ok(());
+        }
+        let channel = self.conn.dave_channel();
+        self.run_dave(move |dave, _, out| dave.follow(channel, out))
+            .await?
+            .map_err(|error| dave_failed(describe(&error)))
     }
 
     async fn on_received(&mut self, received: Received) -> Result<(), SessionEnd> {

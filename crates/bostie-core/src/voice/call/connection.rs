@@ -212,7 +212,8 @@ struct SelfState {
 
 struct Servers {
     used: u64,
-    settled: u64,
+    claimed: u64,
+    claim_next: bool,
     moved: bool,
     change_delay: Duration,
 }
@@ -238,7 +239,6 @@ pub(in crate::voice) struct Connection {
     pub(super) voice: Option<VoiceSession>,
     pub(super) generation: u64,
     pub(super) deadline: Option<Instant>,
-    pub(super) fresh: bool,
     pub(super) tuning: ConnectionTuning,
     me: SelfState,
     servers: Servers,
@@ -282,7 +282,6 @@ impl Connection {
             voice: None,
             generation: 0,
             deadline: Some(Instant::now() + request.timeout),
-            fresh: false,
             tuning,
             me: SelfState {
                 shard: request.shard,
@@ -296,7 +295,8 @@ impl Connection {
             },
             servers: Servers {
                 used: 0,
-                settled: 0,
+                claimed: 0,
+                claim_next: true,
                 moved: false,
                 change_delay: request.server_change_delay,
             },
@@ -339,7 +339,6 @@ impl Connection {
         self.deadline = None;
         self.connected = true;
         self.failures.last = None;
-        self.servers.settled = self.servers.used;
         if let Some(voice) = &mut self.voice {
             voice.resumable = true;
         }
@@ -431,9 +430,10 @@ impl Connection {
                             to: channel,
                             by_us: self.me.requested == Some(channel),
                         });
-                        if !(self.fresh && self.servers.used > self.servers.settled) {
+                        if self.servers.claimed == self.servers.used {
                             return Some(GatewayEvent::Moved);
                         }
+                        self.servers.claimed = self.servers.used;
                     }
                     Some(_) => {}
                 }
@@ -544,6 +544,9 @@ impl Connection {
     fn take_server(&mut self) -> Option<Credentials> {
         let (credentials, seq) = self.offered_server()?;
         self.servers.used = seq;
+        if self.servers.claim_next {
+            self.servers.claimed = seq;
+        }
         self.seen.server = self.seen.server.max(seq);
         Some(credentials)
     }
@@ -707,6 +710,7 @@ impl Connection {
             GatewayEvent::ServerUnavailable => ConnectStep::ServerUnavailable,
             GatewayEvent::SessionReplaced => ConnectStep::SessionReplaced,
         };
+        self.servers.claim_next = event == GatewayEvent::Moved;
         self.servers.moved = self.connected
             && !self.servers.change_delay.is_zero()
             && matches!(
@@ -725,6 +729,7 @@ impl Connection {
     }
 
     async fn send_voice_state(&mut self, channel: Option<ChannelId>) -> Result<(), SessionEnd> {
+        self.servers.claim_next = true;
         let me = &self.me;
         let payload = proto::voice_state_update(self.guild, channel, me.self_mute, me.self_deaf);
         let mut failures = 0;

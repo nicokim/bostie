@@ -29,13 +29,24 @@ async fn a_move_by_someone_else_reconnects_and_keeps_held_audio_for_the_new_serv
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_server_first_move_joins_the_new_channel_group() {
+    server_first_move(&[op::IDENTIFY]).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_first_move_announced_after_dave_started_joins_the_new_channel_group() {
+    server_first_move(&[op::IDENTIFY, op::DAVE_MLS_KEY_PACKAGE]).await;
+}
+
+async fn server_first_move(announced_after: &[u8]) {
     let mut harness = Harness::with(|config| config.dave_protocol_version = 1).await;
     harness.connected().await;
     harness.server.expect_op(op::IDENTIFY).await;
     harness.server.sfu.ignore_discoveries(1);
 
     harness.fresh_server().await;
-    harness.server.expect_op(op::IDENTIFY).await;
+    for &op in announced_after {
+        harness.server.expect_op(op).await;
+    }
     harness.state(Some(OTHER_CHANNEL));
     let mut call = dave_call(OTHER_CHANNEL, &[LATE_PEER]);
     call.join_remote(bot());
@@ -239,6 +250,27 @@ async fn a_new_token_on_the_same_endpoint_identifies_again_and_never_resumes() {
     );
     assert_eq!(harness.server.count(op::RESUME), 0);
     assert_eq!(harness.joins(CHANNEL), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_move_after_a_server_change_in_the_channel_identifies_on_the_server_of_the_move() {
+    let mut harness = Harness::start().await;
+    harness.connected().await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Ready).await;
+
+    harness.state(Some(OTHER_CHANNEL));
+    let moved = harness.wait_for(moved).await;
+    harness.fresh_server().await;
+    harness.until(VoiceStatus::Ready).await;
+    harness.server.collect().await;
+
+    assert_eq!(moved, (CHANNEL, OTHER_CHANNEL, false));
+    assert_eq!(harness.server.count(op::IDENTIFY), 3);
+    assert_eq!(
+        harness.server.json(op::IDENTIFY)[2]["token"].as_str(),
+        Some("token-3")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
