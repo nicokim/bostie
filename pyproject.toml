@@ -4,7 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "bostie"
-description = "Discord library for Python with a Rust core, built around reliable voice"
+description = "Discord library for Python with DAVE voice receive and recording, built on a Rust core"
+keywords = ["discord", "discord-bot", "discord-api", "dave", "e2ee", "voice", "voice-receive", "recording", "opus", "rust", "asyncio"]
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 license-files = ["LICENSE-MIT", "LICENSE-APACHE", "THIRD-PARTY-NOTICES.md"]
